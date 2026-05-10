@@ -3640,11 +3640,29 @@ async function printPayoutVoucher(payoutId) {
     const p = pArr?.[0];
     if (!p) { toast('لم يُعثر على بيانات الصرف','err'); return; }
 
-    const poArr = await apiGet('purchase_orders', { select:'supplier,po_date', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
+    const poArr = await apiGet('purchase_orders', { select:'supplier,po_date,total_purchase', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
     const deal  = poArr?.[0];
-
+    // Get full deal balance for this partner
+    let dealSummary = null;
+    try { dealSummary = await getPartnerDealBalance(p.file_no, p.partner, state.system); } catch(e) {}
+    const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
     const typeColor = { 'استرداد رأس مال':'#2563eb', 'توزيع أرباح':'#16a34a', 'رأس مال + أرباح':'#7c3aed', 'سلفة':'#e6930a' };
     const color = typeColor[p.payout_type] || '#1a1a1a';
+
+    const dealBreakdown = dealSummary ? `
+      <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;margin-bottom:20px">
+        <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">ملخص الصفقة — ملف ${p.file_no}</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;color:#888">رأس المال (شراء)</div><div style="font-weight:700;color:#2563eb">${fmt2(dealSummary._totalCost)} KWD</div></div>
+          <div><div style="font-size:10px;color:#888">المصاريف</div><div style="font-weight:700;color:#dc2626">${fmt2(dealSummary._totalExp)} KWD</div></div>
+          <div><div style="font-size:10px;color:#888">المبيعات</div><div style="font-weight:700;color:#16a34a">${fmt2(dealSummary._totalSales)} KWD</div></div>
+        </div>
+        <div style="border-top:1px solid #e5e7eb;padding-top:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+          <div><div style="font-size:10px;color:#888">رأس المال المدفوع (حصتي)</div><div style="font-weight:700;color:#2563eb">${fmt2(dealSummary.capitalPaid)} KWD</div></div>
+          <div><div style="font-size:10px;color:#888">الربح المستحق (حصتي)</div><div style="font-weight:700;color:${dealSummary.profit>=0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(dealSummary.profit))} KWD</div></div>
+          <div><div style="font-size:10px;color:#888">المسحوبات السابقة</div><div style="font-weight:700;color:#e6930a">${fmt2(dealSummary.totalWithdrawn)} KWD</div></div>
+        </div>
+      </div>` : '';
 
     const splitRows = [];
     if (+p.capital_amount) splitRows.push(`<tr><td>رأس مال مُسترد</td><td style="font-weight:700;color:#2563eb">${(+p.capital_amount).toLocaleString('en-US',{minimumFractionDigits:2})} KWD</td></tr>`);
@@ -3721,6 +3739,8 @@ async function printPayoutVoucher(payoutId) {
       <div class="pay-id"># ${p.pay_id||payoutId}</div>
     </div>
   </div>
+
+  ${dealBreakdown}
 
   <div class="info-grid">
     <div class="info-box">
@@ -5078,23 +5098,72 @@ async function onPayoutPartnerChange() {
   const partner = el('pout-partner').value;
   const fn      = state.currentFileNo;
   if (!partner || !fn) return;
-  // Show partner balance summary
+  const card = el('pout-balance-card');
+  card.style.display = '';
+  card.innerHTML = `<div style="text-align:center;padding:8px;color:var(--text2);font-size:12px">⏳ جاري التحميل...</div>`;
   try {
-    const summary = await getPartnerDealBalance(fn, partner, state.system);
-    const card = el('pout-balance-card');
-    card.style.display = '';
+    const s = await getPartnerDealBalance(fn, partner, state.system);
+    const shareP = (s.share * 100).toFixed(0);
+    const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
     card.innerHTML = `
-      <div style="font-weight:700;margin-bottom:8px;color:var(--purple)">${partner} — ملخص الصفقة</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-        <div><div style="color:var(--text2);font-size:10px">رأس المال المدفوع</div><div class="mono" style="color:var(--blue);font-weight:700">${fmt(summary.capitalPaid)}</div></div>
-        <div><div style="color:var(--text2);font-size:10px">ربح/خسارة مستحق</div><div class="mono" style="color:${summary.profit>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(summary.profit)}</div></div>
-        <div><div style="color:var(--text2);font-size:10px">إجمالي المسحوبات</div><div class="mono" style="color:var(--amber);font-weight:700">${fmt(summary.totalWithdrawn)}</div></div>
+      <div style="font-weight:800;font-size:13px;color:var(--purple);margin-bottom:10px;display:flex;align-items:center;gap:6px">
+        👤 ${partner}
+        <span style="background:var(--purple);color:#fff;border-radius:20px;padding:2px 10px;font-size:11px">${shareP}% حصة</span>
       </div>
-      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;justify-content:space-between">
-        <span style="color:var(--text2)">المتبقي المستحق:</span>
-        <span class="mono" style="font-weight:700;color:${summary.netDue>=0?'var(--green)':'var(--red)'}">${fmt(summary.netDue)}</span>
+      <div style="font-size:10px;font-weight:700;color:var(--text2);letter-spacing:.5px;margin-bottom:6px">تفاصيل الصفقة الكاملة</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">
+        <div style="background:var(--card2);border-radius:6px;padding:8px 10px;border-right:3px solid var(--blue)">
+          <div style="font-size:9px;color:var(--text2);font-weight:700">رأس المال (شراء)</div>
+          <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--blue)">${fmt2(s._totalCost)}</div>
+        </div>
+        <div style="background:var(--card2);border-radius:6px;padding:8px 10px;border-right:3px solid var(--red)">
+          <div style="font-size:9px;color:var(--text2);font-weight:700">المصاريف</div>
+          <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--red)">${fmt2(s._totalExp)}</div>
+        </div>
+        <div style="background:var(--card2);border-radius:6px;padding:8px 10px;border-right:3px solid var(--green)">
+          <div style="font-size:9px;color:var(--text2);font-weight:700">المبيعات</div>
+          <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--green)">${fmt2(s._totalSales)}</div>
+        </div>
+      </div>
+      <div style="font-size:10px;font-weight:700;color:var(--text2);letter-spacing:.5px;margin-bottom:6px">حصة الشريك (${shareP}%)</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px">
+        <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
+          <div style="font-size:9px;color:var(--text2);font-weight:700">رأس المال المدفوع</div>
+          <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--blue)">${fmt2(s.capitalPaid)}</div>
+        </div>
+        <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
+          <div style="font-size:9px;color:var(--text2);font-weight:700">الربح المستحق</div>
+          <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:${s.profit>=0?'var(--green)':'var(--red)'}">${fmt2(Math.abs(s.profit))}</div>
+        </div>
+        <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
+          <div style="font-size:9px;color:var(--text2);font-weight:700">إجمالي المسحوبات</div>
+          <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--amber)">${fmt2(s.totalWithdrawn)}</div>
+        </div>
+        <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
+          <div style="font-size:9px;color:var(--text2);font-weight:700">صافي الربح (حصتي)</div>
+          <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:${s.dealProfit>=0?'var(--green)':'var(--red)'}">${fmt2(s.dealProfit * s.share)}</div>
+        </div>
+      </div>
+      <div style="background:${s.netDue>=0?'var(--green-dim)':'var(--red-dim)'};border:1px solid ${s.netDue>=0?'var(--green)':'var(--red)'};border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:12px;font-weight:700">المتبقي المستحق للشريك</span>
+        <span style="font-family:var(--mono);font-size:16px;font-weight:900;color:${s.netDue>=0?'var(--green)':'var(--red)'}">
+          ${fmt2(Math.abs(s.netDue))} ${s.netDue>=0?'✅':'⚠️'}
+        </span>
       </div>`;
-  } catch(e) {}
+    // ملء المبالغ تلقائياً
+    const type = el('pout-type').value;
+    if (type === 'رأس مال + أرباح') {
+      if (!el('pout-capital').value) el('pout-capital').value = Math.max(0, s.capitalPaid - s.capitalRet).toFixed(3);
+      if (!el('pout-profit').value && s.profit > 0) el('pout-profit').value = Math.max(0, s.profit - s.profitTaken).toFixed(3);
+      calcPayoutTotal();
+    } else if (type === 'استرداد رأس مال' && !el('pout-amount').value) {
+      el('pout-amount').value = Math.max(0, s.capitalPaid - s.capitalRet).toFixed(3);
+    } else if (type === 'توزيع أرباح' && !el('pout-amount').value && s.profit > 0) {
+      el('pout-amount').value = Math.max(0, s.profit - s.profitTaken).toFixed(3);
+    }
+  } catch(e) {
+    card.innerHTML = `<div style="color:var(--red);padding:8px">خطأ: ${e.message}</div>`;
+  }
 }
 
 function onPayoutTypeChange() {
@@ -5139,7 +5208,8 @@ async function getPartnerDealBalance(fileNo, partner, sys) {
   const advances    = (payouts||[]).reduce((s,p)=>s+(+p.advance_amount||0),0);
   const totalWithdrawn = capitalRet + profitTaken + advances;
   const netDue = capitalPaid + profit - totalWithdrawn;
-  return { share, capitalPaid, profit, capitalRet, profitTaken, advances, totalWithdrawn, netDue, dealProfit };
+  return { share, capitalPaid, profit, capitalRet, profitTaken, advances, totalWithdrawn, netDue, dealProfit,
+           _totalCost: totalCost, _totalExp: totalExp, _totalSales: totalSales };
 }
 
 async function submitPayout() {
