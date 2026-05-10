@@ -5692,13 +5692,16 @@ async function postLedger({ contactName, contactType, date, description, debit=0
 // ════════════════════════════════════════
 const contactsState = { all: [], typeFilter: 'all' };
 
-async function showContacts() {
+async function showContacts(type='all') {
   sessionStorage.setItem('tm_last_view','contacts');
   hideAllViews();
   el('contactsView').style.display = 'block';
   el('topBarTitle').textContent = 'جهات الاتصال';
   navActive('nav-contacts');
+  contactsState.typeFilter = type;
   await loadContacts();
+  // Apply filter after data loads
+  filterContacts(type);
 }
 
 async function loadContacts() {
@@ -7281,8 +7284,7 @@ async function showPartnerDealStatement(fileNo, partner, sys) {
 // CONTACTS BY TYPE SHORTCUT
 // ════════════════════════════════════════
 function showContactsByType(type) {
-  showContacts();
-  setTimeout(() => filterContacts(type), 700);
+  showContacts(type);
 }
 
 // ════════════════════════════════════════
