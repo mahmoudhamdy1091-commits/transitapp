@@ -4479,15 +4479,18 @@ async function submitPayment() {
     await apiPost('payments', data);
     await logAudit('INSERT','payments',fn,null,data);
     // Ledger: supplier gets paid (credit on supplier = reduces what we owe)
-    const deal3 = state.allDeals.find(d=>d.file_no===fn);
-    const supplierName = deal3?.supplier || payer;
-    await postLedger({ contactName:supplierName, contactType:'supplier', date,
-      description:`دفعة للمورد — ملف ${fn} — دافع: ${payer}`,
-      credit: amount, sourceTable:'payments', fileNo: fn });
+    // جيب اسم المورد من الـ DB مباشرة عشان نضمن الصح
+    const poArr = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
+    const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
+    if (supplierName) {
+      await postLedger({ contactName:supplierName, contactType:'supplier', date,
+        description:`دفعة للمورد — ملف ${fn} — دافع: ${payer}`,
+        credit: amount, sourceTable:'payments', fileNo: fn });
+    }
     // إذا كان الدافع شريكاً — سجّل مدين عليه
     if (payer && payer !== supplierName) {
       await postLedger({ contactName:payer, contactType:'partner', date,
-        description:`دفع للمورد ${supplierName} — ملف ${fn}`,
+        description:`دفع للمورد ${supplierName||'المورد'} — ملف ${fn}`,
         debit: amount, sourceTable:'payments', fileNo: fn });
     }
     closeModal('paymentModal');
