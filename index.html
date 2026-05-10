@@ -3086,8 +3086,8 @@ function renderDealsTable(deals) {
           <span class="mono text-amber" style="font-weight:700">${fileNoDisplay}</span>
           ${canOpen ? `<button onclick="event.stopPropagation();openNewFileModal('${d.file_no}')"
             style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:13px;padding:2px 4px;border-radius:4px" title="تعديل">✏️</button>` : ''}
-          <button onclick="event.stopPropagation();deleteOrphanDeal('${d.id||d.file_no}')"
-            style="background:none;border:none;cursor:pointer;color:var(--red);font-size:13px;padding:2px 4px;border-radius:4px" title="حذف">🗑</button>
+          ${can('delete') ? `<button onclick="event.stopPropagation();deleteOrphanDeal('${d.id||d.file_no}')"
+            style="background:none;border:none;cursor:pointer;color:var(--red);font-size:13px;padding:2px 4px;border-radius:4px" title="حذف">🗑</button>` : ''}
         </div>
         <div style="font-size:11px;color:var(--text2);margin-top:2px">${fmtDate(d.po_date)}</div>
       </td>
@@ -3810,7 +3810,7 @@ async function loadPayoutsTab(fn, sys) {
           <div style="display:flex;gap:4px">
             <button class="btn btn-secondary btn-sm" onclick="printPayoutVoucher(${p.id})" title="طباعة سند" style="color:var(--purple)">🖨️</button>
             <button class="btn btn-secondary btn-sm" onclick="openEditPayoutModal(${p.id})" title="تعديل">✏️</button>
-            <button class="btn btn-secondary btn-sm" onclick="deletePayoutEntry(${p.id},'${fn}')" title="حذف" style="color:var(--red)">🗑</button>
+            ${can('delete') ? `<button class="btn btn-secondary btn-sm" onclick="deletePayoutEntry(${p.id},'${fn}')" title="حذف" style="color:var(--red)">🗑</button>` : ''}
           </div>
         </td>
       </tr>`;
@@ -8510,17 +8510,32 @@ function saveRole() {
 }
 
 function applyRoleRestrictions() {
-  // Hide delete buttons for non-admins
+  const canDel = can('delete');
+  const canTx  = can('transactions');
+
+  // Hide static delete buttons
   document.querySelectorAll('.btn-danger, #nfDeleteBtn').forEach(btn => {
-    btn.style.display = can('delete') ? '' : 'none';
+    btn.style.display = canDel ? '' : 'none';
   });
   // Hide add/edit buttons for readonly
   document.querySelectorAll('#nfSubmitBtn, #saleSubmitBtn, #paymentSubmitBtn, #expSubmitBtn').forEach(btn => {
-    btn.style.display = can('transactions') ? '' : 'none';
+    btn.style.display = canTx ? '' : 'none';
   });
   // Quick expense fab
   const fab = el('quickExpFab');
-  if (fab) fab.style.display = can('transactions') && state.currentFileNo ? 'flex' : 'none';
+  if (fab) fab.style.display = canTx && state.currentFileNo ? 'flex' : 'none';
+}
+
+// Guard: block delete API calls if no permission (second layer of protection)
+const _origApiDelete = apiDelete;
+async function apiDelete(table, matchParams) {
+  // Allow only admins to delete from data tables
+  const protectedTables = ['purchase_orders','vehicles','sales','expenses','payments','collections','partner_payouts','contacts'];
+  if (protectedTables.includes(table) && !can('delete')) {
+    toast('🔒 ليس لديك صلاحية الحذف', 'err');
+    throw new Error('غير مصرح بالحذف');
+  }
+  return _origApiDelete(table, matchParams);
 }
 
 // ════════════════════════════════════════
