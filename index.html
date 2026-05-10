@@ -3902,8 +3902,9 @@ async function submitNewFile() {
     };
     await apiPost('purchase_orders', poData);
 
-    // 2. Ledger entry for supplier
+    // 2. Ledger entry for supplier — امسح القديم وأضف جديد
     if (finalTotal > 0) {
+      try { await apiDelete('ledger_entries', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, source_table:`eq.purchase_orders` }); } catch(e) {}
       await postLedger({ contactName:supplier, contactType:'supplier', date:poDate||today(),
         description:`شراء — ملف ${fileNo}${poNo?' — PO: '+poNo:''}`,
         debit: finalTotal, sourceTable:'purchase_orders', fileNo });
@@ -4284,6 +4285,19 @@ async function submitPayment() {
   const notes  = el('pay-notes').value.trim();
 
   if (!payer || !amount || !date) { showFieldErr('payError','يرجى ملء الحقول المطلوبة'); return; }
+
+  // تحذير لو الدفعة أكبر من المتبقي
+  const deal = state.allDeals.find(d=>d.file_no===fn) || state.allDealsEnriched?.find(d=>d.file_no===fn);
+  if (deal) {
+    const totalCost    = +deal.total_purchase || 0;
+    const alreadyPaid  = (await apiGet('payments', { select:'amount', system_type:`eq.${state.system}`, file_no:`eq.${fn}` }) || [])
+                          .reduce((s,p) => s + (+p.amount||0), 0);
+    const remaining    = totalCost - alreadyPaid;
+    if (amount > remaining && remaining > 0) {
+      const proceed = confirm(`⚠️ تنبيه: قيمة الدفعة (${amount.toLocaleString()}) أكبر من المتبقي للمورد (${remaining.toLocaleString()}).\n\nهل تريد المتابعة؟`);
+      if (!proceed) return;
+    }
+  }
 
   try {
     const data = {
