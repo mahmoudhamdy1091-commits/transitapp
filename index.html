@@ -785,6 +785,32 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   .section-header{ flex-wrap:wrap; gap:6px; }
   .section-actions{ width:100%; justify-content:flex-end; }
   .mobile-nav{ display:flex !important; }
+
+  /* ── Viewer mobile fixes ── */
+  .viewer-header{
+    flex-direction:column; gap:10px; padding:14px 16px;
+  }
+  .vh-info{ width:100%; }
+  .vh-meta{ gap:8px; }
+  .vh-actions{ flex-wrap:wrap; gap:6px; }
+  .vh-actions .btn{ font-size:11px; padding:6px 10px; }
+  #viewer-kpis{
+    grid-template-columns:repeat(3,1fr) !important;
+    gap:6px !important; padding:8px 0 !important;
+  }
+  #viewerTabs{
+    display:flex; overflow-x:auto; -webkit-overflow-scrolling:touch;
+    flex-wrap:nowrap; gap:4px;
+    scrollbar-width:none; -ms-overflow-style:none;
+    padding-bottom:4px;
+  }
+  #viewerTabs::-webkit-scrollbar{ display:none; }
+  #viewerTabs .tab{
+    white-space:nowrap; flex-shrink:0;
+    padding:7px 10px; font-size:11px;
+  }
+  .tab-content{ padding-top:8px; }
+  .section-header .section-title{ font-size:13px; }
 }
 
 /* Bottom Nav — hidden by default, shown on mobile */
@@ -8564,9 +8590,18 @@ async function loadDealStatement(fn, sys) {
   } catch(e) { el('dealStatementWrap').innerHTML = errHTML('خطأ: '+e.message); }
 }
 
-function printDealStatement() {
-  const d = window._dealStatementData;
-  if (!d) { toast('افتح كشف الصفقة أولاً','err'); return; }
+async function printDealStatement(fileNo) {
+  // لو فيه fileNo → جيب البيانات مباشرة
+  // لو مفيش → استخدم _dealStatementData المحفوظ
+  let d = window._dealStatementData;
+  if (fileNo && (!d || d.fn !== fileNo)) {
+    toast('⏳ جاري تحميل كشف الصفقة...', 'ok');
+    try {
+      await loadDealStatement(fileNo, state.system);
+      d = window._dealStatementData;
+    } catch(e) { toast('خطأ: ' + e.message, 'err'); return; }
+  }
+  if (!d) { toast('افتح كشف الصفقة أولاً', 'err'); return; }
   const { fn, deal, entries, totalPurchase, totalPaid, totalExp, totalSales, totalColl, profit } = d;
   let running = 0;
   const rows = entries.map(e => {
