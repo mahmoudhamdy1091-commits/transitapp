@@ -2608,7 +2608,14 @@ function initApp() {
   document.getElementById('userName').textContent = name;
   document.getElementById('userEmailDisplay').textContent = email;
 
-  loadDashboard();
+  loadDashboard().then(() => {
+    // Restore last view after refresh
+    const lastView = sessionStorage.getItem('tm_last_view');
+    if (lastView === 'contacts') showContacts();
+    else if (lastView === 'journal') showJournal();
+    else if (lastView && lastView.startsWith('report:')) showReport(lastView.split(':')[1]);
+    else showDashboard();
+  });
   updateSystemUI();
 }
 
@@ -5223,6 +5230,7 @@ async function searchVin(q) {
 // UI HELPERS
 // ════════════════════════════════════════
 function showDashboard() {
+  sessionStorage.setItem('tm_last_view','dashboard');
   hideAllViews();
   el('dashboardView').style.display = 'block';
   el('topBarTitle').textContent    = 'لوحة التحكم';
@@ -5327,6 +5335,7 @@ const journalState = {
 };
 
 function showJournal() {
+  sessionStorage.setItem('tm_last_view','journal');
   hideAllViews();
   el('journalView').style.display  = 'block';
   el('topBarTitle').textContent    = 'صفحة اليومية';
@@ -5607,6 +5616,7 @@ async function postLedger({ contactName, contactType, date, description, debit=0
 const contactsState = { all: [], typeFilter: 'all' };
 
 async function showContacts() {
+  sessionStorage.setItem('tm_last_view','contacts');
   hideAllViews();
   el('contactsView').style.display = 'block';
   el('topBarTitle').textContent = 'جهات الاتصال';
@@ -7262,6 +7272,7 @@ async function apiGetDateRange(table, dateCol, from, to, extra={}) {
 }
 
 function showReport(type) {
+  sessionStorage.setItem('tm_last_view','report:'+type);
   hideAllViews();
   el('reportsView').style.display = 'block';
   el('topBarTitle').textContent = 'التقارير';
