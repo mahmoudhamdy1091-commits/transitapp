@@ -1177,6 +1177,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           <div class="tab" onclick="switchTab(4)">🤝 المبيعات</div>
           <div class="tab" onclick="switchTab(5)">💰 التحصيلات</div>
           <div class="tab" onclick="switchTab(6)">👥 صرف الشركاء</div>
+          <div class="tab" onclick="switchTab(7)">📄 كشف الصفقة</div>
         </div>
 
         <!-- Tab 0: Summary -->
@@ -1253,6 +1254,18 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
             </div>
           </div>
           <div class="data-table-wrap" id="payoutsTable"></div>
+        </div>
+
+        <!-- Tab 7: Deal Statement -->
+        <div class="tab-content" id="tab-7">
+          <div class="section-header">
+            <div class="section-title">📄 كشف الصفقة</div>
+            <div class="section-actions">
+              <button class="btn btn-secondary btn-sm" onclick="printDealStatement()">🖨️ طباعة PDF</button>
+              <button class="btn btn-secondary btn-sm" onclick="exportDealStatementExcel()">📊 Excel</button>
+            </div>
+          </div>
+          <div id="dealStatementWrap"></div>
         </div>
 
       </div><!-- /viewerView -->
@@ -2938,6 +2951,7 @@ async function loadViewerTab(idx) {
   if (idx === 4) await loadSalesTab(fn, sys);
   if (idx === 5) await loadCollectionsTab(fn, sys);
   if (idx === 6) await loadPayoutsTab(fn, sys);
+  if (idx === 7) await loadDealStatement(fn, sys);
 }
 
 async function loadSummaryTab(fn, sys) {
@@ -8007,10 +8021,171 @@ async function loadUserRoleFromDB() {
   } catch(e) {}
 }
 
+
+// ════════════════════════════════════════
+// DEAL STATEMENT (TAB 7)
+// ════════════════════════════════════════
+async function loadDealStatement(fn, sys) {
+  const wrap = el('dealStatementWrap');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
+  try {
+    const [po, vehicles, payments, expenses, sales, collections, partners, payouts] = await Promise.all([
+      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGet('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
+      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'expense_date.asc' }),
+      apiGet('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.asc' }),
+      apiGet('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.asc' }),
+      apiGet('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
+    ]);
+
+    const deal = po?.[0] || {};
+    const totalPurchase = +deal.total_purchase || 0;
+    const totalPaid     = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
+    const totalExp      = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
+    const totalSales    = (sales||[]).reduce((s,s2)=>s+(+s2.sale_price||0),0);
+    const totalColl     = (collections||[]).reduce((s,c)=>s+(+c.amount||0),0);
+    const totalPayouts  = (payouts||[]).reduce((s,p)=>s+(+p.amount||0),0);
+    const profit        = totalSales - totalPurchase - totalExp;
+
+    const entries = [
+      { date:deal.po_date||deal.created_at, type:'شراء', icon:'📋', color:'var(--blue)',
+        party:deal.supplier||'—', debit:totalPurchase, credit:0,
+        desc:`سند شراء ${fn}${deal.po_no?' — PO: '+deal.po_no:''}`,
+        extra:`${(vehicles||[]).length} سيارة` },
+      ...(payments||[]).map(p=>({ date:p.pay_date, type:'دفعة للمورد', icon:'💳', color:'var(--cyan)',
+        party:p.payer||'—', debit:0, credit:+p.amount,
+        desc:`دفعة من ${p.payer||'—'}`, extra:`${p.pay_method||''}${p.document?' · '+p.document:''}` })),
+      ...(expenses||[]).map(e=>({ date:e.expense_date, type:'مصروف', icon:'💸', color:'var(--red)',
+        party:e.vendor||'—', debit:0, credit:+e.amount,
+        desc:e.category||e.description||'مصروف', extra:`${e.pay_method||''}` })),
+      ...(sales||[]).map(s=>({ date:s.sale_date, type:'بيع', icon:'🤝', color:'var(--green)',
+        party:s.customer||'—', debit:+s.sale_price, credit:0,
+        desc:`بيع ${s.model||s.vin||'سيارة'} — ${s.customer||'—'}`,
+        extra:`${s.vin?'شاصي: '+s.vin:''}${s.invoice_no?' · '+s.invoice_no:''}` })),
+      ...(collections||[]).map(c=>({ date:c.paid_date, type:'تحصيل', icon:'💰', color:'var(--green)',
+        party:c.customer||'—', debit:+c.amount, credit:0,
+        desc:`تحصيل من ${c.customer||'—'}`, extra:`${c.pay_method||''}` })),
+      ...(payouts||[]).map(p=>({ date:p.pay_date, type:'صرف شريك', icon:'👥', color:'var(--purple)',
+        party:p.partner||'—', debit:0, credit:+p.amount,
+        desc:`${p.payout_type||'صرف'} — ${p.partner||'—'}`, extra:`${p.pay_method||''}${p.notes?' · '+p.notes:''}` })),
+    ].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+
+    window._dealStatementData = { fn, deal, entries, totalPurchase, totalPaid, totalExp, totalSales, totalColl, totalPayouts, profit, partners, payouts, vehicles };
+
+    const kpis = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px">
+      ${[['تكلفة الشراء',fmt(totalPurchase),'var(--blue)'],['المدفوع',fmt(totalPaid),'var(--cyan)'],
+         ['المصاريف',fmt(totalExp),'var(--red)'],['المبيعات',fmt(totalSales),'var(--green)'],
+         ['المحصّل',fmt(totalColl),'var(--green)'],['صافي الربح',fmt(Math.abs(profit)),profit>=0?'var(--green)':'var(--red)'],
+      ].map(([l,v,c])=>`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px">
+        <div style="font-size:10px;color:var(--text2);margin-bottom:4px">${l}</div>
+        <div style="font-size:16px;font-weight:700;color:${c}">${v}</div></div>`).join('')}
+    </div>`;
+
+    let running = 0;
+    const rows = entries.map(e => {
+      if (e.debit>0) running += e.debit; if (e.credit>0) running -= e.credit;
+      return `<tr onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
+        <td style="padding:10px 12px;font-size:11px;color:var(--text3);white-space:nowrap">${e.date||'—'}</td>
+        <td style="padding:10px 12px"><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${e.color}22;color:${e.color}">${e.icon} ${e.type}</span></td>
+        <td style="padding:10px 12px"><div style="font-size:12px;font-weight:600">${e.desc}</div>${e.extra?`<div style="font-size:10px;color:var(--text3)">${e.extra}</div>`:''}</td>
+        <td style="padding:10px 12px;font-size:12px;color:var(--text2)">${e.party}</td>
+        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--green)">${e.debit>0?fmt(e.debit):'—'}</td>
+        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--red)">${e.credit>0?fmt(e.credit):'—'}</td>
+        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:13px;font-weight:700;color:${running>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(running))}</td>
+      </tr>`;
+    }).join('');
+
+    const partnersHtml = (partners||[]).length ? `
+      <div style="margin-top:16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
+        <div style="font-weight:700;margin-bottom:12px;font-size:13px">👥 توزيع الأرباح على الشركاء</div>
+        ${(partners||[]).map(p=>{
+          const paid = (payouts||[]).filter(py=>py.partner===p.partner).reduce((s,py)=>s+(+py.amount||0),0);
+          const share = profit*(+p.share_percent||0)/100;
+          return `<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+            <div style="flex:1;font-weight:700;min-width:100px">${p.partner}</div>
+            <div style="font-size:12px;color:var(--text2)">حصة: <b>${p.share_percent}%</b></div>
+            <div style="font-size:12px;color:var(--green)">ربح مستحق: <b>${fmt(share)}</b></div>
+            <div style="font-size:12px;color:var(--accent)">مصروف: <b>${fmt(paid)}</b></div>
+            <div style="font-size:12px;font-weight:700;color:${share-paid>0?'var(--red)':'var(--green)'}">متبقي: <b>${fmt(share-paid)}</b></div>
+          </div>`;
+        }).join('')}
+      </div>` : '';
+
+    wrap.innerHTML = kpis + `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--card2);border-bottom:1px solid var(--border)">
+            ${['التاريخ','النوع','البيان','الطرف','مدين','دائن','الرصيد'].map((h,i)=>`<th style="padding:10px 12px;font-size:11px;color:var(--text3);font-weight:700;text-align:${i>=4?'left':'right'}">${h}</th>`).join('')}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>` + partnersHtml;
+
+  } catch(e) { el('dealStatementWrap').innerHTML = errHTML('خطأ: '+e.message); }
+}
+
+function printDealStatement() {
+  const d = window._dealStatementData;
+  if (!d) { toast('افتح كشف الصفقة أولاً','err'); return; }
+  const { fn, deal, entries, totalPurchase, totalPaid, totalExp, totalSales, totalColl, profit } = d;
+  let running = 0;
+  const rows = entries.map(e => {
+    if(e.debit>0) running+=e.debit; if(e.credit>0) running-=e.credit;
+    return `<tr><td>${e.date||'—'}</td><td>${e.type}</td><td><b>${e.desc}</b>${e.extra?'<br><small>'+e.extra+'</small>':''}</td>
+    <td>${e.party}</td>
+    <td style="text-align:left;color:green">${e.debit>0?e.debit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
+    <td style="text-align:left;color:red">${e.credit>0?e.credit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
+    <td style="text-align:left;font-weight:700;color:${running>=0?'green':'red'}">${Math.abs(running).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`;
+  }).join('');
+  const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>كشف الصفقة ${fn}</title>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;padding:20px}
+  h2{margin-bottom:4px}.sub{color:#666;margin-bottom:16px}
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px}
+  .kpi{border:1px solid #ddd;border-radius:6px;padding:8px;text-align:center}
+  .kpi div:first-child{font-size:10px;color:#666}.kpi div:last-child{font-weight:700;font-size:13px}
+  table{width:100%;border-collapse:collapse}th{background:#f0f0f0;padding:7px 10px;font-size:11px;border:1px solid #ddd;text-align:right}
+  td{padding:6px 10px;border:1px solid #eee;font-size:11px}tr:nth-child(even){background:#fafafa}
+  @media print{@page{size:A4 landscape}}</style></head><body>
+  <div style="display:flex;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #000">
+    <div><h2>كشف الصفقة — ${fn}</h2><div class="sub">المورد: ${deal.supplier||'—'} · تاريخ: ${deal.po_date||'—'}</div></div>
+    <div style="text-align:left;font-size:11px;color:#666">Transit Co.<br>${new Date().toLocaleDateString('ar-EG')}</div>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div>تكلفة الشراء</div><div style="color:#2563eb">${totalPurchase.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+    <div class="kpi"><div>المدفوع</div><div style="color:#0891b2">${totalPaid.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+    <div class="kpi"><div>المصاريف</div><div style="color:#dc2626">${totalExp.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+    <div class="kpi"><div>المبيعات</div><div style="color:#16a34a">${totalSales.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+    <div class="kpi"><div>المحصّل</div><div style="color:#16a34a">${totalColl.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+    <div class="kpi"><div>صافي الربح</div><div style="color:${profit>=0?'#16a34a':'#dc2626'}">${Math.abs(profit).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+  </div>
+  <table><thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>الطرف</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <scr` + `ipt>window.onload=()=>window.print()<` + `/scr` + `ipt></body></html>`;
+  const w = window.open('','_blank'); w.document.write(html); w.document.close();
+}
+
+function exportDealStatementExcel() {
+  const d = window._dealStatementData;
+  if (!d) { toast('افتح كشف الصفقة أولاً','err'); return; }
+  const { fn, entries } = d;
+  let running = 0;
+  const rows = [['التاريخ','النوع','البيان','الطرف','مدين','دائن','الرصيد']];
+  entries.forEach(e => {
+    if(e.debit>0) running+=e.debit; if(e.credit>0) running-=e.credit;
+    rows.push([e.date||'', e.type, e.desc+(e.extra?' — '+e.extra:''), e.party,
+      e.debit>0?e.debit:'', e.credit>0?e.credit:'', Math.abs(running)]);
+  });
+  const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `كشف_${fn}.csv`; a.click();
+}
+
 // ════════════════════════════════════════
 // ACTIVITY LOG
 // ════════════════════════════════════════
-
 async function acGetContacts(type) {
   const key = state.system + ':' + type;
   if (_acCache[key] && (Date.now() - _acCache[key].ts < 60000)) return _acCache[key].data;
