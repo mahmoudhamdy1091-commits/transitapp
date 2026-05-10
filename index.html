@@ -1127,7 +1127,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       </div>
 
       <!-- ⚙️ الإدارة -->
-      <div class="nav-section">
+      <div class="nav-section" id="nav-section-admin">
         <div class="nav-section-title" onclick="toggleNav(this)">
           <span>⚙️ الإدارة</span>
           <span class="ns-arrow">▼</span>
@@ -8510,8 +8510,9 @@ function saveRole() {
 }
 
 function applyRoleRestrictions() {
-  const canDel = can('delete');
-  const canTx  = can('transactions');
+  const canDel   = can('delete');
+  const canTx    = can('transactions');
+  const isAdmin  = can('roles');
 
   // Hide static delete buttons
   document.querySelectorAll('.btn-danger, #nfDeleteBtn').forEach(btn => {
@@ -8524,6 +8525,10 @@ function applyRoleRestrictions() {
   // Quick expense fab
   const fab = el('quickExpFab');
   if (fab) fab.style.display = canTx && state.currentFileNo ? 'flex' : 'none';
+
+  // Hide admin-only sidebar section (الإدارة) for non-admins
+  const adminNav = el('nav-section-admin');
+  if (adminNav) adminNav.style.display = isAdmin ? '' : 'none';
 }
 
 // Guard: block delete API calls if no permission (second layer of protection)
@@ -8629,6 +8634,7 @@ document.addEventListener('DOMContentLoaded', () => {
 let _activityData = [];
 
 async function showActivityLog() {
+  if (!can('roles')) { toast('🔒 هذه الصفحة للمدراء فقط', 'err'); return; }
   hideAllViews();
   el('activityView').style.display = 'block';
   el('topBarTitle').textContent = 'سجل النشاط';
@@ -8727,6 +8733,7 @@ function switchSettTab(name) {
 }
 
 async function showSettings() {
+  if (!can('roles')) { toast('🔒 هذه الصفحة للمدراء فقط', 'err'); return; }
   hideAllViews();
   el('settingsView').style.display = 'block';
   el('topBarTitle').textContent = 'الإعدادات';
