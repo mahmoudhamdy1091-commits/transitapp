@@ -4968,7 +4968,7 @@ async function submitPayout() {
     await logAudit('INSERT','partner_payouts',fn,null,data);
     await postLedger({ contactName:partner, contactType:'partner', date,
       description:`${type} — ملف ${fn}`,
-      credit: amount, sourceTable:'partner_payouts', fileNo: fn });
+      debit: amount, sourceTable:'partner_payouts', fileNo: fn });
     closeModal('payoutModal');
     toast(`✅ تم تسجيل ${type} للشريك ${partner}`,'ok');
     if (state.currentTab === 6) loadPayoutsTab(fn, state.system);
@@ -5273,7 +5273,7 @@ async function submitQuickPayout() {
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
     await postLedger({ contactName:partner, contactType:'partner', date,
       description:`صرف شريك — ملف ${fileNo}`,
-      credit:amount, sourceTable:'partner_payouts', fileNo });
+      debit:amount, sourceTable:'partner_payouts', fileNo });
     closeModal('quickPayoutModal');
     toast('✅ تم تسجيل الصرف بنجاح','ok');
     loadJournal();
