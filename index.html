@@ -1865,11 +1865,6 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
               oninput="acSearch('customer','sale-customer')" onfocus="acSearch('customer','sale-customer')" onblur="acBlur('sale-customer')" onkeydown="acKey(event,'sale-customer')">
             <div class="ac-dropdown" id="ac-sale-customer"></div>
           </div>
-            style="margin-top:6px;width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
-        </div>
-        <div class="field">
-          <label>رقم الفاتورة / Invoice No *</label>
-          <input type="text" id="sale-invNo" placeholder="INV-2025-001">
         </div>
       </div>
       <input type="hidden" id="sale-fileNo">
@@ -3302,7 +3297,7 @@ async function reprintInvoice(invNo, fn) {
       const vehicles = await apiGet('vehicles', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
       items.forEach(item => {
         const v = (vehicles||[]).find(v=>v.vin===item.vin);
-        if (v) { item.model=v.model||v.vehicle_type||''; item.plate=v.plate||''; item.color=v.color||''; }
+        if (v) { item.model=v.model||v.vehicle_type||''; item.plate=v.plate||''; item.color=v.color||''; item.engine=v.engine_size||''; item.year=v.year||''; }
       });
     } catch(e) {}
     printSaleInvoice({ invNo, customer:s.customer, date:s.sale_date, fn, notes:s.notes||'', items, total: items.reduce((t,i)=>t+i.price,0) });
@@ -3319,11 +3314,11 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
       <td style="text-align:center">${i+1}</td>
       <td>
         <div style="font-weight:600">${item.model||'—'}</div>
-        <div style="font-size:11px;color:#666">${item.color||''}</div>
+        <div style="font-size:11px;color:#666">${item.color||''}${item.year?' · '+item.year:''}</div>
       </td>
       <td style="direction:ltr;text-align:center;font-family:monospace;font-size:12px">${item.vin||'—'}</td>
       <td style="direction:ltr;text-align:center;font-family:monospace">${item.plate||'—'}</td>
-      <td style="text-align:center">${item.color||'—'}</td>
+      <td style="text-align:center">${item.engine?item.engine+' L':'—'}</td>
       <td style="text-align:left;font-weight:600">${item.price.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>`).join('');
 
@@ -3452,7 +3447,7 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
         <th>السيارة / Vehicle</th>
         <th>رقم الشاصي / VIN</th>
         <th>اللوحة / Plate</th>
-        <th>اللون / Color</th>
+        <th>الحجم / Engine</th>
         <th style="text-align:left">السعر / Price</th>
       </tr>
     </thead>
@@ -6863,7 +6858,8 @@ async function printPurchaseOrder(fileNo) {
       <td style="direction:ltr;font-family:monospace;font-size:11px;font-weight:700">${v.vin||'—'}</td>
       <td style="direction:ltr">${v.plate||'—'}</td>
       <td>${v.color||'—'}</td>
-      <td>${v.year||'—'}</td>
+      <td style="text-align:center">${v.engine_size?v.engine_size+' L':'—'}</td>
+      <td style="text-align:center">${v.year||'—'}</td>
       <td class="amber" style="text-align:left">${fmt2(v.purchase_price)}</td>
     </tr>`).join('');
 
@@ -6926,7 +6922,7 @@ async function printPurchaseOrder(fileNo) {
 
       <div class="section-title">📦 السيارات / Vehicles</div>
       <table>
-        <thead><tr><th>#</th><th>النوع / الموديل</th><th>رقم الشاصي (VIN)</th><th>اللوحة</th><th>اللون</th><th>السنة</th><th>سعر الشراء</th></tr></thead>
+        <thead><tr><th>#</th><th>النوع / الموديل</th><th>رقم الشاصي (VIN)</th><th>اللوحة</th><th>اللون</th><th>الحجم</th><th>السنة</th><th>سعر الشراء</th></tr></thead>
         <tbody>${vehicleRows}</tbody>
         <tfoot><tr>
           <td colspan="6" style="padding:8px 10px"><strong>إجمالي قيمة الشراء</strong></td>
