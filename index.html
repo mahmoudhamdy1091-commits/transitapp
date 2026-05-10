@@ -2891,6 +2891,7 @@ function filterDeals(status) {
 // ════════════════════════════════════════
 // VIEWER
 // ════════════════════════════════════════
+
 async function openViewer(fileNo) {
   state.currentFileNo = fileNo;
   state.currentTab = 0;
@@ -2929,6 +2930,9 @@ async function openViewer(fileNo) {
   switchTab(0);
   loadViewerTab(0);
   navActive('');
+  // Show quick expense FAB
+  const fab = el('quickExpFab');
+  if (fab && can('transactions')) fab.style.display = 'flex';
 }
 
 function switchTab(idx) {
@@ -3283,6 +3287,198 @@ async function reprintInvoice(invNo, fn) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
+function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
+  const companyName = 'Transit Co.';
+  const companyNameAr = 'ترانزيت';
+  const companyAddress = 'Kuwait · الكويت';
+
+  const itemsHtml = items.map((item, i) => `
+    <tr>
+      <td style="text-align:center">${i+1}</td>
+      <td>
+        <div style="font-weight:600">${item.model||'—'}</div>
+        <div style="font-size:11px;color:#666">${item.color||''}</div>
+      </td>
+      <td style="direction:ltr;text-align:center;font-family:monospace;font-size:12px">${item.vin||'—'}</td>
+      <td style="direction:ltr;text-align:center;font-family:monospace">${item.plate||'—'}</td>
+      <td style="text-align:center">${item.color||'—'}</td>
+      <td style="text-align:left;font-weight:600">${item.price.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>فاتورة ${invNo}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color:#1a1a1a; font-size:13px; background:#fff; }
+  .page { max-width:800px; margin:0 auto; padding:32px 36px; }
+
+  /* Header */
+  .inv-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:28px; padding-bottom:20px; border-bottom:3px solid #1a1a1a; }
+  .logo-area { text-align:right; }
+  .logo-placeholder { width:120px; height:60px; border:2px dashed #ccc; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:11px; margin-bottom:6px; }
+  .company-name { font-size:22px; font-weight:800; color:#1a1a1a; }
+  .company-name-ar { font-size:14px; color:#555; margin-top:2px; }
+  .inv-title-area { text-align:left; }
+  .inv-title { font-size:28px; font-weight:800; color:#1a1a1a; letter-spacing:-0.5px; }
+  .inv-title-ar { font-size:16px; color:#555; margin-top:4px; }
+  .inv-number { font-size:16px; font-weight:700; margin-top:8px; color:#c47a00; }
+
+  /* Info boxes */
+  .inv-info { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; }
+  .info-box { background:#f8f9fa; border-radius:8px; padding:14px 16px; }
+  .info-box-title { font-size:10px; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+  .info-row { display:flex; justify-content:space-between; padding:3px 0; font-size:13px; }
+  .info-label { color:#666; }
+  .info-value { font-weight:600; color:#1a1a1a; }
+
+  /* Table */
+  table { width:100%; border-collapse:collapse; margin-bottom:20px; }
+  thead tr { background:#1a1a1a; color:#fff; }
+  thead th { padding:10px 12px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
+  tbody tr { border-bottom:1px solid #eee; }
+  tbody tr:nth-child(even) { background:#fafafa; }
+  tbody td { padding:10px 12px; vertical-align:middle; }
+
+  /* Total */
+  .total-section { display:flex; justify-content:flex-end; margin-bottom:24px; }
+  .total-box { background:#1a1a1a; color:#fff; border-radius:10px; padding:16px 24px; min-width:220px; }
+  .total-label { font-size:12px; color:#aaa; margin-bottom:4px; }
+  .total-amount { font-size:24px; font-weight:800; color:#fff; }
+  .total-currency { font-size:13px; color:#aaa; margin-top:2px; }
+
+  /* Notes */
+  .notes-section { background:#f8f9fa; border-radius:8px; padding:14px 16px; margin-bottom:24px; }
+  .notes-title { font-size:11px; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
+
+  /* Footer */
+  .inv-footer { text-align:center; padding-top:20px; border-top:1px solid #eee; color:#999; font-size:11px; }
+
+  /* Signature area */
+  .sig-area { display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-bottom:24px; }
+  .sig-box { text-align:center; padding-top:40px; border-top:1px solid #ccc; }
+  .sig-label { font-size:11px; color:#888; margin-top:6px; }
+
+  @media print {
+    body { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+    .page { padding:20px; }
+    .no-print { display:none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Print button -->
+  <div class="no-print" style="text-align:center;margin-bottom:20px;display:flex;gap:10px;justify-content:center">
+    <button onclick="window.print()" style="background:#1a1a1a;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">🖨️ طباعة / Print</button>
+    <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">✕ إغلاق</button>
+  </div>
+
+  <!-- Header -->
+  <div class="inv-header">
+    <div class="logo-area">
+      <div class="logo-placeholder">LOGO</div>
+      <div class="company-name">${companyName}</div>
+      <div class="company-name-ar">${companyNameAr}</div>
+      <div style="font-size:11px;color:#888;margin-top:4px">${companyAddress}</div>
+    </div>
+    <div class="inv-title-area">
+      <div class="inv-title">INVOICE</div>
+      <div class="inv-title-ar">فاتورة بيع</div>
+      <div class="inv-number"># ${invNo}</div>
+    </div>
+  </div>
+
+  <!-- Info -->
+  <div class="inv-info">
+    <div class="info-box">
+      <div class="info-box-title">بيانات العميل / Bill To</div>
+      <div class="info-row">
+        <span class="info-label">العميل / Customer</span>
+        <span class="info-value">${customer}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">رقم الملف / File No</span>
+        <span class="info-value">${fn||'—'}</span>
+      </div>
+    </div>
+    <div class="info-box">
+      <div class="info-box-title">بيانات الفاتورة / Invoice Details</div>
+      <div class="info-row">
+        <span class="info-label">رقم الفاتورة / No</span>
+        <span class="info-value" style="color:#c47a00">${invNo}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">التاريخ / Date</span>
+        <span class="info-value">${new Date(date).toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'})}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">عدد السيارات / Vehicles</span>
+        <span class="info-value">${items.length}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Items table -->
+  <table>
+    <thead>
+      <tr>
+        <th style="width:40px">#</th>
+        <th>السيارة / Vehicle</th>
+        <th>رقم الشاصي / VIN</th>
+        <th>اللوحة / Plate</th>
+        <th>اللون / Color</th>
+        <th style="text-align:left">السعر / Price</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemsHtml}
+    </tbody>
+  </table>
+
+  <!-- Total -->
+  <div class="total-section">
+    <div class="total-box">
+      <div class="total-label">الإجمالي / Total Amount</div>
+      <div class="total-amount">${total.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
+      <div class="total-currency">KWD / د.ك</div>
+    </div>
+  </div>
+
+  ${notes ? `<div class="notes-section"><div class="notes-title">ملاحظات / Notes</div><p style="color:#444;line-height:1.6">${notes}</p></div>` : ''}
+
+  <!-- Signatures -->
+  <div class="sig-area">
+    <div class="sig-box">
+      <div class="sig-label">توقيع البائع / Seller Signature</div>
+    </div>
+    <div class="sig-box">
+      <div class="sig-label">توقيع المشتري / Buyer Signature</div>
+    </div>
+  </div>
+
+  <div class="inv-footer">
+    ${companyName} · ${companyAddress} · شكراً لتعاملكم معنا · Thank you for your business
+  </div>
+</div>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank', 'width=900,height=700,scrollbars=yes');
+  w.document.write(html);
+  w.document.close();
+  // WhatsApp option after print
+  setTimeout(() => {
+    if (confirm('إرسال الفاتورة عبر واتساب؟')) {
+      const phone = prompt('رقم واتساب العميل (مثال: 96512345678)\nاتركه فارغاً لاختيار يدوي:','');
+      if (phone !== null) sendWhatsappInvoice({ invNo, customer, date, fn, notes, items, total, phone });
+    }
+  }, 800);
+}
+
 async function loadCollectionsTab(fn, sys) {
   try {
     const data = await apiGet('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.desc' });
@@ -3406,17 +3602,6 @@ async function openEditPayoutModal(payoutId) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
-async function deletePayoutEntry(payoutId, fileNo, silent=false) {
-  if (!silent && !confirm('هل تريد حذف هذه الدفعة؟')) return;
-  try {
-    await apiDelete('partner_payouts', { id:`eq.${payoutId}` });
-    if (!silent) {
-      toast('✅ تم الحذف','ok');
-      loadPayoutsTab(fileNo, state.system);
-      loadSummaryTab(fileNo, state.system);
-    }
-  } catch(e) { if(!silent) alert('خطأ: '+e.message); }
-}
 
 // ════════════════════════════════════════
 // NEW FILE FORM
@@ -4108,35 +4293,6 @@ async function submitEditFileFull() {
   btn.disabled = false; btn.textContent = '💾 حفظ التعديلات';
 }
 
-async function confirmDeleteDealFromModal() {
-  const fn = _nfEditFileNo;
-  if (!fn) return;
-  if (!confirm(`⚠️ هل تريد حذف الصفقة ${fn} نهائياً؟\n\nسيتم حذف كل السيارات والعمليات والمدفوعات المرتبطة بها.\nهذا الإجراء لا يمكن التراجع عنه.`)) return;
-
-  const btn = el('nfDeleteBtn');
-  btn.disabled = true; btn.textContent = '⏳ جاري الحذف...';
-
-  try {
-    const sys = state.system;
-    const tables = ['vehicles','payments','expenses','sales','collections','partner_payouts','partners_master','ledger_entries'];
-    for (const table of tables) {
-      try { await apiDelete(table, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) { console.warn(table, e.message); }
-    }
-    // Delete audit log separately (might not have system_type)
-    try { await apiDelete('audit_log', { file_no:`eq.${fn}` }); } catch(e) {}
-    // Delete PO last
-    await apiDelete('purchase_orders', { system_type:`eq.${sys}`, file_no:`eq.${fn}` });
-
-    closeModal('newFileModal');
-    toast(`✅ تم حذف الصفقة ${fn} نهائياً`,'ok');
-    state.currentFileNo = null;
-    await loadDashboard();
-    showDashboard();
-  } catch(e) {
-    alert('خطأ في الحذف: ' + e.message);
-    btn.disabled = false; btn.textContent = '🗑 حذف الصفقة';
-  }
-}
 
 
 // ════════════════════════════════════════
@@ -4610,190 +4766,6 @@ async function submitSale() {
 // ════════════════════════════════════════
 // PRINT SALE INVOICE
 // ════════════════════════════════════════
-function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
-  const companyName = 'Transit Co.';
-  const companyNameAr = 'ترانزيت';
-  const companyAddress = 'Kuwait · الكويت';
-
-  const itemsHtml = items.map((item, i) => `
-    <tr>
-      <td style="text-align:center">${i+1}</td>
-      <td>
-        <div style="font-weight:600">${item.model||'—'}</div>
-        <div style="font-size:11px;color:#666">${item.color||''}</div>
-      </td>
-      <td style="direction:ltr;text-align:center;font-family:monospace;font-size:12px">${item.vin||'—'}</td>
-      <td style="direction:ltr;text-align:center;font-family:monospace">${item.plate||'—'}</td>
-      <td style="text-align:center">${item.color||'—'}</td>
-      <td style="text-align:left;font-weight:600">${item.price.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
-    </tr>`).join('');
-
-  const html = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<title>فاتورة ${invNo}</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color:#1a1a1a; font-size:13px; background:#fff; }
-  .page { max-width:800px; margin:0 auto; padding:32px 36px; }
-
-  /* Header */
-  .inv-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:28px; padding-bottom:20px; border-bottom:3px solid #1a1a1a; }
-  .logo-area { text-align:right; }
-  .logo-placeholder { width:120px; height:60px; border:2px dashed #ccc; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:11px; margin-bottom:6px; }
-  .company-name { font-size:22px; font-weight:800; color:#1a1a1a; }
-  .company-name-ar { font-size:14px; color:#555; margin-top:2px; }
-  .inv-title-area { text-align:left; }
-  .inv-title { font-size:28px; font-weight:800; color:#1a1a1a; letter-spacing:-0.5px; }
-  .inv-title-ar { font-size:16px; color:#555; margin-top:4px; }
-  .inv-number { font-size:16px; font-weight:700; margin-top:8px; color:#c47a00; }
-
-  /* Info boxes */
-  .inv-info { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; }
-  .info-box { background:#f8f9fa; border-radius:8px; padding:14px 16px; }
-  .info-box-title { font-size:10px; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
-  .info-row { display:flex; justify-content:space-between; padding:3px 0; font-size:13px; }
-  .info-label { color:#666; }
-  .info-value { font-weight:600; color:#1a1a1a; }
-
-  /* Table */
-  table { width:100%; border-collapse:collapse; margin-bottom:20px; }
-  thead tr { background:#1a1a1a; color:#fff; }
-  thead th { padding:10px 12px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
-  tbody tr { border-bottom:1px solid #eee; }
-  tbody tr:nth-child(even) { background:#fafafa; }
-  tbody td { padding:10px 12px; vertical-align:middle; }
-
-  /* Total */
-  .total-section { display:flex; justify-content:flex-end; margin-bottom:24px; }
-  .total-box { background:#1a1a1a; color:#fff; border-radius:10px; padding:16px 24px; min-width:220px; }
-  .total-label { font-size:12px; color:#aaa; margin-bottom:4px; }
-  .total-amount { font-size:24px; font-weight:800; color:#fff; }
-  .total-currency { font-size:13px; color:#aaa; margin-top:2px; }
-
-  /* Notes */
-  .notes-section { background:#f8f9fa; border-radius:8px; padding:14px 16px; margin-bottom:24px; }
-  .notes-title { font-size:11px; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
-
-  /* Footer */
-  .inv-footer { text-align:center; padding-top:20px; border-top:1px solid #eee; color:#999; font-size:11px; }
-
-  /* Signature area */
-  .sig-area { display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-bottom:24px; }
-  .sig-box { text-align:center; padding-top:40px; border-top:1px solid #ccc; }
-  .sig-label { font-size:11px; color:#888; margin-top:6px; }
-
-  @media print {
-    body { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
-    .page { padding:20px; }
-    .no-print { display:none !important; }
-  }
-</style>
-</head>
-<body>
-<div class="page">
-
-  <!-- Print button -->
-  <div class="no-print" style="text-align:center;margin-bottom:20px;display:flex;gap:10px;justify-content:center">
-    <button onclick="window.print()" style="background:#1a1a1a;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">🖨️ طباعة / Print</button>
-    <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">✕ إغلاق</button>
-  </div>
-
-  <!-- Header -->
-  <div class="inv-header">
-    <div class="logo-area">
-      <div class="logo-placeholder">LOGO</div>
-      <div class="company-name">${companyName}</div>
-      <div class="company-name-ar">${companyNameAr}</div>
-      <div style="font-size:11px;color:#888;margin-top:4px">${companyAddress}</div>
-    </div>
-    <div class="inv-title-area">
-      <div class="inv-title">INVOICE</div>
-      <div class="inv-title-ar">فاتورة بيع</div>
-      <div class="inv-number"># ${invNo}</div>
-    </div>
-  </div>
-
-  <!-- Info -->
-  <div class="inv-info">
-    <div class="info-box">
-      <div class="info-box-title">بيانات العميل / Bill To</div>
-      <div class="info-row">
-        <span class="info-label">العميل / Customer</span>
-        <span class="info-value">${customer}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">رقم الملف / File No</span>
-        <span class="info-value">${fn||'—'}</span>
-      </div>
-    </div>
-    <div class="info-box">
-      <div class="info-box-title">بيانات الفاتورة / Invoice Details</div>
-      <div class="info-row">
-        <span class="info-label">رقم الفاتورة / No</span>
-        <span class="info-value" style="color:#c47a00">${invNo}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">التاريخ / Date</span>
-        <span class="info-value">${new Date(date).toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'})}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">عدد السيارات / Vehicles</span>
-        <span class="info-value">${items.length}</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Items table -->
-  <table>
-    <thead>
-      <tr>
-        <th style="width:40px">#</th>
-        <th>السيارة / Vehicle</th>
-        <th>رقم الشاصي / VIN</th>
-        <th>اللوحة / Plate</th>
-        <th>اللون / Color</th>
-        <th style="text-align:left">السعر / Price</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${itemsHtml}
-    </tbody>
-  </table>
-
-  <!-- Total -->
-  <div class="total-section">
-    <div class="total-box">
-      <div class="total-label">الإجمالي / Total Amount</div>
-      <div class="total-amount">${total.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
-      <div class="total-currency">KWD / د.ك</div>
-    </div>
-  </div>
-
-  ${notes ? `<div class="notes-section"><div class="notes-title">ملاحظات / Notes</div><p style="color:#444;line-height:1.6">${notes}</p></div>` : ''}
-
-  <!-- Signatures -->
-  <div class="sig-area">
-    <div class="sig-box">
-      <div class="sig-label">توقيع البائع / Seller Signature</div>
-    </div>
-    <div class="sig-box">
-      <div class="sig-label">توقيع المشتري / Buyer Signature</div>
-    </div>
-  </div>
-
-  <div class="inv-footer">
-    ${companyName} · ${companyAddress} · شكراً لتعاملكم معنا · Thank you for your business
-  </div>
-</div>
-</body>
-</html>`;
-
-  const w = window.open('', '_blank', 'width=900,height=700,scrollbars=yes');
-  w.document.write(html);
-  w.document.close();
-}
 
 // Collection - open modal
 async function openCollectionModal() {
@@ -5041,22 +5013,6 @@ async function submitAddVehicle() {
 // ════════════════════════════════════════
 // FILE DROPDOWN HELPER
 // ════════════════════════════════════════
-async function populateContactSelect(selectId, type, allowEmpty=true) {
-  const sel = document.getElementById(selectId);
-  if (!sel || sel.tagName !== 'SELECT') return;
-  const saved = sel.value;
-  sel.innerHTML = allowEmpty ? '<option value="">-- اختر --</option>' : '';
-  try {
-    const contacts = await getContactsByType(type);
-    (contacts||[]).forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c.name;
-      opt.textContent = c.name;
-      sel.appendChild(opt);
-    });
-    if (saved) sel.value = saved;
-  } catch(e) { console.warn('populateContactSelect error:', e); }
-}
 
 async function populateFileDropdown(selectId) {
   const sel = document.getElementById(selectId);
@@ -6278,15 +6234,6 @@ async function submitEditVehicle() {
   } catch(e) { showFieldErr('evError','خطأ: '+e.message); }
 }
 
-async function confirmDeleteVehicle() {
-  if (!confirm('هل تريد حذف هذه السيارة؟')) return;
-  try {
-    await apiDelete('vehicles', { id:`eq.${_editVehicleId}` });
-    closeModal('editVehicleModal');
-    toast('✅ تم حذف السيارة','ok');
-    loadVehiclesTab(state.currentFileNo, state.system);
-  } catch(e) { alert('خطأ: '+e.message); }
-}
 
 // apiDelete helper
 async function apiDelete(table, matchParams) {
@@ -6508,68 +6455,6 @@ async function exportPurchaseOrderExcel(fileNo) {
 // ════════════════════════════════════════
 // 2. DEAL STATEMENT PRINT / EXPORT
 // ════════════════════════════════════════
-async function printDealStatement(fileNo) {
-  try {
-    const sys = state.system;
-    const [poArr, vehicles, sales, expenses, collections, payments, payouts, partners] = await Promise.all([
-      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'sale_date.asc' }),
-      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'expense_date.asc' }),
-      apiGet('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'paid_date.asc' }),
-      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'pay_date.asc' }),
-      apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'pay_date.asc' }),
-      apiGet('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-    ]);
-    const po = poArr?.[0] || {};
-    const totalCost  = +po.total_purchase || 0;
-    const totalExp   = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
-    const totalSales = (sales||[]).reduce((s,s2)=>s+(+s2.sale_price||0),0);
-    const totalColl  = (collections||[]).reduce((s,c)=>s+(+c.amount||0),0);
-    const totalPaid  = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
-    const fullCost   = totalCost + totalExp;
-    const profit     = totalSales - fullCost;
-
-    const mkTable = (headers, rows) => `<table>
-      <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-
-    const html = `
-      ${docHeader('كشف حساب صفقة', 'Deal Statement', fileNo)}
-
-      <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
-        <div class="kpi-box"><div class="kpi-label">تكلفة الشراء</div><div class="kpi-val blue">${fmt(totalCost)}</div></div>
-        <div class="kpi-box"><div class="kpi-label">المصاريف</div><div class="kpi-val red">${fmt(totalExp)}</div></div>
-        <div class="kpi-box"><div class="kpi-label">إجمالي المبيعات</div><div class="kpi-val green">${fmt(totalSales)}</div></div>
-        <div class="kpi-box"><div class="kpi-label">${profit>=0?'الربح':'الخسارة'}</div><div class="kpi-val ${profit>=0?'green':'red'}">${fmt(Math.abs(profit))}</div></div>
-      </div>
-
-      <div class="section-title">المبيعات</div>
-      ${mkTable(['التاريخ','الفاتورة','VIN','العميل','السعر'],
-        (sales||[]).map(s=>`<tr><td>${s.sale_date||''}</td><td>${s.inv_no||''}</td><td style="direction:ltr">${s.vin||''}</td><td>${s.customer||''}</td><td class="green">${fmt(s.sale_price)}</td></tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:#999">لا توجد مبيعات</td></tr>')}
-
-      <div class="section-title">المصاريف</div>
-      ${mkTable(['التاريخ','البيان','النوع','المبلغ'],
-        (expenses||[]).map(e=>`<tr><td>${e.expense_date||e.created_at?.split('T')[0]||''}</td><td>${e.description||''}</td><td>${e.category||''}</td><td class="red">${fmt(e.amount)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#999">لا توجد مصاريف</td></tr>')}
-
-      <div class="section-title">دفعات المورد</div>
-      ${mkTable(['التاريخ','الدافع','المبلغ','المستند'],
-        (payments||[]).map(p=>`<tr><td>${p.pay_date||''}</td><td>${p.payer||''}</td><td class="amber">${fmt(p.amount)}</td><td>${p.document||''}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#999">لا توجد دفعات</td></tr>')}
-
-      <div class="section-title">التحصيلات</div>
-      ${mkTable(['التاريخ','العميل','المبلغ','طريقة الدفع'],
-        (collections||[]).map(c=>`<tr><td>${c.paid_date||''}</td><td>${c.customer||''}</td><td class="blue">${fmt(c.amount)}</td><td>${c.pay_method||''}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#999">لا توجد تحصيلات</td></tr>')}
-
-      <div class="section-title">صرف الشركاء</div>
-      ${mkTable(['التاريخ','الشريك','النوع','رأس مال','أرباح','إجمالي'],
-        (payouts||[]).map(p=>`<tr><td>${p.pay_date||''}</td><td>${p.partner||''}</td><td>${p.payout_type||''}</td><td>${fmt(p.capital_amount||0)}</td><td>${fmt(p.profit_amount||0)}</td><td class="amber">${fmt(p.amount)}</td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#999">لا يوجد صرف</td></tr>')}
-
-      <div class="footer">Transit International · كشف حساب صفقة ${fileNo} · ${new Date().toLocaleDateString('ar-EG')}</div>`;
-
-    printDocument(html, `كشف حساب — ${fileNo}`);
-  } catch(e) { toast('خطأ: '+e.message,'err'); }
-}
 
 async function exportDealExcel(fileNo) {
   try {
@@ -7801,17 +7686,7 @@ function sendWhatsappInvoice({ invNo, customer, date, items, total, phone='' }) 
   window.open(url, '_blank');
 }
 
-// Patch printSaleInvoice to add WhatsApp button
-const _origPrintSaleInvoice = printSaleInvoice;
-function printSaleInvoice(opts) {
-  _origPrintSaleInvoice(opts);
-  setTimeout(() => {
-    if (confirm('إرسال الفاتورة عبر واتساب؟')) {
-      const phone = prompt('رقم واتساب العميل (مثال: 96512345678)\nاتركه فارغاً لاختيار الرقم يدوياً:','');
-      if (phone !== null) sendWhatsappInvoice({ ...opts, phone });
-    }
-  }, 800);
-}
+// WhatsApp after print — called from reprint buttons directly
 
 // ════════════════════════════════════════
 // FEATURE 5 — QUICK EXPENSE FAB
@@ -7821,13 +7696,7 @@ function openQuickExpFab() {
   openQuickModal('expense');
 }
 
-// Show FAB when a file is open
-const _origOpenViewer = openViewer;
-async function openViewer(fileNo) {
-  await _origOpenViewer(fileNo);
-  const fab = el('quickExpFab');
-  if (fab && can('transactions')) fab.style.display = 'flex';
-}
+// FAB shown in openViewer directly
 
 function showDashboard_withFab() {
   showDashboard();
@@ -8270,12 +8139,7 @@ async function populateContactSelect(selectId, type, allowEmpty=true) {
   return _origPopulateCS(selectId, type, allowEmpty);
 }
 
-// Invalidate cache when contact saved
-const _origSaveContact = saveContact;
-async function saveContact(...args) {
-  await _origSaveContact(...args);
-  acClearCache();
-}
+// Cache cleared in submitContact directly
 
 // Fix value reading for supplier/customer — no more -new suffix
 // (already handled: nf-supplier, sale-customer, qs-customer are now single inputs)
