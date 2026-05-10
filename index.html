@@ -206,16 +206,28 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
 /* Nav */
 .sidebar-nav{flex:1;overflow-y:auto;padding:8px}
-.nav-section{margin-bottom:4px}
+.nav-section{margin-bottom:2px}
 .nav-section-title{
-  font-size:10px;color:var(--text3);font-weight:700;
-  padding:6px 8px 4px;text-transform:uppercase;letter-spacing:1px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 12px;border-radius:8px;
+  font-size:11px;font-weight:700;color:var(--text2);
+  text-transform:uppercase;letter-spacing:.6px;
+  cursor:pointer;user-select:none;
+  transition:background .15s,color .15s;
 }
+.nav-section-title:hover{background:var(--card2);color:var(--text)}
+.nav-section-title.open{color:var(--text);background:var(--card2)}
+.nav-section-title .ns-arrow{font-size:9px;transition:transform .2s;display:inline-block;opacity:.4}
+.nav-section-title.open .ns-arrow{transform:rotate(180deg);opacity:1}
+.nav-section-items{overflow:hidden;max-height:0;transition:max-height .25s ease}
+.nav-section-items.open{max-height:600px}
+.nav-section-fixed .nav-section-items{max-height:none}
 .nav-item{
   display:flex;align-items:center;gap:10px;
-  padding:9px 12px;border-radius:var(--radius-sm);
+  padding:8px 12px 8px 16px;border-radius:var(--radius-sm);
   cursor:pointer;transition:all .15s;
   color:var(--text2);font-size:13px;font-weight:500;
+  margin-bottom:1px;
 }
 .nav-item:hover{background:var(--card2);color:var(--text)}
 .nav-item.active{background:var(--accent-dim);color:var(--accent)}
@@ -1000,96 +1012,133 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
     <div class="sidebar-nav">
 
-      <!-- الرئيسية -->
-      <div class="nav-section">
-        <div class="nav-section-title">الرئيسية</div>
-        <div class="nav-item active" id="nav-dashboard" onclick="showDashboard()">
-          <span class="ni-icon">📊</span><span>لوحة التحكم</span>
-        </div>
-        <div class="nav-item" id="nav-journal" onclick="showJournal()">
-          <span class="ni-icon">📅</span><span>اليومية</span>
-        </div>
-      </div>
-
-      <!-- أوامر سريعة -->
-      <div class="nav-section">
-        <div class="nav-section-title" style="color:var(--accent)">⚡ أوامر سريعة</div>
-        <div class="nav-item" onclick="openNewFileModal()" style="background:var(--accent-dim);color:var(--accent);font-weight:700">
-          <span class="ni-icon">📋</span><span>سند شراء جديد</span>
-        </div>
-        <div class="nav-item" onclick="openSaleModal()" style="background:var(--green-dim);color:var(--green);font-weight:700">
-          <span class="ni-icon">🧾</span><span>فاتورة بيع</span>
-        </div>
-        <div class="nav-item" onclick="openQuickModal('collection')" style="background:var(--blue-dim);color:var(--blue);font-weight:700">
-          <span class="ni-icon">💰</span><span>تحصيل</span>
-        </div>
-        <div class="nav-item" onclick="openQuickModal('expense')" style="background:var(--red-dim);color:var(--red);font-weight:700">
-          <span class="ni-icon">💸</span><span>مصروف</span>
+      <!-- الرئيسية — دايماً ظاهرة -->
+      <div class="nav-section nav-section-fixed">
+        <div class="nav-section-items open">
+          <div class="nav-item active" id="nav-dashboard" onclick="showDashboard()">
+            <span class="ni-icon">📊</span><span>لوحة التحكم</span>
+          </div>
+          <div class="nav-item" id="nav-journal" onclick="showJournal()">
+            <span class="ni-icon">📅</span><span>اليومية</span>
+          </div>
         </div>
       </div>
 
-      <!-- المبيعات -->
+      <div style="height:1px;background:var(--border);margin:6px 8px"></div>
+
+      <!-- ⚡ أوامر سريعة -->
       <div class="nav-section">
-        <div class="nav-section-title">المبيعات والتحصيل</div>
-        <div class="nav-item" onclick="showAllSales()">
-          <span class="ni-icon">🤝</span><span>المبيعات</span>
+        <div class="nav-section-title open" onclick="toggleNav(this)">
+          <span>⚡ أوامر سريعة</span>
+          <span class="ns-arrow">▼</span>
         </div>
-        <div class="nav-item" onclick="showAllCollections()">
-          <span class="ni-icon">💰</span><span>التحصيلات</span>
+        <div class="nav-section-items open">
+          <div class="nav-item" onclick="openNewFileModal()" style="color:var(--accent);font-weight:700">
+            <span class="ni-icon">📋</span><span>سند شراء جديد</span>
+          </div>
+          <div class="nav-item" onclick="openSaleModal()" style="color:var(--green);font-weight:700">
+            <span class="ni-icon">🧾</span><span>فاتورة بيع</span>
+          </div>
+          <div class="nav-item" onclick="openQuickModal('collection')" style="color:var(--blue);font-weight:700">
+            <span class="ni-icon">💰</span><span>تحصيل</span>
+          </div>
+          <div class="nav-item" onclick="openQuickModal('expense')" style="color:var(--red);font-weight:700">
+            <span class="ni-icon">💸</span><span>مصروف</span>
+          </div>
+          <div class="nav-item" onclick="openPayoutModal()" style="color:var(--purple);font-weight:700">
+            <span class="ni-icon">👥</span><span>صرف شريك</span>
+          </div>
         </div>
       </div>
 
-      <!-- الحسابات -->
+      <!-- 📁 الصفقات -->
       <div class="nav-section">
-        <div class="nav-section-title">الحسابات</div>
-        <div class="nav-item" id="nav-contacts" onclick="showContacts('all')">
-          <span class="ni-icon">👤</span><span>جهات الاتصال</span>
+        <div class="nav-section-title" onclick="toggleNav(this)">
+          <span>📁 الصفقات</span>
+          <span class="ns-arrow">▼</span>
         </div>
-        <div class="nav-item" onclick="showContactsByType('customer')">
-          <span class="ni-icon">👥</span><span>العملاء</span>
-        </div>
-        <div class="nav-item" onclick="showContactsByType('supplier')">
-          <span class="ni-icon">🏭</span><span>الموردين</span>
-        </div>
-        <div class="nav-item" onclick="showContactsByType('partner')">
-          <span class="ni-icon">🤲</span><span>الشركاء</span>
-        </div>
-        <div class="nav-item" onclick="showContactsByType('custodian')">
-          <span class="ni-icon">🗝</span><span>العهد وأخرى</span>
-        </div>
-        <div class="nav-item" id="nav-trial" onclick="showTrialBalance()">
-          <span class="ni-icon">⚖️</span><span>ميزان المراجعة</span>
+        <div class="nav-section-items">
+          <div class="nav-item" onclick="showDashboard();document.getElementById('dealsTableBody')?.scrollIntoView({behavior:'smooth'})">
+            <span class="ni-icon">📋</span><span>كل الصفقات</span>
+          </div>
+          <div class="nav-item" onclick="showAllSales()">
+            <span class="ni-icon">🤝</span><span>المبيعات</span>
+          </div>
+          <div class="nav-item" onclick="showAllCollections()">
+            <span class="ni-icon">💰</span><span>التحصيلات</span>
+          </div>
+          <div class="nav-item" onclick="showVehiclesReport()">
+            <span class="ni-icon">🚗</span><span>السيارات</span>
+          </div>
         </div>
       </div>
 
-      <!-- التقارير -->
+      <!-- 👤 الحسابات -->
       <div class="nav-section">
-        <div class="nav-section-title">التقارير</div>
-        <div class="nav-item" onclick="showReport('profit')">
-          <span class="ni-icon">📈</span><span>الأرباح والخسائر</span>
+        <div class="nav-section-title" onclick="toggleNav(this)">
+          <span>👤 الحسابات</span>
+          <span class="ns-arrow">▼</span>
         </div>
-        <div class="nav-item" onclick="showReport('partners')">
-          <span class="ni-icon">🤲</span><span>الشركاء</span>
-        </div>
-        <div class="nav-item" onclick="showReport('sales')">
-          <span class="ni-icon">💹</span><span>المبيعات</span>
-        </div>
-        <div class="nav-item" onclick="showReport('expenses')">
-          <span class="ni-icon">💸</span><span>المصاريف</span>
-        </div>
-        <div class="nav-item" onclick="showVehiclesReport()">
-          <span class="ni-icon">🚗</span><span>تقرير السيارات</span>
+        <div class="nav-section-items">
+          <div class="nav-item" id="nav-contacts" onclick="showContacts('all')">
+            <span class="ni-icon">📒</span><span>جهات الاتصال</span>
+          </div>
+          <div class="nav-item" onclick="showContactsByType('customer')">
+            <span class="ni-icon">👥</span><span>العملاء</span>
+          </div>
+          <div class="nav-item" onclick="showContactsByType('supplier')">
+            <span class="ni-icon">🏭</span><span>الموردين</span>
+          </div>
+          <div class="nav-item" onclick="showContactsByType('partner')">
+            <span class="ni-icon">🤲</span><span>الشركاء</span>
+          </div>
+          <div class="nav-item" onclick="showContactsByType('custodian')">
+            <span class="ni-icon">🗝</span><span>العهد وأخرى</span>
+          </div>
+          <div class="nav-item" id="nav-ledger" onclick="showLedger&&showLedger()">
+            <span class="ni-icon">📖</span><span>دفتر الأستاذ</span>
+          </div>
+          <div class="nav-item" id="nav-trial" onclick="showTrialBalance()">
+            <span class="ni-icon">⚖️</span><span>ميزان المراجعة</span>
+          </div>
         </div>
       </div>
 
-      <!-- الإدارة -->
+      <!-- 📈 التقارير -->
       <div class="nav-section">
-        <div class="nav-section-title">الإدارة</div>
-        <div class="nav-item" id="nav-activity" onclick="showActivityLog()">
-          <span class="ni-icon">🕵️</span><span>سجل النشاط</span>
+        <div class="nav-section-title" onclick="toggleNav(this)">
+          <span>📈 التقارير</span>
+          <span class="ns-arrow">▼</span>
         </div>
-        <div class="nav-item" id="nav-settings" onclick="showSettings()">
-          <span class="ni-icon">⚙️</span><span>الإعدادات</span>
+        <div class="nav-section-items">
+          <div class="nav-item" onclick="showReport('profit')">
+            <span class="ni-icon">📈</span><span>الأرباح والخسائر</span>
+          </div>
+          <div class="nav-item" onclick="showReport('partners')">
+            <span class="ni-icon">🤲</span><span>تقرير الشركاء</span>
+          </div>
+          <div class="nav-item" onclick="showReport('sales')">
+            <span class="ni-icon">💹</span><span>تقرير المبيعات</span>
+          </div>
+          <div class="nav-item" onclick="showReport('expenses')">
+            <span class="ni-icon">💸</span><span>تقرير المصاريف</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ⚙️ الإدارة -->
+      <div class="nav-section">
+        <div class="nav-section-title" onclick="toggleNav(this)">
+          <span>⚙️ الإدارة</span>
+          <span class="ns-arrow">▼</span>
+        </div>
+        <div class="nav-section-items">
+          <div class="nav-item" id="nav-activity" onclick="showActivityLog()">
+            <span class="ni-icon">🕵️</span><span>سجل النشاط</span>
+          </div>
+          <div class="nav-item" id="nav-settings" onclick="showSettings()">
+            <span class="ni-icon">⚙️</span><span>الإعدادات</span>
+          </div>
         </div>
       </div>
 
@@ -5619,6 +5668,13 @@ function showDashboard() {
   el('topBarTitle').textContent    = 'لوحة التحكم';
   navActive('nav-dashboard');
   state.currentFileNo = null;
+}
+
+function toggleNav(titleEl) {
+  const items = titleEl.nextElementSibling;
+  const isOpen = items.classList.contains('open');
+  titleEl.classList.toggle('open', !isOpen);
+  items.classList.toggle('open', !isOpen);
 }
 
 function navActive(id) {
