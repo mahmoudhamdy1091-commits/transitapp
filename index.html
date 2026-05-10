@@ -1554,8 +1554,11 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       <div class="form-row">
         <div class="field">
           <label>المورد *</label>
-          <select id="nf-supplier"><option value="">-- اختر مورد --</option></select>
-          <input type="text" id="nf-supplier-new" placeholder="أو اكتب اسم مورد جديد..." style="margin-top:6px;width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
+          <div class="ac-wrap" id="ac-wrap-supplier">
+            <input type="text" id="nf-supplier" class="ac-input" placeholder="🔍 ابحث أو أضف مورد جديد..." autocomplete="off"
+              oninput="acSearch('supplier','nf-supplier')" onfocus="acSearch('supplier','nf-supplier')" onblur="acBlur('nf-supplier')" onkeydown="acKey(event,'nf-supplier')">
+            <div class="ac-dropdown" id="ac-nf-supplier"></div>
+          </div>
         </div>
         <div class="field">
           <label>رقم PO / المستند</label>
@@ -1763,8 +1766,11 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       <div class="form-row">
         <div class="field">
           <label>العميل / Customer *</label>
-          <select id="sale-customer"><option value="">-- اختر العميل --</option></select>
-          <input type="text" id="sale-customer-new" placeholder="أو اكتب اسم عميل جديد..." autocomplete="off"
+          <div class="ac-wrap" id="ac-wrap-sale-customer">
+            <input type="text" id="sale-customer" class="ac-input" placeholder="🔍 ابحث أو أضف عميل جديد..." autocomplete="off"
+              oninput="acSearch('customer','sale-customer')" onfocus="acSearch('customer','sale-customer')" onblur="acBlur('sale-customer')" onkeydown="acKey(event,'sale-customer')">
+            <div class="ac-dropdown" id="ac-sale-customer"></div>
+          </div>
             style="margin-top:6px;width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
         </div>
         <div class="field">
@@ -2039,8 +2045,11 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       </div>
       <div class="field">
         <label>العميل *</label>
-        <select id="qs-customer"><option value="">-- اختر العميل --</option></select>
-          <input type="text" id="qs-customer-new" placeholder="أو أضف عميل جديد..." autocomplete="off" style="margin-top:6px;width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
+        <div class="ac-wrap">
+            <input type="text" id="qs-customer" class="ac-input" placeholder="🔍 ابحث أو أضف عميل جديد..." autocomplete="off"
+              oninput="acSearch('customer','qs-customer')" onfocus="acSearch('customer','qs-customer')" onblur="acBlur('qs-customer')" onkeydown="acKey(event,'qs-customer')">
+            <div class="ac-dropdown" id="ac-qs-customer"></div>
+          </div>
       </div>
       <div class="field">
         <label>رقم الفاتورة</label>
@@ -2675,13 +2684,18 @@ async function loadDashboard() {
       };
     });
 
-    // KPIs
+    // KPIs — فقط البيانات المرتبطة بصفقات موجودة
+    const existingFileNos = new Set((deals||[]).map(d => d.file_no));
+    const filteredSales    = (sales||[]).filter(s => existingFileNos.has(s.file_no));
+    const filteredExpenses = (expenses||[]).filter(e => existingFileNos.has(e.file_no));
+    const filteredVehicles = (vehicles||[]).filter(v => existingFileNos.has(v.file_no));
+
     const totPurchase = (deals||[]).reduce((s,d)=>s+(+d.total_purchase||0),0);
-    const totSales    = (sales||[]).reduce((s,v)=>s+(+v.sale_price||0),0);
-    const totExp      = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
+    const totSales    = filteredSales.reduce((s,v)=>s+(+v.sale_price||0),0);
+    const totExp      = filteredExpenses.reduce((s,e)=>s+(+e.amount||0),0);
     const profit      = totSales - totPurchase - totExp;
-    const soldVins    = new Set((sales||[]).map(s=>s.vin));
-    const stockCount  = (vehicles||[]).filter(v=>!soldVins.has(v.vin)).length;
+    const soldVins    = new Set(filteredSales.map(s=>s.vin));
+    const stockCount  = filteredVehicles.filter(v=>!soldVins.has(v.vin)).length;
     const setKpi = (id, val, color) => { const e = el(id); if(e){ e.textContent=val; if(color) e.style.color=color; } };
     setKpi('kpi-deals',    (deals||[]).length);
     setKpi('kpi-purchase', fmt(totPurchase));
@@ -3422,7 +3436,7 @@ async function openNewFileModal(editFileNo = null) {
       el('nf-poNo').value         = d.po_no          || '';
       el('nf-totalAmount').value  = d.total_purchase || '';
       el('nf-vehicleCount').value = d.vehicle_count  || '';
-      el('nf-supplier-new').value = '';
+      
 
       // Set supplier after contacts loaded
       await populateContactSelect('nf-supplier', 'supplier');
@@ -3468,7 +3482,7 @@ async function openNewFileModal(editFileNo = null) {
     el('nf-price-mode-wrap').style.display = 'none';
     el('nf-poDate').value       = today();
     el('nf-notes').value        = '';
-    el('nf-supplier-new').value = '';
+    
     el('nf-poNo').value         = '';
     el('nf-totalAmount').value  = '';
     el('nf-vehicleCount').value = '';
@@ -3733,7 +3747,7 @@ async function submitNewFile() {
   if (_nfEditMode) { await submitEditFileFull(); return; }
 
   const fileNo      = el('nf-fileNo').value.trim();
-  const supplier    = (el('nf-supplier').value || el('nf-supplier-new')?.value || '').trim();
+  const supplier    = el('nf-supplier')?.value?.trim() || '';
   const poNo        = el('nf-poNo').value.trim();
   const poDate      = el('nf-poDate').value;
   const notes       = el('nf-notes').value.trim();
@@ -3870,7 +3884,7 @@ async function submitNewFile() {
 async function submitEditFileFull() {
   const oldFileNo   = _nfEditFileNo;
   const newFileNo   = el('nf-fileNo').value.trim();
-  const supplier    = (el('nf-supplier').value || el('nf-supplier-new')?.value || '').trim();
+  const supplier    = el('nf-supplier')?.value?.trim() || '';
   const poNo        = el('nf-poNo').value.trim();
   const poDate      = el('nf-poDate').value;
   const notes       = el('nf-notes').value.trim();
@@ -4227,7 +4241,7 @@ async function openSaleModal(fileNoOverride = null) {
   el('sale-date').value    = today();
   el('sale-notes').value   = '';
   el('saleError').style.display = 'none';
-  el('sale-customer-new').value = '';
+  
   await populateContactSelect('sale-customer','customer');
 
   // Generate invoice number per file
@@ -4394,7 +4408,7 @@ function updateSaleTotal() {
 async function submitSale() {
   const fn       = (el('sale-fileNo')?.value || '').trim() || state.currentFileNo || '';
   const invNo    = el('sale-invNo').value.trim();
-  const customer = (el('sale-customer').value || el('sale-customer-new')?.value || '').trim();
+  const customer = el('sale-customer')?.value?.trim() || '';
   const date     = el('sale-date').value;
   const notes    = el('sale-notes').value.trim();
 
@@ -4989,7 +5003,7 @@ async function openQuickModal(type) {
     openExpenseModal();
     return;
   }
-  if (type === 'sale')       { await populateContactSelect('qs-customer','customer'); if(el('qs-customer-new')) el('qs-customer-new').value=''; }
+  if (type === 'sale')       { await populateContactSelect('qs-customer','customer');  }
   if (type === 'collection') await populateContactSelect('qc-customer','customer');
   if (type === 'payment')    await populateContactSelect('qp-payer','partner');
   openModal(map[type]);
@@ -5052,7 +5066,7 @@ async function loadQuickPartners(fileNo) {
 async function submitQuickSale() {
   const fileNo   = el('qs-fileNo').value;
   const vin      = el('qs-vin').value.trim();
-  const customer = (el('qs-customer').value || el('qs-customer-new')?.value || '').trim();
+  const customer = el('qs-customer')?.value?.trim() || '';
   const invNo    = el('qs-invNo').value.trim();
   const price    = parseFloat(el('qs-price').value);
   const date     = el('qs-date').value;
@@ -5648,42 +5662,57 @@ function renderContactsList() {
 
   const typeColors = { customer:'var(--blue)', supplier:'var(--accent)', partner:'var(--purple)', custodian:'var(--cyan)' };
   const typeDims   = { customer:'var(--blue-dim)', supplier:'var(--accent-dim)', partner:'var(--purple-dim)', custodian:'var(--cyan-dim)' };
+  const typeIcons  = { customer:'🤝', supplier:'🏭', partner:'👥', custodian:'🗝' };
 
-  const cards = list.map(c => {
+  const rows = list.map((c,i) => {
     const bal = c.balance;
-    const balColor = bal > 0 ? 'var(--green)' : bal < 0 ? 'var(--red)' : 'var(--text2)';
-    const balLabel = bal > 0 ? 'له عندك' : bal < 0 ? 'عليك له' : 'متوازن';
-    return `<div onclick="showLedger(${c.id},'${c.name.replace(/'/g,"\'")}','${c.type}')"
-      style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;cursor:pointer;transition:border-color .15s"
-      onmouseover="this.style.borderColor='var(--border2)'" onmouseout="this.style.borderColor='var(--border)'">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-        <div style="width:38px;height:38px;border-radius:50%;background:${typeDims[c.type]||'var(--card2)'};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">
-          ${c.type==='customer'?'🤝':c.type==='supplier'?'🏭':c.type==='partner'?'👥':'🗝'}
+    const balColor = bal > 0 ? 'var(--green)' : bal < 0 ? 'var(--red)' : 'var(--text3)';
+    const balLabel = bal > 0 ? 'له عندك' : bal < 0 ? 'عليك له' : '—';
+    return `<tr onclick="showLedger(${c.id},'${c.name.replace(/'/g,"\\'")}','${c.type}')"
+      style="cursor:pointer;transition:background .12s"
+      onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
+      <td style="padding:11px 14px;font-size:12px;color:var(--text3);width:40px;text-align:center">${i+1}</td>
+      <td style="padding:11px 14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;height:32px;border-radius:50%;background:${typeDims[c.type]||'var(--card2)'};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">
+            ${typeIcons[c.type]||'👤'}
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:13px">${c.name}</div>
+            ${c.phone ? `<div style="font-size:11px;color:var(--text3)">📞 ${c.phone}</div>` : ''}
+          </div>
         </div>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:14px;margin-bottom:2px">${c.name}</div>
-          <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${typeDims[c.type]||'var(--card2)'};color:${typeColors[c.type]||'var(--text2)'}">${typeLabels[c.type]||c.type}</span>
-        </div>
-        <div style="text-align:left">
-          <div style="font-family:var(--mono);font-size:16px;font-weight:700;color:${balColor}">${fmt(Math.abs(bal))}</div>
-          <div style="font-size:10px;font-weight:600;color:${balColor};text-align:center">${balLabel}</div>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:10px;border-top:1px solid var(--border)">
-        <div style="text-align:center">
-          <div style="font-size:10px;color:var(--text2);margin-bottom:2px">مدين</div>
-          <div style="font-family:var(--mono);font-size:12px;color:var(--green)">${fmt(c.totalDebit)}</div>
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;color:var(--text2);margin-bottom:2px">دائن</div>
-          <div style="font-family:var(--mono);font-size:12px;color:var(--red)">${fmt(c.totalCredit)}</div>
-        </div>
-      </div>
-      ${c.phone ? `<div style="font-size:11px;color:var(--text2);margin-top:8px">📞 ${c.phone}</div>` : ''}
-    </div>`;
+      </td>
+      <td style="padding:11px 14px">
+        <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;background:${typeDims[c.type]||'var(--card2)'};color:${typeColors[c.type]||'var(--text2)'}">
+          ${typeLabels[c.type]||c.type}
+        </span>
+      </td>
+      <td style="padding:11px 14px;font-family:var(--mono);font-size:12px;color:var(--green);text-align:left">${fmt(c.totalDebit)}</td>
+      <td style="padding:11px 14px;font-family:var(--mono);font-size:12px;color:var(--red);text-align:left">${fmt(c.totalCredit)}</td>
+      <td style="padding:11px 14px;text-align:left">
+        <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${balColor}">${bal!==0?fmt(Math.abs(bal)):'—'}</div>
+        <div style="font-size:10px;color:${balColor}">${balLabel}</div>
+      </td>
+    </tr>`;
   }).join('');
 
-  el('contactsGrid').innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">${cards}</div>`;
+  el('contactsGrid').innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--card2);border-bottom:1px solid var(--border)">
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:center">#</th>
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">الاسم</th>
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">النوع</th>
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:left">مدين</th>
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:left">دائن</th>
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:left">الرصيد</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 // ════════════════════════════════════════
@@ -7637,6 +7666,104 @@ document.addEventListener('DOMContentLoaded', () => {
   _pendingRole = _currentRole;
 });
 
+// ════════════════════════════════════════
+// SMART AUTOCOMPLETE ENGINE
+// ════════════════════════════════════════
+
+async function acGetContacts(type) {
+  const key = state.system + ':' + type;
+  if (_acCache[key] && (Date.now() - _acCache[key].ts < 60000)) return _acCache[key].data;
+  try {
+    const data = await apiGet('contacts', { select:'id,name,type,phone', system_type:`eq.${state.system}`, order:'name.asc' });
+    const filtered = (data||[]).filter(c => type==='all' || c.type===type);
+    _acCache[key] = { data: filtered, ts: Date.now() };
+    return filtered;
+  } catch(e) { return []; }
+}
+
+function acClearCache() { Object.keys(_acCache).forEach(k => delete _acCache[k]); }
+
+const _acTypeLabels2 = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
+const _acTypeBadges  = { customer:'ac-badge-customer', supplier:'ac-badge-supplier', partner:'ac-badge-partner', custodian:'ac-badge-custodian' };
+const _acTypeIcons   = { customer:'🤝', supplier:'🏭', partner:'👥', custodian:'🗝' };
+let _acActiveIndex = -1;
+
+async function acSearch(type, inputId) {
+  const inp  = el(inputId);
+  const drop = el('ac-' + inputId);
+  if (!inp || !drop) return;
+  const q = inp.value.trim().toLowerCase();
+  const contacts = await acGetContacts(type);
+  const filtered = q ? contacts.filter(c => c.name.toLowerCase().includes(q)) : contacts;
+  _acActiveIndex = -1;
+  let html = '';
+  filtered.slice(0,8).forEach(c => {
+    html += `<div class="ac-item" data-name="${c.name}" onmousedown="acSelect('${inputId}','${c.name.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">
+      <span>${_acTypeIcons[c.type]||'👤'}</span>
+      <span class="ac-item-name">${c.name}</span>
+      <span class="ac-item-badge ${_acTypeBadges[c.type]||''}">${_acTypeLabels2[c.type]||c.type}</span>
+      ${c.phone?`<span style="font-size:10px;color:var(--text3)">${c.phone}</span>`:''}
+    </div>`;
+  });
+  if (q && !contacts.find(c => c.name.toLowerCase()===q)) {
+    html += `<div class="ac-item" onmousedown="acSelectNew('${inputId}','${type}','${inp.value.trim().replace(/'/g,"\\'")}')">
+      <span>➕</span><span class="ac-item-name ac-item-new">إضافة "${inp.value.trim()}" كـ ${_acTypeLabels2[type]||type} جديد</span>
+    </div>`;
+  }
+  drop.innerHTML = html || `<div class="ac-item" style="color:var(--text3);cursor:default">لا توجد نتائج</div>`;
+  drop.classList.add('open');
+}
+
+function acSelect(inputId, name) {
+  const inp = el(inputId); if(inp) inp.value = name;
+  const drop = el('ac-'+inputId); if(drop) drop.classList.remove('open');
+}
+
+async function acSelectNew(inputId, type, name) {
+  if (!name) return;
+  try {
+    const existing = await apiGet('contacts',{select:'id',system_type:`eq.${state.system}`,name:`eq.${name}`});
+    if (!existing||!existing.length) {
+      await apiPost('contacts',{system_type:state.system,name,type});
+      acClearCache();
+      toast(`✅ تم إضافة "${name}"`,'ok');
+    }
+    acSelect(inputId, name);
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
+function acBlur(inputId) {
+  setTimeout(() => { const d=el('ac-'+inputId); if(d) d.classList.remove('open'); }, 200);
+}
+
+function acKey(e, inputId) {
+  const drop = el('ac-'+inputId);
+  if (!drop||!drop.classList.contains('open')) return;
+  const items = drop.querySelectorAll('.ac-item');
+  if (e.key==='ArrowDown')  { e.preventDefault(); _acActiveIndex=Math.min(_acActiveIndex+1,items.length-1); items.forEach((it,i)=>it.classList.toggle('active',i===_acActiveIndex)); }
+  else if (e.key==='ArrowUp')   { e.preventDefault(); _acActiveIndex=Math.max(_acActiveIndex-1,0); items.forEach((it,i)=>it.classList.toggle('active',i===_acActiveIndex)); }
+  else if (e.key==='Enter'&&_acActiveIndex>=0) { e.preventDefault(); items[_acActiveIndex]?.dispatchEvent(new MouseEvent('mousedown')); }
+  else if (e.key==='Escape') drop.classList.remove('open');
+}
+
+// Patch populateContactSelect — ac inputs just clear value & pre-cache
+const _origPopulateCS = populateContactSelect;
+async function populateContactSelect(selectId, type, allowEmpty=true) {
+  const e2 = document.getElementById(selectId);
+  if (!e2 || e2.tagName !== 'SELECT') { if(e2) e2.value=''; acGetContacts(type); return; }
+  return _origPopulateCS(selectId, type, allowEmpty);
+}
+
+// Invalidate cache when contact saved
+const _origSaveContact = saveContact;
+async function saveContact(...args) {
+  await _origSaveContact(...args);
+  acClearCache();
+}
+
+// Fix value reading for supplier/customer — no more -new suffix
+// (already handled: nf-supplier, sale-customer, qs-customer are now single inputs)
+
 // PWA Install prompt
 let _pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
@@ -7665,6 +7792,33 @@ function installPWA() {
 .perm-yes{color:var(--green);font-weight:700}
 .perm-no{color:var(--red);font-weight:700}
 .perm-limited{color:var(--accent);font-weight:700}
+
+/* Smart Autocomplete */
+.ac-wrap{position:relative}
+.ac-input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;direction:rtl;transition:border-color .2s}
+.ac-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
+.ac-dropdown{
+  position:absolute;top:calc(100% + 4px);right:0;left:0;
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius-sm);z-index:5000;
+  max-height:220px;overflow-y:auto;display:none;
+  box-shadow:0 8px 24px rgba(0,0,0,.3);
+}
+.ac-dropdown.open{display:block}
+.ac-item{
+  padding:10px 14px;cursor:pointer;display:flex;
+  align-items:center;gap:10px;transition:background .1s;
+  border-bottom:1px solid var(--border);
+}
+.ac-item:last-child{border:none}
+.ac-item:hover,.ac-item.active{background:var(--card2)}
+.ac-item-name{font-size:13px;font-weight:700;flex:1}
+.ac-item-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px}
+.ac-item-new{color:var(--accent);font-size:12px;font-style:italic}
+.ac-badge-customer{background:var(--blue-dim);color:var(--blue)}
+.ac-badge-supplier{background:var(--accent-dim);color:var(--accent)}
+.ac-badge-partner{background:var(--purple-dim);color:var(--purple)}
+.ac-badge-custodian{background:var(--cyan-dim);color:var(--cyan)}
 </style>
 
 <style>
