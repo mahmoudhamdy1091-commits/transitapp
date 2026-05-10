@@ -418,6 +418,215 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ══════════════════════════════════════
+   ANIMATIONS & DYNAMICS
+══════════════════════════════════════ */
+
+/* View transitions */
+@keyframes fadeSlideIn {
+  from { opacity:0; transform:translateY(12px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity:0; }
+  to   { opacity:1; }
+}
+@keyframes slideInRight {
+  from { opacity:0; transform:translateX(-16px); }
+  to   { opacity:1; transform:translateX(0); }
+}
+@keyframes countUp {
+  from { opacity:0; transform:scale(.85); }
+  to   { opacity:1; transform:scale(1); }
+}
+@keyframes pulseOnce {
+  0%   { box-shadow:0 0 0 0 rgba(230,147,10,.4); }
+  70%  { box-shadow:0 0 0 8px rgba(230,147,10,0); }
+  100% { box-shadow:0 0 0 0 rgba(230,147,10,0); }
+}
+@keyframes shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+
+/* KPI cards animate in */
+.kpi-card {
+  animation: fadeSlideIn .35s ease both;
+}
+.kpi-card:nth-child(1){animation-delay:.04s}
+.kpi-card:nth-child(2){animation-delay:.08s}
+.kpi-card:nth-child(3){animation-delay:.12s}
+.kpi-card:nth-child(4){animation-delay:.16s}
+.kpi-card:nth-child(5){animation-delay:.20s}
+.kpi-card:nth-child(6){animation-delay:.24s}
+
+/* KPI value pop */
+.kpi-val { animation: countUp .4s cubic-bezier(.175,.885,.32,1.275) both; }
+
+/* Table rows stagger in */
+.data-table tbody tr {
+  animation: slideInRight .25s ease both;
+}
+.data-table tbody tr:nth-child(1){animation-delay:.03s}
+.data-table tbody tr:nth-child(2){animation-delay:.06s}
+.data-table tbody tr:nth-child(3){animation-delay:.09s}
+.data-table tbody tr:nth-child(4){animation-delay:.12s}
+.data-table tbody tr:nth-child(5){animation-delay:.15s}
+.data-table tbody tr:nth-child(6){animation-delay:.18s}
+.data-table tbody tr:nth-child(7){animation-delay:.21s}
+.data-table tbody tr:nth-child(8){animation-delay:.24s}
+.data-table tbody tr:nth-child(n+9){animation-delay:.27s}
+
+/* Clickable row feedback */
+.data-table tbody tr {
+  transition: background .12s, transform .1s;
+}
+.data-table tbody tr:hover {
+  background: var(--card2);
+  transform: translateX(-2px);
+}
+.data-table tbody tr:active {
+  transform: translateX(-1px) scale(.995);
+}
+
+/* View fade */
+.content-area > div[id$="View"],
+#dashboardView {
+  animation: fadeSlideIn .3s ease both;
+}
+
+/* Modal animate */
+.modal-box, .modal {
+  animation: fadeSlideIn .25s cubic-bezier(.175,.885,.32,1.275) both !important;
+}
+
+/* Sidebar nav item */
+.nav-item {
+  transition: background .12s, color .12s, transform .1s, padding-right .12s;
+}
+.nav-item:hover  { transform: translateX(-3px); }
+.nav-item.active { transform: translateX(-3px); }
+.nav-item:active { transform: translateX(-1px); }
+
+/* Buttons */
+.btn { transition: all .15s cubic-bezier(.175,.885,.32,1.275); }
+.btn:hover  { transform: translateY(-1px); }
+.btn:active { transform: translateY(0) scale(.97); }
+.btn-primary:hover {
+  box-shadow: 0 6px 20px rgba(230,147,10,.35);
+}
+
+/* KPI card hover enhanced */
+.kpi-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+}
+.kpi-card:active { transform: translateY(-1px); }
+
+/* Viewer KPI strip */
+.vkpi {
+  animation: fadeSlideIn .3s ease both;
+  transition: transform .15s, box-shadow .15s;
+}
+.vkpi:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,.07);
+}
+
+/* Tab switching */
+.tab {
+  transition: all .15s;
+  position: relative;
+}
+.tab.active::after {
+  content:'';
+  position:absolute; bottom:-1px; left:0; right:0;
+  height:2px; background:var(--accent);
+  border-radius:2px 2px 0 0;
+  animation: fadeIn .2s ease;
+}
+
+/* Skeleton loading */
+.skeleton {
+  background: linear-gradient(90deg, var(--card2) 25%, var(--border) 50%, var(--card2) 75%);
+  background-size: 600px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: var(--radius-sm);
+}
+
+/* Badge pulse for important counts */
+.ni-badge {
+  animation: pulseOnce 2s ease 1s;
+}
+
+/* Section header slide */
+.section-header {
+  animation: fadeIn .3s ease both;
+}
+
+/* j-entry hover */
+.j-entry {
+  transition: border-color .15s, transform .12s, box-shadow .15s;
+}
+.j-entry:hover {
+  transform: translateX(-3px);
+  box-shadow: 0 4px 12px rgba(0,0,0,.06);
+}
+
+/* Top bar refined */
+.top-bar {
+  transition: box-shadow .2s;
+}
+
+/* Smooth system switcher */
+.sys-btn {
+  transition: all .2s cubic-bezier(.175,.885,.32,1.275);
+}
+.sys-btn.active {
+  transform: scale(1.04);
+}
+
+/* Toast enhanced */
+@keyframes toastIn {
+  from { opacity:0; transform:translateX(-50%) translateY(16px) scale(.95); }
+  to   { opacity:1; transform:translateX(-50%) translateY(0) scale(1); }
+}
+@keyframes toastOut {
+  from { opacity:1; transform:translateX(-50%) translateY(0) scale(1); }
+  to   { opacity:0; transform:translateX(-50%) translateY(8px) scale(.95); }
+}
+#toast.show { animation: toastIn .22s cubic-bezier(.175,.885,.32,1.275) both; }
+#toast.hiding { animation: toastOut .18s ease forwards; }
+
+/* Viewer header actions */
+.vh-back {
+  transition: background .15s, transform .1s;
+}
+.vh-back:hover { transform: translateX(3px); }
+
+/* Search box focus expand */
+.search-box input {
+  transition: border-color .2s, box-shadow .2s, width .2s;
+}
+
+/* Contacts grid cards */
+.contact-card {
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+  animation: fadeSlideIn .3s ease both;
+}
+.contact-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0,0,0,.08);
+}
+
+/* Filter buttons active state */
+.journal-period-btn {
+  transition: all .15s;
+}
+.journal-period-btn:hover:not(.active) {
+  transform: translateY(-1px);
+}
+
+/* ══════════════════════════════════════
    VIEWER
 ══════════════════════════════════════ */
 #viewerView{display:none}
@@ -686,7 +895,53 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   background:var(--card2);color:var(--text2);
 }
 
-/* Compact vehicle table */
+/* ── Login screen ── */
+.login-box {
+  animation: fadeSlideIn .4s cubic-bezier(.175,.885,.32,1.275) both;
+}
+.login-logo .icon {
+  animation: countUp .5s cubic-bezier(.175,.885,.32,1.275) .1s both;
+}
+
+/* ── App screen entry ── */
+#appScreen {
+  animation: fadeIn .25s ease both;
+}
+
+/* ── Sidebar entry ── */
+.sidebar {
+  animation: slideInRight .3s ease both;
+}
+
+/* ── Top bar shadow on scroll ── */
+.top-bar.scrolled {
+  box-shadow: 0 2px 12px rgba(0,0,0,.08);
+}
+
+/* ── Viewer KPI strip ── */
+#viewer-kpis .vkpi:nth-child(1){animation-delay:.05s}
+#viewer-kpis .vkpi:nth-child(2){animation-delay:.10s}
+#viewer-kpis .vkpi:nth-child(3){animation-delay:.15s}
+#viewer-kpis .vkpi:nth-child(4){animation-delay:.20s}
+#viewer-kpis .vkpi:nth-child(5){animation-delay:.25s}
+#viewer-kpis .vkpi:nth-child(6){animation-delay:.30s}
+
+/* ── Filter button active ── */
+.section-actions .btn.active-filter {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+
+/* ── Row highlight on new insert ── */
+@keyframes rowHighlight {
+  0%   { background: var(--accent-dim); }
+  100% { background: transparent; }
+}
+.row-new {
+  animation: rowHighlight 1.5s ease forwards;
+}
+
 .vt-table { width:100%; border-collapse:collapse; font-size:12px; }
 .vt-table thead tr { background:var(--card2); }
 .vt-table thead th { padding:7px 8px; text-align:right; font-weight:600; color:var(--text2); font-size:11px; border-bottom:1px solid var(--border); white-space:nowrap; }
@@ -3037,7 +3292,11 @@ async function loadDashboard() {
     const profit      = totSales - totPurchase - totExp;
     const soldVins    = new Set(filteredSales.map(s=>s.vin));
     const stockCount  = filteredVehicles.filter(v=>!soldVins.has(v.vin)).length;
-    const setKpi = (id, val, color) => { const e = el(id); if(e){ e.textContent=val; if(color) e.style.color=color; } };
+    const setKpi = (id, val, color) => {
+      const e = el(id);
+      if (!e) return;
+      animateCount(e, String(val), color);
+    };
     setKpi('kpi-deals',    (deals||[]).length);
     setKpi('kpi-purchase', fmt(totPurchase));
     setKpi('kpi-sales',    fmt(totSales));
@@ -3130,6 +3389,12 @@ function filterDeals(status) {
   renderDealsTable(deals);
   navActive('nav-dashboard');
   showDashboard();
+  // Update active filter button
+  document.querySelectorAll('.section-actions .btn').forEach(b => b.classList.remove('active-filter'));
+  const labels = {'all':'الكل','OPEN':'مفتوح','IN PROGRESS':'جاري','CLOSED':'مغلق'};
+  document.querySelectorAll('.section-actions .btn').forEach(b => {
+    if (b.textContent.trim() === (labels[status]||status)) b.classList.add('active-filter');
+  });
 }
 
 // ════════════════════════════════════════
@@ -3414,7 +3679,7 @@ async function loadPaymentsTab(fn, sys) {
       <table class="data-table">
         <thead><tr>
           <th>رقم الدفعة</th><th>الدافع</th><th>المبلغ</th><th>طريقة الدفع</th>
-          <th>المستند</th><th>التاريخ</th><th>ملاحظات</th>
+          <th>المستند</th><th>التاريخ</th><th>ملاحظات</th><th></th>
         </tr></thead>
         <tbody>
           ${data.map(p=>`<tr>
@@ -3425,6 +3690,7 @@ async function loadPaymentsTab(fn, sys) {
             <td class="mono">${p.document||'—'}</td>
             <td class="mono">${fmtDate(p.pay_date)}</td>
             <td class="text-muted">${p.notes||''}</td>
+            <td><button class="btn btn-secondary btn-sm" onclick="openEditPaymentModal(${p.id})">✏️</button></td>
           </tr>`).join('')}
           <tr style="background:var(--surface)">
             <td colspan="2"><strong>الإجمالي</strong></td>
@@ -3451,7 +3717,7 @@ async function loadExpensesTab(fn, sys) {
       <table class="data-table">
         <thead><tr>
           <th>رقم المصروف</th><th>الوصف</th><th>النوع</th><th>المبلغ</th>
-          <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th>
+          <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th><th></th>
         </tr></thead>
         <tbody>
           ${data.map(e=>`<tr>
@@ -3462,6 +3728,7 @@ async function loadExpensesTab(fn, sys) {
             <td>${e.pay_method||'—'}</td>
             <td class="mono">${e.document||'—'}</td>
             <td class="mono">${fmtDate(e.exp_date)}</td>
+            <td><button class="btn btn-secondary btn-sm" onclick="openEditExpenseModal(${e.id})">✏️</button></td>
           </tr>`).join('')}
           <tr style="background:var(--surface)">
             <td colspan="3"><strong>الإجمالي</strong></td>
@@ -3755,7 +4022,7 @@ async function loadCollectionsTab(fn, sys) {
       <table class="data-table">
         <thead><tr>
           <th>رقم التحصيل</th><th>رقم الفاتورة</th><th>العميل</th><th>الشاصي</th>
-          <th>المبلغ</th><th>طريقة الدفع</th><th>الاستحقاق</th><th>تاريخ الدفع</th>
+          <th>المبلغ</th><th>طريقة الدفع</th><th>الاستحقاق</th><th>تاريخ الدفع</th><th></th>
         </tr></thead>
         <tbody>
           ${data.map(c=>`<tr>
@@ -3767,6 +4034,7 @@ async function loadCollectionsTab(fn, sys) {
             <td>${c.pay_method||'—'}</td>
             <td class="mono">${fmtDate(c.due_date)}</td>
             <td class="mono">${fmtDate(c.paid_date)}</td>
+            <td><button class="btn btn-secondary btn-sm" onclick="openEditCollectionModal(${c.id})">✏️</button></td>
           </tr>`).join('')}
           <tr style="background:var(--surface)">
             <td colspan="4"><strong>الإجمالي</strong></td>
@@ -4086,16 +4354,33 @@ async function addPartnerRowWithData(partner, payment) {
   const row  = rows[rows.length - 1];
   if (!row) return;
   row.dataset.partnerId = partner.id;
-  const sels   = row.querySelectorAll('select');
+
   const inputs = row.querySelectorAll('input');
-  if (sels[0])   sels[0].value   = partner.partner       || '';
+  const sels   = row.querySelectorAll('select');
+
+  // Partner name — set in select, add option if missing
+  if (sels[0]) {
+    const partnerName = partner.partner || '';
+    let opt = Array.from(sels[0].options).find(o => o.value === partnerName);
+    if (!opt && partnerName) {
+      opt = document.createElement('option');
+      opt.value = partnerName; opt.textContent = partnerName;
+      sels[0].insertBefore(opt, sels[0].lastElementChild);
+    }
+    sels[0].value = partnerName;
+  }
+
+  // Share percent
   if (inputs[0]) inputs[0].value = partner.share_percent || '';
-  if (payment && inputs[1]) {
-    inputs[1].value = payment.amount     || '';
+
+  // Payment data
+  if (payment) {
+    if (inputs[1]) inputs[1].value = payment.amount     || '';
     if (inputs[2]) inputs[2].value = payment.pay_date   || '';
     if (sels[1])   sels[1].value   = payment.pay_method || 'تحويل بنكي';
     if (inputs[3]) inputs[3].value = payment.document   || '';
   }
+
   updatePartnerSummary();
 }
 
@@ -4129,9 +4414,17 @@ async function openNewFileModal(editFileNo = null) {
   el('vehiclesContainer').innerHTML = '';
   el('partnersContainer').innerHTML = '';
   el('partnerSummary').style.display = 'none';
-  el('nf-fileNo').removeAttribute('readonly');
-  el('nf-fileNo').style.opacity = '1';
-  el('nf-fileNo').style.cursor  = '';
+
+  // Lock file no in edit mode
+  if (_nfEditMode) {
+    el('nf-fileNo').setAttribute('readonly', true);
+    el('nf-fileNo').style.opacity = '0.6';
+    el('nf-fileNo').style.cursor  = 'not-allowed';
+  } else {
+    el('nf-fileNo').removeAttribute('readonly');
+    el('nf-fileNo').style.opacity = '1';
+    el('nf-fileNo').style.cursor  = '';
+  }
 
   await populatePartnersSelect();
 
@@ -4163,9 +4456,10 @@ async function openNewFileModal(editFileNo = null) {
       el('nf-vehicleCount').value = d.vehicle_count  || '';
       
 
-      // Set supplier after contacts loaded
-      await populateContactSelect('nf-supplier', 'supplier');
+      // Set supplier — ac-input (text), just set value directly
       el('nf-supplier').value = d.supplier || '';
+      // pre-cache supplier contacts silently
+      acGetContacts('supplier').catch(()=>{});
 
       // Load vehicles
       el('vehiclesContainer').innerHTML = '';
@@ -5921,10 +6215,89 @@ function showErr(id, msg) {
 let toastTimer;
 function toast(msg, type='ok') {
   const t = el('toast');
+  t.className = '';
   t.textContent = msg;
+  void t.offsetWidth; // force reflow
   t.className = 'show ' + type;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.classList.remove('show'); }, 3000);
+  toastTimer = setTimeout(() => {
+    t.classList.add('hiding');
+    setTimeout(() => { t.className = ''; }, 200);
+  }, 3000);
+}
+
+// ── Count-up animation for KPI numbers ──
+function animateCount(el, targetStr, color) {
+  if (!el) return;
+  // Extract numeric value for animation
+  const isNum = /^[\d,\.]+$/.test(targetStr.replace(/\s/g,''));
+  if (!isNum) { el.textContent = targetStr; if(color) el.style.color=color; return; }
+  const target = parseFloat(targetStr.replace(/,/g,'')) || 0;
+  const duration = 600;
+  const start = performance.now();
+  const startVal = parseFloat(el.textContent?.replace(/,/g,'')) || 0;
+  // Kick off animation
+  el.style.transition = 'color .3s';
+  if(color) el.style.color = color;
+  function step(now) {
+    const p = Math.min((now - start) / duration, 1);
+    const ease = 1 - Math.pow(1 - p, 3); // ease-out-cubic
+    const cur = startVal + (target - startVal) * ease;
+    // Format same as target
+    if (targetStr.includes('.')) {
+      el.textContent = cur.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    } else {
+      el.textContent = Math.round(cur).toLocaleString('en-US');
+    }
+    if (p < 1) requestAnimationFrame(step);
+    else el.textContent = targetStr;
+  }
+  requestAnimationFrame(step);
+}
+
+// ── Skeleton loading ──
+function setLoading(id, msg='جاري التحميل...') {
+  el(id).innerHTML = `
+    <div style="padding:16px">
+      <div class="skeleton" style="height:38px;margin-bottom:8px;border-radius:6px"></div>
+      <div class="skeleton" style="height:38px;margin-bottom:8px;opacity:.8;border-radius:6px"></div>
+      <div class="skeleton" style="height:38px;margin-bottom:8px;opacity:.6;border-radius:6px"></div>
+      <div class="skeleton" style="height:38px;opacity:.4;border-radius:6px"></div>
+    </div>`;
+}
+
+// ── Smooth view transition ──
+function switchView(showId, title, sub='') {
+  const current = document.querySelector('.content-area > div[id$="View"]:not([style*="display: none"]):not([style*="display:none"])');
+  if (current && current.id !== showId) {
+    current.style.opacity = '0';
+    current.style.transform = 'translateY(6px)';
+    current.style.transition = 'opacity .15s, transform .15s';
+    setTimeout(() => {
+      current.style.display = 'none';
+      current.style.opacity = '';
+      current.style.transform = '';
+      current.style.transition = '';
+    }, 150);
+  }
+  const next = el(showId);
+  if (next) {
+    next.style.display = 'block';
+    next.style.opacity = '0';
+    next.style.transform = 'translateY(10px)';
+    next.style.transition = 'none';
+    void next.offsetWidth;
+    next.style.transition = 'opacity .25s ease, transform .25s ease';
+    next.style.opacity = '1';
+    next.style.transform = 'translateY(0)';
+    setTimeout(() => {
+      next.style.transition = '';
+      next.style.opacity = '';
+      next.style.transform = '';
+    }, 300);
+  }
+  if(title) el('topBarTitle').textContent = title;
+  if(sub)   el('topBarSub').textContent   = sub;
 }
 
 // ════════════════════════════════════════
@@ -6908,7 +7281,15 @@ async function deleteContact(id, name) {
 // ════════════════════════════════════════
 function hideAllViews() {
   ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView']
-    .forEach(id => { const e = el(id); if(e) e.style.display='none'; });
+    .forEach(id => {
+      const e = el(id);
+      if (e) {
+        e.style.display = 'none';
+        e.style.opacity = '';
+        e.style.transform = '';
+        e.style.transition = '';
+      }
+    });
 }
 
 // ════════════════════════════════════════
@@ -8626,6 +9007,15 @@ function showDashboard_withFab() {
 document.addEventListener('DOMContentLoaded', () => {
   _currentRole = localStorage.getItem('tm_role') || 'admin';
   _pendingRole = _currentRole;
+
+  // Top bar shadow on scroll
+  const contentArea = document.querySelector('.content-area');
+  const topBar = document.querySelector('.top-bar');
+  if (contentArea && topBar) {
+    contentArea.addEventListener('scroll', () => {
+      topBar.classList.toggle('scrolled', contentArea.scrollTop > 10);
+    });
+  }
 });
 
 // ════════════════════════════════════════
@@ -9147,6 +9537,134 @@ async function populateContactSelect(selectId, type, allowEmpty=true) {
 // Fix value reading for supplier/customer — no more -new suffix
 // (already handled: nf-supplier, sale-customer, qs-customer are now single inputs)
 
+// ════════════════════════════════════════
+// EDIT PAYMENT
+// ════════════════════════════════════════
+async function openEditPaymentModal(paymentId) {
+  try {
+    const data = await apiGet('payments', { select:'*', id:`eq.${paymentId}` });
+    const p = data?.[0];
+    if (!p) { toast('لم يُعثر على البيانات','err'); return; }
+
+    // Load partners for this file
+    let partners = await apiGet('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
+    if (!partners?.length) {
+      const all = await getContactsByType('partner');
+      partners = (all||[]).map(x=>({partner:x.name}));
+    }
+    el('ep-id').value     = p.id;
+    el('ep-payer').innerHTML = (partners||[]).map(pm =>
+      `<option value="${pm.partner}" ${pm.partner===p.payer?'selected':''}>${pm.partner}</option>`
+    ).join('');
+    el('ep-payer').value  = p.payer    || '';
+    el('ep-amount').value = p.amount   || '';
+    el('ep-method').value = p.pay_method || 'تحويل بنكي';
+    el('ep-date').value   = p.pay_date  || '';
+    el('ep-doc').value    = p.document  || '';
+    el('ep-notes').value  = p.notes     || '';
+    el('epError').style.display = 'none';
+    openModal('editPaymentModal');
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
+async function submitEditPayment() {
+  const id     = el('ep-id').value;
+  const payer  = el('ep-payer').value;
+  const amount = parseFloat(el('ep-amount').value);
+  const method = el('ep-method').value;
+  const date   = el('ep-date').value;
+  const doc    = el('ep-doc').value.trim();
+  const notes  = el('ep-notes').value.trim();
+  if (!payer || !amount || !date) { showFieldErr('epError','يرجى ملء الحقول المطلوبة'); return; }
+  try {
+    await apiPatch('payments', { id:`eq.${id}` }, { payer, amount, pay_method:method, pay_date:date, document:doc||null, notes:notes||null });
+    closeModal('editPaymentModal');
+    toast('✅ تم تعديل الدفعة','ok');
+    if (state.currentTab === 2) loadPaymentsTab(state.currentFileNo, state.system);
+    if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);
+  } catch(e) { showFieldErr('epError','خطأ: '+e.message); }
+}
+
+// ════════════════════════════════════════
+// EDIT EXPENSE
+// ════════════════════════════════════════
+async function openEditExpenseModal(expenseId) {
+  try {
+    const data = await apiGet('expenses', { select:'*', id:`eq.${expenseId}` });
+    const e = data?.[0];
+    if (!e) { toast('لم يُعثر على البيانات','err'); return; }
+    el('ee-id').value     = e.id;
+    el('ee-desc').value   = e.description  || '';
+    el('ee-type').value   = e.exp_type     || 'أخرى';
+    el('ee-amount').value = e.amount       || '';
+    el('ee-date').value   = e.exp_date     || '';
+    el('ee-method').value = e.pay_method   || 'تحويل بنكي';
+    el('ee-doc').value    = e.document     || '';
+    el('ee-notes').value  = e.notes        || '';
+    el('eeError').style.display = 'none';
+    openModal('editExpenseModal');
+  } catch(err) { toast('خطأ: '+err.message,'err'); }
+}
+
+async function submitEditExpense() {
+  const id     = el('ee-id').value;
+  const desc   = el('ee-desc').value.trim();
+  const type   = el('ee-type').value;
+  const amount = parseFloat(el('ee-amount').value);
+  const date   = el('ee-date').value;
+  const method = el('ee-method').value;
+  const doc    = el('ee-doc').value.trim();
+  const notes  = el('ee-notes').value.trim();
+  if (!desc || !amount || !date) { showFieldErr('eeError','يرجى ملء الحقول المطلوبة'); return; }
+  try {
+    await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null });
+    closeModal('editExpenseModal');
+    toast('✅ تم تعديل المصروف','ok');
+    if (state.currentTab === 3) loadExpensesTab(state.currentFileNo, state.system);
+    if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);
+  } catch(e) { showFieldErr('eeError','خطأ: '+e.message); }
+}
+
+// ════════════════════════════════════════
+// EDIT COLLECTION
+// ════════════════════════════════════════
+async function openEditCollectionModal(collectionId) {
+  try {
+    const data = await apiGet('collections', { select:'*', id:`eq.${collectionId}` });
+    const c = data?.[0];
+    if (!c) { toast('لم يُعثر على البيانات','err'); return; }
+    el('ec-id').value       = c.id;
+    el('ec-invNo').value    = c.inv_no    || '';
+    el('ec-customer').value = c.customer  || '';
+    el('ec-amount').value   = c.amount    || '';
+    el('ec-method').value   = c.pay_method || 'تحويل بنكي';
+    el('ec-dueDate').value  = c.due_date  || '';
+    el('ec-paidDate').value = c.paid_date || '';
+    el('ec-doc').value      = c.document  || '';
+    el('ec-notes').value    = c.notes     || '';
+    el('ecError').style.display = 'none';
+    openModal('editCollectionModal');
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
+async function submitEditCollection() {
+  const id     = el('ec-id').value;
+  const amount = parseFloat(el('ec-amount').value);
+  const method = el('ec-method').value;
+  const due    = el('ec-dueDate').value;
+  const paid   = el('ec-paidDate').value;
+  const doc    = el('ec-doc').value.trim();
+  const notes  = el('ec-notes').value.trim();
+  if (!amount) { showFieldErr('ecError','يرجى إدخال المبلغ'); return; }
+  try {
+    await apiPatch('collections', { id:`eq.${id}` }, { amount, pay_method:method, due_date:due||null, paid_date:paid||null, document:doc||null, notes:notes||null });
+    closeModal('editCollectionModal');
+    toast('✅ تم تعديل التحصيل','ok');
+    if (state.currentTab === 5) loadCollectionsTab(state.currentFileNo, state.system);
+    if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);
+  } catch(e) { showFieldErr('ecError','خطأ: '+e.message); }
+}
+
 // PWA Install prompt
 let _pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
@@ -9260,6 +9778,111 @@ function installPWA() {
 <button class="pwa-fab pwa-install-btn" onclick="installPWA()">
   📲 تثبيت التطبيق
 </button>
+
+<!-- EDIT PAYMENT MODAL -->
+<div class="modal-overlay" id="editPaymentModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--cyan-dim)">💳</div>
+      <h3>تعديل دفعة المورد</h3>
+      <button class="modal-close" onclick="closeModal('editPaymentModal')">✕</button>
+    </div>
+    <div class="modal-body"><div class="form-col">
+      <input type="hidden" id="ep-id">
+      <div class="form-row">
+        <div class="field"><label>الدافع *</label><select id="ep-payer"></select></div>
+        <div class="field"><label>المبلغ *</label><input type="number" id="ep-amount" placeholder="0.00" min="0" step="0.01"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>طريقة الدفع</label>
+          <select id="ep-method"><option>تحويل بنكي</option><option>نقد</option><option>شيك</option><option>SWIFT</option></select>
+        </div>
+        <div class="field"><label>التاريخ *</label><input type="date" id="ep-date"></div>
+      </div>
+      <div class="field"><label>رقم المستند</label><input type="text" id="ep-doc" placeholder="رقم التحويل أو الشيك"></div>
+      <div class="field"><label>ملاحظات</label><textarea id="ep-notes" rows="2" placeholder="..."></textarea></div>
+      <div id="epError" class="alert alert-err" style="display:none"></div>
+    </div></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('editPaymentModal')">إلغاء</button>
+      <button class="btn btn-primary" onclick="submitEditPayment()">💾 حفظ التعديل</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT EXPENSE MODAL -->
+<div class="modal-overlay" id="editExpenseModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--red-dim)">💸</div>
+      <h3>تعديل مصروف</h3>
+      <button class="modal-close" onclick="closeModal('editExpenseModal')">✕</button>
+    </div>
+    <div class="modal-body"><div class="form-col">
+      <input type="hidden" id="ee-id">
+      <div class="form-row">
+        <div class="field"><label>الوصف *</label><input type="text" id="ee-desc" placeholder="وصف المصروف"></div>
+        <div class="field"><label>النوع</label>
+          <select id="ee-type">
+            <option>شحن</option><option>جمارك</option><option>تأمين</option>
+            <option>إدارية</option><option>صيانة</option><option>أخرى</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>المبلغ *</label><input type="number" id="ee-amount" placeholder="0.00" min="0" step="0.01"></div>
+        <div class="field"><label>التاريخ *</label><input type="date" id="ee-date"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>طريقة الدفع</label>
+          <select id="ee-method"><option>تحويل بنكي</option><option>نقد</option><option>شيك</option></select>
+        </div>
+        <div class="field"><label>رقم المستند</label><input type="text" id="ee-doc" placeholder="رقم المستند"></div>
+      </div>
+      <div class="field"><label>ملاحظات</label><textarea id="ee-notes" rows="2" placeholder="..."></textarea></div>
+      <div id="eeError" class="alert alert-err" style="display:none"></div>
+    </div></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('editExpenseModal')">إلغاء</button>
+      <button class="btn btn-primary" onclick="submitEditExpense()">💾 حفظ التعديل</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT COLLECTION MODAL -->
+<div class="modal-overlay" id="editCollectionModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--green-dim)">💰</div>
+      <h3>تعديل تحصيل</h3>
+      <button class="modal-close" onclick="closeModal('editCollectionModal')">✕</button>
+    </div>
+    <div class="modal-body"><div class="form-col">
+      <input type="hidden" id="ec-id">
+      <div class="form-row">
+        <div class="field"><label>رقم الفاتورة</label><input type="text" id="ec-invNo" readonly style="opacity:.7"></div>
+        <div class="field"><label>العميل</label><input type="text" id="ec-customer" readonly style="opacity:.7"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>المبلغ *</label><input type="number" id="ec-amount" placeholder="0.00" min="0" step="0.01"></div>
+        <div class="field"><label>طريقة الدفع</label>
+          <select id="ec-method"><option>تحويل بنكي</option><option>نقد</option><option>شيك</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>تاريخ الاستحقاق</label><input type="date" id="ec-dueDate"></div>
+        <div class="field"><label>تاريخ الدفع</label><input type="date" id="ec-paidDate"></div>
+      </div>
+      <div class="field"><label>رقم المستند</label><input type="text" id="ec-doc" placeholder="رقم التحويل"></div>
+      <div class="field"><label>ملاحظات</label><textarea id="ec-notes" rows="2" placeholder="..."></textarea></div>
+      <div id="ecError" class="alert alert-err" style="display:none"></div>
+    </div></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('editCollectionModal')">إلغاء</button>
+      <button class="btn btn-primary" onclick="submitEditCollection()">💾 حفظ التعديل</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
