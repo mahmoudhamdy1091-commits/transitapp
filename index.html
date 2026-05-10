@@ -3161,14 +3161,21 @@ async function loadPaymentsTab(fn, sys) {
     const data = await apiGet('payments', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc' });
     if (!data?.length) { el('paymentsTable').innerHTML = emptyHTML('💳','لا توجد دفعات'); return; }
     const total = data.reduce((s,p)=>s+(+p.amount||0),0);
+    const csvRows = data.map(p=>[p.ref_no||'—', p.payer||'—', +p.amount||0, p.pay_method||'—', p.document||'—', p.pay_date||'—', p.notes||'']);
+    const csvHeaders = ['رقم الدفعة','الدافع','المبلغ','طريقة الدفع','المستند','التاريخ','ملاحظات'];
     el('paymentsTable').innerHTML = `
+      ${exportBtns(
+        `exportCSV(${JSON.stringify(csvHeaders)},${JSON.stringify(csvRows)},'دفعات_${fn}')`,
+        `printSection('دفعات المورد','ملف: ${fn}',document.querySelector('#tab-2 table')?.outerHTML||'')`
+      )}
       <table class="data-table">
         <thead><tr>
-          <th>الدافع</th><th>المبلغ</th><th>طريقة الدفع</th>
+          <th>رقم الدفعة</th><th>الدافع</th><th>المبلغ</th><th>طريقة الدفع</th>
           <th>المستند</th><th>التاريخ</th><th>ملاحظات</th>
         </tr></thead>
         <tbody>
           ${data.map(p=>`<tr>
+            <td class="mono" style="color:var(--cyan);font-weight:700;font-size:11px">${p.ref_no||'—'}</td>
             <td>${p.payer||'—'}</td>
             <td class="mono text-blue">${fmt(p.amount)}</td>
             <td>${p.pay_method||'—'}</td>
@@ -3177,7 +3184,7 @@ async function loadPaymentsTab(fn, sys) {
             <td class="text-muted">${p.notes||''}</td>
           </tr>`).join('')}
           <tr style="background:var(--surface)">
-            <td><strong>الإجمالي</strong></td>
+            <td colspan="2"><strong>الإجمالي</strong></td>
             <td class="mono text-blue"><strong>${fmt(total)}</strong></td>
             <td colspan="4"></td>
           </tr>
@@ -3191,14 +3198,21 @@ async function loadExpensesTab(fn, sys) {
     const data = await apiGet('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.desc' });
     if (!data?.length) { el('expensesTable').innerHTML = emptyHTML('💸','لا توجد مصاريف'); return; }
     const total = data.reduce((s,e)=>s+(+e.amount||0),0);
+    const csvRows = data.map(e=>[e.ref_no||'—', e.description||'—', e.exp_type||'—', +e.amount||0, e.pay_method||'—', e.document||'—', e.exp_date||'—']);
+    const csvHeaders = ['رقم المصروف','الوصف','النوع','المبلغ','طريقة الدفع','المستند','التاريخ'];
     el('expensesTable').innerHTML = `
+      ${exportBtns(
+        `exportCSV(${JSON.stringify(csvHeaders)},${JSON.stringify(csvRows)},'مصاريف_${fn}')`,
+        `printSection('المصاريف','ملف: ${fn}',document.querySelector('#tab-3 table')?.outerHTML||'')`
+      )}
       <table class="data-table">
         <thead><tr>
-          <th>الوصف</th><th>النوع</th><th>المبلغ</th>
+          <th>رقم المصروف</th><th>الوصف</th><th>النوع</th><th>المبلغ</th>
           <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th>
         </tr></thead>
         <tbody>
           ${data.map(e=>`<tr>
+            <td class="mono" style="color:var(--red);font-weight:700;font-size:11px">${e.ref_no||'—'}</td>
             <td>${e.description||'—'}</td>
             <td><span class="chip">${e.exp_type||'—'}</span></td>
             <td class="mono text-red">${fmt(e.amount)}</td>
@@ -3207,7 +3221,7 @@ async function loadExpensesTab(fn, sys) {
             <td class="mono">${fmtDate(e.exp_date)}</td>
           </tr>`).join('')}
           <tr style="background:var(--surface)">
-            <td colspan="2"><strong>الإجمالي</strong></td>
+            <td colspan="3"><strong>الإجمالي</strong></td>
             <td class="mono text-red"><strong>${fmt(total)}</strong></td>
             <td colspan="3"></td>
           </tr>
@@ -3488,14 +3502,21 @@ async function loadCollectionsTab(fn, sys) {
     const data = await apiGet('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.desc' });
     if (!data?.length) { el('collectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
     const total = data.reduce((s,c)=>s+(+c.amount||0),0);
+    const csvRows = data.map(c=>[c.ref_no||'—', c.inv_no||'—', c.customer||'—', c.vin||'—', +c.amount||0, c.pay_method||'—', c.due_date||'—', c.paid_date||'—']);
+    const csvHeaders = ['رقم التحصيل','رقم الفاتورة','العميل','الشاصي','المبلغ','طريقة الدفع','تاريخ الاستحقاق','تاريخ الدفع'];
     el('collectionsTable').innerHTML = `
+      ${exportBtns(
+        `exportCSV(${JSON.stringify(csvHeaders)},${JSON.stringify(csvRows)},'تحصيلات_${fn}')`,
+        `printSection('التحصيلات','ملف: ${fn}',document.querySelector('#tab-5 table')?.outerHTML||'')`
+      )}
       <table class="data-table">
         <thead><tr>
-          <th>رقم الفاتورة</th><th>العميل</th><th>VIN</th>
-          <th>المبلغ</th><th>طريقة الدفع</th><th>تاريخ الاستحقاق</th><th>تاريخ الدفع</th>
+          <th>رقم التحصيل</th><th>رقم الفاتورة</th><th>العميل</th><th>الشاصي</th>
+          <th>المبلغ</th><th>طريقة الدفع</th><th>الاستحقاق</th><th>تاريخ الدفع</th>
         </tr></thead>
         <tbody>
           ${data.map(c=>`<tr>
+            <td class="mono" style="color:var(--green);font-weight:700;font-size:11px">${c.ref_no||'—'}</td>
             <td class="mono">${c.inv_no||'—'}</td>
             <td>${c.customer||'—'}</td>
             <td class="mono">${c.vin||'—'}</td>
@@ -3505,7 +3526,7 @@ async function loadCollectionsTab(fn, sys) {
             <td class="mono">${fmtDate(c.paid_date)}</td>
           </tr>`).join('')}
           <tr style="background:var(--surface)">
-            <td colspan="3"><strong>الإجمالي</strong></td>
+            <td colspan="4"><strong>الإجمالي</strong></td>
             <td class="mono text-green"><strong>${fmt(total)}</strong></td>
             <td colspan="3"></td>
           </tr>
@@ -3532,6 +3553,7 @@ async function loadPayoutsTab(fn, sys) {
           ${+p.advance_amount ? `<span style="color:var(--amber)">سلفة: ${fmt(p.advance_amount)}</span>` : ''}
         </div>` : '';
       return `<tr>
+        <td class="mono" style="color:var(--accent);font-weight:700;font-size:11px">${p.pay_id||'—'}</td>
         <td><strong>${p.partner||'—'}</strong></td>
         <td>
           <span class="chip">${p.payout_type||'—'}</span>
@@ -3543,6 +3565,7 @@ async function loadPayoutsTab(fn, sys) {
         <td class="mono text-muted">${fmtDate(p.pay_date)}</td>
         <td>
           <div style="display:flex;gap:4px">
+            <button class="btn btn-secondary btn-sm" onclick="printPayoutVoucher(${p.id})" title="طباعة سند" style="color:var(--purple)">🖨️</button>
             <button class="btn btn-secondary btn-sm" onclick="openEditPayoutModal(${p.id})" title="تعديل">✏️</button>
             <button class="btn btn-secondary btn-sm" onclick="deletePayoutEntry(${p.id},'${fn}')" title="حذف" style="color:var(--red)">🗑</button>
           </div>
@@ -3557,9 +3580,13 @@ async function loadPayoutsTab(fn, sys) {
         <div class="j-kpi"><div class="j-kpi-label">أرباح موزعة</div><div class="j-kpi-val text-green">${fmt(profTotal)}</div></div>
         <div class="j-kpi"><div class="j-kpi-label">سلف</div><div class="j-kpi-val text-amber">${fmt(advTotal)}</div></div>
       </div>
+      ${exportBtns(
+        `exportCSV(['رقم الصرف','الشريك','نوع الصرف','المبلغ','طريقة الدفع','المستند','التاريخ'],${JSON.stringify(data.map(p=>[p.pay_id||'—',p.partner||'—',p.payout_type||'—',+p.amount||0,p.pay_method||'—',p.document||'—',p.pay_date||'—']))},'صرف_شركاء_${fn}')`,
+        `printSection('صرف الشركاء','ملف: ${fn}',document.querySelector('#tab-6 table')?.outerHTML||'')`
+      )}
       <table class="data-table">
         <thead><tr>
-          <th>الشريك</th><th>نوع الصرف</th><th>المبلغ</th>
+          <th>رقم الصرف</th><th>الشريك</th><th>نوع الصرف</th><th>المبلغ</th>
           <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -3570,6 +3597,154 @@ async function loadPayoutsTab(fn, sys) {
         </tfoot>
       </table>`;
   } catch(e) { el('payoutsTable').innerHTML = errHTML(e.message); }
+}
+
+async function printPayoutVoucher(payoutId) {
+  try {
+    const [pArr, dealArr] = await Promise.all([
+      apiGet('partner_payouts', { select:'*', id:`eq.${payoutId}` }),
+      null
+    ]);
+    const p = pArr?.[0];
+    if (!p) { toast('لم يُعثر على بيانات الصرف','err'); return; }
+
+    const poArr = await apiGet('purchase_orders', { select:'supplier,po_date', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
+    const deal  = poArr?.[0];
+
+    const typeColor = { 'استرداد رأس مال':'#2563eb', 'توزيع أرباح':'#16a34a', 'رأس مال + أرباح':'#7c3aed', 'سلفة':'#e6930a' };
+    const color = typeColor[p.payout_type] || '#1a1a1a';
+
+    const splitRows = [];
+    if (+p.capital_amount) splitRows.push(`<tr><td>رأس مال مُسترد</td><td style="font-weight:700;color:#2563eb">${(+p.capital_amount).toLocaleString('en-US',{minimumFractionDigits:2})} KWD</td></tr>`);
+    if (+p.profit_amount)  splitRows.push(`<tr><td>أرباح موزعة</td><td style="font-weight:700;color:#16a34a">${(+p.profit_amount).toLocaleString('en-US',{minimumFractionDigits:2})} KWD</td></tr>`);
+    if (+p.advance_amount) splitRows.push(`<tr><td>سلفة</td><td style="font-weight:700;color:#e6930a">${(+p.advance_amount).toLocaleString('en-US',{minimumFractionDigits:2})} KWD</td></tr>`);
+
+    const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>سند صرف ${p.pay_id||payoutId}</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Cairo',Arial,sans-serif;color:#1a1a1a;background:#fff;font-size:13px}
+  .page{max-width:700px;margin:0 auto;padding:32px 36px}
+  .no-print{text-align:center;margin-bottom:20px;display:flex;gap:10px;justify-content:center}
+  .no-print button{padding:10px 28px;border-radius:8px;font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;cursor:pointer;border:none}
+  /* Header */
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:18px;border-bottom:3px solid #1a1a1a}
+  .company-name{font-size:22px;font-weight:900}
+  .company-sub{font-size:12px;color:#888;margin-top:3px}
+  .voucher-title{text-align:left}
+  .voucher-title h1{font-size:26px;font-weight:900;letter-spacing:-0.5px}
+  .voucher-title .pay-id{font-size:15px;font-weight:700;color:${color};margin-top:6px;letter-spacing:1px}
+  /* Info grid */
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px}
+  .info-box{background:#f8f9fa;border-radius:8px;padding:14px 16px}
+  .info-box-title{font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+  .info-row{display:flex;justify-content:space-between;padding:3px 0;font-size:13px}
+  .info-label{color:#666}
+  .info-value{font-weight:700;color:#1a1a1a}
+  /* Amount box */
+  .amount-box{background:#1a1a1a;color:#fff;border-radius:10px;padding:20px 28px;text-align:center;margin-bottom:22px}
+  .amount-label{font-size:12px;color:#aaa;margin-bottom:6px}
+  .amount-value{font-size:32px;font-weight:900;letter-spacing:-1px}
+  .amount-currency{font-size:13px;color:#aaa;margin-top:4px}
+  .amount-type{display:inline-block;background:${color};color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px}
+  /* Split table */
+  .split-table{width:100%;border-collapse:collapse;margin-bottom:22px}
+  .split-table td{padding:8px 14px;border-bottom:1px solid #eee}
+  .split-table td:last-child{text-align:left}
+  /* Notes */
+  .notes-box{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:22px}
+  .notes-label{font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+  /* Signatures */
+  .sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-bottom:28px}
+  .sig-box{text-align:center;padding-top:44px;border-top:1px solid #ccc}
+  .sig-label{font-size:11px;color:#888;margin-top:6px}
+  /* Footer */
+  .footer{text-align:center;padding-top:16px;border-top:1px solid #eee;color:#bbb;font-size:10px}
+  @media print{
+    body{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+    .page{padding:16px}
+    .no-print{display:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="no-print">
+    <button onclick="window.print()" style="background:#1a1a1a;color:#fff">🖨️ طباعة</button>
+    <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd">✕ إغلاق</button>
+  </div>
+
+  <div class="hdr">
+    <div>
+      <div class="company-name">Transit Cars</div>
+      <div class="company-sub">ترانزيت للسيارات · الكويت</div>
+    </div>
+    <div class="voucher-title">
+      <h1>سند صرف شريك</h1>
+      <div class="pay-id"># ${p.pay_id||payoutId}</div>
+    </div>
+  </div>
+
+  <div class="info-grid">
+    <div class="info-box">
+      <div class="info-box-title">بيانات الشريك</div>
+      <div class="info-row"><span class="info-label">اسم الشريك</span><span class="info-value">${p.partner||'—'}</span></div>
+      <div class="info-row"><span class="info-label">رقم الملف</span><span class="info-value">${p.file_no||'—'}</span></div>
+      ${deal ? `<div class="info-row"><span class="info-label">المورد</span><span class="info-value">${deal.supplier||'—'}</span></div>` : ''}
+    </div>
+    <div class="info-box">
+      <div class="info-box-title">بيانات الدفع</div>
+      <div class="info-row"><span class="info-label">التاريخ</span><span class="info-value">${p.pay_date||'—'}</span></div>
+      <div class="info-row"><span class="info-label">طريقة الدفع</span><span class="info-value">${p.pay_method||'—'}</span></div>
+      ${p.document ? `<div class="info-row"><span class="info-label">رقم المستند</span><span class="info-value">${p.document}</span></div>` : ''}
+    </div>
+  </div>
+
+  <div class="amount-box">
+    <div class="amount-label">المبلغ الإجمالي</div>
+    <div class="amount-value">${(+p.amount).toLocaleString('en-US',{minimumFractionDigits:2})}</div>
+    <div class="amount-currency">KWD — دينار كويتي</div>
+    <div><span class="amount-type">${p.payout_type||'صرف'}</span></div>
+  </div>
+
+  ${splitRows.length > 1 ? `
+  <table class="split-table">
+    <tr style="background:#f8f9fa"><td colspan="2" style="padding:8px 14px;font-weight:700;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px">تفاصيل التوزيع</td></tr>
+    ${splitRows.join('')}
+  </table>` : ''}
+
+  ${p.notes ? `
+  <div class="notes-box">
+    <div class="notes-label">ملاحظات</div>
+    <div>${p.notes}</div>
+  </div>` : ''}
+
+  <div class="sig-grid">
+    <div class="sig-box">
+      <div class="sig-label">توقيع المستلم (الشريك)</div>
+      <div style="font-size:12px;color:#1a1a1a;margin-top:4px">${p.partner||''}</div>
+    </div>
+    <div class="sig-box">
+      <div class="sig-label">توقيع المُصدِر</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    تم إنشاؤه بتاريخ ${new Date().toLocaleDateString('ar-KW')} · Transit Cars System
+  </div>
+
+</div>
+</body></html>`;
+
+    const w = window.open('','_blank');
+    w.document.write(html);
+    w.document.close();
+  } catch(e) { toast('خطأ في الطباعة: '+e.message,'err'); }
 }
 
 async function openEditPayoutModal(payoutId) {
@@ -4108,8 +4283,9 @@ async function submitNewFile() {
     // 2. Ledger entry for supplier — امسح القديم وأضف جديد
     if (finalTotal > 0) {
       try { await apiDelete('ledger_entries', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, source_table:`eq.purchase_orders` }); } catch(e) {}
+      const vinList = vehicles.filter(v=>v.vin).map(v=>v.vin).join(' / ');
       await postLedger({ contactName:supplier, contactType:'supplier', date:poDate||today(),
-        description:`شراء — ملف ${fileNo}${poNo?' — PO: '+poNo:''}`,
+        description:`شراء ${vehicles.length} سيارة${vinList?' — شواصي: '+vinList:''} — ملف ${fileNo}${poNo?' — PO: '+poNo:''}`,
         debit: finalTotal, sourceTable:'purchase_orders', fileNo });
     }
 
@@ -4421,9 +4597,11 @@ async function submitExpense() {
   if (btn) { btn.disabled=true; btn.textContent='⏳ جاري الحفظ...'; }
   try {
     for (const exp of expenses) {
+      const expFileNo = exp.fileNo || state.currentFileNo || 'GENERAL';
+      const refNo = await genSeqRef('EXP', state.system, expFileNo, 'expenses');
       const data = {
         system_type: state.system,
-        file_no:     exp.fileNo || state.currentFileNo || 'GENERAL',
+        file_no:     expFileNo,
         description: exp.desc  || 'مصروف',
         exp_type:    exp.type  || 'Miscellaneous',
         category:    exp.type  || null,
@@ -4432,10 +4610,11 @@ async function submitExpense() {
         document:    exp.doc   || null,
         exp_date:    date,
         expense_date:date,
-        notes:       exp.notes || null
+        notes:       exp.notes || null,
+        ref_no:      refNo
       };
       await apiPost('expenses', data);
-      await logAudit('INSERT','expenses', exp.fileNo, null, data);
+      await logAudit('INSERT','expenses', expFileNo, null, data);
     }
     closeModal('expenseModal');
     toast(`✅ تم تسجيل ${expenses.length} مصروف`,'ok');
@@ -4474,27 +4653,26 @@ async function submitPayment() {
   }
 
   try {
+    const refNo = await genSeqRef('PMT', state.system, fn, 'payments');
     const data = {
       system_type: state.system, file_no: fn,
       po_no: state.currentDeal?.po_no || null,
       payer, amount, pay_method: method,
-      document: doc||null, pay_date: date, notes: notes||null
+      document: doc||null, pay_date: date,
+      notes: notes||null, ref_no: refNo
     };
     await apiPost('payments', data);
     await logAudit('INSERT','payments',fn,null,data);
-    // Ledger: supplier gets paid (credit on supplier = reduces what we owe)
-    // جيب اسم المورد من الـ DB مباشرة عشان نضمن الصح
     const poArr = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
     if (supplierName) {
       await postLedger({ contactName:supplierName, contactType:'supplier', date,
-        description:`دفعة للمورد — ملف ${fn} — دافع: ${payer}`,
+        description:`[${refNo}] دفعة للمورد — ملف ${fn} — دافع: ${payer}`,
         credit: amount, sourceTable:'payments', fileNo: fn });
     }
-    // إذا كان الدافع شريكاً — سجّل مدين عليه
     if (payer && payer !== supplierName) {
       await postLedger({ contactName:payer, contactType:'partner', date,
-        description:`دفع للمورد ${supplierName||'المورد'} — ملف ${fn}`,
+        description:`[${refNo}] دفع للمورد ${supplierName||'المورد'} — ملف ${fn}`,
         debit: amount, sourceTable:'payments', fileNo: fn });
     }
     closeModal('paymentModal');
@@ -4812,17 +4990,18 @@ async function submitCollection() {
   if (!invNo || !amount) { showFieldErr('colError','يرجى ملء الحقول المطلوبة'); return; }
 
   try {
+    const refNo = await genSeqRef('COL', state.system, fn, 'collections');
     const data = {
       system_type: state.system, file_no: fn,
       inv_no: invNo, customer: cust, vin: vin||null, amount,
       pay_method: method, document: doc||null,
-      due_date: due||null, paid_date: paid||null, notes: notes||null
+      due_date: due||null, paid_date: paid||null, notes: notes||null,
+      ref_no: refNo
     };
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
-    // Ledger: customer pays (credit)
     if (cust) await postLedger({ contactName:cust, contactType:'customer', date:paid||today(),
-      description:`تحصيل — ملف ${fn} — ${invNo||''}`,
+      description:`[${refNo}] تحصيل فاتورة ${invNo||''}${vin?' — شاصي: '+vin:''} — ملف ${fn}`,
       credit: amount, sourceTable:'collections', fileNo: fn });
     closeModal('collectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
@@ -4975,7 +5154,7 @@ async function submitPayout() {
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fn,null,data);
     await postLedger({ contactName:partner, contactType:'partner', date,
-      description:`${type} — ملف ${fn}`,
+      description:`[${pay_id}] ${type} — ملف ${fn}`,
       debit: amount, sourceTable:'partner_payouts', fileNo: fn });
     closeModal('payoutModal');
     toast(`✅ تم تسجيل ${type} للشريك ${partner}`,'ok');
@@ -5192,14 +5371,15 @@ async function submitQuickCollection() {
     showFieldErr('qsColError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
   try {
+    const refNo = await genSeqRef('COL', state.system, fileNo, 'collections');
     const data = { system_type:state.system, file_no:fileNo,
       inv_no:invNo||null, customer:customer||null, amount, pay_method:method,
-      document:doc||null, paid_date:date, notes:notes||null };
+      document:doc||null, paid_date:date, notes:notes||null, ref_no:refNo };
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fileNo,null,data);
     const qcCust = (el('qc-customer').value || '').trim();
     if (qcCust) await postLedger({ contactName:qcCust, contactType:'customer', date:el('qc-date').value,
-      description:`تحصيل — ملف ${fileNo}`, credit:amount, sourceTable:'collections', fileNo });
+      description:`[${refNo}] تحصيل فاتورة ${invNo||''} — ملف ${fileNo}`, credit:amount, sourceTable:'collections', fileNo });
     closeModal('quickCollectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     loadJournal();
@@ -5221,9 +5401,10 @@ async function submitQuickExpense() {
     showFieldErr('qsExpError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
   try {
+    const refNo = await genSeqRef('EXP', state.system, fileNo, 'expenses');
     const data = { system_type:state.system, file_no:fileNo, description:desc,
       category:type, amount, pay_method:method, document:doc||null,
-      expense_date:date, notes:notes||null };
+      expense_date:date, notes:notes||null, ref_no:refNo };
     await apiPost('expenses', data);
     await logAudit('INSERT','expenses',fileNo,null,data);
     closeModal('quickExpenseModal');
@@ -5246,12 +5427,13 @@ async function submitQuickPayment() {
     showFieldErr('qsPayError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
   try {
+    const refNo = await genSeqRef('PMT', state.system, fileNo, 'payments');
     const data = { system_type:state.system, file_no:fileNo, payer, amount,
-      pay_method:method, document:doc||null, pay_date:date, notes:notes||null };
+      pay_method:method, document:doc||null, pay_date:date, notes:notes||null, ref_no:refNo };
     await apiPost('payments', data);
     await logAudit('INSERT','payments',fileNo,null,data);
     await postLedger({ contactName:payer, contactType:'supplier', date,
-      description:`دفعة للمورد — ملف ${fileNo}`,
+      description:`[${refNo}] دفعة للمورد — ملف ${fileNo}`,
       credit:amount, sourceTable:'payments', fileNo });
     closeModal('quickPaymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
@@ -5523,8 +5705,11 @@ async function loadJournal() {
         amount: +r.amount||0, sign:+1,
         title:`تحصيل — ${r.customer||r.inv_no||''}`,
         meta:[
+          r.ref_no?`<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
           r.customer?`من: ${r.customer}`:'',
           `ملف: ${r.file_no||'—'}`,
+          r.inv_no?`فاتورة: ${r.inv_no}`:'',
+          r.vin?`شاصي: ${r.vin}`:'',
           r.pay_method?`طريقة: ${r.pay_method}`:'',
           r.paid_date?`تاريخ: ${r.paid_date}`:'',
           r.document?`مستند: ${r.document}`:'',
@@ -5536,6 +5721,7 @@ async function loadJournal() {
         amount: +r.amount||0, sign:-1,
         title:`مصروف — ${r.category||r.description||''}`,
         meta:[
+          r.ref_no?`<span style="background:var(--red-dim);color:var(--red);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
           r.vendor?`جهة: ${r.vendor}`:'',
           `ملف: ${r.file_no||'—'}`,
           r.pay_method?`طريقة: ${r.pay_method}`:'',
@@ -5549,6 +5735,7 @@ async function loadJournal() {
         amount: +r.amount||0, sign:-1,
         title:`دفعة للمورد — ${r.payer||''}`,
         meta:[
+          r.ref_no?`<span style="background:var(--cyan-dim);color:var(--cyan);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
           `ملف: ${r.file_no||'—'}`,
           r.pay_method?`طريقة: ${r.pay_method}`:'',
           r.pay_date?`تاريخ: ${r.pay_date}`:'',
@@ -5562,6 +5749,7 @@ async function loadJournal() {
         amount: +r.amount||0, sign:-1,
         title:`صرف لشريك — ${r.partner||''}`,
         meta:[
+          r.pay_id?`<span style="background:var(--purple-dim);color:var(--purple);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.pay_id}</span>`:'',
           `ملف: ${r.file_no||'—'}`,
           r.payout_type?`نوع: ${r.payout_type}`:'',
           r.pay_method?`طريقة: ${r.pay_method}`:'',
@@ -5707,6 +5895,85 @@ async function findOrCreateContact(name, type) {
     const created = await apiPost('contacts', { system_type: sys, name, type });
     return Array.isArray(created) ? created[0] : created;
   } catch(e) { console.warn('findOrCreateContact error:', e.message); return null; }
+}
+
+// ════════════════════════════════════════
+// REFERENCE NUMBERS & EXPORT HELPERS
+// ════════════════════════════════════════
+
+async function genSeqRef(prefix, sys, fileNo, table) {
+  try {
+    const rows = await apiGet(table, { select:'id', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+    const next = (rows?.length || 0) + 1;
+    return `${prefix}-${fileNo}-${String(next).padStart(3,'0')}`;
+  } catch(e) {
+    return `${prefix}-${fileNo}-${String(Date.now()).slice(-4)}`;
+  }
+}
+
+function exportCSV(headers, rows, filename) {
+  const csv = [headers, ...rows]
+    .map(r => r.map(v => `"${String(v==null?'':v).replace(/"/g,'""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename + '.csv';
+  a.click();
+}
+
+function printSection(title, subtitle, tableHtml, summaryHtml='') {
+  const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>${title}</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Cairo',Arial,sans-serif;color:#1a1a1a;font-size:12px;background:#fff}
+  .page{max-width:900px;margin:0 auto;padding:28px 32px}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1a1a1a;padding-bottom:16px;margin-bottom:20px}
+  .co-name{font-size:20px;font-weight:900} .co-sub{font-size:11px;color:#888;margin-top:2px}
+  .rep-title{text-align:left} .rep-title h1{font-size:22px;font-weight:900}
+  .rep-title .sub{font-size:12px;color:#666;margin-top:4px}
+  .summary{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+  .s-box{background:#f8f9fa;border-radius:8px;padding:10px 16px;flex:1;min-width:120px}
+  .s-box-label{font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+  .s-box-val{font-size:16px;font-weight:900;margin-top:3px}
+  table{width:100%;border-collapse:collapse;margin-bottom:16px}
+  thead tr{background:#1a1a1a;color:#fff}
+  thead th{padding:9px 10px;font-size:11px;font-weight:700;text-align:right}
+  tbody tr:nth-child(even){background:#fafafa}
+  tbody td{padding:8px 10px;border-bottom:1px solid #eee;vertical-align:middle}
+  tfoot td{padding:9px 10px;background:#f0f2f5;font-weight:700}
+  .footer{text-align:center;padding-top:12px;border-top:1px solid #eee;color:#aaa;font-size:10px;margin-top:12px}
+  .no-print{text-align:center;margin-bottom:16px;display:flex;gap:8px;justify-content:center}
+  .no-print button{padding:9px 24px;border-radius:8px;font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;cursor:pointer;border:none}
+  @media print{.no-print{display:none!important}body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+</style>
+</head>
+<body><div class="page">
+  <div class="no-print">
+    <button onclick="window.print()" style="background:#1a1a1a;color:#fff">🖨️ طباعة</button>
+    <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd">✕ إغلاق</button>
+  </div>
+  <div class="hdr">
+    <div><div class="co-name">Transit Cars</div><div class="co-sub">ترانزيت للسيارات · الكويت</div></div>
+    <div class="rep-title"><h1>${title}</h1><div class="sub">${subtitle}</div></div>
+  </div>
+  ${summaryHtml}
+  ${tableHtml}
+  <div class="footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('ar-KW')} · Transit Cars System</div>
+</div></body></html>`;
+  const w = window.open('','_blank'); w.document.write(html); w.document.close();
+}
+
+function exportBtns(csvFn, printFn) {
+  return `<div style="display:flex;gap:6px;margin-bottom:10px;justify-content:flex-end">
+    <button class="btn btn-sm btn-secondary" onclick="${csvFn}" style="color:var(--green)">⬇️ Excel</button>
+    <button class="btn btn-sm btn-secondary" onclick="${printFn}" style="color:var(--blue)">🖨️ PDF</button>
+  </div>`;
 }
 
 async function postLedger({ contactName, contactType, date, description, debit=0, credit=0, sourceTable, sourceId, fileNo }) {
