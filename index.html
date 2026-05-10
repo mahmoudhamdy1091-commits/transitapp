@@ -4362,8 +4362,10 @@ async function submitNewFile() {
       });
       // If partner paid something, record as payment
       if (p.paid > 0) {
+        const pmtId = `PMT-${fileNo}-P${partners.indexOf(p)+1}`;
         await apiPost('payments', {
           system_type: state.system, file_no: fileNo,
+          pay_id: pmtId, ref_no: pmtId,
           po_no: poNo||null, payer: p.name,
           amount: p.paid, pay_method: p.method||'تحويل بنكي',
           document: p.doc||null, pay_date: p.payDate||poDate||null,
@@ -4501,6 +4503,7 @@ async function submitEditFileFull() {
         try { await apiDelete('payments', { system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}`, payer:`eq.${p.name}` }); } catch(e) {}
         await apiPost('payments', {
           system_type:state.system, file_no:newFileNo,
+          pay_id:`PMT-${newFileNo}-P${p.name.slice(0,3)}`, ref_no:`PMT-${newFileNo}-P${p.name.slice(0,3)}`,
           po_no:poNo||null, payer:p.name,
           amount:p.paid, pay_method:p.method||'تحويل بنكي',
           document:p.doc||null, pay_date:p.payDate||poDate||null,
@@ -4657,6 +4660,7 @@ async function submitExpense() {
       const data = {
         system_type: state.system,
         file_no:     expFileNo,
+        pay_id:      refNo,
         description: exp.desc  || 'مصروف',
         exp_type:    exp.type  || 'Miscellaneous',
         category:    exp.type  || null,
@@ -4711,10 +4715,11 @@ async function submitPayment() {
     const refNo = await genSeqRef('PMT', state.system, fn, 'payments');
     const data = {
       system_type: state.system, file_no: fn,
+      pay_id: refNo, ref_no: refNo,
       po_no: state.currentDeal?.po_no || null,
       payer, amount, pay_method: method,
       document: doc||null, pay_date: date,
-      notes: notes||null, ref_no: refNo
+      notes: notes||null
     };
     await apiPost('payments', data);
     await logAudit('INSERT','payments',fn,null,data);
@@ -5046,9 +5051,10 @@ async function submitCollection() {
 
   try {
     const refNo = await genSeqRef('COL', state.system, fn, 'collections');
+    const pay_id = refNo;
     const data = {
       system_type: state.system, file_no: fn,
-      inv_no: invNo, customer: cust, vin: vin||null, amount,
+      pay_id, inv_no: invNo, customer: cust, vin: vin||null, amount,
       pay_method: method, document: doc||null,
       due_date: due||null, paid_date: paid||null, notes: notes||null,
       ref_no: refNo
@@ -5478,7 +5484,7 @@ async function submitQuickCollection() {
   try {
     const refNo = await genSeqRef('COL', state.system, fileNo, 'collections');
     const data = { system_type:state.system, file_no:fileNo,
-      inv_no:invNo||null, customer:customer||null, amount, pay_method:method,
+      pay_id: refNo, inv_no:invNo||null, customer:customer||null, amount, pay_method:method,
       document:doc||null, paid_date:date, notes:notes||null, ref_no:refNo };
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fileNo,null,data);
@@ -5508,7 +5514,7 @@ async function submitQuickExpense() {
   try {
     const refNo = await genSeqRef('EXP', state.system, fileNo, 'expenses');
     const data = { system_type:state.system, file_no:fileNo, description:desc,
-      category:type, amount, pay_method:method, document:doc||null,
+      pay_id:refNo, category:type, amount, pay_method:method, document:doc||null,
       expense_date:date, notes:notes||null, ref_no:refNo };
     await apiPost('expenses', data);
     await logAudit('INSERT','expenses',fileNo,null,data);
@@ -5534,7 +5540,8 @@ async function submitQuickPayment() {
   try {
     const refNo = await genSeqRef('PMT', state.system, fileNo, 'payments');
     const data = { system_type:state.system, file_no:fileNo, payer, amount,
-      pay_method:method, document:doc||null, pay_date:date, notes:notes||null, ref_no:refNo };
+      pay_id:refNo, ref_no:refNo,
+      pay_method:method, document:doc||null, pay_date:date, notes:notes||null };
     await apiPost('payments', data);
     await logAudit('INSERT','payments',fileNo,null,data);
     await postLedger({ contactName:payer, contactType:'supplier', date,
