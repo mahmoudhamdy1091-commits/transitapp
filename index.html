@@ -1535,45 +1535,207 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
       <!-- SETTINGS VIEW -->
       <div id="settingsView" style="display:none">
-        <div style="font-size:16px;font-weight:900;margin-bottom:20px">⚙️ الإعدادات</div>
-        <div style="display:grid;gap:14px;max-width:700px">
+        <div style="font-size:16px;font-weight:900;margin-bottom:16px">⚙️ الإعدادات</div>
 
-          <!-- User Roles -->
-          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
-            <div style="font-weight:700;margin-bottom:4px">🔐 صلاحيات المستخدمين</div>
-            <div style="font-size:12px;color:var(--text2);margin-bottom:16px">تحكم في صلاحيات كل مستخدم في النظام</div>
-            <div id="userRolesList" style="margin-bottom:12px"></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <input type="email" id="newUserEmail" placeholder="إيميل المستخدم الجديد..." class="ac-input" style="flex:1;min-width:200px">
-              <select id="newUserRole" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
-                <option value="employee">👤 موظف</option>
-                <option value="readonly">👁 مشاهدة فقط</option>
-                <option value="admin">👑 مدير</option>
-              </select>
-              <button class="btn btn-primary btn-sm" onclick="addUserRole()">➕ إضافة</button>
+        <!-- Settings Tabs -->
+        <div style="display:flex;gap:4px;margin-bottom:20px;background:var(--card2);border-radius:var(--radius-sm);padding:4px;width:fit-content">
+          <button class="btn sett-tab active" id="stab-users" onclick="switchSettTab('users')">👥 المستخدمون</button>
+          <button class="btn sett-tab" id="stab-roles" onclick="switchSettTab('roles')">🔐 الأدوار والصلاحيات</button>
+          <button class="btn sett-tab" id="stab-invite" onclick="switchSettTab('invite')">📩 دعوة مستخدم</button>
+          <button class="btn sett-tab" id="stab-info" onclick="switchSettTab('info')">ℹ️ معلومات النظام</button>
+        </div>
+
+        <!-- ── TAB: المستخدمون ── -->
+        <div id="sett-panel-users" class="sett-panel" style="max-width:760px">
+
+          <!-- Stats -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+            <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
+              <div id="sett-stat-total" style="font-size:24px;font-weight:700;font-family:var(--mono);color:var(--text)">—</div>
+              <div style="font-size:12px;color:var(--text2);margin-top:2px">إجمالي المستخدمين</div>
+            </div>
+            <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
+              <div id="sett-stat-active" style="font-size:24px;font-weight:700;font-family:var(--mono);color:var(--green)">—</div>
+              <div style="font-size:12px;color:var(--text2);margin-top:2px">مفعّل</div>
+            </div>
+            <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center">
+              <div id="sett-stat-admins" style="font-size:24px;font-weight:700;font-family:var(--mono);color:var(--accent)">—</div>
+              <div style="font-size:12px;color:var(--text2);margin-top:2px">مدراء</div>
             </div>
           </div>
 
-          <!-- System Info -->
+          <!-- Users List -->
           <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
-            <div style="font-weight:700;margin-bottom:12px">ℹ️ معلومات النظام</div>
-            <div style="display:grid;gap:8px;font-size:13px">
-              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-                <span style="color:var(--text2)">المستخدم الحالي</span>
-                <span id="sett-email" style="font-weight:700"></span>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+              <div style="font-weight:700;font-size:14px">قائمة المستخدمين</div>
+              <button class="btn btn-secondary btn-sm" onclick="loadUserRoles()">🔄 تحديث</button>
+            </div>
+            <div id="userRolesList">
+              <div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>
+            </div>
+          </div>
+
+          <!-- Inline Edit Card (hidden) -->
+          <div id="sett-edit-card" style="display:none;background:var(--card);border:2px solid var(--accent);border-radius:var(--radius);padding:20px;margin-top:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+              <div style="font-weight:700;font-size:14px">✏️ تعديل: <span id="sett-edit-email-label"></span></div>
+              <button class="btn btn-secondary btn-sm" onclick="closeSettEditCard()">✕ إغلاق</button>
+            </div>
+            <input type="hidden" id="sett-edit-id">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+              <div class="field">
+                <label>الدور</label>
+                <select id="sett-edit-role">
+                  <option value="admin">👑 مدير كامل</option>
+                  <option value="employee">👤 موظف</option>
+                  <option value="readonly">👁 مشاهدة فقط</option>
+                </select>
               </div>
-              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+              <div class="field">
+                <label>الأنظمة المسموح بها</label>
+                <div style="display:flex;gap:16px;margin-top:8px">
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                    <input type="checkbox" id="sett-edit-sys-box" style="width:16px;height:16px;accent-color:var(--accent)"> BOX
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                    <input type="checkbox" id="sett-edit-sys-tr" style="width:16px;height:16px;accent-color:var(--accent)"> TRANSIT
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px">
+              <button class="btn btn-secondary btn-sm" onclick="closeSettEditCard()">إلغاء</button>
+              <button class="btn btn-primary btn-sm" onclick="saveUserRoleEdit()">💾 حفظ التعديل</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── TAB: الأدوار والصلاحيات ── -->
+        <div id="sett-panel-roles" class="sett-panel" style="display:none;max-width:760px">
+
+          <div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 14px;font-size:12px;color:var(--accent);margin-bottom:16px">
+            ⚡ الأدوار الثلاثة ثابتة في النظام. الجدول أدناه يوضح صلاحيات كل دور.
+          </div>
+
+          <!-- Role Cards -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+            <div style="background:var(--card);border:2px solid var(--accent);border-radius:var(--radius);padding:16px;text-align:center">
+              <div style="font-size:28px;margin-bottom:8px">👑</div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:6px">مدير كامل</div>
+              <div style="font-size:11px;color:var(--text2);line-height:1.6">وصول كامل لجميع الميزات والإعدادات والمستخدمين</div>
+            </div>
+            <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center">
+              <div style="font-size:28px;margin-bottom:8px">👤</div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:6px">موظف</div>
+              <div style="font-size:11px;color:var(--text2);line-height:1.6">يضيف ويعدّل البيانات، لا يحذف ولا يدير المستخدمين</div>
+            </div>
+            <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center">
+              <div style="font-size:28px;margin-bottom:8px">👁</div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:6px">مشاهدة فقط</div>
+              <div style="font-size:11px;color:var(--text2);line-height:1.6">يقرأ التقارير والبيانات فقط، لا يعدّل أي شيء</div>
+            </div>
+          </div>
+
+          <!-- Permissions Table -->
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+            <table class="data-table" style="table-layout:fixed">
+              <thead>
+                <tr>
+                  <th style="width:55%">الصلاحية</th>
+                  <th style="text-align:center;width:15%">👑 مدير</th>
+                  <th style="text-align:center;width:15%">👤 موظف</th>
+                  <th style="text-align:center;width:15%">👁 مشاهدة</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>📋 إضافة وتعديل الصفقات</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
+                <tr><td>🗑 حذف الصفقات والبيانات</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
+                <tr><td>💸 إضافة مصاريف ومبيعات وتحصيلات</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
+                <tr><td>📊 عرض التقارير والكشوفات</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td></tr>
+                <tr><td>🖨️ طباعة وتصدير Excel / PDF</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td></tr>
+                <tr><td>👥 إدارة جهات الاتصال</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
+                <tr><td>🔐 إدارة المستخدمين والصلاحيات</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
+                <tr><td>🏢 الوصول للأنظمة (BOX / TRANSIT)</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">الكل</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">حسب الإعداد</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">حسب الإعداد</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── TAB: دعوة مستخدم ── -->
+        <div id="sett-panel-invite" class="sett-panel" style="display:none;max-width:600px">
+
+          <div style="background:var(--blue-dim);border:1px solid var(--blue);border-radius:var(--radius-sm);padding:10px 14px;font-size:12px;color:var(--blue);margin-bottom:16px">
+            📩 سيُضاف المستخدم مباشرة في قاعدة البيانات ويتمكن من الدخول بمجرد تسجيله.
+          </div>
+
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:16px">بيانات المستخدم الجديد</div>
+            <div class="field">
+              <label>البريد الإلكتروني *</label>
+              <input type="email" id="newUserEmail" placeholder="user@company.com" style="direction:ltr;text-align:left">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div class="field">
+                <label>الدور *</label>
+                <select id="newUserRole">
+                  <option value="employee">👤 موظف</option>
+                  <option value="readonly">👁 مشاهدة فقط</option>
+                  <option value="admin">👑 مدير</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>الأنظمة المسموح بها</label>
+                <div style="display:flex;gap:16px;margin-top:8px">
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                    <input type="checkbox" id="newUserSysBox" checked style="width:16px;height:16px;accent-color:var(--accent)"> BOX
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                    <input type="checkbox" id="newUserSysTr" style="width:16px;height:16px;accent-color:var(--accent)"> TRANSIT
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="field">
+              <label>ملاحظة (اختياري)</label>
+              <input type="text" id="newUserNote" placeholder="مثال: مسؤول عن صفقات المستودع">
+            </div>
+            <div id="inviteError" class="alert alert-err" style="display:none"></div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
+              <button class="btn btn-secondary" onclick="switchSettTab('users')">إلغاء</button>
+              <button class="btn btn-primary" onclick="addUserRole()">➕ إضافة المستخدم</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── TAB: معلومات النظام ── -->
+        <div id="sett-panel-info" class="sett-panel" style="display:none;max-width:600px">
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:14px">ℹ️ معلومات النظام</div>
+            <div style="display:grid;gap:0;font-size:13px">
+              <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+                <span style="color:var(--text2)">المستخدم الحالي</span>
+                <span id="sett-email" style="font-weight:700;direction:ltr"></span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
                 <span style="color:var(--text2)">الصلاحية</span>
                 <span id="sett-role" style="font-weight:700"></span>
               </div>
-              <div style="display:flex;justify-content:space-between;padding:8px 0">
-                <span style="color:var(--text2)">النظام الحالي</span>
-                <span id="sett-system" style="font-weight:700"></span>
+              <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+                <span style="color:var(--text2)">النظام النشط</span>
+                <span id="sett-system" style="font-weight:700;color:var(--accent)"></span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+                <span style="color:var(--text2)">إصدار التطبيق</span>
+                <span style="font-weight:700;font-family:var(--mono)">v2.1.0</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:10px 0">
+                <span style="color:var(--text2)">حالة الاتصال</span>
+                <span style="font-weight:700;color:var(--green)">● متصل بـ Supabase</span>
               </div>
             </div>
           </div>
-
         </div>
+
       </div>
 
       <!-- ════ VEHICLES REPORT ════ -->
@@ -8538,70 +8700,144 @@ function renderActivityLog() {
 // ════════════════════════════════════════
 // SETTINGS
 // ════════════════════════════════════════
+// SETTINGS
+// ════════════════════════════════════════
+function switchSettTab(name) {
+  document.querySelectorAll('.sett-panel').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('.sett-tab').forEach(t => t.classList.remove('active'));
+  const panel = el('sett-panel-' + name);
+  const tab   = el('stab-' + name);
+  if (panel) panel.style.display = 'block';
+  if (tab)   tab.classList.add('active');
+}
+
 async function showSettings() {
   hideAllViews();
   el('settingsView').style.display = 'block';
   el('topBarTitle').textContent = 'الإعدادات';
   navActive('nav-settings');
   sessionStorage.setItem('tm_last_view','settings');
-
-  // System info
+  switchSettTab('users');
   if(el('sett-email'))  el('sett-email').textContent  = state.user?.email || '—';
   if(el('sett-role'))   el('sett-role').textContent   = ROLES[_currentRole]?.label || _currentRole;
   if(el('sett-system')) el('sett-system').textContent = state.system;
-
   await loadUserRoles();
 }
 
 async function loadUserRoles() {
   const wrap = el('userRolesList');
   if (!wrap) return;
-  wrap.innerHTML = '<div style="font-size:12px;color:var(--text3)">جاري التحميل...</div>';
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
-    const data = await apiGet('user_roles', { select:'*', system_type:`eq.${state.system}`, order:'email.asc' });
-    if (!data || !data.length) { wrap.innerHTML = '<div style="font-size:12px;color:var(--text3)">لا يوجد مستخدمون بعد</div>'; return; }
-    const roleLabels = { admin:'👑 مدير', employee:'👤 موظف', readonly:'👁 مشاهدة' };
-    const roleBg     = { admin:'var(--accent-dim)', employee:'var(--blue-dim)', readonly:'var(--card2)' };
-    const roleColor  = { admin:'var(--accent)', employee:'var(--blue)', readonly:'var(--text2)' };
-    wrap.innerHTML = data.map(u => `
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--accent)">
-          ${u.email[0].toUpperCase()}
+    const data = await apiGet('user_roles', { select:'*', order:'email.asc' });
+    const all  = data || [];
+
+    // Update stats
+    const admins = all.filter(u => u.role === 'admin').length;
+    if(el('sett-stat-total'))  el('sett-stat-total').textContent  = all.length;
+    if(el('sett-stat-active')) el('sett-stat-active').textContent = all.length;
+    if(el('sett-stat-admins')) el('sett-stat-admins').textContent = admins;
+
+    if (!all.length) {
+      wrap.innerHTML = '<div class="empty-state"><div class="e-icon">👥</div><p>لا يوجد مستخدمون بعد</p><small>أضف مستخدمًا من تبويب "دعوة مستخدم"</small></div>';
+      return;
+    }
+
+    const roleLabel = { admin:'👑 مدير', employee:'👤 موظف', readonly:'👁 مشاهدة' };
+
+    wrap.innerHTML = all.map(u => {
+      const sys = u.systems ? u.systems.split(',') : [u.system_type || state.system];
+      const sysTags = sys.map(s => s.trim()).filter(Boolean).map(s =>
+        `<span class="sett-sys-tag ${s==='BOX'?'sett-sys-box':'sett-sys-tr'}">${s}</span>`
+      ).join(' ');
+      const isSelf = u.email === state.user?.email;
+      return `
+      <div class="sett-user-row" id="urow-${u.id}">
+        <div class="sett-user-avatar sett-av-${u.role}">${u.email[0].toUpperCase()}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px">
+            ${u.email}
+            ${isSelf ? '<span style="font-size:10px;background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-weight:700">أنت</span>' : ''}
+          </div>
+          <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;align-items:center">
+            <span class="sett-role-badge sett-badge-${u.role}">${roleLabel[u.role]||u.role}</span>
+            ${sysTags}
+          </div>
         </div>
-        <div style="flex:1;font-size:13px;font-weight:600">${u.email}</div>
-        <select onchange="updateUserRole(${u.id},this.value)"
-          style="background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px">
-          <option value="admin"    ${u.role==='admin'   ?'selected':''}>👑 مدير</option>
-          <option value="employee" ${u.role==='employee'?'selected':''}>👤 موظف</option>
-          <option value="readonly" ${u.role==='readonly'?'selected':''}>👁 مشاهدة</option>
-        </select>
-        <button onclick="deleteUserRole(${u.id},'${u.email}')"
-          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:Cairo,sans-serif">🗑</button>
-      </div>`).join('');
-  } catch(e) { wrap.innerHTML = `<div style="color:var(--red);font-size:12px">خطأ: ${e.message}</div>`; }
+        ${!isSelf ? `
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-secondary btn-sm" onclick="openSettEditCard(${u.id},'${u.email}','${u.role}','${sys.join(',')}')">✏️ تعديل</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteUserRole(${u.id},'${u.email}')">🗑</button>
+        </div>` : ''}
+      </div>`;
+    }).join('');
+
+  } catch(e) { wrap.innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px">خطأ في التحميل: ${e.message}</div>`; }
+}
+
+function openSettEditCard(id, email, role, systems) {
+  el('sett-edit-id').value            = id;
+  el('sett-edit-email-label').textContent = email;
+  el('sett-edit-role').value          = role;
+  el('sett-edit-sys-box').checked     = systems.includes('BOX');
+  el('sett-edit-sys-tr').checked      = systems.includes('TRANSIT');
+  el('sett-edit-card').style.display  = 'block';
+  el('sett-edit-card').scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+function closeSettEditCard() {
+  el('sett-edit-card').style.display = 'none';
+}
+
+async function saveUserRoleEdit() {
+  const id      = el('sett-edit-id').value;
+  const role    = el('sett-edit-role').value;
+  const sysBox  = el('sett-edit-sys-box').checked;
+  const sysTr   = el('sett-edit-sys-tr').checked;
+  if (!sysBox && !sysTr) { toast('اختر نظاماً واحداً على الأقل','err'); return; }
+  const systems = [sysBox?'BOX':null, sysTr?'TRANSIT':null].filter(Boolean).join(',');
+  try {
+    await apiPatch('user_roles', { id:`eq.${id}` }, { role, systems, system_type: sysBox ? 'BOX' : 'TRANSIT' });
+    toast('✅ تم تحديث بيانات المستخدم','ok');
+    closeSettEditCard();
+    await loadUserRoles();
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
 async function addUserRole() {
-  const email = el('newUserEmail')?.value.trim();
-  const role  = el('newUserRole')?.value;
-  if (!email) { toast('أدخل الإيميل','err'); return; }
+  const email  = el('newUserEmail')?.value.trim();
+  const role   = el('newUserRole')?.value;
+  const sysBox = el('newUserSysBox')?.checked;
+  const sysTr  = el('newUserSysTr')?.checked;
+  const note   = el('newUserNote')?.value.trim() || '';
+  const errEl  = el('inviteError');
+  if (errEl) errEl.style.display = 'none';
+  if (!email) { if(errEl){errEl.textContent='أدخل البريد الإلكتروني';errEl.style.display='flex';} return; }
+  if (!sysBox && !sysTr) { if(errEl){errEl.textContent='اختر نظاماً واحداً على الأقل';errEl.style.display='flex';} return; }
+  const systems = [sysBox?'BOX':null, sysTr?'TRANSIT':null].filter(Boolean).join(',');
   try {
-    await apiPost('user_roles', { email, role, system_type: state.system });
+    await apiPost('user_roles', { email, role, system_type: sysBox ? 'BOX' : 'TRANSIT', systems, notes: note });
     el('newUserEmail').value = '';
+    if(el('newUserNote')) el('newUserNote').value = '';
     toast(`✅ تم إضافة ${email}`,'ok');
+    switchSettTab('users');
     await loadUserRoles();
-  } catch(e) { toast('خطأ: '+e.message,'err'); }
+  } catch(e) {
+    if(errEl){errEl.textContent='خطأ: '+e.message;errEl.style.display='flex';}
+    else toast('خطأ: '+e.message,'err');
+  }
 }
 
 async function updateUserRole(id, role) {
   try {
     await apiPatch('user_roles', { id:`eq.${id}` }, { role });
     toast('✅ تم تحديث الصلاحية','ok');
+    await loadUserRoles();
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
 async function deleteUserRole(id, email) {
-  showConfirm(`إزالة ${email}`, 'سيتم إزالة صلاحيات هذا المستخدم.', async () => {
+  showConfirm(`إزالة ${email}`, 'سيتم إزالة صلاحيات هذا المستخدم من النظام.', async () => {
     try {
       await apiDelete('user_roles', { id:`eq.${id}` });
       toast('✅ تم الحذف','ok');
@@ -8614,7 +8850,7 @@ async function deleteUserRole(id, email) {
 async function loadUserRoleFromDB() {
   try {
     const data = await apiGet('user_roles', {
-      select:'role', system_type:`eq.${state.system}`,
+      select:'role,systems', system_type:`eq.${state.system}`,
       email:`eq.${state.user?.email}`, limit:1
     });
     if (data && data[0]) {
@@ -8914,6 +9150,26 @@ function installPWA() {
 /* Roles & permissions */
 .role-btn{padding:8px 16px;border-radius:8px;border:2px solid var(--border);background:var(--card2);color:var(--text2);font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
 .role-btn.active,.role-btn:hover{border-color:var(--accent);background:var(--accent-dim);color:var(--accent)}
+
+/* Settings Tabs */
+.sett-tab{background:transparent;border:none;color:var(--text2);font-size:13px;font-weight:600;padding:7px 14px;border-radius:6px;cursor:pointer;transition:all .15s;white-space:nowrap;font-family:'Cairo',sans-serif}
+.sett-tab:hover{background:var(--card);color:var(--text)}
+.sett-tab.active{background:var(--card);color:var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+/* User row in settings */
+.sett-user-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.sett-user-row:last-child{border-bottom:none;padding-bottom:0}
+.sett-user-row:first-child{padding-top:0}
+.sett-user-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0}
+.sett-av-admin{background:var(--accent-dim);color:var(--accent)}
+.sett-av-employee{background:var(--blue-dim);color:var(--blue)}
+.sett-av-readonly{background:var(--card2);color:var(--text2)}
+.sett-role-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
+.sett-badge-admin{background:var(--accent-dim);color:var(--accent)}
+.sett-badge-employee{background:var(--blue-dim);color:var(--blue)}
+.sett-badge-readonly{background:var(--card2);color:var(--text2)}
+.sett-sys-tag{display:inline-flex;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
+.sett-sys-box{background:var(--accent-dim);color:var(--accent)}
+.sett-sys-tr{background:var(--blue-dim);color:var(--blue)}
 .perm-yes{color:var(--green);font-weight:700}
 .perm-no{color:var(--red);font-weight:700}
 .perm-limited{color:var(--accent);font-weight:700}
