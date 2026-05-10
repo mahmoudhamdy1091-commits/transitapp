@@ -4656,7 +4656,7 @@ async function submitExpense() {
   try {
     for (const exp of expenses) {
       const expFileNo = exp.fileNo || state.currentFileNo || 'GENERAL';
-      const refNo = await genSeqRef('EXP', state.system, expFileNo, 'expenses');
+      const refNo = (await genSeqRef('EXP', state.system, expFileNo, 'expenses')) || `EXP-${expFileNo}-${Date.now()}`;
       const data = {
         system_type: state.system,
         file_no:     expFileNo,
@@ -4712,7 +4712,7 @@ async function submitPayment() {
   }
 
   try {
-    const refNo = await genSeqRef('PMT', state.system, fn, 'payments');
+    const refNo = (await genSeqRef('PMT', state.system, fn, 'payments')) || `PMT-${fn}-${Date.now()}`;
     const data = {
       system_type: state.system, file_no: fn,
       pay_id: refNo, ref_no: refNo,
@@ -5050,7 +5050,7 @@ async function submitCollection() {
   if (!invNo || !amount) { showFieldErr('colError','يرجى ملء الحقول المطلوبة'); return; }
 
   try {
-    const refNo = await genSeqRef('COL', state.system, fn, 'collections');
+    const refNo = (await genSeqRef('COL', state.system, fn, 'collections')) || `COL-${fn}-${Date.now()}`;
     const pay_id = refNo;
     const data = {
       system_type: state.system, file_no: fn,
@@ -5482,7 +5482,7 @@ async function submitQuickCollection() {
     showFieldErr('qsColError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
   try {
-    const refNo = await genSeqRef('COL', state.system, fileNo, 'collections');
+    const refNo = (await genSeqRef('COL', state.system, fileNo, 'collections')) || `COL-${fileNo}-${Date.now()}`;
     const data = { system_type:state.system, file_no:fileNo,
       pay_id: refNo, inv_no:invNo||null, customer:customer||null, amount, pay_method:method,
       document:doc||null, paid_date:date, notes:notes||null, ref_no:refNo };
@@ -5512,7 +5512,7 @@ async function submitQuickExpense() {
     showFieldErr('qsExpError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
   try {
-    const refNo = await genSeqRef('EXP', state.system, fileNo, 'expenses');
+    const refNo = (await genSeqRef('EXP', state.system, fileNo, 'expenses')) || `EXP-${fileNo}-${Date.now()}`;
     const data = { system_type:state.system, file_no:fileNo, description:desc,
       pay_id:refNo, category:type, amount, pay_method:method, document:doc||null,
       expense_date:date, notes:notes||null, ref_no:refNo };
@@ -5538,7 +5538,7 @@ async function submitQuickPayment() {
     showFieldErr('qsPayError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
   try {
-    const refNo = await genSeqRef('PMT', state.system, fileNo, 'payments');
+    const refNo = (await genSeqRef('PMT', state.system, fileNo, 'payments')) || `PMT-${fileNo}-${Date.now()}`;
     const data = { system_type:state.system, file_no:fileNo, payer, amount,
       pay_id:refNo, ref_no:refNo,
       pay_method:method, document:doc||null, pay_date:date, notes:notes||null };
@@ -6014,12 +6014,13 @@ async function findOrCreateContact(name, type) {
 // ════════════════════════════════════════
 
 async function genSeqRef(prefix, sys, fileNo, table) {
+  const safe = (fileNo || 'GEN').toString().replace(/[^A-Za-z0-9\-]/g,'');
   try {
-    const rows = await apiGet(table, { select:'id', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
-    const next = (rows?.length || 0) + 1;
-    return `${prefix}-${fileNo}-${String(next).padStart(3,'0')}`;
+    const rows = await apiGet(table, { select:'id', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, limit:1000 });
+    const next = ((rows && rows.length) || 0) + 1;
+    return `${prefix}-${safe}-${String(next).padStart(3,'0')}`;
   } catch(e) {
-    return `${prefix}-${fileNo}-${String(Date.now()).slice(-4)}`;
+    return `${prefix}-${safe}-${String(Date.now()).slice(-5)}`;
   }
 }
 
