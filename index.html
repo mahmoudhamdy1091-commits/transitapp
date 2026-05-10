@@ -4958,9 +4958,17 @@ async function submitPayout() {
   if (type === 'رأس مال + أرباح' && amount === 0) { showFieldErr('poutError','يرجى إدخال المبالغ'); return; }
 
   try {
+    // Generate pay_id
+    let pay_id = `PAY-${fn}-001`;
+    try {
+      const existing = await apiGet('partner_payouts', { select:'pay_id', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, order:'created_at.desc', limit:100 });
+      const lastNums = (existing||[]).map(p=>{ const m=(p.pay_id||'').match(/(\d+)$/); return m?parseInt(m[1]):0; });
+      const nextNum  = (lastNums.length ? Math.max(...lastNums) : 0) + 1;
+      pay_id = `PAY-${fn}-${String(nextNum).padStart(3,'0')}`;
+    } catch(e) {}
     const data = {
       system_type: state.system, file_no: fn, partner,
-      payout_type: type, amount,
+      pay_id, payout_type: type, amount,
       capital_amount: capitalAmt, profit_amount: profitAmt, advance_amount: advanceAmt,
       pay_method: method, document: doc||null, pay_date: date, notes: notes||null
     };
@@ -5266,8 +5274,16 @@ async function submitQuickPayout() {
     showFieldErr('qsPoError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
   try {
+    // Generate pay_id
+    let pay_id = `PAY-${fileNo}-001`;
+    try {
+      const existing = await apiGet('partner_payouts', { select:'pay_id', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, order:'created_at.desc', limit:100 });
+      const lastNums = (existing||[]).map(p=>{ const m=(p.pay_id||'').match(/(\d+)$/); return m?parseInt(m[1]):0; });
+      const nextNum  = (lastNums.length ? Math.max(...lastNums) : 0) + 1;
+      pay_id = `PAY-${fileNo}-${String(nextNum).padStart(3,'0')}`;
+    } catch(e) {}
     const data = { system_type:state.system, file_no:fileNo, partner,
-      payout_type:type, amount, pay_method:method, document:doc||null,
+      pay_id, payout_type:type, amount, pay_method:method, document:doc||null,
       pay_date:date, notes:notes||null };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
