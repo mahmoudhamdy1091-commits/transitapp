@@ -438,7 +438,10 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 .vh-meta{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:12px}
 .vh-meta-item{font-size:12px;color:var(--text2)}
 .vh-meta-item strong{color:var(--text);font-weight:600}
-.vh-actions{display:flex;gap:8px;flex-wrap:wrap}
+.vh-actions{display:flex;flex-direction:column;gap:8px;width:100%}
+.vh-action-group{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.vh-print-group{display:flex;gap:6px;flex-wrap:wrap}
+.vh-print-group .btn{flex:1;min-width:fit-content}
 
 /* Tabs */
 .tabs{
@@ -792,10 +795,11 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   }
   .vh-info{ width:100%; }
   .vh-meta{ gap:8px; }
-  .vh-actions{ flex-wrap:wrap; gap:6px; }
-  .vh-actions .btn{ font-size:11px; padding:6px 10px; }
+  .vh-action-group{ grid-template-columns:repeat(3,1fr); gap:6px; }
+  .vh-action-group .btn{ font-size:11px; padding:7px 6px; text-align:center; justify-content:center; }
+  .vh-print-group .btn{ font-size:11px; padding:7px 8px; }
   #viewer-kpis{
-    grid-template-columns:repeat(3,1fr) !important;
+    grid-template-columns:repeat(2,1fr) !important;
     gap:6px !important; padding:8px 0 !important;
   }
   #viewerTabs{
@@ -2942,17 +2946,20 @@ async function openViewer(fileNo) {
   `;
   el('vh-status-badge').innerHTML = `<span class="badge badge-${statusClass(deal?.status)}">${deal?.status}</span>`;
   el('vh-actions').innerHTML = `
-    <button class="btn btn-secondary btn-sm" onclick="openNewFileModal('${fileNo}')">✏️ تعديل</button>
-    <button class="btn btn-secondary btn-sm" onclick="openPaymentModal()">💳 دفعة</button>
-    <button class="btn btn-secondary btn-sm" onclick="openExpenseModal()">💸 مصروف</button>
-    <button class="btn btn-secondary btn-sm" onclick="openSaleModal()">🤝 بيع</button>
-    <button class="btn btn-secondary btn-sm" onclick="openCollectionModal()">💰 تحصيل</button>
-    <button class="btn btn-secondary btn-sm" onclick="openPayoutModal()">👥 صرف شريك</button>
-    <div style="width:1px;background:var(--border);margin:0 4px"></div>
-    <button class="btn btn-secondary btn-sm" onclick="printPurchaseOrder('${fileNo}')" title="طباعة سند الشراء">🖨️ سند</button>
-    <button class="btn btn-secondary btn-sm" onclick="printDealStatement('${fileNo}')" title="طباعة كشف الحساب">🖨️ كشف</button>
-    <button class="btn btn-secondary btn-sm" onclick="exportDealExcel('${fileNo}')" title="تصدير Excel">📊 Excel</button>
-    <button class="btn btn-secondary btn-sm" onclick="exportPurchaseOrderExcel('${fileNo}')" title="Excel سند الشراء">📋 Excel PO</button>
+    <div class="vh-action-group">
+      <button class="btn btn-secondary btn-sm" onclick="openPaymentModal()">💳 دفعة</button>
+      <button class="btn btn-secondary btn-sm" onclick="openSaleModal()">🤝 بيع</button>
+      <button class="btn btn-secondary btn-sm" onclick="openExpenseModal()">💸 مصروف</button>
+      <button class="btn btn-secondary btn-sm" onclick="openCollectionModal()">💰 تحصيل</button>
+      <button class="btn btn-secondary btn-sm" onclick="openPayoutModal()">👥 صرف شريك</button>
+      <button class="btn btn-secondary btn-sm" onclick="openNewFileModal('${fileNo}')">✏️ تعديل</button>
+    </div>
+    <div class="vh-print-group">
+      <button class="btn btn-secondary btn-sm" onclick="printPurchaseOrder('${fileNo}')">🖨️ سند</button>
+      <button class="btn btn-secondary btn-sm" onclick="printDealStatement('${fileNo}')">🖨️ كشف</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportDealExcel('${fileNo}')">📊 Excel</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportPurchaseOrderExcel('${fileNo}')">📋 Excel PO</button>
+    </div>
   `;
 
   // Reset tabs
