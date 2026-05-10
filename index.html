@@ -7635,12 +7635,14 @@ function applyRoleRestrictions() {
 // FEATURE 3 — VIN DUPLICATE CHECK
 // ════════════════════════════════════════
 async function checkVinDuplicate(vin, excludeFileNo='') {
-  if (!vin || vin.length < 5) return null;
+  if (!vin || vin.length < 3) return null;
   try {
-    const params = { select:'file_no,model,vin', system_type:`eq.${state.system}`, vin:`eq.${vin}` };
-    const results = await apiGet('vehicles', params);
+    const results = await apiGet('vehicles', { select:'file_no,model,vin', system_type:`eq.${state.system}`, vin:`eq.${vin}` });
     const found = (results||[]).filter(v => v.file_no !== excludeFileNo);
-    return found.length ? found[0] : null;
+    if (!found.length) return null;
+    // Check if the deal still exists
+    const deals = await apiGet('purchase_orders', { select:'file_no', system_type:`eq.${state.system}`, file_no:`eq.${found[0].file_no}` });
+    return (deals && deals.length) ? found[0] : null;
   } catch(e) { return null; }
 }
 
