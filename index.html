@@ -4295,12 +4295,17 @@ async function submitPayment() {
     await apiPost('payments', data);
     await logAudit('INSERT','payments',fn,null,data);
     // Ledger: supplier gets paid (credit on supplier = reduces what we owe)
-    // Actually payment reduces our debt to supplier: credit supplier
     const deal3 = state.allDeals.find(d=>d.file_no===fn);
     const supplierName = deal3?.supplier || payer;
     await postLedger({ contactName:supplierName, contactType:'supplier', date,
       description:`دفعة للمورد — ملف ${fn} — دافع: ${payer}`,
       credit: amount, sourceTable:'payments', fileNo: fn });
+    // إذا كان الدافع شريكاً — سجّل مدين عليه
+    if (payer && payer !== supplierName) {
+      await postLedger({ contactName:payer, contactType:'partner', date,
+        description:`دفع للمورد ${supplierName} — ملف ${fn}`,
+        debit: amount, sourceTable:'payments', fileNo: fn });
+    }
     closeModal('paymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
     if (state.currentTab === 2) loadPaymentsTab(fn, state.system);
@@ -5496,36 +5501,66 @@ async function loadJournal() {
       ...(sales||[]).map(r=>({
         type:'sale', date: r.sale_date||r.created_at||from,
         amount: +r.sale_price||0, sign:+1,
-        title:`بيع سيارة — ${r.vin||''}`,
-        meta:[`عميل: ${r.customer||'—'}`, `ملف: ${r.file_no||'—'}`, r.invoice_no?`فاتورة: ${r.invoice_no}`:''],
+        title:`بيع سيارة — ${r.model||r.vin||''}`,
+        meta:[
+          r.customer?`عميل: ${r.customer}`:'',
+          `ملف: ${r.file_no||'—'}`,
+          r.vin?`شاصي: ${r.vin}`:'',
+          r.invoice_no?`فاتورة: ${r.invoice_no}`:'',
+          r.sale_date?`تاريخ: ${r.sale_date}`:'',
+        ],
         fileNo: r.file_no, raw: r,
       })),
       ...(collections||[]).map(r=>({
         type:'collection', date: r.paid_date||r.created_at||from,
         amount: +r.amount||0, sign:+1,
-        title:`تحصيل من عميل — ${r.customer||r.inv_no||''}`,
-        meta:[`ملف: ${r.file_no||'—'}`, `طريقة: ${r.pay_method||'—'}`, r.document?`مستند: ${r.document}`:''],
+        title:`تحصيل — ${r.customer||r.inv_no||''}`,
+        meta:[
+          r.customer?`من: ${r.customer}`:'',
+          `ملف: ${r.file_no||'—'}`,
+          r.pay_method?`طريقة: ${r.pay_method}`:'',
+          r.paid_date?`تاريخ: ${r.paid_date}`:'',
+          r.document?`مستند: ${r.document}`:'',
+        ],
         fileNo: r.file_no, raw: r,
       })),
       ...(expenses||[]).map(r=>({
         type:'expense', date: r.expense_date||r.created_at||from,
         amount: +r.amount||0, sign:-1,
         title:`مصروف — ${r.category||r.description||''}`,
-        meta:[`ملف: ${r.file_no||'—'}`, `طريقة: ${r.pay_method||'—'}`, r.vendor?`جهة: ${r.vendor}`:''],
+        meta:[
+          r.vendor?`جهة: ${r.vendor}`:'',
+          `ملف: ${r.file_no||'—'}`,
+          r.pay_method?`طريقة: ${r.pay_method}`:'',
+          r.expense_date?`تاريخ: ${r.expense_date}`:'',
+          r.description&&r.description!==r.category?`بيان: ${r.description}`:'',
+        ],
         fileNo: r.file_no, raw: r,
       })),
       ...(payments||[]).map(r=>({
         type:'payment', date: r.pay_date||r.created_at||from,
         amount: +r.amount||0, sign:-1,
         title:`دفعة للمورد — ${r.payer||''}`,
-        meta:[`ملف: ${r.file_no||'—'}`, `طريقة: ${r.pay_method||'—'}`, r.document?`مستند: ${r.document}`:''],
+        meta:[
+          `ملف: ${r.file_no||'—'}`,
+          r.pay_method?`طريقة: ${r.pay_method}`:'',
+          r.pay_date?`تاريخ: ${r.pay_date}`:'',
+          r.document?`مستند: ${r.document}`:'',
+          r.notes?`ملاحظة: ${r.notes}`:'',
+        ],
         fileNo: r.file_no, raw: r,
       })),
       ...(payouts||[]).map(r=>({
         type:'payout', date: r.pay_date||r.created_at||from,
         amount: +r.amount||0, sign:-1,
         title:`صرف لشريك — ${r.partner||''}`,
-        meta:[`ملف: ${r.file_no||'—'}`, `نوع: ${r.payout_type||'—'}`, r.pay_method?`طريقة: ${r.pay_method}`:''],
+        meta:[
+          `ملف: ${r.file_no||'—'}`,
+          r.payout_type?`نوع: ${r.payout_type}`:'',
+          r.pay_method?`طريقة: ${r.pay_method}`:'',
+          r.pay_date?`تاريخ: ${r.pay_date}`:'',
+          r.notes?`ملاحظة: ${r.notes}`:'',
+        ],
         fileNo: r.file_no, raw: r,
       })),
     ];
