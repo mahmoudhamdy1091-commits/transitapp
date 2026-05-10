@@ -1049,6 +1049,17 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         </div>
       </div>
 
+      <!-- الإدارة -->
+      <div class="nav-section">
+        <div class="nav-section-title">الإدارة</div>
+        <div class="nav-item" id="nav-activity" onclick="showActivityLog()">
+          <span class="ni-icon">🕵️</span><span>سجل النشاط</span>
+        </div>
+        <div class="nav-item" id="nav-settings" onclick="showSettings()">
+          <span class="ni-icon">⚙️</span><span>الإعدادات</span>
+        </div>
+      </div>
+
     </div>
 
         <div class="sidebar-footer">
@@ -1401,6 +1412,71 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         </div>
         <div id="reportKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px"></div>
         <div class="data-table-wrap"><div id="reportTable"></div></div>
+      </div>
+
+      <!-- ACTIVITY LOG VIEW -->
+      <div id="activityView" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+          <div style="font-size:16px;font-weight:900">🕵️ سجل النشاط</div>
+          <div style="display:flex;gap:8px">
+            <select id="actFilter-user" onchange="renderActivityLog()"
+              style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px">
+              <option value="">كل المستخدمين</option>
+            </select>
+            <select id="actFilter-action" onchange="renderActivityLog()"
+              style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px">
+              <option value="">كل العمليات</option>
+              <option value="INSERT">إضافة</option>
+              <option value="UPDATE">تعديل</option>
+              <option value="DELETE">حذف</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadActivityLog()">🔄 تحديث</button>
+          </div>
+        </div>
+        <div id="activityTableWrap" class="data-table-wrap"></div>
+      </div>
+
+      <!-- SETTINGS VIEW -->
+      <div id="settingsView" style="display:none">
+        <div style="font-size:16px;font-weight:900;margin-bottom:20px">⚙️ الإعدادات</div>
+        <div style="display:grid;gap:14px;max-width:700px">
+
+          <!-- User Roles -->
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
+            <div style="font-weight:700;margin-bottom:4px">🔐 صلاحيات المستخدمين</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:16px">تحكم في صلاحيات كل مستخدم في النظام</div>
+            <div id="userRolesList" style="margin-bottom:12px"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input type="email" id="newUserEmail" placeholder="إيميل المستخدم الجديد..." class="ac-input" style="flex:1;min-width:200px">
+              <select id="newUserRole" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
+                <option value="employee">👤 موظف</option>
+                <option value="readonly">👁 مشاهدة فقط</option>
+                <option value="admin">👑 مدير</option>
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="addUserRole()">➕ إضافة</button>
+            </div>
+          </div>
+
+          <!-- System Info -->
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
+            <div style="font-weight:700;margin-bottom:12px">ℹ️ معلومات النظام</div>
+            <div style="display:grid;gap:8px;font-size:13px">
+              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+                <span style="color:var(--text2)">المستخدم الحالي</span>
+                <span id="sett-email" style="font-weight:700"></span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+                <span style="color:var(--text2)">الصلاحية</span>
+                <span id="sett-role" style="font-weight:700"></span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:8px 0">
+                <span style="color:var(--text2)">النظام الحالي</span>
+                <span id="sett-system" style="font-weight:700"></span>
+              </div>
+            </div>
+          </div>
+
+        </div>
       </div>
 
       <!-- ════ VEHICLES REPORT ════ -->
@@ -2527,7 +2603,8 @@ async function logAudit(action, tableName, fileNo, oldVal, newVal, notes='') {
       file_no: fileNo,
       old_value: oldVal ? JSON.stringify(oldVal) : null,
       new_value: newVal ? JSON.stringify(newVal) : null,
-      notes
+      notes,
+      user_email: state.user?.email || 'unknown'
     });
   } catch(e) { /* silent */ }
 }
@@ -2613,9 +2690,12 @@ function initApp() {
     const lastView = sessionStorage.getItem('tm_last_view');
     if (lastView === 'contacts') showContacts();
     else if (lastView === 'journal') showJournal();
+    else if (lastView === 'activity') showActivityLog();
+    else if (lastView === 'settings') showSettings();
     else if (lastView && lastView.startsWith('report:')) showReport(lastView.split(':')[1]);
     else showDashboard();
   });
+  loadUserRoleFromDB();
   updateSystemUI();
 }
 
@@ -5678,11 +5758,10 @@ function renderContactsList() {
     const bal = c.balance;
     const balColor = bal > 0 ? 'var(--green)' : bal < 0 ? 'var(--red)' : 'var(--text3)';
     const balLabel = bal > 0 ? 'له عندك' : bal < 0 ? 'عليك له' : '—';
-    return `<tr onclick="showLedger(${c.id},'${c.name.replace(/'/g,"\\'")}','${c.type}')"
-      style="cursor:pointer;transition:background .12s"
-      onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
+    const safeName = c.name.replace(/'/g,"\\'");
+    return `<tr style="transition:background .12s" onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
       <td style="padding:11px 14px;font-size:12px;color:var(--text3);width:40px;text-align:center">${i+1}</td>
-      <td style="padding:11px 14px">
+      <td style="padding:11px 14px;cursor:pointer" onclick="showLedger(${c.id},'${safeName}','${c.type}')">
         <div style="display:flex;align-items:center;gap:10px">
           <div style="width:32px;height:32px;border-radius:50%;background:${typeDims[c.type]||'var(--card2)'};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">
             ${typeIcons[c.type]||'👤'}
@@ -5704,6 +5783,12 @@ function renderContactsList() {
         <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${balColor}">${bal!==0?fmt(Math.abs(bal)):'—'}</div>
         <div style="font-size:10px;color:${balColor}">${balLabel}</div>
       </td>
+      <td style="padding:11px 14px;text-align:center;white-space:nowrap">
+        <button onclick="openContactModal(contactsState.all.find(x=>x.id===${c.id}))" title="تعديل"
+          style="background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:Cairo,sans-serif;margin-left:4px">✏️</button>
+        <button onclick="deleteContact(${c.id},'${safeName}')" title="حذف"
+          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:Cairo,sans-serif">🗑</button>
+      </td>
     </tr>`;
   }).join('');
 
@@ -5718,6 +5803,7 @@ function renderContactsList() {
             <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:left">مدين</th>
             <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:left">دائن</th>
             <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:left">الرصيد</th>
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:center">إجراءات</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -5958,8 +6044,12 @@ async function submitContact() {
   btn.disabled = true; btn.textContent = 'جاري الحفظ...';
   try {
     const data = { system_type:state.system, name, type, phone:phone||null, email:email||null, opening_balance:opening, notes:notes||null };
-    await apiPost('contacts', data);
-    // Invalidate autocomplete cache
+    const editId = el('contactModal').dataset.editId;
+    if (editId) {
+      await apiPatch('contacts', { id:`eq.${editId}` }, data);
+    } else {
+      await apiPost('contacts', data);
+    }
     Object.keys(_acCache).forEach(k => { if(k.startsWith(state.system)) delete _acCache[k]; });
     closeModal('contactModal');
     toast('✅ تم حفظ جهة الاتصال','ok');
@@ -5968,11 +6058,22 @@ async function submitContact() {
   btn.disabled = false; btn.textContent = '💾 حفظ';
 }
 
+async function deleteContact(id, name) {
+  showConfirm(`حذف ${name}`, 'سيتم حذف جهة الاتصال نهائياً. هذا الإجراء لا يمكن التراجع عنه.', async () => {
+    try {
+      await apiDelete('contacts', { id:`eq.${id}` });
+      Object.keys(_acCache).forEach(k => delete _acCache[k]);
+      toast('✅ تم الحذف','ok');
+      await loadContacts();
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
+
 // ════════════════════════════════════════
 // hideAllViews helper
 // ════════════════════════════════════════
 function hideAllViews() {
-  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView']
+  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView']
     .forEach(id => { const e = el(id); if(e) e.style.display='none'; });
 }
 
@@ -7493,6 +7594,7 @@ async function confirmDeleteDealFromModal() {
         const sys = state.system;
         const tables = ['vehicles','payments','expenses','sales','collections','partner_payouts','partners_master','ledger_entries'];
         for (const t of tables) { try { await apiDelete(t, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) {} }
+        await logAudit('DELETE','purchase_orders', fn, {file_no:fn}, null, 'حذف صفقة كاملة');
         try { await apiDelete('audit_log', { file_no:`eq.${fn}` }); } catch(e) {}
         await apiDelete('purchase_orders', { system_type:`eq.${sys}`, file_no:`eq.${fn}` });
         closeModal('newFileModal');
@@ -7678,7 +7780,187 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ════════════════════════════════════════
-// SMART AUTOCOMPLETE ENGINE
+// ACTIVITY LOG
+// ════════════════════════════════════════
+let _activityData = [];
+
+async function showActivityLog() {
+  hideAllViews();
+  el('activityView').style.display = 'block';
+  el('topBarTitle').textContent = 'سجل النشاط';
+  navActive('nav-activity');
+  sessionStorage.setItem('tm_last_view','activity');
+  await loadActivityLog();
+}
+
+async function loadActivityLog() {
+  el('activityTableWrap').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
+  try {
+    const data = await apiGet('audit_log', {
+      select:'*', system_type:`eq.${state.system}`,
+      order:'id.desc', limit:200
+    });
+    _activityData = data || [];
+
+    // Populate user filter
+    const users = [...new Set(_activityData.map(r => r.user_email).filter(Boolean))];
+    const sel = el('actFilter-user');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">كل المستخدمين</option>' +
+      users.map(u => `<option value="${u}" ${u===cur?'selected':''}>${u}</option>`).join('');
+
+    renderActivityLog();
+  } catch(e) { el('activityTableWrap').innerHTML = errHTML('خطأ: '+e.message); }
+}
+
+function renderActivityLog() {
+  const filterUser   = el('actFilter-user')?.value || '';
+  const filterAction = el('actFilter-action')?.value || '';
+  let list = _activityData;
+  if (filterUser)   list = list.filter(r => r.user_email === filterUser);
+  if (filterAction) list = list.filter(r => r.action === filterAction);
+
+  if (!list.length) { el('activityTableWrap').innerHTML = emptyHTML('🕵️','لا توجد سجلات'); return; }
+
+  const actionColors = { INSERT:'var(--green)', UPDATE:'var(--accent)', DELETE:'var(--red)' };
+  const actionLabels = { INSERT:'إضافة', UPDATE:'تعديل', DELETE:'حذف' };
+  const actionBg     = { INSERT:'var(--green-dim)', UPDATE:'var(--accent-dim)', DELETE:'var(--red-dim)' };
+
+  const rows = list.map(r => {
+    const dt = r.created_at ? new Date(r.created_at).toLocaleString('ar-EG') : '—';
+    const email = r.user_email || 'غير معروف';
+    const initials = email[0]?.toUpperCase() || '?';
+    return `<tr>
+      <td style="padding:10px 14px;font-size:11px;color:var(--text3);white-space:nowrap">${dt}</td>
+      <td style="padding:10px 14px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:28px;height:28px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--accent)">${initials}</div>
+          <span style="font-size:12px;font-weight:600">${email}</span>
+        </div>
+      </td>
+      <td style="padding:10px 14px">
+        <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;background:${actionBg[r.action]||'var(--card2)'};color:${actionColors[r.action]||'var(--text2)'}">
+          ${actionLabels[r.action]||r.action}
+        </span>
+      </td>
+      <td style="padding:10px 14px;font-size:12px;color:var(--text2)">${r.table_name||'—'}</td>
+      <td style="padding:10px 14px;font-size:12px;font-weight:700;color:var(--accent)">${r.file_no||'—'}</td>
+      <td style="padding:10px 14px;font-size:11px;color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.notes||'—'}</td>
+    </tr>`;
+  }).join('');
+
+  el('activityTableWrap').innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--card2);border-bottom:1px solid var(--border)">
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">الوقت</th>
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">المستخدم</th>
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">العملية</th>
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">الجدول</th>
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">رقم الملف</th>
+            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">ملاحظات</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:left">إجمالي: ${list.length} سجل</div>`;
+}
+
+// ════════════════════════════════════════
+// SETTINGS
+// ════════════════════════════════════════
+async function showSettings() {
+  hideAllViews();
+  el('settingsView').style.display = 'block';
+  el('topBarTitle').textContent = 'الإعدادات';
+  navActive('nav-settings');
+  sessionStorage.setItem('tm_last_view','settings');
+
+  // System info
+  if(el('sett-email'))  el('sett-email').textContent  = state.user?.email || '—';
+  if(el('sett-role'))   el('sett-role').textContent   = ROLES[_currentRole]?.label || _currentRole;
+  if(el('sett-system')) el('sett-system').textContent = state.system;
+
+  await loadUserRoles();
+}
+
+async function loadUserRoles() {
+  const wrap = el('userRolesList');
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="font-size:12px;color:var(--text3)">جاري التحميل...</div>';
+  try {
+    const data = await apiGet('user_roles', { select:'*', system_type:`eq.${state.system}`, order:'email.asc' });
+    if (!data || !data.length) { wrap.innerHTML = '<div style="font-size:12px;color:var(--text3)">لا يوجد مستخدمون بعد</div>'; return; }
+    const roleLabels = { admin:'👑 مدير', employee:'👤 موظف', readonly:'👁 مشاهدة' };
+    const roleBg     = { admin:'var(--accent-dim)', employee:'var(--blue-dim)', readonly:'var(--card2)' };
+    const roleColor  = { admin:'var(--accent)', employee:'var(--blue)', readonly:'var(--text2)' };
+    wrap.innerHTML = data.map(u => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--accent)">
+          ${u.email[0].toUpperCase()}
+        </div>
+        <div style="flex:1;font-size:13px;font-weight:600">${u.email}</div>
+        <select onchange="updateUserRole(${u.id},this.value)"
+          style="background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px">
+          <option value="admin"    ${u.role==='admin'   ?'selected':''}>👑 مدير</option>
+          <option value="employee" ${u.role==='employee'?'selected':''}>👤 موظف</option>
+          <option value="readonly" ${u.role==='readonly'?'selected':''}>👁 مشاهدة</option>
+        </select>
+        <button onclick="deleteUserRole(${u.id},'${u.email}')"
+          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:Cairo,sans-serif">🗑</button>
+      </div>`).join('');
+  } catch(e) { wrap.innerHTML = `<div style="color:var(--red);font-size:12px">خطأ: ${e.message}</div>`; }
+}
+
+async function addUserRole() {
+  const email = el('newUserEmail')?.value.trim();
+  const role  = el('newUserRole')?.value;
+  if (!email) { toast('أدخل الإيميل','err'); return; }
+  try {
+    await apiPost('user_roles', { email, role, system_type: state.system });
+    el('newUserEmail').value = '';
+    toast(`✅ تم إضافة ${email}`,'ok');
+    await loadUserRoles();
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
+async function updateUserRole(id, role) {
+  try {
+    await apiPatch('user_roles', { id:`eq.${id}` }, { role });
+    toast('✅ تم تحديث الصلاحية','ok');
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
+async function deleteUserRole(id, email) {
+  showConfirm(`إزالة ${email}`, 'سيتم إزالة صلاحيات هذا المستخدم.', async () => {
+    try {
+      await apiDelete('user_roles', { id:`eq.${id}` });
+      toast('✅ تم الحذف','ok');
+      await loadUserRoles();
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
+
+// Load role from Supabase on login
+async function loadUserRoleFromDB() {
+  try {
+    const data = await apiGet('user_roles', {
+      select:'role', system_type:`eq.${state.system}`,
+      email:`eq.${state.user?.email}`, limit:1
+    });
+    if (data && data[0]) {
+      _currentRole = data[0].role;
+      _pendingRole = _currentRole;
+      localStorage.setItem('tm_role', _currentRole);
+      applyRoleRestrictions();
+    }
+  } catch(e) {}
+}
+
+// ════════════════════════════════════════
+// ACTIVITY LOG
 // ════════════════════════════════════════
 
 async function acGetContacts(type) {
