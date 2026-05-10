@@ -970,6 +970,17 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
     <div class="sidebar-nav">
 
+      <!-- الرئيسية -->
+      <div class="nav-section">
+        <div class="nav-section-title">الرئيسية</div>
+        <div class="nav-item active" id="nav-dashboard" onclick="showDashboard()">
+          <span class="ni-icon">📊</span><span>لوحة التحكم</span>
+        </div>
+        <div class="nav-item" id="nav-journal" onclick="showJournal()">
+          <span class="ni-icon">📅</span><span>اليومية</span>
+        </div>
+      </div>
+
       <!-- أوامر سريعة -->
       <div class="nav-section">
         <div class="nav-section-title" style="color:var(--accent)">⚡ أوامر سريعة</div>
@@ -987,17 +998,6 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         </div>
       </div>
 
-      <!-- الرئيسية -->
-      <div class="nav-section">
-        <div class="nav-section-title">الرئيسية</div>
-        <div class="nav-item active" id="nav-dashboard" onclick="showDashboard()">
-          <span class="ni-icon">📊</span><span>لوحة التحكم</span>
-        </div>
-        <div class="nav-item" id="nav-journal" onclick="showJournal()">
-          <span class="ni-icon">📅</span><span>اليومية</span>
-        </div>
-      </div>
-
       <!-- المبيعات -->
       <div class="nav-section">
         <div class="nav-section-title">المبيعات والتحصيل</div>
@@ -1012,6 +1012,9 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       <!-- الحسابات -->
       <div class="nav-section">
         <div class="nav-section-title">الحسابات</div>
+        <div class="nav-item" id="nav-contacts" onclick="showContacts('all')">
+          <span class="ni-icon">👤</span><span>جهات الاتصال</span>
+        </div>
         <div class="nav-item" onclick="showContactsByType('customer')">
           <span class="ni-icon">👥</span><span>العملاء</span>
         </div>
@@ -1361,6 +1364,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
             <option value="">كل الصفقات</option>
           </select>
           <button class="btn btn-secondary btn-sm" style="margin-right:auto" onclick="exportLedgerCSV()">📥 تصدير CSV</button>
+          <button class="btn btn-secondary btn-sm" onclick="printLedgerStatement()" style="color:var(--blue)">🖨️ طباعة PDF</button>
         </div>
         <div id="ledgerKpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px"></div>
         <div class="data-table-wrap">
@@ -4335,6 +4339,9 @@ async function submitNewFile() {
     await loadDashboard();
     showDashboard();
 
+    // ✅ طباعة سند الشراء تلقائياً
+    setTimeout(() => printPurchaseOrder(fileNo), 600);
+
   } catch(e) {
     showFieldErr('nfError','خطأ: ' + e.message);
     console.error(e);
@@ -6265,6 +6272,151 @@ function exportLedgerCSV() {
   downloadCSV(rows, `كشف_${name}.csv`);
 }
 
+function printLedgerStatement() {
+  const contactName = window._ledgerContactName || '—';
+  const contactType = window._ledgerContactType || '';
+  const allEntries  = window._ledgerAllEntries  || [];
+  const vehicleMap  = window._ledgerVehicleMap  || {};
+  const fileFilter  = el('ledger-file-filter')?.value || '';
+  const opening     = !fileFilter ? (window._ledgerOpening || 0) : 0;
+  const fmt2        = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
+
+  const typeLabelsP = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
+  const typeColors  = { customer:'#2563eb', supplier:'#e6930a', partner:'#7c3aed', custodian:'#0891b2' };
+  const color = typeColors[contactType] || '#1a1a1a';
+
+  let list = fileFilter ? allEntries.filter(e => e.file_no === fileFilter) : allEntries;
+  let running = opening;
+
+  const totalDebit  = list.reduce((s,e)=>s+(+e.debit||0),0)  + (opening>0?opening:0);
+  const totalCredit = list.reduce((s,e)=>s+(+e.credit||0),0) + (opening<0?Math.abs(opening):0);
+  const finalBal    = opening + list.reduce((s,e)=>s+(+e.debit||0)-(+e.credit||0),0);
+
+  let rows = '';
+  if (opening !== 0) {
+    rows += `<tr style="background:#f8f9fa;font-weight:700">
+      <td>—</td><td colspan="2">رصيد افتتاحي</td>
+      <td style="color:#16a34a;text-align:left">${opening>0?fmt2(opening):'—'}</td>
+      <td style="color:#dc2626;text-align:left">${opening<0?fmt2(Math.abs(opening)):'—'}</td>
+      <td style="text-align:left;font-weight:700">${fmt2(Math.abs(opening))}</td>
+    </tr>`;
+  }
+
+  list.forEach(e => {
+    running += (+e.debit||0) - (+e.credit||0);
+    // Enrich description with VINs
+    let desc = (e.description||'—').replace(/<[^>]+>/g,''); // strip html tags for print
+    if (e.source_table === 'purchase_orders' && e.file_no && vehicleMap[e.file_no]) {
+      const vins = vehicleMap[e.file_no].map(v=>v.vin).filter(Boolean);
+      if (vins.length) desc += `\n شواصي: ${vins.join(' · ')}`;
+    }
+    const rowBg = running < 0 ? '#fff5f5' : '';
+    rows += `<tr style="background:${rowBg}">
+      <td style="white-space:nowrap">${e.entry_date||'—'}</td>
+      <td style="font-size:11px;line-height:1.6;white-space:pre-line">${desc}</td>
+      <td style="font-family:monospace;font-size:11px;color:#666">${e.file_no||'—'}</td>
+      <td style="color:#16a34a;text-align:left;font-weight:600">${+e.debit?fmt2(e.debit):'—'}</td>
+      <td style="color:#dc2626;text-align:left;font-weight:600">${+e.credit?fmt2(e.credit):'—'}</td>
+      <td style="text-align:left;font-weight:700;color:${running>=0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(running))}</td>
+    </tr>`;
+  });
+
+  const printDate = new Date().toLocaleDateString('ar-KW');
+  const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>كشف حساب — ${contactName}</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Cairo',Arial,sans-serif;color:#1a1a1a;background:#fff;font-size:12px}
+  .page{max-width:960px;margin:0 auto;padding:28px 32px}
+  .no-print{text-align:center;margin-bottom:16px;display:flex;gap:8px;justify-content:center}
+  .no-print button{padding:9px 24px;border-radius:8px;font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;cursor:pointer;border:none}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1a1a1a;padding-bottom:16px;margin-bottom:20px}
+  .co{font-size:18px;font-weight:900}.co-sub{font-size:11px;color:#888;margin-top:2px}
+  .title-area h1{font-size:22px;font-weight:900;text-align:left}
+  .contact-badge{display:inline-block;background:${color};color:#fff;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;margin-top:6px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+  .kpi{background:#f8f9fa;border-radius:8px;padding:10px 14px;border-right:3px solid ${color}}
+  .kpi-label{font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+  .kpi-val{font-size:15px;font-weight:900;margin-top:3px}
+  table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px}
+  thead tr{background:#1a1a1a;color:#fff}
+  thead th{padding:8px 10px;text-align:right;font-weight:700}
+  tbody tr{border-bottom:1px solid #eee}
+  tbody tr:nth-child(even){background:#fafafa}
+  tbody td{padding:7px 10px;vertical-align:top}
+  tfoot td{padding:9px 10px;background:#f0f2f5;font-weight:700}
+  .footer{text-align:center;padding-top:12px;border-top:1px solid #eee;color:#aaa;font-size:10px;margin-top:16px}
+  .sig-row{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:28px}
+  .sig-box{text-align:center;padding-top:40px;border-top:1px solid #ccc;font-size:11px;color:#888}
+  @media print{
+    .no-print{display:none!important}
+    body{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+    .page{padding:14px}
+  }
+</style>
+</head>
+<body><div class="page">
+
+  <div class="no-print">
+    <button onclick="window.print()" style="background:#1a1a1a;color:#fff">🖨️ طباعة</button>
+    <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd">✕ إغلاق</button>
+  </div>
+
+  <div class="hdr">
+    <div>
+      <div class="co">Transit Cars</div>
+      <div class="co-sub">ترانزيت للسيارات · الكويت</div>
+      <div class="co-sub" style="margin-top:4px">تاريخ الطباعة: ${printDate}</div>
+    </div>
+    <div class="title-area">
+      <h1>كشف حساب</h1>
+      <div class="contact-badge">${typeLabelsP[contactType]||contactType}</div>
+      <div style="font-size:18px;font-weight:900;text-align:left;margin-top:6px">${contactName}</div>
+      ${fileFilter?`<div style="font-size:12px;color:#666;text-align:left;margin-top:2px">ملف: ${fileFilter}</div>`:''}
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-label">إجمالي المدين</div><div class="kpi-val" style="color:#16a34a">${fmt2(totalDebit)}</div></div>
+    <div class="kpi"><div class="kpi-label">إجمالي الدائن</div><div class="kpi-val" style="color:#dc2626">${fmt2(totalCredit)}</div></div>
+    <div class="kpi"><div class="kpi-label">الرصيد الحالي</div><div class="kpi-val" style="color:${finalBal>=0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}</div></div>
+    <div class="kpi"><div class="kpi-label">عدد الحركات</div><div class="kpi-val">${list.length}</div></div>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th>التاريخ</th><th>البيان</th><th>الملف</th>
+      <th style="text-align:left">مدين</th>
+      <th style="text-align:left">دائن</th>
+      <th style="text-align:left">الرصيد</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr>
+      <td colspan="3">الإجمالي</td>
+      <td style="color:#16a34a;text-align:left">${fmt2(totalDebit)}</td>
+      <td style="color:#dc2626;text-align:left">${fmt2(totalCredit)}</td>
+      <td style="color:${finalBal>=0?'#16a34a':'#dc2626'};text-align:left">${fmt2(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}</td>
+    </tr></tfoot>
+  </table>
+
+  <div class="sig-row">
+    <div class="sig-box">توقيع المحاسب</div>
+    <div class="sig-box">توقيع المدير</div>
+  </div>
+
+  <div class="footer">Transit Cars System · تم الإنشاء بتاريخ ${printDate}</div>
+
+</div></body></html>`;
+
+  const w = window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
+}
+
 // ════════════════════════════════════════
 // TRIAL BALANCE
 // ════════════════════════════════════════
@@ -6692,67 +6844,143 @@ function docHeader(title, subtitle, fileNo) {
 async function printPurchaseOrder(fileNo) {
   try {
     const sys = state.system;
-    const [poArr, vehicles, partners, payments] = await Promise.all([
+    const [poArr, vehicles, partners, payments, expenses] = await Promise.all([
       apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
       apiGet('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
       apiGet('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'pay_date.asc' }),
+      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'exp_date.asc' }),
     ]);
-    const po = poArr?.[0] || {};
-    const totalPaid = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
+    const po         = poArr?.[0] || {};
+    const totalPaid  = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
+    const totalExp   = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
+    const remaining  = (+po.total_purchase||0) - totalPaid;
+    const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
 
     const vehicleRows = (vehicles||[]).map((v,i) => `<tr>
-      <td>${i+1}</td>
-      <td>${v.vehicle_type||'—'}</td>
-      <td>${v.model||'—'}</td>
-      <td style="direction:ltr">${v.vin||'—'}</td>
+      <td style="text-align:center;font-weight:700">${i+1}</td>
+      <td>${v.vehicle_type||'—'} ${v.model||''}</td>
+      <td style="direction:ltr;font-family:monospace;font-size:11px;font-weight:700">${v.vin||'—'}</td>
       <td style="direction:ltr">${v.plate||'—'}</td>
       <td>${v.color||'—'}</td>
-      <td class="amber">${(+v.purchase_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+      <td>${v.year||'—'}</td>
+      <td class="amber" style="text-align:left">${fmt2(v.purchase_price)}</td>
+    </tr>`).join('');
+
+    const paymentRows = (payments||[]).map(p => `<tr>
+      <td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td>
+      <td>${p.payer||'—'}</td>
+      <td class="green" style="text-align:left">${fmt2(p.amount)}</td>
+      <td>${p.pay_method||'—'}</td>
+      <td style="direction:ltr">${p.document||'—'}</td>
+      <td>${p.pay_date||'—'}</td>
+    </tr>`).join('');
+
+    const expenseRows = (expenses||[]).map(e => `<tr>
+      <td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td>
+      <td>${e.description||'—'}</td>
+      <td>${e.exp_type||'—'}</td>
+      <td class="red" style="text-align:left">${fmt2(e.amount)}</td>
+      <td>${e.pay_method||'—'}</td>
+      <td>${e.exp_date||e.expense_date||'—'}</td>
     </tr>`).join('');
 
     const partnerRows = (partners||[]).map(p => {
       const paid = (payments||[]).filter(pm=>pm.payer===p.partner).reduce((s,pm)=>s+(+pm.amount||0),0);
       const due  = (+po.total_purchase||0) * (+p.share_percent||0) / 100;
       return `<tr>
-        <td>${p.partner}</td>
-        <td>${p.share_percent}%</td>
-        <td class="blue">${due.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
-        <td class="green">${paid.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
-        <td class="${(due-paid)>0?'red':'green'}">${(due-paid).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td style="font-weight:700">${p.partner}</td>
+        <td style="text-align:center">${p.share_percent}%</td>
+        <td class="blue" style="text-align:left">${fmt2(due)}</td>
+        <td class="green" style="text-align:left">${fmt2(paid)}</td>
+        <td class="${(due-paid)>0.01?'red':'green'}" style="text-align:left;font-weight:700">${fmt2(due-paid)}</td>
       </tr>`;
     }).join('');
 
     const html = `
       ${docHeader('سند شراء', 'Purchase Order', fileNo)}
+
+      <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi-box"><div class="kpi-label">قيمة الصفقة</div><div class="kpi-val amber">${fmt2(po.total_purchase)} KWD</div></div>
+        <div class="kpi-box" style="border-color:#16a34a"><div class="kpi-label">المدفوع للمورد</div><div class="kpi-val green">${fmt2(totalPaid)} KWD</div></div>
+        <div class="kpi-box" style="border-color:${remaining>0?'#dc2626':'#16a34a'}"><div class="kpi-label">المتبقي</div><div class="kpi-val ${remaining>0?'red':'green'}">${fmt2(remaining)} KWD</div></div>
+        <div class="kpi-box" style="border-color:#7c3aed"><div class="kpi-label">المصاريف</div><div class="kpi-val" style="color:#7c3aed">${fmt2(totalExp)} KWD</div></div>
+      </div>
+
       <div class="info-grid">
         <div class="info-box">
-          <div class="info-row"><span class="info-label">رقم الملف</span><span class="info-val">${po.file_no||'—'}</span></div>
+          <div class="info-row"><span class="info-label">رقم الملف</span><span class="info-val amber">${po.file_no||'—'}</span></div>
           <div class="info-row"><span class="info-label">المورد</span><span class="info-val">${po.supplier||'—'}</span></div>
-          <div class="info-row"><span class="info-label">رقم PO</span><span class="info-val">${po.po_no||'—'}</span></div>
-          <div class="info-row"><span class="info-label">التاريخ</span><span class="info-val">${po.po_date||'—'}</span></div>
-        </div>
-        <div class="info-box">
-          <div class="info-row"><span class="info-label">قيمة الصفقة</span><span class="info-val amber">${(+po.total_purchase||0).toLocaleString('en-US',{minimumFractionDigits:2})}</span></div>
-          <div class="info-row"><span class="info-label">عدد السيارات</span><span class="info-val">${(vehicles||[]).length}</span></div>
-          <div class="info-row"><span class="info-label">المدفوع للمورد</span><span class="info-val green">${totalPaid.toLocaleString('en-US',{minimumFractionDigits:2})}</span></div>
+          <div class="info-row"><span class="info-label">رقم PO</span><span class="info-val" style="direction:ltr">${po.po_no||'—'}</span></div>
+          <div class="info-row"><span class="info-label">تاريخ الصفقة</span><span class="info-val">${po.po_date||'—'}</span></div>
           <div class="info-row"><span class="info-label">الحالة</span><span class="info-val">${po.status||'—'}</span></div>
         </div>
+        <div class="info-box">
+          <div class="info-row"><span class="info-label">عدد السيارات</span><span class="info-val">${(vehicles||[]).length} سيارة</span></div>
+          <div class="info-row"><span class="info-label">عدد الشركاء</span><span class="info-val">${(partners||[]).length} شريك</span></div>
+          <div class="info-row"><span class="info-label">عدد الدفعات</span><span class="info-val">${(payments||[]).length} دفعة</span></div>
+          <div class="info-row"><span class="info-label">عدد المصاريف</span><span class="info-val">${(expenses||[]).length} بند</span></div>
+          <div class="info-row"><span class="info-label">تاريخ الطباعة</span><span class="info-val">${new Date().toLocaleDateString('ar-KW')}</span></div>
+        </div>
       </div>
-      <div class="section-title">السيارات / Vehicles</div>
+
+      <div class="section-title">📦 السيارات / Vehicles</div>
       <table>
-        <thead><tr><th>#</th><th>النوع</th><th>الموديل</th><th>VIN</th><th>اللوحة</th><th>اللون</th><th>سعر الشراء</th></tr></thead>
+        <thead><tr><th>#</th><th>النوع / الموديل</th><th>رقم الشاصي (VIN)</th><th>اللوحة</th><th>اللون</th><th>السنة</th><th>سعر الشراء</th></tr></thead>
         <tbody>${vehicleRows}</tbody>
-        <tfoot><tr><td colspan="6"><strong>الإجمالي</strong></td><td class="amber"><strong>${(+po.total_purchase||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong></td></tr></tfoot>
+        <tfoot><tr>
+          <td colspan="6" style="padding:8px 10px"><strong>إجمالي قيمة الشراء</strong></td>
+          <td class="amber" style="text-align:left"><strong>${fmt2(po.total_purchase)} KWD</strong></td>
+        </tr></tfoot>
       </table>
+
       ${partners?.length ? `
-      <div class="section-title">الشركاء / Partners</div>
+      <div class="section-title">👥 الشركاء / Partners</div>
       <table>
         <thead><tr><th>الشريك</th><th>الحصة %</th><th>المستحق</th><th>المدفوع</th><th>المتبقي</th></tr></thead>
         <tbody>${partnerRows}</tbody>
       </table>` : ''}
-      ${po.notes ? `<div style="margin-top:12px;padding:10px;background:#f8f9fa;border-radius:6px"><strong>ملاحظات:</strong> ${po.notes}</div>` : ''}
-      <div class="footer">Transit International · نظام إدارة صفقات السيارات</div>`;
+
+      ${payments?.length ? `
+      <div class="section-title">💳 دفعات المورد / Payments</div>
+      <table>
+        <thead><tr><th>رقم الدفعة</th><th>الدافع</th><th>المبلغ</th><th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th></tr></thead>
+        <tbody>${paymentRows}</tbody>
+        <tfoot><tr>
+          <td colspan="2"><strong>الإجمالي المدفوع</strong></td>
+          <td class="green" style="text-align:left"><strong>${fmt2(totalPaid)} KWD</strong></td>
+          <td colspan="3"></td>
+        </tr></tfoot>
+      </table>` : ''}
+
+      ${expenses?.length ? `
+      <div class="section-title">💸 المصاريف / Expenses</div>
+      <table>
+        <thead><tr><th>رقم المصروف</th><th>البيان</th><th>النوع</th><th>المبلغ</th><th>طريقة الدفع</th><th>التاريخ</th></tr></thead>
+        <tbody>${expenseRows}</tbody>
+        <tfoot><tr>
+          <td colspan="3"><strong>إجمالي المصاريف</strong></td>
+          <td class="red" style="text-align:left"><strong>${fmt2(totalExp)} KWD</strong></td>
+          <td colspan="2"></td>
+        </tr></tfoot>
+      </table>` : ''}
+
+      ${po.notes ? `<div style="margin:12px 0;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px"><strong>ملاحظات:</strong> ${po.notes}</div>` : ''}
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;margin-top:32px">
+        <div style="text-align:center;padding-top:44px;border-top:1px solid #ccc">
+          <div style="font-size:11px;color:#888">توقيع المورد</div>
+          <div style="font-size:12px;font-weight:700;margin-top:4px">${po.supplier||''}</div>
+        </div>
+        <div style="text-align:center;padding-top:44px;border-top:1px solid #ccc">
+          <div style="font-size:11px;color:#888">توقيع المدير</div>
+        </div>
+        <div style="text-align:center;padding-top:44px;border-top:1px solid #ccc">
+          <div style="font-size:11px;color:#888">توقيع المحاسب</div>
+        </div>
+      </div>
+
+      <div class="footer">Transit Cars · نظام ترانزيت لإدارة صفقات السيارات</div>`;
 
     printDocument(html, `سند شراء — ${fileNo}`);
   } catch(e) { toast('خطأ: '+e.message,'err'); }
@@ -7878,7 +8106,7 @@ async function confirmDeleteDealFromModal() {
       btn.disabled = true; btn.textContent = '⏳ جاري الحذف...';
       try {
         const sys = state.system;
-        const tables = ['vehicles','payments','expenses','sales','collections','partner_payouts','partners_master','ledger_entries'];
+        const tables = ['vehicles','payments','expenses','sales','collections','partner_payouts','partners_master','ledger_entries','journal_entries'];
         for (const t of tables) { try { await apiDelete(t, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) {} }
         await logAudit('DELETE','purchase_orders', fn, {file_no:fn}, null, 'حذف صفقة كاملة');
         try { await apiDelete('audit_log', { file_no:`eq.${fn}` }); } catch(e) {}
