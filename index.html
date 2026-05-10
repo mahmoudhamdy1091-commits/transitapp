@@ -1055,6 +1055,9 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       <button id="pwa-install-btn" onclick="installPWA()" style="display:none;width:100%;margin-bottom:8px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:8px;padding:8px 12px;color:var(--accent);font-family:Cairo,sans-serif;font-size:12px;font-weight:700;cursor:pointer;align-items:center;justify-content:center;gap:6px">
         📲 تنزيل التطبيق
       </button>
+      <button onclick="openRolesModal()" style="width:100%;margin-bottom:8px;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text2);font-family:Cairo,sans-serif;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+        🔐 الصلاحيات
+      </button>
       <div class="user-info">
         <div class="user-avatar" id="userAvatar">M</div>
         <div>
@@ -1429,19 +1432,19 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
 <!-- MOBILE BOTTOM NAV -->
 <nav class="mobile-nav">
-  <button class="mob-nav-item active" onclick="showView('dashboardView');setMobNav(this)">
+  <button class="mob-nav-item active" onclick="showDashboard();setMobNav(this)">
     <span class="mn-icon">🏠</span>الرئيسية
   </button>
-  <button class="mob-nav-item" onclick="showView('dealsView');setMobNav(this)">
+  <button class="mob-nav-item" onclick="showDashboard();document.getElementById('dealsTableBody')?.scrollIntoView({behavior:'smooth'});setMobNav(this)">
     <span class="mn-icon">📁</span>الصفقات
   </button>
-  <button class="mob-nav-item" onclick="showView('contactsView');setMobNav(this)">
+  <button class="mob-nav-item" onclick="showContacts();setMobNav(this)">
     <span class="mn-icon">👥</span>جهات
   </button>
-  <button class="mob-nav-item" onclick="showView('journalView');setMobNav(this)">
+  <button class="mob-nav-item" onclick="showJournal();setMobNav(this)">
     <span class="mn-icon">📊</span>الحركات
   </button>
-  <button class="mob-nav-item" onclick="showView('reportsView');setMobNav(this)">
+  <button class="mob-nav-item" onclick="showReport('profit');setMobNav(this)">
     <span class="mn-icon">📈</span>تقارير
   </button>
 </nav>
@@ -1451,6 +1454,75 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 <!-- ════════════════════════════════════
      MODALS
 ════════════════════════════════════ -->
+
+<!-- CONFIRM DELETE MODAL -->
+<div class="modal-overlay" id="confirmDeleteModal" style="z-index:10000">
+  <div class="modal" style="max-width:420px;text-align:center;padding:32px 28px">
+    <div style="font-size:48px;margin-bottom:12px">⚠️</div>
+    <div style="font-size:17px;font-weight:900;color:var(--text);margin-bottom:8px" id="confirmDeleteTitle">تأكيد الحذف</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:24px;line-height:1.6" id="confirmDeleteMsg"></div>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button class="btn btn-secondary" onclick="closeModal('confirmDeleteModal')" style="min-width:100px">إلغاء</button>
+      <button class="btn btn-danger" id="confirmDeleteOkBtn" style="min-width:120px">🗑 حذف نهائي</button>
+    </div>
+  </div>
+</div>
+
+<!-- ROLES MODAL -->
+<div class="modal-overlay" id="rolesModal">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <div class="modal-title">🔐 إدارة الصلاحيات</div>
+      <button class="modal-close" onclick="closeModal('rolesModal')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:20px">
+      <div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:var(--accent)">
+        ⚡ الصلاحيات محفوظة محلياً — كل جهاز يُضبط بشكل منفصل
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:8px">دور المستخدم الحالي</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="role-btn" data-role="admin" onclick="setRole('admin')">👑 مدير كامل</button>
+          <button class="role-btn" data-role="employee" onclick="setRole('employee')">👤 موظف</button>
+          <button class="role-btn" data-role="readonly" onclick="setRole('readonly')">👁 مشاهدة فقط</button>
+        </div>
+      </div>
+      <div style="background:var(--card2);border-radius:10px;padding:14px;font-size:12px">
+        <div style="font-weight:700;margin-bottom:10px;color:var(--text)">صلاحيات كل دور:</div>
+        <div style="display:grid;gap:6px">
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+            <span style="color:var(--text2)">إضافة / تعديل صفقات</span>
+            <span id="perm-edit">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+            <span style="color:var(--text2)">حذف صفقات</span>
+            <span id="perm-delete">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+            <span style="color:var(--text2)">إضافة مصاريف ومبيعات</span>
+            <span id="perm-transactions">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0">
+            <span style="color:var(--text2)">إدارة الصلاحيات</span>
+            <span id="perm-roles">—</span>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:16px;display:flex;justify-content:flex-end">
+        <button class="btn btn-primary" onclick="saveRole()">💾 حفظ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- QUICK EXPENSE FAB -->
+<button id="quickExpFab" onclick="openQuickExpFab()" title="مصروف سريع"
+  style="display:none;position:fixed;left:16px;bottom:72px;z-index:900;
+  width:50px;height:50px;border-radius:50%;background:var(--red);border:none;
+  color:#fff;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(220,38,38,.4);
+  transition:transform .15s" onmouseenter="this.style.transform='scale(1.1)'" onmouseleave="this.style.transform='scale(1)'">
+  💸
+</button>
 
 <!-- NEW FILE — سند شراء -->
 <div class="modal-overlay" id="newFileModal">
@@ -3055,6 +3127,10 @@ async function loadSalesTab(fn, sys) {
         <td class="mono text-green" style="font-weight:700">${fmt(invTotal)}</td>
         <td>
           <button class="btn btn-secondary btn-sm" onclick="reprintInvoice('${inv.inv_no}','${fn}')">🖨️ طباعة</button>
+          <button class="btn btn-secondary btn-sm" onclick="sendWhatsappInvoice({invNo:'${inv.inv_no}',customer:'${(inv.customer||'').replace(/'/g,"\\'")}',date:'${inv.sale_date||''}',items:${JSON.stringify(inv._items||[])},total:${inv._total||0},phone:''})" style="background:rgba(37,211,102,.1);border-color:#25d366;color:#25d366">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-left:3px"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.135.558 4.14 1.535 5.878L.057 23.943l6.235-1.635A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.001-1.366l-.36-.214-3.7.971.988-3.608-.236-.372A9.818 9.818 0 0112 2.182c5.42 0 9.818 4.398 9.818 9.818 0 5.42-4.398 9.818-9.818 9.818z"/></svg>
+            واتساب
+          </button>
         </td>
       </tr>`;
     }).join('');
@@ -3515,7 +3591,7 @@ function addVehicleRow() {
     <td><input class="vt-inp" type="text" name="v-type" placeholder="Pickup"></td>
     <td><input class="vt-inp" type="text" name="v-model" placeholder="Hilux 2024"></td>
     <td><input class="vt-inp" type="number" name="v-year" placeholder="2024" min="1990" max="2030" style="width:60px"></td>
-    <td><input class="vt-inp" type="text" name="v-vin" placeholder="VIN" style="direction:ltr;letter-spacing:.5px"></td>
+    <td><input class="vt-inp" type="text" name="v-vin" placeholder="VIN" style="direction:ltr;letter-spacing:.5px" onblur="onVinBlur(this,'')"></td>
     <td><input class="vt-inp" type="text" name="v-plate" placeholder="ABC-123" style="direction:ltr"></td>
     <td><input class="vt-inp" type="text" name="v-color" placeholder="أبيض"></td>
     <td><input class="vt-inp" type="text" name="v-engine" placeholder="1.5" style="width:55px"></td>
@@ -7351,6 +7427,216 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+
+// ════════════════════════════════════════
+// FEATURE 1 — CONFIRM DELETE MODAL
+// ════════════════════════════════════════
+function showConfirm(title, msg, onConfirm) {
+  el('confirmDeleteTitle').textContent = title;
+  el('confirmDeleteMsg').textContent = msg;
+  const btn = el('confirmDeleteOkBtn');
+  btn.onclick = async () => { closeModal('confirmDeleteModal'); await onConfirm(); };
+  openModal('confirmDeleteModal');
+}
+
+// Override browser confirm() for delete operations
+async function confirmDeleteDealFromModal() {
+  const fn = _nfEditFileNo;
+  if (!fn) return;
+  showConfirm(
+    `حذف الصفقة ${fn}`,
+    `سيتم حذف كل السيارات والعمليات والمدفوعات المرتبطة بها نهائياً. هذا الإجراء لا يمكن التراجع عنه.`,
+    async () => {
+      const btn = el('nfDeleteBtn');
+      btn.disabled = true; btn.textContent = '⏳ جاري الحذف...';
+      try {
+        const sys = state.system;
+        const tables = ['vehicles','payments','expenses','sales','collections','partner_payouts','partners_master','ledger_entries'];
+        for (const t of tables) { try { await apiDelete(t, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) {} }
+        try { await apiDelete('audit_log', { file_no:`eq.${fn}` }); } catch(e) {}
+        await apiDelete('purchase_orders', { system_type:`eq.${sys}`, file_no:`eq.${fn}` });
+        closeModal('newFileModal');
+        toast(`✅ تم حذف الصفقة ${fn}`,'ok');
+        state.currentFileNo = null;
+        await loadDashboard(); showDashboard();
+      } catch(e) { toast('خطأ: '+e.message,'err'); btn.disabled=false; btn.textContent='🗑 حذف الصفقة'; }
+    }
+  );
+}
+
+async function confirmDeleteVehicle() {
+  if (!_editVehicleId) return;
+  showConfirm('حذف السيارة', 'هل تريد حذف هذه السيارة نهائياً من الصفقة؟', async () => {
+    try {
+      await apiDelete('vehicles', { id:`eq.${_editVehicleId}` });
+      closeModal('editVehicleModal');
+      toast('✅ تم حذف السيارة','ok');
+      if (state.currentFileNo) await loadViewerTab(state.currentTab);
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
+
+async function deletePayoutEntry(payoutId, fileNo, silent=false) {
+  if (silent) {
+    try { await apiDelete('partner_payouts', { id:`eq.${payoutId}` }); await loadPayoutsTab(fileNo, state.system); } catch(e) { toast('خطأ: '+e.message,'err'); }
+    return;
+  }
+  showConfirm('حذف الدفعة', 'هل تريد حذف هذه الدفعة نهائياً؟', async () => {
+    try { await apiDelete('partner_payouts', { id:`eq.${payoutId}` }); await loadPayoutsTab(fileNo, state.system); toast('✅ تم الحذف','ok'); }
+    catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
+
+// ════════════════════════════════════════
+// FEATURE 2 — ROLES & PERMISSIONS
+// ════════════════════════════════════════
+const ROLES = {
+  admin:    { label:'👑 مدير كامل',  edit:true,  delete:true,  transactions:true,  roles:true  },
+  employee: { label:'👤 موظف',       edit:true,  delete:false, transactions:true,  roles:false },
+  readonly: { label:'👁 مشاهدة',     edit:false, delete:false, transactions:false, roles:false },
+};
+
+let _currentRole = localStorage.getItem('tm_role') || 'admin';
+
+function can(action) { return ROLES[_currentRole]?.[action] !== false; }
+
+function openRolesModal() {
+  openModal('rolesModal');
+  updateRoleUI(_currentRole);
+}
+
+let _pendingRole = _currentRole;
+function setRole(role) {
+  _pendingRole = role;
+  updateRoleUI(role);
+}
+
+function updateRoleUI(role) {
+  document.querySelectorAll('.role-btn').forEach(b => b.classList.toggle('active', b.dataset.role === role));
+  const r = ROLES[role];
+  el('perm-edit').innerHTML        = r.edit         ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-no">❌ ممنوع</span>';
+  el('perm-delete').innerHTML      = r.delete        ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-no">❌ ممنوع</span>';
+  el('perm-transactions').innerHTML= r.transactions  ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-no">❌ ممنوع</span>';
+  el('perm-roles').innerHTML       = r.roles         ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-limited">🔒 مدير فقط</span>';
+}
+
+function saveRole() {
+  _currentRole = _pendingRole;
+  localStorage.setItem('tm_role', _currentRole);
+  applyRoleRestrictions();
+  closeModal('rolesModal');
+  toast(`✅ تم الحفظ — الدور: ${ROLES[_currentRole].label}`,'ok');
+}
+
+function applyRoleRestrictions() {
+  // Hide delete buttons for non-admins
+  document.querySelectorAll('.btn-danger, #nfDeleteBtn').forEach(btn => {
+    btn.style.display = can('delete') ? '' : 'none';
+  });
+  // Hide add/edit buttons for readonly
+  document.querySelectorAll('#nfSubmitBtn, #saleSubmitBtn, #paymentSubmitBtn, #expSubmitBtn').forEach(btn => {
+    btn.style.display = can('transactions') ? '' : 'none';
+  });
+  // Quick expense fab
+  const fab = el('quickExpFab');
+  if (fab) fab.style.display = can('transactions') && state.currentFileNo ? 'flex' : 'none';
+}
+
+// ════════════════════════════════════════
+// FEATURE 3 — VIN DUPLICATE CHECK
+// ════════════════════════════════════════
+async function checkVinDuplicate(vin, excludeFileNo='') {
+  if (!vin || vin.length < 5) return null;
+  try {
+    const params = { select:'file_no,model,vin', system_type:`eq.${state.system}`, vin:`eq.${vin}` };
+    const results = await apiGet('vehicles', params);
+    const found = (results||[]).filter(v => v.file_no !== excludeFileNo);
+    return found.length ? found[0] : null;
+  } catch(e) { return null; }
+}
+
+async function onVinBlur(input, excludeFileNo='') {
+  const vin = input.value.trim().toUpperCase();
+  if (!vin) return;
+  input.value = vin;
+  const dup = await checkVinDuplicate(vin, excludeFileNo);
+  if (dup) {
+    input.style.borderColor = 'var(--red)';
+    input.style.boxShadow = '0 0 0 3px var(--red-dim)';
+    const warn = input.parentElement.querySelector('.vin-warn') || (() => {
+      const d = document.createElement('div');
+      d.className = 'vin-warn hint';
+      d.style.color = 'var(--red)';
+      input.parentElement.appendChild(d);
+      return d;
+    })();
+    warn.textContent = `⚠️ هذا الشاصي موجود في صفقة ${dup.file_no} (${dup.model||''})`;
+  } else {
+    input.style.borderColor = '';
+    input.style.boxShadow = '';
+    const warn = input.parentElement.querySelector('.vin-warn');
+    if (warn) warn.remove();
+  }
+}
+
+// ════════════════════════════════════════
+// FEATURE 4 — WHATSAPP INVOICE
+// ════════════════════════════════════════
+function sendWhatsappInvoice({ invNo, customer, date, items, total, phone='' }) {
+  const itemLines = items.map((it,i) => `${i+1}. ${it.model||'سيارة'} — ${it.price.toLocaleString('en-US',{minimumFractionDigits:2})} ج.م`).join('\n');
+  const msg = `🚗 *ترانزيت — فاتورة مبيعات*\n\n` +
+    `رقم الفاتورة: *${invNo}*\n` +
+    `التاريخ: ${date}\n` +
+    `العميل: ${customer}\n\n` +
+    `*السيارات:*\n${itemLines}\n\n` +
+    `*الإجمالي: ${total.toLocaleString('en-US',{minimumFractionDigits:2})} ج.م*\n\n` +
+    `شكراً لتعاملكم مع ترانزيت 🤝`;
+
+  const num = phone.replace(/\D/g,'');
+  const url = num ? `https://wa.me/${num}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
+}
+
+// Patch printSaleInvoice to add WhatsApp button
+const _origPrintSaleInvoice = printSaleInvoice;
+function printSaleInvoice(opts) {
+  _origPrintSaleInvoice(opts);
+  setTimeout(() => {
+    if (confirm('إرسال الفاتورة عبر واتساب؟')) {
+      const phone = prompt('رقم واتساب العميل (مثال: 96512345678)\nاتركه فارغاً لاختيار الرقم يدوياً:','');
+      if (phone !== null) sendWhatsappInvoice({ ...opts, phone });
+    }
+  }, 800);
+}
+
+// ════════════════════════════════════════
+// FEATURE 5 — QUICK EXPENSE FAB
+// ════════════════════════════════════════
+function openQuickExpFab() {
+  if (!state.currentFileNo) { toast('افتح صفقة أولاً','err'); return; }
+  openQuickModal('expense');
+}
+
+// Show FAB when a file is open
+const _origOpenViewer = openViewer;
+async function openViewer(fileNo) {
+  await _origOpenViewer(fileNo);
+  const fab = el('quickExpFab');
+  if (fab && can('transactions')) fab.style.display = 'flex';
+}
+
+function showDashboard_withFab() {
+  showDashboard();
+  const fab = el('quickExpFab');
+  if (fab) fab.style.display = 'none';
+}
+
+// Init roles on load
+document.addEventListener('DOMContentLoaded', () => {
+  _currentRole = localStorage.getItem('tm_role') || 'admin';
+  _pendingRole = _currentRole;
+});
+
 // PWA Install prompt
 let _pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
@@ -7371,6 +7657,15 @@ function installPWA() {
 }
 
 </script>
+
+<style>
+/* Roles & permissions */
+.role-btn{padding:8px 16px;border-radius:8px;border:2px solid var(--border);background:var(--card2);color:var(--text2);font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
+.role-btn.active,.role-btn:hover{border-color:var(--accent);background:var(--accent-dim);color:var(--accent)}
+.perm-yes{color:var(--green);font-weight:700}
+.perm-no{color:var(--red);font-weight:700}
+.perm-limited{color:var(--accent);font-weight:700}
+</style>
 
 <style>
 /* Floating install button */
