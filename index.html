@@ -7640,9 +7640,13 @@ async function checkVinDuplicate(vin, excludeFileNo='') {
     const results = await apiGet('vehicles', { select:'file_no,model,vin', system_type:`eq.${state.system}`, vin:`eq.${vin}` });
     const found = (results||[]).filter(v => v.file_no !== excludeFileNo);
     if (!found.length) return null;
-    // Check if the deal still exists
     const deals = await apiGet('purchase_orders', { select:'file_no', system_type:`eq.${state.system}`, file_no:`eq.${found[0].file_no}` });
-    return (deals && deals.length) ? found[0] : null;
+    if (!deals || !deals.length) {
+      // VIN exists but deal is deleted — clean up orphan silently
+      try { await apiDelete('vehicles', { system_type:`eq.${state.system}`, vin:`eq.${vin}`, file_no:`eq.${found[0].file_no}` }); } catch(e) {}
+      return null;
+    }
+    return found[0];
   } catch(e) { return null; }
 }
 
