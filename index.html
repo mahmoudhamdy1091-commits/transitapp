@@ -1452,46 +1452,81 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       <!-- ════ DASHBOARD ════ -->
       <div id="dashboardView">
 
-        <!-- KPI Strip -->
-        <div class="kpi-grid" id="kpiGrid" style="grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px">
-          <div class="kpi-card kpi-amber" style="cursor:default">
-            <div class="kpi-top"><span class="kpi-label">صفقات نشطة</span><div class="kpi-icon">📁</div></div>
-            <div class="kpi-val" id="kpi-deals">—</div>
-            <div class="kpi-sub" id="kpi-deals-sub">في النظام</div>
+        <!-- Period Selector -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+          <div style="display:flex;gap:4px;background:var(--card2);border-radius:var(--radius-sm);padding:4px">
+            <button class="dash-period-btn" id="period-btn-7"      onclick="setDashPeriod(7)">آخر أسبوع</button>
+            <button class="dash-period-btn active" id="period-btn-30" onclick="setDashPeriod(30)">آخر شهر</button>
+            <button class="dash-period-btn" id="period-btn-60"     onclick="setDashPeriod(60)">آخر شهرين</button>
+            <button class="dash-period-btn" id="period-btn-90"     onclick="setDashPeriod(90)">آخر 3 أشهر</button>
+            <button class="dash-period-btn" id="period-btn-custom" onclick="setDashPeriod('custom')">تاريخ محدد</button>
           </div>
-          <div class="kpi-card kpi-purple" style="cursor:default">
+          <div id="dash-custom-dates" style="display:none;align-items:center;gap:6px">
+            <input type="date" id="dash-from" onchange="setDashPeriod('custom')" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <span style="color:var(--text2);font-size:12px">—</span>
+            <input type="date" id="dash-to" onchange="setDashPeriod('custom')" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          </div>
+          <div id="dash-period-label" style="font-size:11px;color:var(--text2)"></div>
+        </div>
+
+        <!-- KPIs — كل كارت قابل للضغط -->
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px" id="kpiGrid">
+          <div class="kpi-card kpi-green kpi-clickable" onclick="toggleDrillDown('sales')" id="kpi-card-sales">
+            <div class="kpi-top"><span class="kpi-label">المبيعات</span><div class="kpi-icon">💹</div></div>
+            <div class="kpi-val" id="kpi-sales">—</div>
+            <div class="kpi-sub" id="kpi-sales-sub">في الفترة</div>
+            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
+          </div>
+          <div class="kpi-card kpi-blue kpi-clickable" onclick="toggleDrillDown('collections')" id="kpi-card-collections">
+            <div class="kpi-top"><span class="kpi-label">التحصيلات</span><div class="kpi-icon">💰</div></div>
+            <div class="kpi-val" id="kpi-collections">—</div>
+            <div class="kpi-sub" id="kpi-collections-sub">في الفترة</div>
+            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
+          </div>
+          <div class="kpi-card kpi-red kpi-clickable" onclick="toggleDrillDown('expenses')" id="kpi-card-expenses">
+            <div class="kpi-top"><span class="kpi-label">المصاريف</span><div class="kpi-icon">💸</div></div>
+            <div class="kpi-val" id="kpi-month-exp">—</div>
+            <div class="kpi-sub" id="kpi-month-exp-sub">في الفترة</div>
+            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
+          </div>
+          <div class="kpi-card kpi-amber kpi-clickable" onclick="toggleDrillDown('fullcost')" id="kpi-card-fullcost">
+            <div class="kpi-top"><span class="kpi-label">التكلفة الكاملة</span><div class="kpi-icon">🏷️</div></div>
+            <div class="kpi-val" id="kpi-fullcost">—</div>
+            <div class="kpi-sub" id="kpi-fullcost-sub">شراء + مصاريف</div>
+            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
+          </div>
+          <div class="kpi-card kpi-green kpi-clickable" onclick="toggleDrillDown('profit')" id="kpi-card-profit">
+            <div class="kpi-top"><span class="kpi-label">صافي الربح</span><div class="kpi-icon">📈</div></div>
+            <div class="kpi-val" id="kpi-profit">—</div>
+            <div class="kpi-sub" id="kpi-profit-sub">مبيعات - تكلفة</div>
+            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
+          </div>
+          <div class="kpi-card kpi-purple kpi-clickable" onclick="toggleDrillDown('stock')" id="kpi-card-stock">
             <div class="kpi-top"><span class="kpi-label">في المخزن</span><div class="kpi-icon">🚗</div></div>
             <div class="kpi-val" id="kpi-stock">—</div>
             <div class="kpi-sub" id="kpi-stock-sub">لم تُباع بعد</div>
-          </div>
-          <div class="kpi-card kpi-green" style="cursor:default">
-            <div class="kpi-top"><span class="kpi-label">مبيعات الشهر</span><div class="kpi-icon">💹</div></div>
-            <div class="kpi-val" id="kpi-sales">—</div>
-            <div class="kpi-sub" id="kpi-sales-sub">إيرادات المبيعات</div>
-          </div>
-          <div class="kpi-card kpi-green" style="cursor:default">
-            <div class="kpi-top"><span class="kpi-label">صافي الربح</span><div class="kpi-icon">📈</div></div>
-            <div class="kpi-val" id="kpi-profit">—</div>
-            <div class="kpi-sub" id="kpi-profit-sub">مبيعات - تكلفة كاملة</div>
-          </div>
-          <div class="kpi-card kpi-red" style="cursor:default">
-            <div class="kpi-top"><span class="kpi-label">تحصيلات متأخرة</span><div class="kpi-icon">⏰</div></div>
-            <div class="kpi-val" id="kpi-overdue">—</div>
-            <div class="kpi-sub" id="kpi-overdue-sub">تجاوزت الاستحقاق</div>
-          </div>
-          <div class="kpi-card kpi-red" style="cursor:default">
-            <div class="kpi-top"><span class="kpi-label">مصاريف الشهر</span><div class="kpi-icon">💸</div></div>
-            <div class="kpi-val" id="kpi-month-exp">—</div>
-            <div class="kpi-sub" id="kpi-month-exp-sub">الشهر الحالي</div>
-          </div>
-          <div class="kpi-card kpi-amber" style="cursor:default">
-            <div class="kpi-top"><span class="kpi-label">مسودات معلقة</span><div class="kpi-icon">📝</div></div>
-            <div class="kpi-val" id="kpi-drafts">—</div>
-            <div class="kpi-sub">تحتاج مراجعة</div>
+            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
           </div>
         </div>
 
-        <!-- تنبيهات تحتاج عمل -->
+        <!-- Drill-down Panel -->
+        <div id="dash-drilldown" style="display:none;background:var(--card);border:2px solid var(--accent);border-radius:var(--radius);padding:16px 20px;margin-bottom:14px;animation:fadeSlideIn .2s ease">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div style="font-size:13px;font-weight:700" id="dd-title"></div>
+            <button onclick="closeDrillDown()" style="background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:'Cairo',sans-serif;color:var(--text)">✕ إغلاق</button>
+          </div>
+          <!-- Summary KPIs -->
+          <div id="dd-kpis" style="display:grid;gap:8px;margin-bottom:16px"></div>
+          <!-- Chart -->
+          <div id="dd-chart-wrap" style="margin-bottom:16px;display:none">
+            <div id="dd-chart" style="display:flex;gap:4px;align-items:flex-end;height:100px"></div>
+            <div id="dd-chart-labels" style="display:flex;gap:4px;margin-top:4px"></div>
+          </div>
+          <!-- Table -->
+          <div id="dd-table" style="max-height:320px;overflow-y:auto"></div>
+        </div>
+
+        <!-- تنبيهات -->
         <div id="dash-alerts-wrap" style="margin-bottom:14px;display:none">
           <div style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px">
             <span style="color:var(--red)">●</span> تحتاج متابعة الآن
@@ -1499,47 +1534,35 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           <div id="dash-alerts" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px"></div>
         </div>
 
-        <!-- 3 columns: مخزن + تحصيلات + مبيعات -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
-
-          <!-- المخزن -->
+        <!-- Charts Row -->
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:14px">
           <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <div style="font-size:12px;font-weight:700">🚗 المخزن</div>
-              <span style="font-size:10px;color:var(--text2)" id="stock-count-label">—</span>
+              <div style="font-size:12px;font-weight:700">📊 أداء الفترة</div>
+              <div style="display:flex;gap:12px;font-size:10px;color:var(--text2)">
+                <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;background:var(--green);border-radius:2px;display:inline-block"></span>مبيعات</span>
+                <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;background:var(--red);border-radius:2px;display:inline-block"></span>مصاريف</span>
+                <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;background:var(--accent);border-radius:2px;display:inline-block"></span>ربح</span>
+              </div>
             </div>
-            <div id="dash-stock-list">
-              <div style="font-size:12px;color:var(--text2);text-align:center;padding:16px">جاري التحميل...</div>
-            </div>
+            <div id="dash-perf-chart" style="display:flex;gap:6px;align-items:flex-end;height:120px;margin-bottom:8px"></div>
+            <div id="dash-perf-labels" style="display:flex;gap:6px"></div>
           </div>
-
-          <!-- تحصيلات متأخرة -->
           <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <div style="font-size:12px;font-weight:700">⏰ تحصيلات متأخرة وقادمة</div>
-              <span style="font-size:10px;color:var(--text2)" id="collections-label">—</span>
-            </div>
-            <div id="dash-collections-list">
-              <div style="font-size:12px;color:var(--text2);text-align:center;padding:16px">جاري التحميل...</div>
-            </div>
-          </div>
-
-          <!-- مبيعات آخر 6 أشهر -->
-          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
-            <div style="font-size:12px;font-weight:700;margin-bottom:12px">📊 مبيعات آخر 6 أشهر</div>
-            <div id="dash-sales-chart" style="display:flex;gap:3px;align-items:flex-end;height:95px;margin-bottom:10px"></div>
-            <div style="border-top:1px solid var(--border);padding-top:10px">
-              <div style="font-size:10px;font-weight:500;color:var(--text2);margin-bottom:6px">توزيع المصاريف</div>
-              <div id="dash-exp-breakdown"></div>
+            <div style="font-size:12px;font-weight:700;margin-bottom:12px">💸 توزيع المصاريف</div>
+            <div id="dash-exp-breakdown"></div>
+            <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
+              <div style="font-size:12px;font-weight:700;margin-bottom:8px">⏰ تحصيلات متأخرة</div>
+              <div id="dash-collections-list"></div>
+              <span style="font-size:10px;color:var(--text2)" id="collections-label"></span>
             </div>
           </div>
-
         </div>
 
-        <!-- جدول الصفقات -->
+        <!-- جدول الصفقات الكامل -->
         <div class="section-header">
           <div>
-            <div class="section-title">الصفقات</div>
+            <div class="section-title">كل الصفقات</div>
             <div class="section-sub" id="dealsCountLabel">جميع الملفات</div>
           </div>
           <div class="section-actions">
@@ -3350,14 +3373,56 @@ function updateSystemUI() {
 // ════════════════════════════════════════
 // DASHBOARD
 // ════════════════════════════════════════
-async function loadDashboard() {
-  setLoading('dealsTableBody', 'جاري تحميل البيانات...');
-  try {
-    const sys   = state.system;
-    const today = new Date().toISOString().split('T')[0];
-    const in7   = new Date(Date.now() + 7*864e5).toISOString().split('T')[0];
+// ════════════════════════════════════════
+// DASHBOARD — period-based
+// ════════════════════════════════════════
+const dashState = { days: 30, from: null, to: null };
 
-    const [deals, vehicles, sales, expenses, collections, drafts] = await Promise.all([
+function setDashPeriod(days) {
+  // Update active button
+  document.querySelectorAll('.dash-period-btn').forEach(b => b.classList.remove('active'));
+  const btn = el('period-btn-' + days);
+  if (btn) btn.classList.add('active');
+
+  const customDates = el('dash-custom-dates');
+  if (days === 'custom') {
+    if (customDates) customDates.style.display = 'flex';
+    const from = el('dash-from')?.value;
+    const to   = el('dash-to')?.value;
+    if (!from || !to) return;
+    dashState.days = 'custom';
+    dashState.from = from;
+    dashState.to   = to;
+  } else {
+    if (customDates) customDates.style.display = 'none';
+    dashState.days = days;
+    const toDate   = new Date();
+    const fromDate = new Date(Date.now() - days * 864e5);
+    dashState.from = fromDate.toISOString().split('T')[0];
+    dashState.to   = toDate.toISOString().split('T')[0];
+  }
+
+  // Update period label
+  const labels = {7:'آخر 7 أيام', 30:'آخر 30 يوم', 60:'آخر 60 يوم', 90:'آخر 90 يوم'};
+  if (el('dash-period-label')) {
+    el('dash-period-label').textContent = days === 'custom'
+      ? `${dashState.from} — ${dashState.to}`
+      : labels[days] || '';
+  }
+
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  setLoading('dealsTableBody');
+  const sys  = state.system;
+  const from = dashState.from || new Date(Date.now() - 30*864e5).toISOString().split('T')[0];
+  const to   = dashState.to   || new Date().toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split('T')[0];
+  const in7   = new Date(Date.now() + 7*864e5).toISOString().split('T')[0];
+
+  try {
+    const [deals, vehicles, allSales, allExpenses, collections, drafts] = await Promise.all([
       apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, order:'created_at.desc' }),
       apiGet('vehicles',        { select:'*', system_type:`eq.${sys}` }),
       apiGet('sales',           { select:'*', system_type:`eq.${sys}` }),
@@ -3368,11 +3433,16 @@ async function loadDashboard() {
 
     state.allDeals = deals || [];
 
+    // ── فلتر بيانات الفترة ──
+    const inPeriod = (dateStr) => dateStr && dateStr >= from && dateStr <= to;
+    const periodSales = (allSales||[]).filter(s => inPeriod(s.sale_date||s.created_at?.split('T')[0]));
+    const periodExp   = (allExpenses||[]).filter(e => inPeriod(e.exp_date||e.expense_date||e.created_at?.split('T')[0]));
+
     // ── Maps ──
     const vehicleMap = {}, salesMap = {}, expMap = {};
-    (vehicles||[]).forEach(v => { vehicleMap[v.file_no] = vehicleMap[v.file_no]||[]; vehicleMap[v.file_no].push(v); });
-    (sales||[]).forEach(s    => { salesMap[s.file_no]   = salesMap[s.file_no]||[];   salesMap[s.file_no].push(s); });
-    (expenses||[]).forEach(e => { expMap[e.file_no]     = expMap[e.file_no]||[];     expMap[e.file_no].push(e); });
+    (vehicles||[]).forEach(v  => { vehicleMap[v.file_no] = vehicleMap[v.file_no]||[]; vehicleMap[v.file_no].push(v); });
+    (allSales||[]).forEach(s  => { salesMap[s.file_no]   = salesMap[s.file_no]||[];   salesMap[s.file_no].push(s); });
+    (allExpenses||[]).forEach(e=> { expMap[e.file_no]    = expMap[e.file_no]||[];     expMap[e.file_no].push(e); });
 
     // ── Enrich deals ──
     state.allDealsEnriched = (deals||[]).map(d => {
@@ -3385,67 +3455,62 @@ async function loadDashboard() {
       const totalExp  = eList.reduce((s,e)=>s+(+e.amount||0),0);
       const totalSale = sList.reduce((s,s2)=>s+(+s2.sale_price||0),0);
       const fullCost  = totalCost + totalExp;
-      const profit    = totalSale - fullCost;
       return {
         ...d,
         _vTotal: vList.length, _vSold: sList.length,
         _vLeft:  vList.length - sList.length,
         _totalCost: totalCost, _totalExp: totalExp,
-        _fullCost: fullCost, _totalSale: totalSale, _profit: profit,
+        _fullCost: fullCost, _totalSale: totalSale,
+        _profit: totalSale - fullCost,
         _remaining: fullCost - totalSale,
         _stockVehicles: vList.filter(v => !soldVins.has(v.vin)),
       };
     });
 
+    // ── حسابات الفترة ──
+    const totSales      = periodSales.reduce((s,r)=>s+(+r.sale_price||0),0);
+    const totExp        = periodExp.reduce((s,e)=>s+(+e.amount||0),0);
+    const periodFileNos = new Set(periodSales.map(s=>s.file_no));
+    const periodDeals   = (deals||[]).filter(d => periodFileNos.has(d.file_no));
+    const totPurchase   = periodDeals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
+    const periodDealExp = (allExpenses||[]).filter(e => periodFileNos.has(e.file_no)).reduce((s,e)=>s+(+e.amount||0),0);
+    const profit        = totSales - totPurchase - periodDealExp;
+    const margin        = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
+    const soldVinsAll   = new Set((allSales||[]).map(s=>s.vin));
+    const stockVehicles = (vehicles||[]).filter(v => !soldVinsAll.has(v.vin));
+    const overdueList   = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date < todayStr);
+    const upcomingList  = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date >= todayStr && c.due_date <= in7);
+    const overdueAmt    = overdueList.reduce((s,c)=>s+(+c.amount||0),0);
+    const draftCount    = (drafts||[]).length;
+
+    // ── حفظ البيانات للـ drill-down ──
+    _ddState.data = {
+      periodSales, periodExp, periodDeals,
+      periodCollections: (collections||[]).filter(c => {
+        const d = c.due_date||c.paid_date||c.created_at?.split('T')[0]||'';
+        return d >= from && d <= to;
+      }),
+      stockVehicles, todayStr, from, to,
+    };
+
     // ── KPIs ──
-    const activeDeals  = (deals||[]).filter(d => d.status !== 'CLOSED');
-    const soldVinsAll  = new Set((sales||[]).map(s=>s.vin));
-    const stockVehicles= (vehicles||[]).filter(v => !soldVinsAll.has(v.vin));
-    const stockCount   = stockVehicles.length;
+    const totCollections = (_ddState.data.periodCollections||[]).reduce((s,c)=>s+(+c.amount||0),0);
+    const totFullCost    = totPurchase + periodDealExp;
 
-    // مبيعات الشهر الحالي
-    const nowY = new Date().getFullYear(), nowM = new Date().getMonth();
-    const monthSales = (sales||[]).filter(s => {
-      const d = new Date(s.sale_date||s.created_at);
-      return d.getFullYear()===nowY && d.getMonth()===nowM;
-    }).reduce((s,r)=>s+(+r.sale_price||0),0);
+    const setKpi = (id, val, color) => { const e = el(id); if(!e) return; animateCount(e, String(val), color); };
+    setKpi('kpi-sales',       fmt(totSales),       'var(--green)');
+    setKpi('kpi-collections', fmt(totCollections), 'var(--blue)');
+    setKpi('kpi-month-exp',   fmt(totExp),         totExp>0?'var(--red)':'var(--text2)');
+    setKpi('kpi-fullcost',    fmt(totFullCost),     'var(--accent)');
+    setKpi('kpi-profit',      fmt(profit),          profit>=0?'var(--green)':'var(--red)');
+    setKpi('kpi-stock',       stockVehicles.length, stockVehicles.length>0?'var(--purple)':'var(--green)');
 
-    // مصاريف الشهر الحالي
-    const monthExp = (expenses||[]).filter(e => {
-      const d = new Date(e.exp_date||e.expense_date||e.created_at);
-      return d.getFullYear()===nowY && d.getMonth()===nowM;
-    }).reduce((s,e)=>s+(+e.amount||0),0);
-
-    // الربح الكلي
-    const totPurchase = (deals||[]).reduce((s,d)=>s+(+d.total_purchase||0),0);
-    const totSales    = (sales||[]).reduce((s,v)=>s+(+v.sale_price||0),0);
-    const totExp      = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
-    const profit      = totSales - totPurchase - totExp;
-    const margin      = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
-
-    // تحصيلات متأخرة وقادمة
-    const overdueList  = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date < today);
-    const upcomingList = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date >= today && c.due_date <= in7);
-    const overdueAmt   = overdueList.reduce((s,c)=>s+(+c.amount||0),0);
-    const draftCount   = (drafts||[]).length;
-
-    // ── Set KPIs ──
-    const setKpi = (id, val, color) => { const e = el(id); if (!e) return; animateCount(e, String(val), color); };
-    setKpi('kpi-deals',   activeDeals.length);
-    setKpi('kpi-stock',   stockCount,   stockCount > 0 ? 'var(--purple)' : 'var(--green)');
-    setKpi('kpi-sales',   fmt(monthSales), 'var(--green)');
-    setKpi('kpi-profit',  fmt(profit),  profit>=0?'var(--green)':'var(--red)');
-    setKpi('kpi-overdue', overdueList.length, overdueList.length > 0 ? 'var(--red)' : 'var(--green)');
-    setKpi('kpi-drafts',     draftCount,   draftCount > 0 ? 'var(--accent)' : 'var(--text2)');
-    setKpi('kpi-month-exp',  fmt(monthExp), monthExp > 0 ? 'var(--red)' : 'var(--text2)');
-    if(el('kpi-month-exp-sub')) el('kpi-month-exp-sub').textContent = 'الشهر الحالي';
-
-    // KPI sub text
-    if(el('kpi-deals-sub'))   el('kpi-deals-sub').textContent   = `${(deals||[]).filter(d=>d.status==='IN PROGRESS').length} جارية`;
-    if(el('kpi-stock-sub'))   el('kpi-stock-sub').textContent   = stockVehicles.filter(v=>v._days>60).length > 0 ? `${stockVehicles.filter(v=>daysSince(v.created_at)>60).length} أكثر من 60 يوم` : 'لم تُباع بعد';
-    if(el('kpi-sales-sub'))   el('kpi-sales-sub').textContent   = 'الشهر الحالي';
-    if(el('kpi-profit-sub'))  el('kpi-profit-sub').textContent  = `هامش ${margin}%`;
-    if(el('kpi-overdue-sub')) el('kpi-overdue-sub').textContent = overdueList.length > 0 ? `${fmt(overdueAmt)} متأخر` : 'لا يوجد متأخر';
+    if(el('kpi-sales-sub'))       el('kpi-sales-sub').textContent       = `${periodSales.length} فاتورة`;
+    if(el('kpi-collections-sub')) el('kpi-collections-sub').textContent = `${(_ddState.data.periodCollections||[]).length} قيد`;
+    if(el('kpi-month-exp-sub'))   el('kpi-month-exp-sub').textContent   = `${periodExp.length} بند`;
+    if(el('kpi-fullcost-sub'))    el('kpi-fullcost-sub').textContent    = `شراء ${fmt(totPurchase)} + مصاريف ${fmt(periodDealExp)}`;
+    if(el('kpi-profit-sub'))      el('kpi-profit-sub').textContent      = `هامش ${margin}%`;
+    if(el('kpi-stock-sub'))       el('kpi-stock-sub').textContent       = stockVehicles.filter(v=>daysSince(v.created_at)>60).length>0 ? `${stockVehicles.filter(v=>daysSince(v.created_at)>60).length} أكثر من 60 يوم` : 'لم تُباع بعد';
 
     // ── Badges ──
     if(el('badge-open'))     el('badge-open').textContent     = (deals||[]).filter(d=>d.status==='OPEN').length || '';
@@ -3454,27 +3519,151 @@ async function loadDashboard() {
     // ── Alerts ──
     renderDashAlerts(overdueList, upcomingList, stockVehicles, draftCount, deals||[]);
 
-    // ── Stock list ──
-    renderDashStock(stockVehicles, vehicleMap, salesMap);
-
-    // ── Collections list ──
-    renderDashCollections(overdueList, upcomingList, today);
-
-    // ── Sales chart ──
-    renderDashSalesChart(sales||[]);
+    // ── Performance chart ──
+    renderDashPerfChart(periodSales, periodExp, from, to, dashState.days);
 
     // ── Expenses breakdown ──
-    renderDashExpBreakdown(expenses||[]);
+    renderDashExpBreakdown(periodExp);
 
-    // ── Deals table ──
+    // ── Collections list ──
+    renderDashCollections(overdueList, upcomingList, todayStr);
+
+    // ── Full deals table ──
     const list = state.dealsFilter==='all' ? state.allDealsEnriched : state.allDealsEnriched.filter(d=>d.status===state.dealsFilter);
+    if(el('dealsCountLabel')) el('dealsCountLabel').textContent = `${state.allDealsEnriched.length} ملف`;
     renderDealsTable(list);
+
+    // ── لو كان drill-down مفتوح، نحدثه ──
+    if (_ddState.type) renderDrillDown(_ddState.type);
 
   } catch(e) {
     showErr('dealsTableBody', 'خطأ في تحميل البيانات: ' + e.message);
     console.error(e);
   }
 }
+
+// ── Performance Chart (مبيعات + مصاريف + ربح) ──
+function renderDashPerfChart(sales, expenses, from, to, days) {
+  const chartWrap  = el('dash-perf-chart');
+  const labelsWrap = el('dash-perf-labels');
+  if (!chartWrap) return;
+
+  // تقسيم الفترة لنقاط
+  const fromD = new Date(from), toD = new Date(to);
+  const totalDays = Math.round((toD - fromD) / 864e5) + 1;
+  let buckets = [];
+
+  if (totalDays <= 14) {
+    // يومي
+    for (let i = 0; i < totalDays; i++) {
+      const d = new Date(fromD); d.setDate(d.getDate() + i);
+      const ds = d.toISOString().split('T')[0];
+      buckets.push({ label: `${d.getDate()}/${d.getMonth()+1}`, from: ds, to: ds, sales:0, exp:0 });
+    }
+  } else if (totalDays <= 60) {
+    // أسبوعي
+    let cur = new Date(fromD);
+    while (cur <= toD) {
+      const wEnd = new Date(cur); wEnd.setDate(wEnd.getDate() + 6);
+      if (wEnd > toD) wEnd.setTime(toD.getTime());
+      buckets.push({ label: `${cur.getDate()}/${cur.getMonth()+1}`, from: cur.toISOString().split('T')[0], to: wEnd.toISOString().split('T')[0], sales:0, exp:0 });
+      cur = new Date(wEnd); cur.setDate(cur.getDate() + 1);
+    }
+  } else {
+    // شهري
+    let cur = new Date(fromD.getFullYear(), fromD.getMonth(), 1);
+    while (cur <= toD) {
+      const mEnd = new Date(cur.getFullYear(), cur.getMonth()+1, 0);
+      buckets.push({ label: cur.toLocaleDateString('ar-KW',{month:'short'}), from: cur.toISOString().split('T')[0], to: mEnd.toISOString().split('T')[0], sales:0, exp:0 });
+      cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1);
+    }
+  }
+
+  // توزيع البيانات
+  sales.forEach(s => {
+    const d = s.sale_date||s.created_at?.split('T')[0]||'';
+    const b = buckets.find(bk => d >= bk.from && d <= bk.to);
+    if (b) b.sales += +s.sale_price||0;
+  });
+  expenses.forEach(e => {
+    const d = e.exp_date||e.expense_date||e.created_at?.split('T')[0]||'';
+    const b = buckets.find(bk => d >= bk.from && d <= bk.to);
+    if (b) b.exp += +e.amount||0;
+  });
+  buckets.forEach(b => b.profit = b.sales - b.exp);
+
+  const maxVal = Math.max(...buckets.map(b => Math.max(b.sales, b.exp, Math.abs(b.profit))), 1);
+  const CHART_H = 100;
+
+  chartWrap.innerHTML = buckets.map((b,i) => {
+    const sH = Math.max((b.sales/maxVal)*CHART_H, b.sales>0?3:0);
+    const eH = Math.max((b.exp/maxVal)*CHART_H,   b.exp>0?3:0);
+    const pH = Math.max((Math.abs(b.profit)/maxVal)*CHART_H, b.profit!==0?3:0);
+    const pColor = b.profit >= 0 ? 'var(--accent)' : 'var(--red)';
+    const sAmt = b.sales  > 0 ? (b.sales>=1000?(b.sales/1000).toFixed(1)+'K':b.sales.toFixed(0))  : '';
+    const eAmt = b.exp    > 0 ? (b.exp>=1000?(b.exp/1000).toFixed(1)+'K':b.exp.toFixed(0))        : '';
+    const pAmt = b.profit !== 0 ? (Math.abs(b.profit)>=1000?(Math.abs(b.profit)/1000).toFixed(1)+'K':Math.abs(b.profit).toFixed(0)) : '';
+    return `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0">
+      <div style="display:flex;gap:2px;align-items:flex-end;height:${CHART_H}px;width:100%">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px">
+          <div style="font-size:8px;color:var(--green);min-height:10px;text-align:center">${sAmt}</div>
+          <div style="width:100%;height:${sH}px;background:var(--green);border-radius:2px 2px 0 0;min-height:${b.sales>0?2:0}px"></div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px">
+          <div style="font-size:8px;color:var(--red);min-height:10px;text-align:center">${eAmt}</div>
+          <div style="width:100%;height:${eH}px;background:var(--red);border-radius:2px 2px 0 0;min-height:${b.exp>0?2:0}px"></div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px">
+          <div style="font-size:8px;color:${pColor};min-height:10px;text-align:center">${pAmt}</div>
+          <div style="width:100%;height:${pH}px;background:${pColor};border-radius:2px 2px 0 0;min-height:${b.profit!==0?2:0}px"></div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  if (labelsWrap) {
+    labelsWrap.innerHTML = buckets.map(b => `
+      <div style="flex:1;text-align:center;font-size:9px;color:var(--text2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.label}</div>`).join('');
+  }
+}
+
+// ── Period deals summary ──
+function renderDashPeriodDeals(periodSales, periodFileNos, deals) {
+  const wrap = el('dash-period-deals');
+  if (!wrap) return;
+  if(el('dealsCountLabel')) el('dealsCountLabel').textContent = `${periodFileNos.size} ملف`;
+
+  if (!periodFileNos.size) {
+    wrap.innerHTML = `<div style="font-size:12px;color:var(--text2);text-align:center;padding:16px">لا توجد مبيعات في هذه الفترة</div>`;
+    return;
+  }
+
+  const periodDealsData = deals.filter(d => periodFileNos.has(d.file_no)).slice(0,6);
+  wrap.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border)">
+          <th style="padding:6px 8px;text-align:right;color:var(--text2);font-weight:500;font-size:11px">الملف</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text2);font-weight:500;font-size:11px">المورد</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text2);font-weight:500;font-size:11px">مبيعات الفترة</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--text2);font-weight:500;font-size:11px">الحالة</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${periodDealsData.map(d => {
+          const fileSales = periodSales.filter(s=>s.file_no===d.file_no).reduce((s,r)=>s+(+r.sale_price||0),0);
+          return `<tr style="border-bottom:0.5px solid var(--border);cursor:pointer" onclick="openViewer('${d.file_no}')">
+            <td style="padding:7px 8px;font-family:monospace;font-weight:700;color:var(--accent)">${d.file_no||'—'}</td>
+            <td style="padding:7px 8px;color:var(--text2)">${d.supplier||'—'}</td>
+            <td style="padding:7px 8px;font-family:monospace;font-weight:700;color:var(--green)">${fmt(fileSales)}</td>
+            <td style="padding:7px 8px"><span class="badge badge-${statusClass(d.status)}">${d.status}</span></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
 
 // ── Helper: days since date ──
 function daysSince(dateStr) {
@@ -3509,7 +3698,7 @@ function renderDashAlerts(overdueList, upcomingList, stockVehicles, draftCount, 
 }
 
 // ── Stock list ──
-function renderDashStock(stockVehicles, vehicleMap, salesMap) {
+function renderDashStock(stockVehicles) {
   const wrap = el('dash-stock-list');
   if (!wrap) return;
   if(el('stock-count-label')) el('stock-count-label').textContent = `${stockVehicles.length} سيارة`;
@@ -6418,6 +6607,8 @@ function showDashboard() {
   el('topBarTitle').textContent    = 'لوحة التحكم';
   navActive('nav-dashboard');
   state.currentFileNo = null;
+  if (!dashState.from) setDashPeriod(30);
+  else loadDashboard();
 }
 
 function toggleNav(titleEl) {
@@ -10819,6 +11010,264 @@ async function loadOpexReport(from, to) {
   } catch(e) { wrap.innerHTML = errHTML(e.message); }
 }
 
+// ════════════════════════════════════════
+// DRILL-DOWN — كل KPI بيفتح تفاصيله
+// ════════════════════════════════════════
+let _ddState = { type: null, data: {} };
+
+function closeDrillDown() {
+  el('dash-drilldown').style.display = 'none';
+  document.querySelectorAll('.kpi-clickable').forEach(c => c.classList.remove('dd-active'));
+  _ddState.type = null;
+}
+
+function toggleDrillDown(type) {
+  if (_ddState.type === type) { closeDrillDown(); return; }
+  _ddState.type = type;
+  document.querySelectorAll('.kpi-clickable').forEach(c => c.classList.remove('dd-active'));
+  el('kpi-card-' + type)?.classList.add('dd-active');
+  renderDrillDown(type);
+  el('dash-drilldown').style.display = 'block';
+  el('dash-drilldown').scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+function renderDrillDown(type) {
+  const d = _ddState.data;
+  const panel = el('dash-drilldown');
+  const ddKpis = el('dd-kpis');
+  const ddTable = el('dd-table');
+  const ddChartWrap = el('dd-chart-wrap');
+  if (!panel) return;
+
+  const periodLabel = el('dash-period-label')?.textContent || '';
+
+  // ── مبيعات ──
+  if (type === 'sales') {
+    el('dd-title').textContent = `💹 تفاصيل المبيعات — ${periodLabel}`;
+    const sales = d.periodSales || [];
+    const total = sales.reduce((s,r)=>s+(+r.sale_price||0),0);
+    const byFile = {};
+    sales.forEach(r => { byFile[r.file_no]=(byFile[r.file_no]||0)+(+r.sale_price||0); });
+    ddKpis.style.gridTemplateColumns = 'repeat(3,1fr)';
+    ddKpis.innerHTML = `
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--green)">${fmt(total)}</div><div class="dd-kpi-lbl">إجمالي المبيعات</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val">${sales.length}</div><div class="dd-kpi-lbl">عدد الفواتير</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val">${Object.keys(byFile).length}</div><div class="dd-kpi-lbl">عدد الملفات</div></div>`;
+    renderDDChart(Object.entries(byFile).sort((a,b)=>b[1]-a[1]), 'var(--green)');
+    ddTable.innerHTML = sales.length ? `
+      <table class="data-table"><thead><tr>
+        <th>التاريخ</th><th>الملف</th><th>الشاصي</th><th>العميل</th><th>سعر البيع</th>
+      </tr></thead><tbody>
+      ${sales.map(r=>`<tr onclick="openViewer('${r.file_no}')" style="cursor:pointer">
+        <td class="mono">${fmtDate(r.sale_date)}</td>
+        <td class="mono text-amber">${r.file_no||'—'}</td>
+        <td class="mono" style="font-size:11px">${r.vin||'—'}</td>
+        <td>${r.customer||'—'}</td>
+        <td class="mono text-green" style="font-weight:700">${fmt(r.sale_price)}</td>
+      </tr>`).join('')}
+      </tbody></table>` : emptyHTML('💹','لا توجد مبيعات في هذه الفترة');
+  }
+
+  // ── تحصيلات ──
+  else if (type === 'collections') {
+    el('dd-title').textContent = `💰 تفاصيل التحصيلات — ${periodLabel}`;
+    const colls = d.periodCollections || [];
+    const paid   = colls.filter(c=>c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
+    const unpaid = colls.filter(c=>!c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
+    const overdue= colls.filter(c=>!c.paid_date && c.due_date && c.due_date < d.todayStr).length;
+    ddKpis.style.gridTemplateColumns = 'repeat(4,1fr)';
+    ddKpis.innerHTML = `
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--blue)">${fmt(paid+unpaid)}</div><div class="dd-kpi-lbl">إجمالي التحصيلات</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--green)">${fmt(paid)}</div><div class="dd-kpi-lbl">تم تحصيله</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--accent)">${fmt(unpaid)}</div><div class="dd-kpi-lbl">لم يُحصَّل</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--red)">${overdue}</div><div class="dd-kpi-lbl">متأخر</div></div>`;
+    // chart by customer
+    const byCustomer = {};
+    colls.forEach(c=>{ byCustomer[c.customer||'غير محدد']=(byCustomer[c.customer||'غير محدد']||0)+(+c.amount||0); });
+    renderDDChart(Object.entries(byCustomer).sort((a,b)=>b[1]-a[1]).slice(0,8), 'var(--blue)');
+    ddTable.innerHTML = colls.length ? `
+      <table class="data-table"><thead><tr>
+        <th>الاستحقاق</th><th>تاريخ الدفع</th><th>الملف</th><th>رقم الفاتورة</th><th>العميل</th><th>المبلغ</th><th>الحالة</th>
+      </tr></thead><tbody>
+      ${colls.map(c=>{
+        const isOverdue = !c.paid_date && c.due_date && c.due_date < d.todayStr;
+        return `<tr onclick="openViewer('${c.file_no||''}')" style="cursor:pointer">
+          <td class="mono">${fmtDate(c.due_date)}</td>
+          <td class="mono" style="color:${c.paid_date?'var(--green)':'var(--text2)'}">${c.paid_date?fmtDate(c.paid_date):'—'}</td>
+          <td class="mono text-amber">${c.file_no||'—'}</td>
+          <td class="mono">${c.inv_no||'—'}</td>
+          <td>${c.customer||'—'}</td>
+          <td class="mono" style="font-weight:700;color:var(--blue)">${fmt(c.amount)}</td>
+          <td><span style="background:${c.paid_date?'var(--green-dim)':isOverdue?'var(--red-dim)':'var(--accent-dim)'};color:${c.paid_date?'var(--green)':isOverdue?'var(--red)':'var(--accent)'};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">
+            ${c.paid_date?'✓ مُحصَّل':isOverdue?'متأخر':'معلق'}</span></td>
+        </tr>`;
+      }).join('')}
+      </tbody></table>` : emptyHTML('💰','لا توجد تحصيلات في هذه الفترة');
+  }
+
+  // ── مصاريف ──
+  else if (type === 'expenses') {
+    el('dd-title').textContent = `💸 تفاصيل المصاريف — ${periodLabel}`;
+    const exps = d.periodExp || [];
+    const total = exps.reduce((s,e)=>s+(+e.amount||0),0);
+    const byType = {};
+    exps.forEach(e=>{byType[e.exp_type||'أخرى']=(byType[e.exp_type||'أخرى']||0)+(+e.amount||0);});
+    ddKpis.style.gridTemplateColumns = `repeat(${Math.min(Object.keys(byType).length+1,5)},1fr)`;
+    ddKpis.innerHTML = `<div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--red)">${fmt(total)}</div><div class="dd-kpi-lbl">إجمالي المصاريف</div></div>`
+      + Object.entries(byType).sort((a,b)=>b[1]-a[1]).map(([t,v])=>
+        `<div class="dd-kpi"><div class="dd-kpi-val">${fmt(v)}</div><div class="dd-kpi-lbl">${t}</div></div>`).join('');
+    renderDDChart(Object.entries(byType).sort((a,b)=>b[1]-a[1]), 'var(--red)');
+    ddTable.innerHTML = exps.length ? `
+      <table class="data-table"><thead><tr>
+        <th>التاريخ</th><th>الملف</th><th>الوصف</th><th>النوع</th><th>طريقة الدفع</th><th>المبلغ</th>
+      </tr></thead><tbody>
+      ${exps.map(e=>`<tr onclick="${e.file_no?`openViewer('${e.file_no}')`:'void(0)'}" style="cursor:${e.file_no?'pointer':'default'}">
+        <td class="mono">${fmtDate(e.exp_date||e.expense_date)}</td>
+        <td class="mono text-amber">${e.file_no||'—'}</td>
+        <td>${e.description||'—'}</td>
+        <td><span style="background:var(--red-dim);color:var(--red);padding:2px 8px;border-radius:10px;font-size:10px">${e.exp_type||'—'}</span></td>
+        <td>${e.pay_method||'—'}</td>
+        <td class="mono text-red" style="font-weight:700">${fmt(e.amount)}</td>
+      </tr>`).join('')}
+      </tbody></table>` : emptyHTML('💸','لا توجد مصاريف في هذه الفترة');
+  }
+
+  // ── التكلفة الكاملة ──
+  else if (type === 'fullcost') {
+    el('dd-title').textContent = `🏷️ التكلفة الكاملة — ${periodLabel}`;
+    const deals  = d.periodDeals  || [];
+    const totPur = deals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
+    const totExp = (d.periodExp||[]).filter(e=>e.file_no).reduce((s,e)=>s+(+e.amount||0),0);
+    ddKpis.style.gridTemplateColumns = 'repeat(3,1fr)';
+    ddKpis.innerHTML = `
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--blue)">${fmt(totPur)}</div><div class="dd-kpi-lbl">تكلفة الشراء</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--red)">${fmt(totExp)}</div><div class="dd-kpi-lbl">مصاريف الصفقات</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--accent)">${fmt(totPur+totExp)}</div><div class="dd-kpi-lbl">التكلفة الكاملة</div></div>`;
+    const byFile = {};
+    deals.forEach(d2=>{
+      const fe = (d.periodExp||[]).filter(e=>e.file_no===d2.file_no).reduce((s,e)=>s+(+e.amount||0),0);
+      byFile[d2.file_no]=(+d2.total_purchase||0)+fe;
+    });
+    renderDDChart(Object.entries(byFile).sort((a,b)=>b[1]-a[1]), 'var(--accent)');
+    ddTable.innerHTML = deals.length ? `
+      <table class="data-table"><thead><tr>
+        <th>الملف</th><th>المورد</th><th>تكلفة الشراء</th><th>المصاريف</th><th>التكلفة الكاملة</th><th>الحالة</th>
+      </tr></thead><tbody>
+      ${deals.map(d2=>{
+        const fe=(d.periodExp||[]).filter(e=>e.file_no===d2.file_no).reduce((s,e)=>s+(+e.amount||0),0);
+        const fc=(+d2.total_purchase||0)+fe;
+        return `<tr onclick="openViewer('${d2.file_no}')" style="cursor:pointer">
+          <td class="mono text-amber" style="font-weight:700">${d2.file_no}</td>
+          <td>${d2.supplier||'—'}</td>
+          <td class="mono text-blue">${fmt(d2.total_purchase)}</td>
+          <td class="mono text-red">${fmt(fe)}</td>
+          <td class="mono" style="font-weight:700;color:var(--accent)">${fmt(fc)}</td>
+          <td><span class="badge badge-${statusClass(d2.status)}">${d2.status}</span></td>
+        </tr>`;
+      }).join('')}
+      </tbody></table>` : emptyHTML('🏷️','لا توجد صفقات في هذه الفترة');
+  }
+
+  // ── صافي الربح ──
+  else if (type === 'profit') {
+    el('dd-title').textContent = `📈 تفاصيل الربح — ${periodLabel}`;
+    const sales   = d.periodSales  || [];
+    const deals   = d.periodDeals  || [];
+    const exps    = d.periodExp    || [];
+    const totS    = sales.reduce((s,r)=>s+(+r.sale_price||0),0);
+    const totPur  = deals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
+    const totE    = exps.filter(e=>e.file_no).reduce((s,e)=>s+(+e.amount||0),0);
+    const profit  = totS - totPur - totE;
+    const margin  = totS>0?((profit/totS)*100).toFixed(1):0;
+    ddKpis.style.gridTemplateColumns = 'repeat(5,1fr)';
+    ddKpis.innerHTML = `
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--green)">${fmt(totS)}</div><div class="dd-kpi-lbl">المبيعات</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--blue)">${fmt(totPur)}</div><div class="dd-kpi-lbl">تكلفة الشراء</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--red)">${fmt(totE)}</div><div class="dd-kpi-lbl">المصاريف</div></div>
+      <div class="dd-kpi" style="background:${profit>=0?'var(--green-dim)':'var(--red-dim)'}"><div class="dd-kpi-val" style="color:${profit>=0?'var(--green)':'var(--red)'}">${fmt(profit)}</div><div class="dd-kpi-lbl">صافي الربح</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:${profit>=0?'var(--green)':'var(--red)'}">${margin}%</div><div class="dd-kpi-lbl">هامش الربح</div></div>`;
+    // ربح كل صفقة
+    const fileNos = [...new Set(sales.map(s=>s.file_no))];
+    const fileData = fileNos.map(fn=>{
+      const fs = sales.filter(s=>s.file_no===fn).reduce((s,r)=>s+(+r.sale_price||0),0);
+      const fd = deals.find(d2=>d2.file_no===fn);
+      const fe = exps.filter(e=>e.file_no===fn).reduce((s,e)=>s+(+e.amount||0),0);
+      const fp = (+fd?.total_purchase||0)+fe;
+      return {fn, sales:fs, cost:fp, profit:fs-fp};
+    });
+    renderDDChart(fileData.sort((a,b)=>b.profit-a.profit).map(f=>[f.fn, f.profit]), profit>=0?'var(--accent)':'var(--red)');
+    ddTable.innerHTML = fileData.length ? `
+      <table class="data-table"><thead><tr>
+        <th>الملف</th><th>المبيعات</th><th>التكلفة الكاملة</th><th>الربح / الخسارة</th><th>الهامش</th>
+      </tr></thead><tbody>
+      ${fileData.sort((a,b)=>b.profit-a.profit).map(f=>`<tr onclick="openViewer('${f.fn}')" style="cursor:pointer">
+        <td class="mono text-amber" style="font-weight:700">${f.fn}</td>
+        <td class="mono text-green">${fmt(f.sales)}</td>
+        <td class="mono">${fmt(f.cost)}</td>
+        <td class="mono" style="font-weight:700;color:${f.profit>=0?'var(--green)':'var(--red)'}">${f.profit>=0?'+':''}${fmt(f.profit)}</td>
+        <td style="color:${f.profit>=0?'var(--green)':'var(--red)'}">${f.sales>0?((f.profit/f.sales)*100).toFixed(1)+'%':'—'}</td>
+      </tr>`).join('')}
+      </tbody></table>` : emptyHTML('📈','لا توجد بيانات');
+  }
+
+  // ── المخزن ──
+  else if (type === 'stock') {
+    el('dd-title').textContent = `🚗 تفاصيل المخزن`;
+    const stock = d.stockVehicles || [];
+    const old60 = stock.filter(v=>daysSince(v.created_at)>60).length;
+    const old30 = stock.filter(v=>daysSince(v.created_at)>30&&daysSince(v.created_at)<=60).length;
+    ddKpis.style.gridTemplateColumns = 'repeat(4,1fr)';
+    ddKpis.innerHTML = `
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--purple)">${stock.length}</div><div class="dd-kpi-lbl">إجمالي المخزن</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--green)">${stock.length-old30-old60}</div><div class="dd-kpi-lbl">أقل من 30 يوم</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--accent)">${old30}</div><div class="dd-kpi-lbl">30-60 يوم</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--red)">${old60}</div><div class="dd-kpi-lbl">أكثر من 60 يوم</div></div>`;
+    ddChartWrap.style.display = 'none';
+    ddTable.innerHTML = stock.length ? `
+      <table class="data-table"><thead><tr>
+        <th>الملف</th><th>الموديل</th><th>رقم الشاصي</th><th>تكلفة الشراء</th><th>أيام في المخزن</th><th>الحالة</th>
+      </tr></thead><tbody>
+      ${stock.sort((a,b)=>daysSince(b.created_at)-daysSince(a.created_at)).map(v=>{
+        const days=daysSince(v.created_at);
+        const color=days>60?'var(--red)':days>30?'var(--accent)':'var(--green)';
+        const bg=days>60?'var(--red-dim)':days>30?'var(--accent-dim)':'var(--green-dim)';
+        return `<tr onclick="openViewer('${v.file_no}')" style="cursor:pointer">
+          <td class="mono text-amber">${v.file_no||'—'}</td>
+          <td style="font-weight:600">${v.model||v.make||'—'} ${v.year||''}</td>
+          <td class="mono" style="font-size:11px">${v.vin||'—'}</td>
+          <td class="mono">${fmt(v.purchase_price)}</td>
+          <td><span style="background:${bg};color:${color};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${days} يوم</span></td>
+          <td><span style="font-size:10px;color:${color}">${days>60?'⚠️ راكدة':days>30?'تنبه':'جيدة'}</span></td>
+        </tr>`;
+      }).join('')}
+      </tbody></table>` : emptyHTML('🚗','المخزن فارغ');
+  }
+}
+
+// ── DD mini chart ──
+function renderDDChart(entries, color) {
+  const chartWrap  = el('dd-chart-wrap');
+  const chart      = el('dd-chart');
+  const labelsWrap = el('dd-chart-labels');
+  if (!chartWrap||!chart||!entries.length) { if(chartWrap) chartWrap.style.display='none'; return; }
+  chartWrap.style.display = 'block';
+  const max = Math.max(...entries.map(e=>Math.abs(+e[1]||0)), 1);
+  chart.innerHTML = entries.slice(0,10).map(([label,val])=>{
+    const pct = Math.max((Math.abs(+val)/max)*100, 3);
+    const c   = +val >= 0 ? color : 'var(--red)';
+    const amt = Math.abs(+val) >= 1000 ? (Math.abs(+val)/1000).toFixed(1)+'K' : (+val).toFixed(0);
+    return `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0">
+      <div style="font-size:8px;color:${c};min-height:12px;text-align:center;font-weight:600">${amt}</div>
+      <div style="flex:1;width:100%;display:flex;align-items:flex-end">
+        <div style="width:100%;height:${pct}%;background:${c};border-radius:3px 3px 0 0;min-height:3px"></div>
+      </div>
+    </div>`;
+  }).join('');
+  labelsWrap.innerHTML = entries.slice(0,10).map(([label])=>`
+    <div style="flex:1;text-align:center;font-size:9px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${label}</div>`).join('');
+}
+
 // PWA Install prompt
 let _pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
@@ -10864,6 +11313,22 @@ function installPWA() {
 .sett-sys-tag{display:inline-flex;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
 .sett-sys-box{background:var(--accent-dim);color:var(--accent)}
 .sett-sys-tr{background:var(--blue-dim);color:var(--blue)}
+
+/* Period buttons */
+.dash-period-btn{background:transparent;border:none;color:var(--text2);font-size:12px;font-weight:500;padding:6px 12px;border-radius:6px;cursor:pointer;transition:all .15s;font-family:'Cairo',sans-serif;white-space:nowrap}
+.dash-period-btn:hover{background:var(--card);color:var(--text)}
+.dash-period-btn.active{background:var(--card);color:var(--accent);font-weight:700}
+/* Clickable KPI */
+.kpi-clickable{cursor:pointer !important;position:relative}
+.kpi-clickable:hover{transform:translateY(-4px) !important;box-shadow:0 8px 24px rgba(0,0,0,.1) !important}
+.kpi-drill-hint{font-size:9px;color:var(--text2);margin-top:4px;opacity:0;transition:opacity .15s}
+.kpi-clickable:hover .kpi-drill-hint{opacity:1}
+.kpi-clickable.dd-active{border:2px solid var(--accent) !important;background:var(--accent-dim) !important}
+.kpi-clickable.dd-active .kpi-drill-hint{opacity:1;color:var(--accent)}
+/* DD mini KPIs */
+.dd-kpi{background:var(--card2);border-radius:var(--radius-sm);padding:10px 14px;text-align:center;border:0.5px solid var(--border)}
+.dd-kpi-val{font-size:18px;font-weight:700;font-family:var(--mono);margin-bottom:2px}
+.dd-kpi-lbl{font-size:10px;color:var(--text2)}
 .perm-yes{color:var(--green);font-weight:700}
 .perm-no{color:var(--red);font-weight:700}
 .perm-limited{color:var(--accent);font-weight:700}
