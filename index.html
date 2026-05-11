@@ -6136,20 +6136,22 @@ async function openCollectionModal() {
   openModal('collectionModal');
 
   try {
-    // جيب كل الفواتير في الملف
     const [sales, collections] = await Promise.all([
-      apiGet('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
+      apiGet('sales', { select:'id,inv_no,invoice_no,customer,vin,sale_price', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
       apiGet('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
-    // احسب المحصّل لكل فاتورة
     const collectedMap = {};
     (collections||[]).forEach(c => {
-      collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
+      if (c.inv_no) collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
     });
 
-    // الفواتير اللي لسه فيها باقي
-    const pendingSales = (sales||[]).map(s => ({
+    // نوحد inv_no / invoice_no
+    const normalizedSales = (sales||[]).map(s => ({
+      ...s, inv_no: s.inv_no || s.invoice_no || '',
+    })).filter(s => s.inv_no);
+
+    const pendingSales = normalizedSales.map(s => ({
       ...s,
       collected: collectedMap[s.inv_no] || 0,
       remaining: (+s.sale_price||0) - (collectedMap[s.inv_no]||0),
@@ -6619,48 +6621,62 @@ async function loadQuickInvoices(fileNo) {
   el('qc-form-fields').style.display = 'none';
   el('qc-submit-btn').style.display  = 'none';
 
-  if (!fileNo) { invSel.innerHTML = '<option value="">— اختر ملفاً أولاً —</option>'; return; }
+  if (!fileNo) {
+    invSel.innerHTML = '<option value="">— اختر ملفاً أولاً —</option>';
+    return;
+  }
 
-  _invLoadTimer = setTimeout(async () => {
-    try {
-      const sys = state.system;
-      const [sales, collections] = await Promise.all([
-        apiGet('sales',       { select:'*',         system_type:`eq.${sys}`, file_no:`eq.${fileNo.trim()}`, order:'sale_date.desc' }),
-        apiGet('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo.trim()}` }),
-      ]);
+  // بدون timeout — نجيب البيانات فوراً
+  try {
+    const sys = state.system;
+    const fn  = fileNo.trim();
 
-      // احسب المحصّل لكل فاتورة
-      const collectedMap = {};
-      (collections||[]).forEach(c => { collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0); });
+    // طلبين بالتوازي
+    const [sales, collections] = await Promise.all([
+      apiGet('sales',       { select:'id,inv_no,invoice_no,customer,vin,sale_price', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
+      apiGet('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+    ]);
 
-      // الفواتير اللي فيها باقي
-      const pending = (sales||[]).map(s => ({
-        ...s,
-        collected: collectedMap[s.inv_no] || 0,
-        remaining: (+s.sale_price||0) - (collectedMap[s.inv_no]||0),
-      })).filter(s => s.remaining > 0.001);
+    // احسب المحصّل لكل فاتورة — يدعم inv_no و invoice_no
+    const collectedMap = {};
+    (collections||[]).forEach(c => {
+      if (c.inv_no) collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
+    });
 
-      invSel._salesData = pending;
+    // نوحد اسم الحقل — بعض السجلات فيها invoice_no وبعضها inv_no
+    const normalizedSales = (sales||[]).map(s => ({
+      ...s,
+      inv_no: s.inv_no || s.invoice_no || '',
+    })).filter(s => s.inv_no); // بس اللي عندها رقم فاتورة
 
-      if (!pending.length) {
-        invSel.innerHTML = '<option value="">لا توجد فواتير غير محصّلة في هذا الملف</option>';
-        return;
-      }
+    const pending = normalizedSales.map(s => ({
+      ...s,
+      collected: collectedMap[s.inv_no] || 0,
+      remaining: (+s.sale_price||0) - (collectedMap[s.inv_no]||0),
+    })).filter(s => s.remaining > 0.001);
 
-      invSel.innerHTML = '<option value="">— اختر فاتورة —</option>' +
-        pending.map(s => `
-          <option value="${s.inv_no}"
-            data-customer="${s.customer||''}"
-            data-vin="${s.vin||''}"
-            data-total="${s.sale_price||0}"
-            data-collected="${s.collected}"
-            data-remaining="${s.remaining}">
-            ${s.inv_no||'—'} — ${s.customer||''} — باقي: ${fmt(s.remaining)}
-          </option>`).join('');
-    } catch(e) {
-      invSel.innerHTML = '<option value="">خطأ في التحميل</option>';
+    invSel._salesData = pending;
+
+    if (!pending.length) {
+      invSel.innerHTML = '<option value="">لا توجد فواتير غير محصّلة</option>';
+      return;
     }
-  }, 400);
+
+    invSel.innerHTML = '<option value="">— اختر فاتورة —</option>' +
+      pending.map(s => `
+        <option value="${s.inv_no}"
+          data-customer="${s.customer||''}"
+          data-vin="${s.vin||''}"
+          data-total="${s.sale_price||0}"
+          data-collected="${s.collected}"
+          data-remaining="${s.remaining}">
+          ${s.inv_no} — ${s.customer||''} — باقي: ${fmt(s.remaining)}
+        </option>`).join('');
+
+  } catch(e) {
+    invSel.innerHTML = '<option value="">خطأ في التحميل</option>';
+    console.error('loadQuickInvoices:', e.message);
+  }
 }
 
 function onQuickCollectionInvChange() {
