@@ -1479,6 +1479,11 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
             <div class="kpi-val" id="kpi-overdue">—</div>
             <div class="kpi-sub" id="kpi-overdue-sub">تجاوزت الاستحقاق</div>
           </div>
+          <div class="kpi-card kpi-red" style="cursor:default">
+            <div class="kpi-top"><span class="kpi-label">مصاريف الشهر</span><div class="kpi-icon">💸</div></div>
+            <div class="kpi-val" id="kpi-month-exp">—</div>
+            <div class="kpi-sub" id="kpi-month-exp-sub">الشهر الحالي</div>
+          </div>
           <div class="kpi-card kpi-amber" style="cursor:default">
             <div class="kpi-top"><span class="kpi-label">مسودات معلقة</span><div class="kpi-icon">📝</div></div>
             <div class="kpi-val" id="kpi-drafts">—</div>
@@ -1522,7 +1527,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           <!-- مبيعات آخر 6 أشهر -->
           <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
             <div style="font-size:12px;font-weight:700;margin-bottom:12px">📊 مبيعات آخر 6 أشهر</div>
-            <div id="dash-sales-chart" style="display:flex;gap:3px;align-items:flex-end;height:80px;margin-bottom:10px"></div>
+            <div id="dash-sales-chart" style="display:flex;gap:3px;align-items:flex-end;height:95px;margin-bottom:10px"></div>
             <div style="border-top:1px solid var(--border);padding-top:10px">
               <div style="font-size:10px;font-weight:500;color:var(--text2);margin-bottom:6px">توزيع المصاريف</div>
               <div id="dash-exp-breakdown"></div>
@@ -3405,6 +3410,12 @@ async function loadDashboard() {
       return d.getFullYear()===nowY && d.getMonth()===nowM;
     }).reduce((s,r)=>s+(+r.sale_price||0),0);
 
+    // مصاريف الشهر الحالي
+    const monthExp = (expenses||[]).filter(e => {
+      const d = new Date(e.exp_date||e.expense_date||e.created_at);
+      return d.getFullYear()===nowY && d.getMonth()===nowM;
+    }).reduce((s,e)=>s+(+e.amount||0),0);
+
     // الربح الكلي
     const totPurchase = (deals||[]).reduce((s,d)=>s+(+d.total_purchase||0),0);
     const totSales    = (sales||[]).reduce((s,v)=>s+(+v.sale_price||0),0);
@@ -3425,7 +3436,9 @@ async function loadDashboard() {
     setKpi('kpi-sales',   fmt(monthSales), 'var(--green)');
     setKpi('kpi-profit',  fmt(profit),  profit>=0?'var(--green)':'var(--red)');
     setKpi('kpi-overdue', overdueList.length, overdueList.length > 0 ? 'var(--red)' : 'var(--green)');
-    setKpi('kpi-drafts',  draftCount,   draftCount > 0 ? 'var(--accent)' : 'var(--text2)');
+    setKpi('kpi-drafts',     draftCount,   draftCount > 0 ? 'var(--accent)' : 'var(--text2)');
+    setKpi('kpi-month-exp',  fmt(monthExp), monthExp > 0 ? 'var(--red)' : 'var(--text2)');
+    if(el('kpi-month-exp-sub')) el('kpi-month-exp-sub').textContent = 'الشهر الحالي';
 
     // KPI sub text
     if(el('kpi-deals-sub'))   el('kpi-deals-sub').textContent   = `${(deals||[]).filter(d=>d.status==='IN PROGRESS').length} جارية`;
@@ -3544,7 +3557,6 @@ function renderDashCollections(overdueList, upcomingList, today) {
     </div>`; }).join('');
 }
 
-// ── Sales chart (آخر 6 أشهر) ──
 function renderDashSalesChart(sales) {
   const wrap = el('dash-sales-chart');
   if (!wrap) return;
@@ -3560,10 +3572,12 @@ function renderDashSalesChart(sales) {
   });
   const max = Math.max(...months.map(m=>m.total), 1);
   wrap.innerHTML = months.map((m,i) => {
-    const pct     = Math.max((m.total/max)*100, 4);
-    const isLast  = i === months.length - 1;
+    const pct    = Math.max((m.total/max)*100, 4);
+    const isLast = i === months.length - 1;
+    const amtLabel = m.total > 0 ? (m.total >= 1000 ? (m.total/1000).toFixed(1)+'K' : fmt(m.total)) : '';
     return `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;height:100%">
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;height:100%">
+      <div style="font-size:9px;font-weight:600;color:${isLast?'var(--accent)':'var(--text2)'};min-height:13px;text-align:center">${amtLabel}</div>
       <div style="flex:1;width:100%;display:flex;align-items:flex-end">
         <div title="${fmt(m.total)}" style="width:100%;height:${pct}%;background:${isLast?'var(--accent)':'var(--border)'};border-radius:3px 3px 0 0;min-height:3px;transition:height .4s"></div>
       </div>
