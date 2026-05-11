@@ -2463,23 +2463,42 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
 <!-- PAYMENT -->
 <div class="modal-overlay" id="paymentModal">
-  <div class="modal">
+  <div class="modal" style="max-width:560px">
     <div class="modal-header">
-      <div class="modal-icon" style="background:var(--blue-dim)">💳</div>
+      <div class="modal-icon" style="background:var(--cyan-dim)">💳</div>
       <h3>دفعة للمورد</h3>
       <button class="modal-expand-btn" onclick="toggleModalSize('paymentModal')" title="تكبير/تصغير">⛶</button>
       <button class="modal-close" onclick="closeModal('paymentModal')">✕</button>
     </div>
-    <div class="modal-body">
-      <div class="form-col">
+    <div class="modal-body"><div class="form-col">
+
+      <!-- بطاقة أمر الشراء -->
+      <div id="pay-po-card" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:4px">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:8px">تفاصيل أمر الشراء</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+          <div><span style="color:var(--text2)">المورد: </span><span id="pay-card-supplier" style="font-weight:700"></span></div>
+          <div><span style="color:var(--text2)">الملف: </span><span id="pay-card-file" style="font-weight:700;color:var(--accent);font-family:monospace"></span></div>
+          <div><span style="color:var(--text2)">قيمة الشراء: </span><span id="pay-card-total" style="font-weight:700;color:var(--blue)"></span></div>
+          <div><span style="color:var(--text2)">تم دفعه: </span><span id="pay-card-paid" style="font-weight:700;color:var(--purple)"></span></div>
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:var(--text2)">الباقي للمورد:</span>
+          <span id="pay-card-remaining" style="font-size:18px;font-weight:900;color:var(--accent)"></span>
+        </div>
+      </div>
+
+      <!-- بيانات الدفعة -->
+      <div class="form-row">
         <div class="field">
-          <label>الدافع / Payer *</label>
-          <select id="pay-payer"><option value="">-- اختر الشريك --</option></select>
+          <label>الدافع *</label>
+          <select id="pay-payer"></select>
         </div>
         <div class="field">
           <label>المبلغ *</label>
           <input type="number" id="pay-amount" placeholder="0.00" min="0" step="0.01">
         </div>
+      </div>
+      <div class="form-row">
         <div class="field">
           <label>طريقة الدفع</label>
           <select id="pay-method">
@@ -2490,23 +2509,23 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           </select>
         </div>
         <div class="field">
-          <label>رقم المستند</label>
-          <input type="text" id="pay-doc" placeholder="رقم التحويل أو الشيك">
-        </div>
-        <div class="field">
           <label>تاريخ الدفع *</label>
           <input type="date" id="pay-date">
         </div>
-        <div class="field">
-          <label>ملاحظات</label>
-          <textarea id="pay-notes" placeholder="..." rows="2"></textarea>
-        </div>
-        <div id="payError" class="alert alert-err" style="display:none"></div>
       </div>
-    </div>
+      <div class="field">
+        <label>رقم المستند</label>
+        <input type="text" id="pay-doc" placeholder="رقم التحويل أو الشيك">
+      </div>
+      <div class="field">
+        <label>ملاحظات</label>
+        <textarea id="pay-notes" placeholder="..." rows="2"></textarea>
+      </div>
+      <div id="payError" class="alert alert-err" style="display:none"></div>
+    </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('paymentModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitPayment()">💾 حفظ</button>
+      <button class="btn btn-primary" onclick="submitPayment()">💾 حفظ الدفعة</button>
     </div>
   </div>
 </div>
@@ -5643,19 +5662,58 @@ async function submitEditFileFull() {
 async function openPaymentModal() {
   const fn  = state.currentFileNo;
   const sys = state.system;
-  // Load partners for this file as payers
-  let partners = await apiGet('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
-  if (!partners?.length) {
-    const allPartners = await getContactsByType('partner');
-    partners = (allPartners||[]).map(p => ({ partner: p.name }));
-  }
-  el('pay-payer').innerHTML = '<option value="">-- اختر الشريك --</option>' +
-    (partners||[]).map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('');
+
+  el('payError').style.display = 'none';
   el('pay-amount').value = '';
   el('pay-date').value   = today();
   el('pay-doc').value    = '';
   el('pay-notes').value  = '';
-  el('payError').style.display = 'none';
+
+  try {
+    // جيب بيانات الصفقة والدفعات السابقة بالتوازي
+    const [po, prevPayments, partners] = await Promise.all([
+      apiGet('purchase_orders', { select:'file_no,supplier,total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGet('payments',        { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGet('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+    ]);
+
+    const poData    = po?.[0] || {};
+    const totalPO   = +poData.total_purchase || 0;
+    const totalPaid = (prevPayments||[]).reduce((s,p)=>s+(+p.amount||0), 0);
+    const remaining = Math.max(totalPO - totalPaid, 0);
+
+    // بطاقة أمر الشراء
+    if(el('pay-card-supplier'))  el('pay-card-supplier').textContent  = poData.supplier || '—';
+    if(el('pay-card-file'))      el('pay-card-file').textContent      = fn || '—';
+    if(el('pay-card-total'))     el('pay-card-total').textContent     = fmt(totalPO);
+    if(el('pay-card-paid'))      el('pay-card-paid').textContent      = fmt(totalPaid);
+    if(el('pay-card-remaining')) {
+      el('pay-card-remaining').textContent = fmt(remaining);
+      el('pay-card-remaining').style.color = remaining > 0 ? 'var(--accent)' : 'var(--green)';
+    }
+
+    // اقتراح المبلغ = الباقي
+    el('pay-amount').value = remaining > 0 ? remaining.toFixed(3) : '';
+
+    // الدافع — الشركاء أو المورد
+    let payerOptions = '';
+    if (partners?.length) {
+      payerOptions = partners.map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('');
+    } else {
+      // fallback — جيب من contacts
+      const allPartners = await getContactsByType('partner');
+      payerOptions = (allPartners||[]).map(p=>`<option value="${p.name}">${p.name}</option>`).join('');
+    }
+    // أضف المورد كخيار كمان
+    if (poData.supplier) {
+      payerOptions = `<option value="${poData.supplier}">${poData.supplier} (المورد)</option>` + payerOptions;
+    }
+    el('pay-payer').innerHTML = '<option value="">— اختر الدافع —</option>' + payerOptions;
+
+  } catch(e) {
+    console.error('openPaymentModal:', e.message);
+  }
+
   openModal('paymentModal');
 }
 
@@ -5801,17 +5859,12 @@ async function submitPayment() {
 
   if (!payer || !amount || !date) { showFieldErr('payError','يرجى ملء الحقول المطلوبة'); return; }
 
-  // تحذير لو الدفعة أكبر من المتبقي
-  const deal = state.allDeals.find(d=>d.file_no===fn) || state.allDealsEnriched?.find(d=>d.file_no===fn);
-  if (deal) {
-    const totalCost    = +deal.total_purchase || 0;
-    const alreadyPaid  = (await apiGet('payments', { select:'amount', system_type:`eq.${state.system}`, file_no:`eq.${fn}` }) || [])
-                          .reduce((s,p) => s + (+p.amount||0), 0);
-    const remaining    = totalCost - alreadyPaid;
-    if (amount > remaining && remaining > 0) {
-      const proceed = confirm(`⚠️ تنبيه: قيمة الدفعة (${amount.toLocaleString()}) أكبر من المتبقي للمورد (${remaining.toLocaleString()}).\n\nهل تريد المتابعة؟`);
-      if (!proceed) return;
-    }
+  // تحذير لو الدفعة أكبر من المتبقي (من البطاقة المحسوبة)
+  const remainingText = el('pay-card-remaining')?.textContent?.replace(/,/g,'');
+  const remaining = parseFloat(remainingText) || 0;
+  if (remaining > 0 && amount > remaining + 0.001) {
+    const proceed = confirm(`⚠️ قيمة الدفعة (${fmt(amount)}) أكبر من الباقي للمورد (${fmt(remaining)}).\n\nهل تريد المتابعة؟`);
+    if (!proceed) return;
   }
 
   try {
