@@ -9545,8 +9545,6 @@ async function runReport() {
 
   try {
     if (type === 'profit') {
-      // جلب كل البيانات المطلوبة
-      // المصاريف بتخص الصفقة مش التاريخ — نجيبها كلها بدون فلتر تاريخ
       const [sales, expenses, deals, opexItems] = await Promise.all([
         apiGetDateRange('sales', 'sale_date', from, to),
         apiGet('expenses', { select:'*', system_type:`eq.${sys}` }),
@@ -9554,40 +9552,40 @@ async function runReport() {
         fetchOpexForJournal(from, to, sys),
       ]);
 
-      // تكلفة الشراء من purchase_orders
-      const dealCostMap = {};
-      (deals||[]).forEach(d => { dealCostMap[d.file_no] = +d.total_purchase||0; });
+      // Map التكاليف
+      const dealMap = {};
+      (deals||[]).forEach(d => { dealMap[d.file_no] = d; });
 
-      // تجميع بالملف
-      const fileMap = {};
-      const ensureFile = (fn, supplier='') => {
-        if (!fileMap[fn]) fileMap[fn] = { file:fn, supplier, purchase:0, expenses:0, sales:0 };
-      };
-      (deals||[]).forEach(d => {
-        ensureFile(d.file_no, d.supplier);
-        fileMap[d.file_no].purchase = +d.total_purchase||0;
-      });
+      // تجميع المبيعات بالملف أولاً
+      const salesByFile = {};
       (sales||[]).forEach(r => {
-        ensureFile(r.file_no);
-        fileMap[r.file_no].sales += +r.sale_price||0;
-      });
-      (expenses||[]).forEach(r => {
-        if (!r.file_no) return; // مصروف بدون ملف — تجاهل (OPEX منفصل)
-        ensureFile(r.file_no);
-        fileMap[r.file_no].expenses += +r.amount||0;
+        salesByFile[r.file_no] = (salesByFile[r.file_no]||0) + (+r.sale_price||0);
       });
 
-      // حساب الأرباح
+      // بناء fileMap — فقط الملفات اللي فيها مبيعات في الفترة
+      const fileMap = {};
+      Object.keys(salesByFile).forEach(fn => {
+        const d = dealMap[fn] || {};
+        const fe = (expenses||[]).filter(e=>e.file_no===fn).reduce((s,e)=>s+(+e.amount||0),0);
+        fileMap[fn] = {
+          file:     fn,
+          supplier: d.supplier || '—',
+          purchase: +d.total_purchase || 0,
+          expenses: fe,
+          sales:    salesByFile[fn],
+          status:   d.status || '—',
+        };
+      });
+
       const rows_data = Object.values(fileMap).map(v => ({
         ...v,
         fullCost: v.purchase + v.expenses,
         profit:   v.sales - v.purchase - v.expenses,
       })).sort((a,b) => b.profit - a.profit);
 
-      // KPIs الإجمالية
-      const ts       = rows_data.reduce((s,v)=>s+v.sales, 0);
-      const tp       = rows_data.reduce((s,v)=>s+v.purchase, 0);
-      const te       = rows_data.reduce((s,v)=>s+v.expenses, 0);
+      const ts         = rows_data.reduce((s,v)=>s+v.sales, 0);
+      const tp         = rows_data.reduce((s,v)=>s+v.purchase, 0);
+      const te         = rows_data.reduce((s,v)=>s+v.expenses, 0);
       const dealProfit = ts - tp - te;
       const opexTotal  = (opexItems||[]).reduce((s,r)=>s+(+r.amount||0), 0);
       const netProfit  = dealProfit - opexTotal;
