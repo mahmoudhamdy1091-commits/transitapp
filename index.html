@@ -882,7 +882,6 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 #toast.show{display:flex}
 #toast.ok{border-color:var(--green);color:var(--green)}
 #toast.err{border-color:var(--red);color:var(--red)}
-@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 
 /* Misc */
 .percent-bar{
@@ -1187,6 +1186,109 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 .ac-item:hover,.ac-item.ac-active{background:var(--card2)}
 .ac-item-name{font-weight:600;flex:1}
 .ac-item-type{font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px}
+
+/* Roles & permissions */
+.role-btn{padding:8px 16px;border-radius:8px;border:2px solid var(--border);background:var(--card2);color:var(--text2);font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
+.role-btn.active,.role-btn:hover{border-color:var(--accent);background:var(--accent-dim);color:var(--accent)}
+
+/* Settings Tabs */
+.sett-tab{background:transparent;border:none;color:var(--text2);font-size:13px;font-weight:600;padding:7px 14px;border-radius:6px;cursor:pointer;transition:all .15s;white-space:nowrap;font-family:'Cairo',sans-serif}
+.sett-tab:hover{background:var(--card);color:var(--text)}
+.sett-tab.active{background:var(--card);color:var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+/* User row in settings */
+.sett-user-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.sett-user-row:last-child{border-bottom:none;padding-bottom:0}
+.sett-user-row:first-child{padding-top:0}
+.sett-user-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0}
+.sett-av-admin{background:var(--accent-dim);color:var(--accent)}
+.sett-av-employee{background:var(--blue-dim);color:var(--blue)}
+.sett-av-readonly{background:var(--card2);color:var(--text2)}
+.sett-role-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
+.sett-badge-admin{background:var(--accent-dim);color:var(--accent)}
+.sett-badge-employee{background:var(--blue-dim);color:var(--blue)}
+.sett-badge-readonly{background:var(--card2);color:var(--text2)}
+.sett-sys-tag{display:inline-flex;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
+.sett-sys-box{background:var(--accent-dim);color:var(--accent)}
+.sett-sys-tr{background:var(--blue-dim);color:var(--blue)}
+
+/* Period buttons */
+.dash-period-btn{background:transparent;border:none;color:var(--text2);font-size:12px;font-weight:500;padding:6px 12px;border-radius:6px;cursor:pointer;transition:all .15s;font-family:'Cairo',sans-serif;white-space:nowrap}
+.dash-period-btn:hover{background:var(--card);color:var(--text)}
+.dash-period-btn.active{background:var(--card);color:var(--accent);font-weight:700}
+/* Clickable KPI */
+.kpi-clickable{cursor:pointer !important;position:relative}
+.kpi-clickable:hover{transform:translateY(-4px) !important;box-shadow:0 8px 24px rgba(0,0,0,.1) !important}
+.kpi-drill-hint{font-size:9px;color:var(--text2);margin-top:4px;opacity:0;transition:opacity .15s}
+.kpi-clickable:hover .kpi-drill-hint{opacity:1}
+.kpi-clickable.dd-active{border:2px solid var(--accent) !important;background:var(--accent-dim) !important}
+.kpi-clickable.dd-active .kpi-drill-hint{opacity:1;color:var(--accent)}
+/* DD mini KPIs */
+.dd-kpi{background:var(--card2);border-radius:var(--radius-sm);padding:10px 14px;text-align:center;border:0.5px solid var(--border)}
+.dd-kpi-val{font-size:18px;font-weight:700;font-family:var(--mono);margin-bottom:2px}
+.dd-kpi-lbl{font-size:10px;color:var(--text2)}
+.perm-yes{color:var(--green);font-weight:700}
+.perm-no{color:var(--red);font-weight:700}
+.perm-limited{color:var(--accent);font-weight:700}
+
+/* Smart Autocomplete */
+.ac-wrap{position:relative}
+.ac-input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;direction:rtl;transition:border-color .2s}
+.ac-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
+.ac-dropdown{
+  position:absolute;top:calc(100% + 4px);right:0;left:0;
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius-sm);z-index:5000;
+  max-height:220px;overflow-y:auto;display:none;
+  box-shadow:0 8px 24px rgba(0,0,0,.3);
+}
+.ac-dropdown.open{display:block}
+.ac-item{
+  padding:10px 14px;cursor:pointer;display:flex;
+  align-items:center;gap:10px;transition:background .1s;
+  border-bottom:1px solid var(--border);
+}
+.ac-item:last-child{border:none}
+.ac-item:hover,.ac-item.active{background:var(--card2)}
+.ac-item-name{font-size:13px;font-weight:700;flex:1}
+.ac-item-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px}
+.ac-item-new{color:var(--accent);font-size:12px;font-style:italic}
+.ac-badge-customer{background:var(--blue-dim);color:var(--blue)}
+.ac-badge-supplier{background:var(--accent-dim);color:var(--accent)}
+.ac-badge-partner{background:var(--purple-dim);color:var(--purple)}
+.ac-badge-custodian{background:var(--cyan-dim);color:var(--cyan)}
+
+
+/* Floating install button */
+.pwa-fab {
+  display: none;
+  position: fixed;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 30px;
+  padding: 12px 24px;
+  font-family: 'Cairo', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 20px rgba(230,147,10,0.5);
+  white-space: nowrap;
+  animation: fabPulse 2s infinite;
+}
+@keyframes fabPulse {
+  0%,100% { box-shadow: 0 4px 20px rgba(230,147,10,0.4); }
+  50%      { box-shadow: 0 4px 30px rgba(230,147,10,0.8); }
+}
+@media(min-width:641px){
+  .pwa-fab { bottom: 24px; }
+}
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
@@ -3125,6 +3227,49 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 <div id="toast"></div>
 
 <script>
+// ╔══════════════════════════════════════════════════════════╗
+// ║           TABLE OF CONTENTS — Transit Management         ║
+// ╚══════════════════════════════════════════════════════════╝
+//
+// L.3233   CONFIG — Supabase URL & Keys
+// L.3239   STATE — App state object
+// L.3281   API HELPERS — headers, apiGet, apiPost, apiPatch, apiDelete
+// L.3481   DASHBOARD — dashState, setDashPeriod
+// L.3518   DASHBOARD — loadDashboard
+// L.3742   DASHBOARD — render helpers (alerts, collections, chart)
+// L.6620   DASHBOARD — showDashboard
+// L.11039  DASHBOARD — Drill-down panel & renderDrillDown
+// L.3892   VIEWER — openViewer, switchTab, renderDealsTable
+// L.3961   VIEWER TABS — Summary
+// L.4130   VIEWER TABS — Vehicles
+// L.4167   VIEWER TABS — Payments
+// L.4205   VIEWER TABS — Expenses
+// L.4243   VIEWER TABS — Sales
+// L.4510   VIEWER TABS — Collections
+// L.4549   VIEWER TABS — Payouts (Partner Payouts)
+// L.4887   NEW FILE MODAL — Purchase Order (openNewFileModal, submitNewFile)
+// L.5545   PAYMENT MODAL — openPaymentModal, submitPayment
+// L.5567   EXPENSE MODAL — openExpenseModal, submitExpense
+// L.5754   SALE MODAL — openSaleModal, submitSale
+// L.6021   COLLECTION MODAL — openCollectionModal, submitCollection
+// L.6080   PAYOUT MODAL — openPayoutModal, submitPayout
+// L.6671   UTILS — fmt, fmtDate, el, today, statusClass
+// L.6728   UTILS — animateCount, switchView
+// L.6757   UTILS — setLoading, skeleton, emptyHTML, errHTML
+// L.7223   CONTACTS — showContacts, loadContacts, ledger
+// L.7981   EXPORT — exportToExcel, print helpers, PDF
+// L.8945   PARTNER STATEMENT — showPartnerStatement, printPartnerStatement
+// L.9534   REPORTS — showReport, setReportType, runReport
+// L.9907   ROLES — ROLES config, can()
+// L.9945   ROLES — applyRoleRestrictions
+// L.10165  SETTINGS — showSettings, switchSettTab, loadUserRoles
+// L.10583  EDIT MODALS — Payment, Expense, Collection (edit)
+// L.10718  OPERATING EXPENSES — showOpex, loadOpex, submitOpex
+// L.11295  PWA — installPWA
+//
+// ════════════════════════════════════════════════════════════
+
+
 // ════════════════════════════════════════
 // CONFIG
 // ════════════════════════════════════════
@@ -3629,41 +3774,6 @@ function renderDashPerfChart(sales, expenses, from, to, days) {
 }
 
 // ── Period deals summary ──
-function renderDashPeriodDeals(periodSales, periodFileNos, deals) {
-  const wrap = el('dash-period-deals');
-  if (!wrap) return;
-  if(el('dealsCountLabel')) el('dealsCountLabel').textContent = `${periodFileNos.size} ملف`;
-
-  if (!periodFileNos.size) {
-    wrap.innerHTML = `<div style="font-size:12px;color:var(--text2);text-align:center;padding:16px">لا توجد مبيعات في هذه الفترة</div>`;
-    return;
-  }
-
-  const periodDealsData = deals.filter(d => periodFileNos.has(d.file_no)).slice(0,6);
-  wrap.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead>
-        <tr style="border-bottom:1px solid var(--border)">
-          <th style="padding:6px 8px;text-align:right;color:var(--text2);font-weight:500;font-size:11px">الملف</th>
-          <th style="padding:6px 8px;text-align:right;color:var(--text2);font-weight:500;font-size:11px">المورد</th>
-          <th style="padding:6px 8px;text-align:right;color:var(--text2);font-weight:500;font-size:11px">مبيعات الفترة</th>
-          <th style="padding:6px 8px;text-align:right;color:var(--text2);font-weight:500;font-size:11px">الحالة</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${periodDealsData.map(d => {
-          const fileSales = periodSales.filter(s=>s.file_no===d.file_no).reduce((s,r)=>s+(+r.sale_price||0),0);
-          return `<tr style="border-bottom:0.5px solid var(--border);cursor:pointer" onclick="openViewer('${d.file_no}')">
-            <td style="padding:7px 8px;font-family:monospace;font-weight:700;color:var(--accent)">${d.file_no||'—'}</td>
-            <td style="padding:7px 8px;color:var(--text2)">${d.supplier||'—'}</td>
-            <td style="padding:7px 8px;font-family:monospace;font-weight:700;color:var(--green)">${fmt(fileSales)}</td>
-            <td style="padding:7px 8px"><span class="badge badge-${statusClass(d.status)}">${d.status}</span></td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>`;
-}
-
 
 // ── Helper: days since date ──
 function daysSince(dateStr) {
@@ -3697,27 +3807,6 @@ function renderDashAlerts(overdueList, upcomingList, stockVehicles, draftCount, 
     </div>`).join('');
 }
 
-// ── Stock list ──
-function renderDashStock(stockVehicles) {
-  const wrap = el('dash-stock-list');
-  if (!wrap) return;
-  if(el('stock-count-label')) el('stock-count-label').textContent = `${stockVehicles.length} سيارة`;
-  if (!stockVehicles.length) { wrap.innerHTML = `<div style="font-size:12px;color:var(--text2);text-align:center;padding:16px">لا يوجد مخزون</div>`; return; }
-  const sorted = [...stockVehicles].sort((a,b) => daysSince(b.created_at) - daysSince(a.created_at)).slice(0,5);
-  wrap.innerHTML = sorted.map(v => {
-    const days   = daysSince(v.created_at);
-    const color  = days > 60 ? 'var(--red)' : days > 30 ? 'var(--accent)' : 'var(--green)';
-    const bg     = days > 60 ? 'var(--red-dim)' : days > 30 ? 'var(--accent-dim)' : 'var(--green-dim)';
-    return `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openViewer('${v.file_no}')">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.model||v.make||'—'} ${v.year||''}</div>
-        <div style="font-size:10px;color:var(--text2);font-family:monospace">${v.vin||'—'}</div>
-      </div>
-      <span style="background:${bg};color:${color};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0">${days} يوم</span>
-    </div>`; }).join('') + (stockVehicles.length > 5 ? `<div style="font-size:11px;color:var(--text2);text-align:center;padding:8px 0">+ ${stockVehicles.length-5} سيارة أخرى</div>` : '');
-}
-
 // ── Collections list ──
 function renderDashCollections(overdueList, upcomingList, today) {
   const wrap = el('dash-collections-list');
@@ -3744,35 +3833,6 @@ function renderDashCollections(overdueList, upcomingList, today) {
         <div style="font-size:10px;color:${color}">${subText}</div>
       </div>
     </div>`; }).join('');
-}
-
-function renderDashSalesChart(sales) {
-  const wrap = el('dash-sales-chart');
-  if (!wrap) return;
-  const months = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(); d.setMonth(d.getMonth() - i);
-    months.push({ y: d.getFullYear(), m: d.getMonth(), label: d.toLocaleDateString('ar-KW',{month:'short'}), total: 0 });
-  }
-  sales.forEach(s => {
-    const d = new Date(s.sale_date||s.created_at);
-    const mb = months.find(m => m.y === d.getFullYear() && m.m === d.getMonth());
-    if (mb) mb.total += +s.sale_price||0;
-  });
-  const max = Math.max(...months.map(m=>m.total), 1);
-  wrap.innerHTML = months.map((m,i) => {
-    const pct    = Math.max((m.total/max)*100, 4);
-    const isLast = i === months.length - 1;
-    const amtLabel = m.total > 0 ? (m.total >= 1000 ? (m.total/1000).toFixed(1)+'K' : fmt(m.total)) : '';
-    return `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;height:100%">
-      <div style="font-size:9px;font-weight:600;color:${isLast?'var(--accent)':'var(--text2)'};min-height:13px;text-align:center">${amtLabel}</div>
-      <div style="flex:1;width:100%;display:flex;align-items:flex-end">
-        <div title="${fmt(m.total)}" style="width:100%;height:${pct}%;background:${isLast?'var(--accent)':'var(--border)'};border-radius:3px 3px 0 0;min-height:3px;transition:height .4s"></div>
-      </div>
-      <div style="font-size:9px;color:${isLast?'var(--accent)':'var(--text2)'};font-weight:${isLast?'700':'400'}">${m.label}</div>
-    </div>`;
-  }).join('');
 }
 
 // ── Expenses breakdown ──
@@ -11287,110 +11347,9 @@ function installPWA() {
 
 </script>
 
-<style>
-/* Roles & permissions */
-.role-btn{padding:8px 16px;border-radius:8px;border:2px solid var(--border);background:var(--card2);color:var(--text2);font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
-.role-btn.active,.role-btn:hover{border-color:var(--accent);background:var(--accent-dim);color:var(--accent)}
 
-/* Settings Tabs */
-.sett-tab{background:transparent;border:none;color:var(--text2);font-size:13px;font-weight:600;padding:7px 14px;border-radius:6px;cursor:pointer;transition:all .15s;white-space:nowrap;font-family:'Cairo',sans-serif}
-.sett-tab:hover{background:var(--card);color:var(--text)}
-.sett-tab.active{background:var(--card);color:var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.08)}
-/* User row in settings */
-.sett-user-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
-.sett-user-row:last-child{border-bottom:none;padding-bottom:0}
-.sett-user-row:first-child{padding-top:0}
-.sett-user-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0}
-.sett-av-admin{background:var(--accent-dim);color:var(--accent)}
-.sett-av-employee{background:var(--blue-dim);color:var(--blue)}
-.sett-av-readonly{background:var(--card2);color:var(--text2)}
-.sett-role-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
-.sett-badge-admin{background:var(--accent-dim);color:var(--accent)}
-.sett-badge-employee{background:var(--blue-dim);color:var(--blue)}
-.sett-badge-readonly{background:var(--card2);color:var(--text2)}
-.sett-sys-tag{display:inline-flex;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
-.sett-sys-box{background:var(--accent-dim);color:var(--accent)}
-.sett-sys-tr{background:var(--blue-dim);color:var(--blue)}
 
-/* Period buttons */
-.dash-period-btn{background:transparent;border:none;color:var(--text2);font-size:12px;font-weight:500;padding:6px 12px;border-radius:6px;cursor:pointer;transition:all .15s;font-family:'Cairo',sans-serif;white-space:nowrap}
-.dash-period-btn:hover{background:var(--card);color:var(--text)}
-.dash-period-btn.active{background:var(--card);color:var(--accent);font-weight:700}
-/* Clickable KPI */
-.kpi-clickable{cursor:pointer !important;position:relative}
-.kpi-clickable:hover{transform:translateY(-4px) !important;box-shadow:0 8px 24px rgba(0,0,0,.1) !important}
-.kpi-drill-hint{font-size:9px;color:var(--text2);margin-top:4px;opacity:0;transition:opacity .15s}
-.kpi-clickable:hover .kpi-drill-hint{opacity:1}
-.kpi-clickable.dd-active{border:2px solid var(--accent) !important;background:var(--accent-dim) !important}
-.kpi-clickable.dd-active .kpi-drill-hint{opacity:1;color:var(--accent)}
-/* DD mini KPIs */
-.dd-kpi{background:var(--card2);border-radius:var(--radius-sm);padding:10px 14px;text-align:center;border:0.5px solid var(--border)}
-.dd-kpi-val{font-size:18px;font-weight:700;font-family:var(--mono);margin-bottom:2px}
-.dd-kpi-lbl{font-size:10px;color:var(--text2)}
-.perm-yes{color:var(--green);font-weight:700}
-.perm-no{color:var(--red);font-weight:700}
-.perm-limited{color:var(--accent);font-weight:700}
 
-/* Smart Autocomplete */
-.ac-wrap{position:relative}
-.ac-input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;direction:rtl;transition:border-color .2s}
-.ac-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
-.ac-dropdown{
-  position:absolute;top:calc(100% + 4px);right:0;left:0;
-  background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius-sm);z-index:5000;
-  max-height:220px;overflow-y:auto;display:none;
-  box-shadow:0 8px 24px rgba(0,0,0,.3);
-}
-.ac-dropdown.open{display:block}
-.ac-item{
-  padding:10px 14px;cursor:pointer;display:flex;
-  align-items:center;gap:10px;transition:background .1s;
-  border-bottom:1px solid var(--border);
-}
-.ac-item:last-child{border:none}
-.ac-item:hover,.ac-item.active{background:var(--card2)}
-.ac-item-name{font-size:13px;font-weight:700;flex:1}
-.ac-item-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px}
-.ac-item-new{color:var(--accent);font-size:12px;font-style:italic}
-.ac-badge-customer{background:var(--blue-dim);color:var(--blue)}
-.ac-badge-supplier{background:var(--accent-dim);color:var(--accent)}
-.ac-badge-partner{background:var(--purple-dim);color:var(--purple)}
-.ac-badge-custodian{background:var(--cyan-dim);color:var(--cyan)}
-</style>
-
-<style>
-/* Floating install button */
-.pwa-fab {
-  display: none;
-  position: fixed;
-  bottom: 72px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 999;
-  background: var(--accent);
-  color: #000;
-  border: none;
-  border-radius: 30px;
-  padding: 12px 24px;
-  font-family: 'Cairo', sans-serif;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  align-items: center;
-  gap: 8px;
-  box-shadow: 0 4px 20px rgba(230,147,10,0.5);
-  white-space: nowrap;
-  animation: fabPulse 2s infinite;
-}
-@keyframes fabPulse {
-  0%,100% { box-shadow: 0 4px 20px rgba(230,147,10,0.4); }
-  50%      { box-shadow: 0 4px 30px rgba(230,147,10,0.8); }
-}
-@media(min-width:641px){
-  .pwa-fab { bottom: 24px; }
-}
-</style>
 
 <button class="pwa-fab pwa-install-btn" onclick="installPWA()">
   📲 تثبيت التطبيق
