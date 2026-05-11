@@ -1774,7 +1774,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           <div class="section-header">
             <div class="section-title">التحصيلات</div>
             <div class="section-actions">
-              <button class="btn btn-secondary btn-sm" onclick="openModal('collectionModal')">➕ تحصيل جديد</button>
+              <button class="btn btn-secondary btn-sm" onclick="openCollectionModal()">➕ تحصيل جديد</button>
             </div>
           </div>
           <div class="data-table-wrap" id="collectionsTable"></div>
@@ -2653,7 +2653,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
 <!-- COLLECTION -->
 <div class="modal-overlay" id="collectionModal">
-  <div class="modal">
+  <div class="modal" style="max-width:580px">
     <div class="modal-header">
       <div class="modal-icon" style="background:var(--green-dim)">💰</div>
       <h3>تحصيل من عميل</h3>
@@ -2662,52 +2662,76 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
     </div>
     <div class="modal-body">
       <div class="form-col">
+
+        <!-- Step 1: اختيار الفاتورة -->
         <div class="field">
-          <label>رقم الفاتورة *</label>
-          <select id="col-invNo"></select>
-        </div>
-        <div class="field">
-          <label>العميل</label>
-          <input type="text" id="col-customer" placeholder="سيُملأ تلقائياً" readonly style="opacity:.7">
-        </div>
-        <div class="field">
-          <label>VIN</label>
-          <input type="text" id="col-vin" placeholder="سيُملأ تلقائياً" readonly style="opacity:.7">
-        </div>
-        <div class="field">
-          <label>المبلغ المحصل *</label>
-          <input type="number" id="col-amount" placeholder="0.00" min="0" step="0.01">
-        </div>
-        <div class="field">
-          <label>طريقة الدفع</label>
-          <select id="col-method">
-            <option>تحويل بنكي</option>
-            <option>نقد</option>
-            <option>شيك</option>
+          <label>الفاتورة غير المحصلة *</label>
+          <select id="col-invNo" onchange="onCollectionInvChange()">
+            <option value="">— اختر فاتورة —</option>
           </select>
         </div>
-        <div class="field">
-          <label>رقم المستند</label>
-          <input type="text" id="col-doc" placeholder="رقم التحويل">
+
+        <!-- بطاقة الفاتورة — تظهر بعد الاختيار -->
+        <div id="col-inv-card" style="display:none;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:4px">
+          <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:8px">تفاصيل الفاتورة</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+            <div><span style="color:var(--text2)">العميل: </span><span id="col-card-customer" style="font-weight:700"></span></div>
+            <div><span style="color:var(--text2)">الشاصي: </span><span id="col-card-vin" style="font-family:monospace;font-size:11px"></span></div>
+            <div><span style="color:var(--text2)">قيمة الفاتورة: </span><span id="col-card-total" style="font-weight:700;color:var(--green)"></span></div>
+            <div><span style="color:var(--text2)">تم تحصيله: </span><span id="col-card-collected" style="font-weight:700;color:var(--blue)"></span></div>
+          </div>
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:12px;color:var(--text2)">الباقي المستحق:</span>
+            <span id="col-card-remaining" style="font-size:18px;font-weight:900;color:var(--accent)"></span>
+          </div>
         </div>
-        <div class="field">
-          <label>تاريخ الاستحقاق</label>
-          <input type="date" id="col-dueDate">
+
+        <!-- hidden fields -->
+        <input type="hidden" id="col-customer">
+        <input type="hidden" id="col-vin">
+
+        <!-- Step 2: بيانات التحصيل -->
+        <div id="col-form-fields" style="display:none">
+          <div class="form-row">
+            <div class="field">
+              <label>المبلغ المحصل *</label>
+              <input type="number" id="col-amount" placeholder="0.00" min="0" step="0.01">
+            </div>
+            <div class="field">
+              <label>طريقة الدفع</label>
+              <select id="col-method">
+                <option>تحويل بنكي</option>
+                <option>نقد</option>
+                <option>شيك</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="field">
+              <label>تاريخ الاستحقاق</label>
+              <input type="date" id="col-dueDate">
+            </div>
+            <div class="field">
+              <label>تاريخ الدفع</label>
+              <input type="date" id="col-paidDate">
+            </div>
+          </div>
+          <div class="field">
+            <label>رقم المستند</label>
+            <input type="text" id="col-doc" placeholder="رقم التحويل أو الإيصال">
+          </div>
+          <div class="field">
+            <label>ملاحظات</label>
+            <textarea id="col-notes" placeholder="..." rows="2"></textarea>
+          </div>
         </div>
-        <div class="field">
-          <label>تاريخ الدفع</label>
-          <input type="date" id="col-paidDate">
-        </div>
-        <div class="field">
-          <label>ملاحظات</label>
-          <textarea id="col-notes" placeholder="..." rows="2"></textarea>
-        </div>
+
         <div id="colError" class="alert alert-err" style="display:none"></div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('collectionModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitCollection()">💾 حفظ</button>
+      <button class="btn btn-primary" id="col-submit-btn" onclick="submitCollection()" style="display:none">💾 حفظ التحصيل</button>
     </div>
   </div>
 </div>
@@ -2909,7 +2933,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
 <!-- QUICK: تحصيل -->
 <div class="modal-overlay" id="quickCollectionModal">
-  <div class="modal">
+  <div class="modal" style="max-width:580px">
     <div class="modal-header">
       <div class="modal-icon" style="background:var(--blue-dim)">💰</div>
       <h3>تحصيل — تسجيل سريع</h3>
@@ -2917,49 +2941,81 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       <button class="modal-close" onclick="closeModal('quickCollectionModal')">✕</button>
     </div>
     <div class="modal-body"><div class="form-col">
+
+      <!-- Step 1: الملف -->
       <div class="field">
         <label>رقم الملف *</label>
         <select id="qc-fileNo" onchange="loadQuickInvoices(this.value)">
-          <option value="">-- اختر الملف --</option>
+          <option value="">— اختر الملف —</option>
         </select>
       </div>
+
+      <!-- Step 2: الفاتورة -->
       <div class="field">
-        <label>رقم الفاتورة</label>
-        <select id="qc-invNo" onchange="fillCollectionCustomer()">
-          <option value="">— اختر أو اتركه فارغاً —</option>
+        <label>الفاتورة غير المحصّلة *</label>
+        <select id="qc-invNo" onchange="onQuickCollectionInvChange()">
+          <option value="">— اختر ملفاً أولاً —</option>
         </select>
       </div>
-      <div class="field">
-        <label>العميل</label>
-        <select id="qc-customer"><option value="">-- اختر العميل --</option></select>
+
+      <!-- بطاقة الفاتورة -->
+      <div id="qc-inv-card" style="display:none;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:4px">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:8px">تفاصيل الفاتورة</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+          <div><span style="color:var(--text2)">العميل: </span><span id="qc-card-customer" style="font-weight:700"></span></div>
+          <div><span style="color:var(--text2)">الشاصي: </span><span id="qc-card-vin" style="font-family:monospace;font-size:11px"></span></div>
+          <div><span style="color:var(--text2)">قيمة الفاتورة: </span><span id="qc-card-total" style="font-weight:700;color:var(--green)"></span></div>
+          <div><span style="color:var(--text2)">تم تحصيله: </span><span id="qc-card-collected" style="font-weight:700;color:var(--blue)"></span></div>
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:var(--text2)">الباقي المستحق:</span>
+          <span id="qc-card-remaining" style="font-size:18px;font-weight:900;color:var(--accent)"></span>
+        </div>
       </div>
-      <div class="field">
-        <label>المبلغ المحصل *</label>
-        <input type="number" id="qc-amount" placeholder="0.00" min="0" step="0.01">
+
+      <!-- hidden -->
+      <input type="hidden" id="qc-customer">
+      <input type="hidden" id="qc-vin">
+
+      <!-- Step 3: بيانات التحصيل -->
+      <div id="qc-form-fields" style="display:none">
+        <div class="form-row">
+          <div class="field">
+            <label>المبلغ المحصل *</label>
+            <input type="number" id="qc-amount" placeholder="0.00" min="0" step="0.01">
+          </div>
+          <div class="field">
+            <label>طريقة الدفع</label>
+            <select id="qc-method">
+              <option>تحويل بنكي</option><option>نقد</option><option>شيك</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>تاريخ الاستحقاق</label>
+            <input type="date" id="qc-dueDate">
+          </div>
+          <div class="field">
+            <label>تاريخ الدفع *</label>
+            <input type="date" id="qc-date">
+          </div>
+        </div>
+        <div class="field">
+          <label>رقم المستند</label>
+          <input type="text" id="qc-doc" placeholder="رقم التحويل أو الإيصال">
+        </div>
+        <div class="field">
+          <label>ملاحظات</label>
+          <textarea id="qc-notes" placeholder="..." rows="2"></textarea>
+        </div>
       </div>
-      <div class="field">
-        <label>طريقة الدفع</label>
-        <select id="qc-method">
-          <option>تحويل بنكي</option><option>نقد</option><option>شيك</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>رقم المستند</label>
-        <input type="text" id="qc-doc" placeholder="رقم التحويل">
-      </div>
-      <div class="field">
-        <label>تاريخ التحصيل *</label>
-        <input type="date" id="qc-date">
-      </div>
-      <div class="field">
-        <label>ملاحظات</label>
-        <textarea id="qc-notes" placeholder="..." rows="2"></textarea>
-      </div>
+
       <div id="qsColError" class="alert alert-err" style="display:none"></div>
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('quickCollectionModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitQuickCollection()">💾 حفظ</button>
+      <button class="btn btn-primary" id="qc-submit-btn" onclick="submitQuickCollection()" style="display:none">💾 حفظ التحصيل</button>
     </div>
   </div>
 </div>
@@ -6065,23 +6121,100 @@ async function submitSale() {
 async function openCollectionModal() {
   const fn  = state.currentFileNo;
   const sys = state.system;
-  const sales = await apiGet('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
 
-  const sel = el('col-invNo');
-  sel.innerHTML = '<option value="">-- اختر الفاتورة --</option>' +
-    (sales||[]).map(s=>`<option value="${s.inv_no}" data-customer="${s.customer||''}" data-vin="${s.vin||''}">${s.inv_no||'—'} — ${s.customer||''}</option>`).join('');
-  sel.onchange = function() {
-    const opt = this.options[this.selectedIndex];
-    el('col-customer').value = opt.dataset.customer||'';
-    el('col-vin').value = opt.dataset.vin||'';
-  };
-
-  el('col-amount').value = '';
-  el('col-dueDate').value = '';
+  // Reset form
+  el('col-invNo').innerHTML    = '<option value="">جاري التحميل...</option>';
+  el('col-inv-card').style.display   = 'none';
+  el('col-form-fields').style.display = 'none';
+  el('col-submit-btn').style.display  = 'none';
+  el('col-amount').value   = '';
+  el('col-dueDate').value  = '';
   el('col-paidDate').value = today();
-  el('col-notes').value = '';
+  el('col-doc').value      = '';
+  el('col-notes').value    = '';
   el('colError').style.display = 'none';
   openModal('collectionModal');
+
+  try {
+    // جيب كل الفواتير في الملف
+    const [sales, collections] = await Promise.all([
+      apiGet('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
+      apiGet('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+    ]);
+
+    // احسب المحصّل لكل فاتورة
+    const collectedMap = {};
+    (collections||[]).forEach(c => {
+      collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
+    });
+
+    // الفواتير اللي لسه فيها باقي
+    const pendingSales = (sales||[]).map(s => ({
+      ...s,
+      collected: collectedMap[s.inv_no] || 0,
+      remaining: (+s.sale_price||0) - (collectedMap[s.inv_no]||0),
+    })).filter(s => s.remaining > 0.001);
+
+    if (!pendingSales.length) {
+      el('col-invNo').innerHTML = '<option value="">لا توجد فواتير غير محصّلة</option>';
+      return;
+    }
+
+    el('col-invNo').innerHTML = '<option value="">— اختر فاتورة —</option>' +
+      pendingSales.map(s => `
+        <option value="${s.inv_no}"
+          data-customer="${s.customer||''}"
+          data-vin="${s.vin||''}"
+          data-total="${s.sale_price||0}"
+          data-collected="${s.collected}"
+          data-remaining="${s.remaining}">
+          ${s.inv_no||'—'} — ${s.customer||''} — باقي: ${fmt(s.remaining)}
+        </option>`).join('');
+
+    // حفظ البيانات للاستخدام في onchange
+    el('col-invNo')._salesData = pendingSales;
+
+  } catch(e) {
+    el('col-invNo').innerHTML = '<option value="">خطأ في التحميل</option>';
+    console.error(e);
+  }
+}
+
+function onCollectionInvChange() {
+  const sel = el('col-invNo');
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) {
+    el('col-inv-card').style.display    = 'none';
+    el('col-form-fields').style.display = 'none';
+    el('col-submit-btn').style.display  = 'none';
+    return;
+  }
+
+  const total     = parseFloat(opt.dataset.total)     || 0;
+  const collected = parseFloat(opt.dataset.collected) || 0;
+  const remaining = parseFloat(opt.dataset.remaining) || 0;
+
+  // ملء الـ hidden fields
+  el('col-customer').value = opt.dataset.customer || '';
+  el('col-vin').value      = opt.dataset.vin      || '';
+
+  // بطاقة الفاتورة
+  el('col-card-customer').textContent  = opt.dataset.customer || '—';
+  el('col-card-vin').textContent       = opt.dataset.vin      || '—';
+  el('col-card-total').textContent     = fmt(total);
+  el('col-card-collected').textContent = fmt(collected);
+  el('col-card-remaining').textContent = fmt(remaining);
+
+  // لون الباقي
+  const remEl = el('col-card-remaining');
+  remEl.style.color = remaining > 0 ? 'var(--accent)' : 'var(--green)';
+
+  // اقتراح المبلغ = الباقي كاملاً
+  el('col-amount').value = remaining > 0 ? remaining.toFixed(3) : '';
+
+  el('col-inv-card').style.display    = 'block';
+  el('col-form-fields').style.display = 'block';
+  el('col-submit-btn').style.display  = '';
 }
 
 async function submitCollection() {
@@ -6097,6 +6230,15 @@ async function submitCollection() {
   const notes  = el('col-notes').value.trim();
 
   if (!invNo || !amount) { showFieldErr('colError','يرجى ملء الحقول المطلوبة'); return; }
+
+  // تحقق من عدم تجاوز الباقي
+  const sel2 = el('col-invNo');
+  const opt2 = sel2?.options[sel2?.selectedIndex];
+  const remAllowed = parseFloat(opt2?.dataset?.remaining || 999999);
+  if (amount > remAllowed + 0.001) {
+    showFieldErr('colError', `⚠️ المبلغ أكبر من الباقي المستحق (${fmt(remAllowed)})`);
+    return;
+  }
 
   try {
     const refNo = (await genSeqRef('COL', state.system, fn, 'collections')) || `COL-${fn}-${Date.now()}`;
@@ -6420,19 +6562,32 @@ async function openQuickModal(type) {
   // Set today as default date
   const dateIds = ['qs-date','qc-date','qe-date','qp-date','qpo-date'];
   dateIds.forEach(id => { const e = el(id); if (e && !e.value) e.value = today(); });
+
   // Populate file dropdowns
   const fileSelIds = { sale:'qs-fileNo', collection:'qc-fileNo', expense:'qe-fileNo', payment:'qp-fileNo', payout:'qpo-fileNo' };
   if (fileSelIds[type]) await populateFileDropdown(fileSelIds[type]);
 
-  // Populate contact dropdowns
-  if (type === 'expense') {
-    // Use the full expense modal instead of quick modal
-    openExpenseModal();
-    return;
+  if (type === 'expense') { openExpenseModal(); return; }
+  if (type === 'sale')    { await populateContactSelect('qs-customer','customer'); }
+  if (type === 'payment') { await populateContactSelect('qp-payer','partner'); }
+
+  // Collection — reset invoice fields
+  if (type === 'collection') {
+    el('qc-invNo').innerHTML    = '<option value="">— اختر ملفاً أولاً —</option>';
+    el('qc-inv-card').style.display    = 'none';
+    el('qc-form-fields').style.display = 'none';
+    el('qc-submit-btn').style.display  = 'none';
+    el('qc-amount').value  = '';
+    el('qc-doc').value     = '';
+    el('qc-notes').value   = '';
+    el('qc-dueDate').value = '';
+    // لو في ملف مفتوح حالياً — حمّل فواتيره تلقائياً
+    if (state.currentFileNo) {
+      el('qc-fileNo').value = state.currentFileNo;
+      await loadQuickInvoices(state.currentFileNo);
+    }
   }
-  if (type === 'sale')       { await populateContactSelect('qs-customer','customer');  }
-  if (type === 'collection') await populateContactSelect('qc-customer','customer');
-  if (type === 'payment')    await populateContactSelect('qp-payer','partner');
+
   openModal(map[type]);
 }
 
@@ -6458,21 +6613,86 @@ async function loadQuickVins(fileNo) {
 let _invLoadTimer;
 async function loadQuickInvoices(fileNo) {
   clearTimeout(_invLoadTimer);
-  if (!fileNo) return;
+  const invSel = el('qc-invNo');
+  invSel.innerHTML = '<option value="">جاري التحميل...</option>';
+  el('qc-inv-card').style.display    = 'none';
+  el('qc-form-fields').style.display = 'none';
+  el('qc-submit-btn').style.display  = 'none';
+
+  if (!fileNo) { invSel.innerHTML = '<option value="">— اختر ملفاً أولاً —</option>'; return; }
+
   _invLoadTimer = setTimeout(async () => {
     try {
-      const sales = await apiGet('sales', { select:'invoice_no,customer,vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
-      el('qc-invNo').innerHTML = '<option value="">— اختر أو اتركه فارغاً —</option>' +
-        (sales||[]).filter(s=>s.invoice_no).map(s=>`<option value="${s.invoice_no}" data-customer="${s.customer||''}">${s.invoice_no} — ${s.customer||''}</option>`).join('');
-    } catch(e) {}
-  }, 500);
+      const sys = state.system;
+      const [sales, collections] = await Promise.all([
+        apiGet('sales',       { select:'*',         system_type:`eq.${sys}`, file_no:`eq.${fileNo.trim()}`, order:'sale_date.desc' }),
+        apiGet('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo.trim()}` }),
+      ]);
+
+      // احسب المحصّل لكل فاتورة
+      const collectedMap = {};
+      (collections||[]).forEach(c => { collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0); });
+
+      // الفواتير اللي فيها باقي
+      const pending = (sales||[]).map(s => ({
+        ...s,
+        collected: collectedMap[s.inv_no] || 0,
+        remaining: (+s.sale_price||0) - (collectedMap[s.inv_no]||0),
+      })).filter(s => s.remaining > 0.001);
+
+      invSel._salesData = pending;
+
+      if (!pending.length) {
+        invSel.innerHTML = '<option value="">لا توجد فواتير غير محصّلة في هذا الملف</option>';
+        return;
+      }
+
+      invSel.innerHTML = '<option value="">— اختر فاتورة —</option>' +
+        pending.map(s => `
+          <option value="${s.inv_no}"
+            data-customer="${s.customer||''}"
+            data-vin="${s.vin||''}"
+            data-total="${s.sale_price||0}"
+            data-collected="${s.collected}"
+            data-remaining="${s.remaining}">
+            ${s.inv_no||'—'} — ${s.customer||''} — باقي: ${fmt(s.remaining)}
+          </option>`).join('');
+    } catch(e) {
+      invSel.innerHTML = '<option value="">خطأ في التحميل</option>';
+    }
+  }, 400);
 }
 
-function fillCollectionCustomer() {
+function onQuickCollectionInvChange() {
   const sel = el('qc-invNo');
   const opt = sel.options[sel.selectedIndex];
-  if (opt && opt.dataset.customer) el('qc-customer').value = opt.dataset.customer;
+  if (!opt || !opt.value) {
+    el('qc-inv-card').style.display    = 'none';
+    el('qc-form-fields').style.display = 'none';
+    el('qc-submit-btn').style.display  = 'none';
+    return;
+  }
+  const total     = parseFloat(opt.dataset.total)     || 0;
+  const collected = parseFloat(opt.dataset.collected) || 0;
+  const remaining = parseFloat(opt.dataset.remaining) || 0;
+
+  el('qc-customer').value          = opt.dataset.customer || '';
+  el('qc-vin').value               = opt.dataset.vin      || '';
+  el('qc-card-customer').textContent  = opt.dataset.customer || '—';
+  el('qc-card-vin').textContent       = opt.dataset.vin      || '—';
+  el('qc-card-total').textContent     = fmt(total);
+  el('qc-card-collected').textContent = fmt(collected);
+  el('qc-card-remaining').textContent = fmt(remaining);
+  el('qc-card-remaining').style.color = remaining > 0 ? 'var(--accent)' : 'var(--green)';
+  el('qc-amount').value = remaining > 0 ? remaining.toFixed(3) : '';
+
+  el('qc-inv-card').style.display    = 'block';
+  el('qc-form-fields').style.display = 'block';
+  el('qc-submit-btn').style.display  = '';
 }
+
+// Legacy — not used anymore
+function fillCollectionCustomer() {}
 
 // Load partners for a file (used in quick payout)
 let _partnerLoadTimer;
@@ -6520,29 +6740,48 @@ async function submitQuickSale() {
 async function submitQuickCollection() {
   const fileNo   = el('qc-fileNo').value;
   const invNo    = el('qc-invNo').value;
-  const customer = (el('qc-customer').value || '').trim();
+  const customer = el('qc-customer').value.trim();
+  const vin      = el('qc-vin').value.trim();
   const amount   = parseFloat(el('qc-amount').value);
   const method   = el('qc-method').value;
   const doc      = el('qc-doc').value.trim();
-  const date     = el('qc-date').value;
+  const due      = el('qc-dueDate').value;
+  const paid     = el('qc-date').value;
   const notes    = el('qc-notes').value.trim();
 
-  if (!fileNo || !amount || !date) {
+  if (!fileNo || !invNo || !amount || !paid) {
     showFieldErr('qsColError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
+
+  // تحقق من عدم تجاوز الباقي
+  const sel = el('qc-invNo');
+  const opt = sel.options[sel.selectedIndex];
+  const remaining = parseFloat(opt?.dataset.remaining || 0);
+  if (amount > remaining + 0.001) {
+    showFieldErr('qsColError', `⚠️ المبلغ أكبر من الباقي المستحق (${fmt(remaining)})`);
+    return;
+  }
+
   try {
     const refNo = (await genSeqRef('COL', state.system, fileNo, 'collections')) || `COL-${fileNo}-${Date.now()}`;
-    const data = { system_type:state.system, file_no:fileNo,
-      pay_id: refNo, inv_no:invNo||null, customer:customer||null, amount, pay_method:method,
-      document:doc||null, paid_date:date, notes:notes||null, ref_no:refNo };
+    const data = {
+      system_type: state.system, file_no: fileNo,
+      pay_id: refNo, inv_no: invNo, customer: customer||null,
+      vin: vin||null, amount, pay_method: method,
+      document: doc||null, due_date: due||null,
+      paid_date: paid, notes: notes||null, ref_no: refNo
+    };
     await apiPost('collections', data);
-    await logAudit('INSERT','collections',fileNo,null,data);
-    const qcCust = (el('qc-customer').value || '').trim();
-    if (qcCust) await postLedger({ contactName:qcCust, contactType:'customer', date:el('qc-date').value,
-      description:`[${refNo}] تحصيل فاتورة ${invNo||''} — ملف ${fileNo}`, credit:amount, sourceTable:'collections', fileNo });
+    await logAudit('INSERT','collections', fileNo, null, data);
+    if (customer) await postLedger({
+      contactName: customer, contactType: 'customer', date: paid,
+      description: `[${refNo}] تحصيل فاتورة ${invNo} — ملف ${fileNo}`,
+      credit: amount, sourceTable: 'collections', fileNo
+    });
     closeModal('quickCollectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     loadJournal();
+    if (state.currentTab === 5 && state.currentFileNo === fileNo) loadCollectionsTab(fileNo, state.system);
   } catch(e) { showFieldErr('qsColError','خطأ: '+e.message); }
 }
 
