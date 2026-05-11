@@ -9137,10 +9137,11 @@ async function runReport() {
   try {
     if (type === 'profit') {
       // جلب كل البيانات المطلوبة
+      // المصاريف بتخص الصفقة مش التاريخ — نجيبها كلها بدون فلتر تاريخ
       const [sales, expenses, deals, opexItems] = await Promise.all([
-        apiGetDateRange('sales',    'sale_date',    from, to),
-        apiGetDateRange('expenses', 'expense_date', from, to),
-        apiGet('purchase_orders',   { select:'file_no,total_purchase,supplier,status', system_type:`eq.${sys}` }),
+        apiGetDateRange('sales', 'sale_date', from, to),
+        apiGet('expenses', { select:'*', system_type:`eq.${sys}` }),
+        apiGet('purchase_orders', { select:'file_no,total_purchase,supplier,status', system_type:`eq.${sys}` }),
         fetchOpexForJournal(from, to, sys),
       ]);
 
@@ -9162,7 +9163,7 @@ async function runReport() {
         fileMap[r.file_no].sales += +r.sale_price||0;
       });
       (expenses||[]).forEach(r => {
-        if (!r.file_no) return;
+        if (!r.file_no) return; // مصروف بدون ملف — تجاهل (OPEX منفصل)
         ensureFile(r.file_no);
         fileMap[r.file_no].expenses += +r.amount||0;
       });
