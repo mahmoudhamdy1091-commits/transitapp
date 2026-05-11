@@ -7008,39 +7008,52 @@ async function loadJournal() {
     const sys = state.system;
 
     async function apiGetRange(table, dateCol, from, to, extra={}) {
-      let url = `${SB_URL}/rest/v1/${table}?system_type=eq.${encodeURIComponent(sys)}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(to)}&order=${dateCol}.desc`;
+      // Use end of day for 'to' to include all records on that day
+      const toEOD = to + 'T23:59:59';
+      let url = `${SB_URL}/rest/v1/${table}?system_type=eq.${encodeURIComponent(sys)}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`;
       for (const [k,v] of Object.entries(extra)) url += `&${k}=${encodeURIComponent(v)}`;
       const res = await fetch(url, { headers: headers() });
-      if (!res.ok) return [];
+      if (!res.ok) { console.warn(`apiGetRange ${table} failed:`, res.status); return []; }
       return res.json();
     }
 
-    const [sales, collections, expenses, payments, payouts, opexItems] = await Promise.all([
-      apiGetRange('sales',                'sale_date',    from, to),
-      apiGetRange('collections',          'due_date',     from, to),
-      apiGetRange('expenses',             'exp_date',     from, to),
-      apiGetRange('payments',             'pay_date',     from, to),
-      apiGetRange('partner_payouts',      'pay_date',     from, to),
+    const [sales, expenses, payments, payouts, opexItems] = await Promise.all([
+      apiGetRange('sales',           'sale_date', from, to),
+      apiGetRange('expenses',        'exp_date',  from, to),
+      apiGetRange('payments',        'pay_date',  from, to),
+      apiGetRange('partner_payouts', 'pay_date',  from, to),
       fetchOpexForJournal(from, to, sys),
     ]);
+
+    // Collections — نجيب بالـ due_date والـ paid_date معاً
+    const toEOD2 = to + 'T23:59:59';
+    const [colByDue, colByPaid] = await Promise.all([
+      fetch(`${SB_URL}/rest/v1/collections?system_type=eq.${encodeURIComponent(sys)}&due_date=gte.${encodeURIComponent(from)}&due_date=lte.${encodeURIComponent(toEOD2)}&order=due_date.desc`, { headers: headers() }).then(r=>r.ok?r.json():[]),
+      fetch(`${SB_URL}/rest/v1/collections?system_type=eq.${encodeURIComponent(sys)}&paid_date=gte.${encodeURIComponent(from)}&paid_date=lte.${encodeURIComponent(toEOD2)}&order=paid_date.desc`, { headers: headers() }).then(r=>r.ok?r.json():[]),
+    ]);
+    // دمج بدون تكرار
+    const colMap = {};
+    [...(colByDue||[]), ...(colByPaid||[])].forEach(c => { colMap[c.id] = c; });
+    const collections = Object.values(colMap);
 
     // Normalize entries
     const entries = [
       ...(sales||[]).map(r=>({
-        type:'sale', date: r.sale_date||r.created_at||from,
+        type:'sale', date: r.sale_date||r.created_at?.split('T')[0]||from,
         amount: +r.sale_price||0, sign:+1,
-        title:`بيع سيارة — ${r.model||r.vin||''}`,
+        title:`بيع سيارة — ${r.vin||''}`,
         meta:[
           r.customer?`عميل: ${r.customer}`:'',
           `ملف: ${r.file_no||'—'}`,
           r.vin?`شاصي: ${r.vin}`:'',
-          r.invoice_no?`فاتورة: ${r.invoice_no}`:'',
+          r.inv_no||r.invoice_no?`فاتورة: ${r.inv_no||r.invoice_no}`:'',
           r.sale_date?`تاريخ: ${r.sale_date}`:'',
         ],
         fileNo: r.file_no, raw: r,
       })),
       ...(collections||[]).map(r=>({
-        type:'collection', date: r.paid_date||r.created_at||from,
+        type:'collection',
+        date: r.due_date||r.paid_date||r.created_at?.split('T')[0]||from,
         amount: +r.amount||0, sign:+1,
         title:`تحصيل — ${r.customer||r.inv_no||''}`,
         meta:[
@@ -7050,27 +7063,28 @@ async function loadJournal() {
           r.inv_no?`فاتورة: ${r.inv_no}`:'',
           r.vin?`شاصي: ${r.vin}`:'',
           r.pay_method?`طريقة: ${r.pay_method}`:'',
-          r.paid_date?`تاريخ: ${r.paid_date}`:'',
+          r.paid_date?`تاريخ الدفع: ${r.paid_date}`:r.due_date?`استحقاق: ${r.due_date}`:'',
           r.document?`مستند: ${r.document}`:'',
         ],
         fileNo: r.file_no, raw: r,
       })),
       ...(expenses||[]).map(r=>({
-        type:'expense', date: r.expense_date||r.created_at||from,
+        type:'expense',
+        date: r.exp_date||r.expense_date||r.created_at?.split('T')[0]||from,
         amount: +r.amount||0, sign:-1,
-        title:`مصروف — ${r.category||r.description||''}`,
+        title:`مصروف — ${r.exp_type||r.category||r.description||''}`,
         meta:[
           r.ref_no?`<span style="background:var(--red-dim);color:var(--red);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
-          r.vendor?`جهة: ${r.vendor}`:'',
+          r.description?`بيان: ${r.description}`:'',
           `ملف: ${r.file_no||'—'}`,
           r.pay_method?`طريقة: ${r.pay_method}`:'',
-          r.expense_date?`تاريخ: ${r.expense_date}`:'',
-          r.description&&r.description!==r.category?`بيان: ${r.description}`:'',
+          (r.exp_date||r.expense_date)?`تاريخ: ${r.exp_date||r.expense_date}`:'',
         ],
         fileNo: r.file_no, raw: r,
       })),
       ...(payments||[]).map(r=>({
-        type:'payment', date: r.pay_date||r.created_at||from,
+        type:'payment',
+        date: r.pay_date||r.created_at?.split('T')[0]||from,
         amount: +r.amount||0, sign:-1,
         title:`دفعة للمورد — ${r.payer||''}`,
         meta:[
@@ -7084,7 +7098,8 @@ async function loadJournal() {
         fileNo: r.file_no, raw: r,
       })),
       ...(payouts||[]).map(r=>({
-        type:'payout', date: r.pay_date||r.created_at||from,
+        type:'payout',
+        date: r.pay_date||r.created_at?.split('T')[0]||from,
         amount: +r.amount||0, sign:-1,
         title:`صرف لشريك — ${r.partner||''}`,
         meta:[
@@ -7098,7 +7113,8 @@ async function loadJournal() {
         fileNo: r.file_no, raw: r,
       })),
       ...(opexItems||[]).map(r=>({
-        type:'opex', date: r.exp_date||r.created_at||from,
+        type:'opex',
+        date: r.exp_date||r.created_at?.split('T')[0]||from,
         amount: +r.amount||0, sign:-1,
         title:`مصروف تشغيلي — ${r.exp_type||''}: ${r.description||''}`,
         meta:[
@@ -9827,7 +9843,7 @@ async function runReport() {
       el('reportTable').innerHTML = rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>VIN</th><th>العميل</th><th>السعر</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('💹','لا توجد مبيعات');
 
     } else if (type === 'expenses') {
-      const data = await apiGetDateRange('expenses','expense_date',from,to,{order:'expense_date.desc'});
+      const data = await apiGetDateRange('expenses','exp_date',from,to,{order:'exp_date.desc'});
       const total = (data||[]).reduce((s,r)=>s+(+r.amount||0),0);
       reportState.data = data||[];
       el('reportKpis').innerHTML = `
