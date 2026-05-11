@@ -3390,10 +3390,8 @@ function headers(extra = {}) {
 }
 
 async function apiGet(table, params = {}) {
-  let url = `${SB_URL}/rest/v1/${table}?`;
-  for (const [k, v] of Object.entries(params)) {
-    url += `${k}=${encodeURIComponent(v)}&`;
-  }
+  const qs = Object.entries(params).map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
   let res = await fetch(url, { headers: headers({'Prefer':'return=representation'}) });
   if (res.status === 401) {
     const ok = await refreshAccessToken();
@@ -6137,7 +6135,7 @@ async function openCollectionModal() {
 
   try {
     const [sales, collections] = await Promise.all([
-      apiGet('sales', { select:'id,inv_no,invoice_no,customer,vin,sale_price', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
+      apiGet('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
       apiGet('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
@@ -6146,9 +6144,8 @@ async function openCollectionModal() {
       if (c.inv_no) collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
     });
 
-    // نوحد inv_no / invoice_no
     const normalizedSales = (sales||[]).map(s => ({
-      ...s, inv_no: s.inv_no || s.invoice_no || '',
+      ...s, inv_no: s.inv_no || '',
     })).filter(s => s.inv_no);
 
     const pendingSales = normalizedSales.map(s => ({
@@ -6631,23 +6628,19 @@ async function loadQuickInvoices(fileNo) {
     const sys = state.system;
     const fn  = fileNo.trim();
 
-    // طلبين بالتوازي
     const [sales, collections] = await Promise.all([
-      apiGet('sales',       { select:'id,inv_no,invoice_no,customer,vin,sale_price', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
+      apiGet('sales',       { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
       apiGet('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
-    // احسب المحصّل لكل فاتورة — يدعم inv_no و invoice_no
     const collectedMap = {};
     (collections||[]).forEach(c => {
       if (c.inv_no) collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
     });
 
-    // نوحد اسم الحقل — بعض السجلات فيها invoice_no وبعضها inv_no
     const normalizedSales = (sales||[]).map(s => ({
-      ...s,
-      inv_no: s.inv_no || s.invoice_no || '',
-    })).filter(s => s.inv_no); // بس اللي عندها رقم فاتورة
+      ...s, inv_no: s.inv_no || '',
+    })).filter(s => s.inv_no);
 
     const pending = normalizedSales.map(s => ({
       ...s,
@@ -6674,8 +6667,8 @@ async function loadQuickInvoices(fileNo) {
         </option>`).join('');
 
   } catch(e) {
-    invSel.innerHTML = '<option value="">خطأ في التحميل</option>';
-    console.error('loadQuickInvoices:', e.message);
+    console.error('loadQuickInvoices error:', e.message, e);
+    invSel.innerHTML = `<option value="">خطأ: ${e.message}</option>`;
   }
 }
 
