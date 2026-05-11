@@ -1871,7 +1871,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         </div>
 
         <!-- KPI Strip -->
-        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px" id="journalKpis"></div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:0" id="journalKpis"></div>
 
         <!-- Timeline -->
         <div id="journalTimeline"></div>
@@ -7539,36 +7539,137 @@ async function loadJournal() {
 }
 
 function renderJournalKpis(entries) {
-  const sales       = entries.filter(e=>e.type==='sale').reduce((s,e)=>s+e.amount,0);
-  const collections = entries.filter(e=>e.type==='collection').reduce((s,e)=>s+e.amount,0);
-  const expenses    = entries.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
-  const payments    = entries.filter(e=>e.type==='payment').reduce((s,e)=>s+e.amount,0);
-  const payouts     = entries.filter(e=>e.type==='payout').reduce((s,e)=>s+e.amount,0);
-  const opexTotal   = entries.filter(e=>e.type==='opex').reduce((s,e)=>s+e.amount,0);
-  const net         = collections - expenses - payments - payouts;
+  const groups = {
+    sale:       entries.filter(e=>e.type==='sale'),
+    expenses:   entries.filter(e=>e.type==='expense'||e.type==='opex'),
+    collection: entries.filter(e=>e.type==='collection'),
+    payment:    entries.filter(e=>e.type==='payment'),
+    payout:     entries.filter(e=>e.type==='payout'),
+  };
 
-  el('journalKpis').innerHTML = `
-    <div class="j-kpi">
-      <div class="j-kpi-label">💰 مبيعات</div>
-      <div class="j-kpi-val text-green">${fmt(sales)}</div>
+  const totals = {
+    sale:       groups.sale.reduce((s,e)=>s+e.amount,0),
+    expenses:   groups.expenses.reduce((s,e)=>s+e.amount,0),
+    collection: groups.collection.reduce((s,e)=>s+e.amount,0),
+    payment:    groups.payment.reduce((s,e)=>s+e.amount,0),
+    payout:     groups.payout.reduce((s,e)=>s+e.amount,0),
+  };
+
+  const config = [
+    { key:'sale',       label:'مبيعات',       icon:'🧾', color:'var(--green)',  filterVal:'sale'       },
+    { key:'expenses',   label:'مصاريف',       icon:'💸', color:'var(--red)',    filterVal:'expense'    },
+    { key:'collection', label:'تحصيلات',      icon:'💰', color:'var(--blue)',   filterVal:'collection' },
+    { key:'payment',    label:'دفعات مورد',   icon:'💳', color:'var(--cyan)',   filterVal:'payment'    },
+    { key:'payout',     label:'صرف شركاء',    icon:'👥', color:'var(--purple)', filterVal:'payout'     },
+  ];
+
+  el('journalKpis').innerHTML = config.map(c => `
+    <div class="j-kpi" id="jkpi-${c.key}"
+      onclick="filterJournalByType('${c.filterVal}', '${c.key}')"
+      style="cursor:pointer;border-right:3px solid ${c.color};transition:all .15s"
+      onmouseover="this.style.background='var(--card2)'"
+      onmouseout="this.style.background=''">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="j-kpi-label">${c.icon} ${c.label}</div>
+        <div style="font-size:10px;color:var(--text2)">${groups[c.key].length} قيد</div>
+      </div>
+      <div class="j-kpi-val" style="color:${c.color}">${fmt(totals[c.key])}</div>
+      <div style="font-size:9px;color:var(--text2);margin-top:3px">اضغط للتفاصيل</div>
+    </div>`).join('');
+
+  // Detail panel
+  if (!el('jkpi-detail')) {
+    const panel = document.createElement('div');
+    panel.id = 'jkpi-detail';
+    panel.style.cssText = 'display:none;margin-bottom:14px;background:var(--card);border:2px solid var(--accent);border-radius:var(--radius);padding:14px 16px;animation:fadeSlideIn .2s ease';
+    el('journalKpis').after(panel);
+  }
+}
+
+function filterJournalByType(filterVal, key) {
+  // Toggle — لو نفس البند اضغطت تاني يغلق
+  const panel = el('jkpi-detail');
+  const sel   = el('jTypeFilter');
+
+  // Remove active from all
+  document.querySelectorAll('[id^="jkpi-"]').forEach(k => {
+    k.style.borderWidth = '3px';
+    k.style.boxShadow   = '';
+  });
+
+  if (panel._activeKey === key) {
+    panel.style.display  = 'none';
+    panel._activeKey     = null;
+    if (sel) { sel.value = 'all'; renderJournalEntries(); }
+    return;
+  }
+
+  // Set active
+  panel._activeKey = key;
+  const activeEl = el('jkpi-' + key);
+  if (activeEl) { activeEl.style.borderWidth = '3px'; activeEl.style.boxShadow = '0 0 0 2px var(--accent)'; }
+
+  // Filter timeline
+  if (sel) {
+    sel.value = filterVal;
+    renderJournalEntries();
+  }
+
+  // Build detail table
+  const entries = journalState.entries.filter(e => {
+    if (key === 'expenses') return e.type==='expense'||e.type==='opex';
+    return e.type === filterVal;
+  });
+
+  const configs = {
+    sale:       { color:'var(--green)',  title:'🧾 تفاصيل المبيعات' },
+    expenses:   { color:'var(--red)',    title:'💸 تفاصيل المصاريف' },
+    collection: { color:'var(--blue)',   title:'💰 تفاصيل التحصيلات' },
+    payment:    { color:'var(--cyan)',   title:'💳 تفاصيل دفعات المورد' },
+    payout:     { color:'var(--purple)', title:'👥 تفاصيل صرف الشركاء' },
+  };
+  const cfg   = configs[key];
+  const total = entries.reduce((s,e)=>s+e.amount,0);
+
+  panel.style.display = 'block';
+  panel.style.borderColor = cfg.color;
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700">${cfg.title}</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:13px;font-weight:700;color:${cfg.color};font-family:monospace">${fmt(total)}</span>
+        <button onclick="document.getElementById('jkpi-detail').style.display='none';document.getElementById('jkpi-detail')._activeKey=null;document.getElementById('jTypeFilter').value='all';renderJournalEntries()"
+          style="background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'Cairo',sans-serif;color:var(--text)">✕ إغلاق</button>
+      </div>
     </div>
-    <div class="j-kpi">
-      <div class="j-kpi-label">📥 تحصيلات</div>
-      <div class="j-kpi-val text-blue">${fmt(collections)}</div>
-    </div>
-    <div class="j-kpi">
-      <div class="j-kpi-label">💸 مصاريف</div>
-      <div class="j-kpi-val text-red">${fmt(expenses)}</div>
-    </div>
-    <div class="j-kpi">
-      <div class="j-kpi-label">🔄 دفعات+صرف</div>
-      <div class="j-kpi-val text-amber">${fmt(payments+payouts)}</div>
-    </div>
-    <div class="j-kpi">
-      <div class="j-kpi-label">📊 صافي الحركة</div>
-      <div class="j-kpi-val" style="color:${net>=0?'var(--green)':'var(--red)'}">${fmt(net)}</div>
-    </div>
-  `;
+    ${entries.length ? `
+    <div style="max-height:240px;overflow-y:auto">
+      <table class="data-table" style="font-size:12px">
+        <thead><tr>
+          <th>التاريخ</th><th>البيان</th><th>الملف</th><th>طريقة الدفع</th><th>المبلغ</th>
+        </tr></thead>
+        <tbody>
+          ${entries.map(e => {
+            const r = e.raw || {};
+            const method = r.pay_method||r.method||'—';
+            const fileNo = e.fileNo||r.file_no||'—';
+            return `<tr onclick="${fileNo!=='—'?`openViewer('${fileNo}')`:''}" style="cursor:${fileNo!=='—'?'pointer':'default'}">
+              <td class="mono">${fmtDate(e.date)}</td>
+              <td>${e.title||'—'}</td>
+              <td class="mono text-amber">${fileNo}</td>
+              <td>${method}</td>
+              <td class="mono" style="font-weight:700;color:${cfg.color}">${fmt(e.amount)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--card2);font-weight:700">
+            <td colspan="4">الإجمالي — ${entries.length} قيد</td>
+            <td class="mono" style="color:${cfg.color}">${fmt(total)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>` : `<div class="empty-state" style="padding:20px"><div class="e-icon">📭</div><p>لا توجد عمليات</p></div>`}`;
 }
 
 function renderJournalEntries() {
