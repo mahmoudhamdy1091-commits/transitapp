@@ -1855,13 +1855,6 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
               <option value="payout">صرف شريك</option>
               <option value="opex">مصروف تشغيلي</option>
             </select>
-              <option value="all">كل العمليات</option>
-              <option value="sale">مبيعات</option>
-              <option value="collection">تحصيلات</option>
-              <option value="expense">مصاريف</option>
-              <option value="payment">دفعات للمورد</option>
-              <option value="payout">صرف شركاء</option>
-            </select>
             <button class="btn btn-secondary btn-sm" onclick="loadJournal()">🔄 تحديث</button>
           </div>
         </div>
@@ -3099,7 +3092,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
 <!-- QUICK: دفعة للمورد -->
 <div class="modal-overlay" id="quickPaymentModal">
-  <div class="modal">
+  <div class="modal" style="max-width:560px">
     <div class="modal-header">
       <div class="modal-icon" style="background:var(--cyan-dim)">💳</div>
       <h3>دفعة للمورد — تسجيل سريع</h3>
@@ -3107,43 +3100,65 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       <button class="modal-close" onclick="closeModal('quickPaymentModal')">✕</button>
     </div>
     <div class="modal-body"><div class="form-col">
+
+      <!-- الملف -->
       <div class="field">
         <label>رقم الملف *</label>
-        <select id="qp-fileNo">
-          <option value="">-- اختر الملف --</option>
+        <select id="qp-fileNo" onchange="loadPaymentPOCard(this.value)">
+          <option value="">— اختر الملف —</option>
         </select>
       </div>
-      <div class="field">
-        <label>الدافع / Payer *</label>
-        <select id="qp-payer"><option value="">-- اختر الشريك --</option></select>
+
+      <!-- بطاقة أمر الشراء -->
+      <div id="qp-po-card" style="display:none;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:4px">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:8px">تفاصيل أمر الشراء</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+          <div><span style="color:var(--text2)">المورد: </span><span id="qp-card-supplier" style="font-weight:700"></span></div>
+          <div><span style="color:var(--text2)">قيمة الشراء: </span><span id="qp-card-total" style="font-weight:700;color:var(--blue)"></span></div>
+          <div><span style="color:var(--text2)">تم دفعه: </span><span id="qp-card-paid" style="font-weight:700;color:var(--purple)"></span></div>
+          <div><span style="color:var(--text2)">الباقي: </span><span id="qp-card-remaining" style="font-weight:700;color:var(--accent)"></span></div>
+        </div>
       </div>
-      <div class="field">
-        <label>المبلغ *</label>
-        <input type="number" id="qp-amount" placeholder="0.00" min="0" step="0.01">
+
+      <!-- بيانات الدفعة -->
+      <div id="qp-form-fields" style="display:none">
+        <div class="form-row">
+          <div class="field">
+            <label>الدافع *</label>
+            <select id="qp-payer"></select>
+          </div>
+          <div class="field">
+            <label>المبلغ *</label>
+            <input type="number" id="qp-amount" placeholder="0.00" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>طريقة الدفع</label>
+            <select id="qp-method">
+              <option>تحويل بنكي</option><option>نقد</option><option>شيك</option><option>SWIFT</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>تاريخ الدفع *</label>
+            <input type="date" id="qp-date">
+          </div>
+        </div>
+        <div class="field">
+          <label>رقم المستند</label>
+          <input type="text" id="qp-doc" placeholder="رقم التحويل أو الشيك">
+        </div>
+        <div class="field">
+          <label>ملاحظات</label>
+          <textarea id="qp-notes" placeholder="..." rows="2"></textarea>
+        </div>
       </div>
-      <div class="field">
-        <label>طريقة الدفع</label>
-        <select id="qp-method">
-          <option>تحويل بنكي</option><option>نقد</option><option>شيك</option><option>SWIFT</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>رقم المستند</label>
-        <input type="text" id="qp-doc" placeholder="رقم التحويل أو الشيك">
-      </div>
-      <div class="field">
-        <label>تاريخ الدفع *</label>
-        <input type="date" id="qp-date">
-      </div>
-      <div class="field">
-        <label>ملاحظات</label>
-        <textarea id="qp-notes" placeholder="..." rows="2"></textarea>
-      </div>
+
       <div id="qsPayError" class="alert alert-err" style="display:none"></div>
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('quickPaymentModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitQuickPayment()">💾 حفظ</button>
+      <button class="btn btn-primary" id="qp-submit-btn" onclick="submitQuickPayment()" style="display:none">💾 حفظ الدفعة</button>
     </div>
   </div>
 </div>
@@ -6621,7 +6636,19 @@ async function openQuickModal(type) {
 
   if (type === 'expense') { openExpenseModal(); return; }
   if (type === 'sale')    { await populateContactSelect('qs-customer','customer'); }
-  if (type === 'payment') { await populateContactSelect('qp-payer','partner'); }
+  if (type === 'payment') {
+    el('qp-po-card').style.display    = 'none';
+    el('qp-form-fields').style.display = 'none';
+    el('qp-submit-btn').style.display  = 'none';
+    el('qp-amount').value = '';
+    el('qp-doc').value    = '';
+    el('qp-notes').value  = '';
+    // لو في ملف مفتوح — حمّله تلقائياً
+    if (state.currentFileNo) {
+      el('qp-fileNo').value = state.currentFileNo;
+      await loadPaymentPOCard(state.currentFileNo);
+    }
+  }
 
   // Collection — reset invoice fields
   if (type === 'collection') {
@@ -6875,6 +6902,50 @@ async function submitQuickExpense() {
 }
 
 // Submit quick payment (to supplier)
+async function loadPaymentPOCard(fileNo) {
+  el('qp-po-card').style.display    = 'none';
+  el('qp-form-fields').style.display = 'none';
+  el('qp-submit-btn').style.display  = 'none';
+  if (!fileNo) return;
+
+  try {
+    const sys = state.system;
+    const [po, prevPayments, partners] = await Promise.all([
+      apiGet('purchase_orders', { select:'file_no,supplier,total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGet('payments',        { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGet('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+    ]);
+
+    const poData    = po?.[0] || {};
+    const totalPO   = +poData.total_purchase || 0;
+    const totalPaid = (prevPayments||[]).reduce((s,p)=>s+(+p.amount||0), 0);
+    const remaining = Math.max(totalPO - totalPaid, 0);
+
+    el('qp-card-supplier').textContent  = poData.supplier || '—';
+    el('qp-card-total').textContent     = fmt(totalPO);
+    el('qp-card-paid').textContent      = fmt(totalPaid);
+    el('qp-card-remaining').textContent = fmt(remaining);
+    el('qp-card-remaining').style.color = remaining > 0 ? 'var(--accent)' : 'var(--green)';
+
+    el('qp-amount').value = remaining > 0 ? remaining.toFixed(3) : '';
+
+    // الدافع
+    let payerOptions = '';
+    if (partners?.length) {
+      payerOptions = partners.map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('');
+    }
+    if (poData.supplier) {
+      payerOptions = `<option value="${poData.supplier}">${poData.supplier} (المورد)</option>` + payerOptions;
+    }
+    el('qp-payer').innerHTML = '<option value="">— اختر الدافع —</option>' + payerOptions;
+
+    el('qp-po-card').style.display    = 'block';
+    el('qp-form-fields').style.display = 'block';
+    el('qp-submit-btn').style.display  = '';
+
+  } catch(e) { console.error('loadPaymentPOCard:', e.message); }
+}
+
 async function submitQuickPayment() {
   const fileNo = el('qp-fileNo').value;
   const payer  = (el('qp-payer').value || '').trim();
@@ -6887,19 +6958,37 @@ async function submitQuickPayment() {
   if (!fileNo || !payer || !amount || !date) {
     showFieldErr('qsPayError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
+
+  // تحقق من عدم تجاوز الباقي
+  const remainingText = el('qp-card-remaining')?.textContent?.replace(/,/g,'');
+  const remaining = parseFloat(remainingText) || 0;
+  if (remaining > 0 && amount > remaining + 0.001) {
+    const proceed = confirm(`⚠️ قيمة الدفعة (${fmt(amount)}) أكبر من الباقي للمورد (${fmt(remaining)}).\n\nهل تريد المتابعة؟`);
+    if (!proceed) return;
+  }
+
   try {
     const refNo = (await genSeqRef('PMT', state.system, fileNo, 'payments')) || `PMT-${fileNo}-${Date.now()}`;
+    const supplierName = el('qp-card-supplier')?.textContent || '';
     const data = { system_type:state.system, file_no:fileNo, payer, amount,
       pay_id:refNo, ref_no:refNo,
       pay_method:method, document:doc||null, pay_date:date, notes:notes||null };
     await apiPost('payments', data);
-    await logAudit('INSERT','payments',fileNo,null,data);
-    await postLedger({ contactName:payer, contactType:'supplier', date,
-      description:`[${refNo}] دفعة للمورد — ملف ${fileNo}`,
-      credit:amount, sourceTable:'payments', fileNo });
+    await logAudit('INSERT','payments', fileNo, null, data);
+    if (supplierName && supplierName !== '—') {
+      await postLedger({ contactName:supplierName, contactType:'supplier', date,
+        description:`[${refNo}] دفعة للمورد — ملف ${fileNo} — دافع: ${payer}`,
+        credit:amount, sourceTable:'payments', fileNo });
+    }
+    if (payer && payer !== supplierName) {
+      await postLedger({ contactName:payer, contactType:'partner', date,
+        description:`[${refNo}] دفع للمورد ${supplierName||''} — ملف ${fileNo}`,
+        debit:amount, sourceTable:'payments', fileNo });
+    }
     closeModal('quickPaymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
     loadJournal();
+    if (state.currentTab === 2 && state.currentFileNo === fileNo) loadPaymentsTab(fileNo, state.system);
   } catch(e) { showFieldErr('qsPayError','خطأ: '+e.message); }
 }
 
