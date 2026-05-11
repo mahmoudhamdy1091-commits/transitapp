@@ -1359,6 +1359,19 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         </div>
       </div>
 
+      <!-- 💼 المصاريف التشغيلية -->
+      <div class="nav-section">
+        <div class="nav-section-title" onclick="toggleNav(this)">
+          <span>💼 التشغيلية</span>
+          <span class="ns-arrow">▼</span>
+        </div>
+        <div class="nav-section-items">
+          <div class="nav-item" id="nav-opex" onclick="showOpex()">
+            <span class="ni-icon">💼</span><span>المصاريف التشغيلية</span>
+          </div>
+        </div>
+      </div>
+
       <!-- 📈 التقارير -->
       <div class="nav-section">
         <div class="nav-section-title" onclick="toggleNav(this)">
@@ -1377,6 +1390,9 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           </div>
           <div class="nav-item" onclick="showReport('expenses')">
             <span class="ni-icon">💸</span><span>تقرير المصاريف</span>
+          </div>
+          <div class="nav-item" onclick="showReport('opex')">
+            <span class="ni-icon">💼</span><span>تقرير التشغيلية</span>
           </div>
         </div>
       </div>
@@ -1649,6 +1665,14 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           </div>
           <div style="margin-right:auto;display:flex;gap:8px">
             <select id="jTypeFilter" onchange="renderJournalEntries()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 12px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px">
+              <option value="all">كل الحركات</option>
+              <option value="sale">بيع</option>
+              <option value="collection">تحصيل</option>
+              <option value="expense">مصروف صفقة</option>
+              <option value="payment">دفعة مورد</option>
+              <option value="payout">صرف شريك</option>
+              <option value="opex">مصروف تشغيلي</option>
+            </select>
               <option value="all">كل العمليات</option>
               <option value="sale">مبيعات</option>
               <option value="collection">تحصيلات</option>
@@ -1745,6 +1769,45 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         <div class="data-table-wrap"><div id="allCollectionsTable"></div></div>
       </div>
 
+      <!-- ════ OPERATING EXPENSES ════ -->
+      <div id="opexView" style="display:none">
+
+        <!-- Header -->
+        <div class="section-header" style="margin-bottom:16px">
+          <div>
+            <div class="section-title">💼 المصاريف التشغيلية</div>
+            <div class="section-sub" id="opexSystemLabel">نظام BOX</div>
+          </div>
+          <div class="section-actions">
+            <button class="btn btn-secondary btn-sm" onclick="loadOpex()">🔄 تحديث</button>
+            <button class="btn btn-secondary btn-sm" onclick="exportOpexExcel()">📊 Excel</button>
+            <button class="btn btn-primary btn-sm" onclick="openOpexModal()">➕ إضافة مصروف</button>
+          </div>
+        </div>
+
+        <!-- KPIs -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px" id="opexKpis"></div>
+
+        <!-- Filters -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
+          <select id="opex-filter-type" onchange="loadOpex()" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <option value="">كل الأنواع</option>
+            <option>رواتب</option><option>إيجارات</option><option>عمولات</option>
+            <option>نظافة</option><option>ضيافة</option><option>مصروفات حكومية</option><option>أخرى</option>
+          </select>
+          <input type="date" id="opex-filter-from" onchange="loadOpex()" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <span style="color:var(--text2);font-size:12px">—</span>
+          <input type="date" id="opex-filter-to" onchange="loadOpex()" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('opex-filter-type').value='';document.getElementById('opex-filter-from').value='';document.getElementById('opex-filter-to').value='';loadOpex()">✕ مسح الفلاتر</button>
+        </div>
+
+        <!-- Table -->
+        <div class="data-table-wrap"><div id="opexTableBody">
+          <div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>
+        </div></div>
+
+      </div>
+
       <!-- ════ REPORTS ════ -->
       <div id="reportsView" style="display:none">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
@@ -1753,6 +1816,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
             <button class="btn btn-sm journal-period-btn" id="rtype-sales"   onclick="setReportType('sales')">💹 المبيعات</button>
             <button class="btn btn-sm journal-period-btn" id="rtype-expenses" onclick="setReportType('expenses')">💸 المصاريف</button>
             <button class="btn btn-sm journal-period-btn" id="rtype-partners" onclick="setReportType('partners')">👥 الشركاء</button>
+            <button class="btn btn-sm journal-period-btn" id="rtype-opex"     onclick="setReportType('opex')">💼 التشغيلية</button>
           </div>
           <input type="date" id="r-from" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
           <span style="color:var(--text2)">—</span>
@@ -3603,9 +3667,21 @@ async function loadSummaryTab(fn, sys) {
               <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--card2);color:var(--text2)">سُحب: <strong style="color:var(--amber)">${fmt(totalOut)}</strong></span>
             </div>
           </div>
-          <div style="text-align:left">
-            <div style="font-size:15px;font-weight:700;color:${netDue>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(netDue))}</div>
-            <div style="font-size:10px;color:var(--text2)">${netDue>=0?'متبقي له':'تجاوز'}</div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+            <div style="text-align:left">
+              <div style="font-size:15px;font-weight:700;color:${netDue>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(netDue))}</div>
+              <div style="font-size:10px;color:var(--text2)">${netDue>=0?'متبقي له':'تجاوز'}</div>
+            </div>
+            <div style="display:flex;gap:4px">
+              <button onclick="event.stopPropagation();showPartnerStatement('${p.partner}','${fn}')"
+                style="background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+                📋 هذه الصفقة
+              </button>
+              <button onclick="event.stopPropagation();showPartnerStatement('${p.partner}')"
+                style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+                📊 كل الصفقات
+              </button>
+            </div>
           </div>
         </div>`;
     }).join('');
@@ -6190,10 +6266,6 @@ function statusClass(s) {
   return 'open';
 }
 
-function setLoading(id, msg='جاري التحميل...') {
-  el(id).innerHTML = `<div class="loading"><div class="spinner"></div><br>${msg}</div>`;
-}
-
 function emptyHTML(icon, msg) {
   return `<div class="empty-state"><div class="e-icon">${icon}</div><p>${msg}</p></div>`;
 }
@@ -6380,12 +6452,13 @@ async function loadJournal() {
       return res.json();
     }
 
-    const [sales, collections, expenses, payments, payouts] = await Promise.all([
-      apiGetRange('sales',           'sale_date',    from, to),
-      apiGetRange('collections',     'paid_date',    from, to),
-      apiGetRange('expenses',        'expense_date', from, to),
-      apiGetRange('payments',        'pay_date',     from, to),
-      apiGetRange('partner_payouts', 'pay_date',     from, to),
+    const [sales, collections, expenses, payments, payouts, opexItems] = await Promise.all([
+      apiGetRange('sales',                'sale_date',    from, to),
+      apiGetRange('collections',          'paid_date',    from, to),
+      apiGetRange('expenses',             'expense_date', from, to),
+      apiGetRange('payments',             'pay_date',     from, to),
+      apiGetRange('partner_payouts',      'pay_date',     from, to),
+      fetchOpexForJournal(from, to, sys),
     ]);
 
     // Normalize entries
@@ -6461,6 +6534,20 @@ async function loadJournal() {
         ],
         fileNo: r.file_no, raw: r,
       })),
+      ...(opexItems||[]).map(r=>({
+        type:'opex', date: r.exp_date||r.created_at||from,
+        amount: +r.amount||0, sign:-1,
+        title:`مصروف تشغيلي — ${r.exp_type||''}: ${r.description||''}`,
+        meta:[
+          r.ref_no?`<span style="background:var(--purple-dim);color:var(--purple);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
+          r.beneficiary?`جهة: ${r.beneficiary}`:'',
+          r.pay_method?`طريقة: ${r.pay_method}`:'',
+          r.exp_date?`تاريخ: ${r.exp_date}`:'',
+          r.document?`مستند: ${r.document}`:'',
+          r.notes?`ملاحظة: ${r.notes}`:'',
+        ],
+        fileNo: null, raw: r,
+      })),
     ];
 
     entries.sort((a,b) => (b.date||'').localeCompare(a.date||''));
@@ -6479,6 +6566,7 @@ function renderJournalKpis(entries) {
   const expenses    = entries.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
   const payments    = entries.filter(e=>e.type==='payment').reduce((s,e)=>s+e.amount,0);
   const payouts     = entries.filter(e=>e.type==='payout').reduce((s,e)=>s+e.amount,0);
+  const opexTotal   = entries.filter(e=>e.type==='opex').reduce((s,e)=>s+e.amount,0);
   const net         = collections - expenses - payments - payouts;
 
   el('journalKpis').innerHTML = `
@@ -6524,11 +6612,12 @@ function renderJournalEntries() {
   });
 
   const typeConfig = {
-    sale:       { icon:'🤝', bg:'var(--green-dim)',   label:'بيع',       amountColor:'var(--green)'  },
-    collection: { icon:'💰', bg:'var(--blue-dim)',    label:'تحصيل',     amountColor:'var(--blue)'   },
-    expense:    { icon:'💸', bg:'var(--red-dim)',     label:'مصروف',     amountColor:'var(--red)'    },
-    payment:    { icon:'💳', bg:'var(--cyan-dim)',    label:'دفعة مورد', amountColor:'var(--cyan)'   },
-    payout:     { icon:'👥', bg:'var(--purple-dim)',  label:'صرف شريك', amountColor:'var(--purple)' },
+    sale:       { icon:'🤝', bg:'var(--green-dim)',   label:'بيع',            amountColor:'var(--green)'  },
+    collection: { icon:'💰', bg:'var(--blue-dim)',    label:'تحصيل',          amountColor:'var(--blue)'   },
+    expense:    { icon:'💸', bg:'var(--red-dim)',     label:'مصروف',          amountColor:'var(--red)'    },
+    payment:    { icon:'💳', bg:'var(--cyan-dim)',    label:'دفعة مورد',      amountColor:'var(--cyan)'   },
+    payout:     { icon:'👥', bg:'var(--purple-dim)',  label:'صرف شريك',       amountColor:'var(--purple)' },
+    opex:       { icon:'💼', bg:'var(--purple-dim)',  label:'تشغيلي',         amountColor:'var(--purple)' },
   };
 
   let html = '';
@@ -7280,7 +7369,7 @@ async function deleteContact(id, name) {
 // hideAllViews helper
 // ════════════════════════════════════════
 function hideAllViews() {
-  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView']
+  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView']
     .forEach(id => {
       const e = el(id);
       if (e) {
@@ -7431,8 +7520,13 @@ async function submitEditVehicle() {
 }
 
 
-// apiDelete helper
-async function apiDelete(table, matchParams) {
+// apiDelete helper — includes permission guard
+const apiDelete = async function(table, matchParams) {
+  const protectedTables = ['purchase_orders','vehicles','sales','expenses','payments','collections','partner_payouts','contacts'];
+  if (protectedTables.includes(table) && !can('delete')) {
+    toast('🔒 ليس لديك صلاحية الحذف', 'err');
+    throw new Error('غير مصرح بالحذف');
+  }
   let url = `${SB_URL}/rest/v1/${table}?`;
   for (const [k,v] of Object.entries(matchParams)) url += `${k}=${encodeURIComponent(v)}&`;
   let res = await fetch(url, { method:'DELETE', headers: headers({'Prefer':'return=representation'}) });
@@ -8419,86 +8513,505 @@ async function loadViewerKpis(fn, sys) {
 // ════════════════════════════════════════
 // PARTNER DEAL STATEMENT (popup)
 // ════════════════════════════════════════
-async function showPartnerDealStatement(fileNo, partner, sys) {
+// ════════════════════════════════════════
+// كشف حساب الشريك — شامل أو لصفقة محددة
+// ════════════════════════════════════════
+async function showPartnerStatement(partnerName, fileNoFilter = null) {
+  // Show loading overlay first
+  const overlay = document.createElement('div');
+  overlay.id = 'partnerStatementOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px';
+  overlay.innerHTML = `<div style="background:var(--card);border-radius:16px;padding:32px;text-align:center;color:var(--text)"><div class="spinner"></div><br>جاري إعداد الكشف...</div>`;
+  document.body.appendChild(overlay);
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+
   try {
-    const bal = await getPartnerDealBalance(fileNo, partner, sys);
-    const payouts = await apiGet('partner_payouts', {
-      select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}`, order:'pay_date.asc'
+    const sys = state.system;
+
+    // ── 1. جلب كل الصفقات التي الشريك فيها ──
+    const allPartnerDeals = await apiGet('partners_master', {
+      select:'*', system_type:`eq.${sys}`, partner:`eq.${partnerName}`
     });
-    const payments = await apiGet('payments', {
-      select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, payer:`eq.${partner}`
+    if (!allPartnerDeals?.length) { overlay.remove(); toast('لا توجد صفقات لهذا الشريك','err'); return; }
+
+    const deals = fileNoFilter
+      ? allPartnerDeals.filter(d => d.file_no === fileNoFilter)
+      : allPartnerDeals;
+
+    // ── 2. جلب بيانات كل صفقة بالتوازي ──
+    const dealDetails = await Promise.all(deals.map(async pm => {
+      const fn = pm.file_no;
+      const share = (pm.share_percent||0) / 100;
+
+      const [po, vehicles, expenses, sales, allPartners, payments, payouts] = await Promise.all([
+        apiGet('purchase_orders', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGet('vehicles',        { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGet('expenses',        { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGet('sales',           { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGet('partners_master', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGet('payments',        { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}`, payer:`eq.${partnerName}` }),
+        apiGet('partner_payouts', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}`, partner:`eq.${partnerName}` }),
+      ]);
+
+      const poData       = po?.[0] || {};
+      const totalPurchase= +poData.total_purchase || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
+      const totalExp     = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
+      const totalSales   = (sales||[]).reduce((s,s2)=>s+(+s2.sale_price||0),0);
+      const fullCost     = totalPurchase + totalExp;
+      const dealProfit   = totalSales - fullCost;
+
+      // حصة الشريك
+      const myPurchase   = totalPurchase * share;
+      const myExpenses   = totalExp * share;
+      const myFullCost   = fullCost * share;
+      const mySales      = totalSales * share;
+      const myProfit     = dealProfit * share;
+
+      // ما دفعه الشريك
+      const capitalPaid  = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
+
+      // ما استرده
+      const capitalRet   = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
+      const profitTaken  = (payouts||[]).reduce((s,p)=>s+(+p.profit_amount||0),0);
+      const advances     = (payouts||[]).reduce((s,p)=>s+(+p.advance_amount||0),0);
+      const totalWithdrawn = capitalRet + profitTaken + advances;
+
+      // الرصيد المستحق
+      const netDue = capitalPaid + myProfit - totalWithdrawn;
+
+      return {
+        fn, share, poData, vehicles: vehicles||[], expenses: expenses||[],
+        sales: sales||[], allPartners: allPartners||[],
+        payments: payments||[], payouts: payouts||[],
+        totalPurchase, totalExp, totalSales, fullCost, dealProfit,
+        myPurchase, myExpenses, myFullCost, mySales, myProfit,
+        capitalPaid, capitalRet, profitTaken, advances, totalWithdrawn, netDue,
+        status: poData.status || '—', supplier: poData.supplier || '—',
+        poDate: poData.po_date || poData.created_at || '',
+      };
+    }));
+
+    // ── 3. الإجماليات الشاملة ──
+    const grandCapital    = dealDetails.reduce((s,d)=>s+d.capitalPaid,   0);
+    const grandMyProfit   = dealDetails.reduce((s,d)=>s+d.myProfit,      0);
+    const grandWithdrawn  = dealDetails.reduce((s,d)=>s+d.totalWithdrawn,0);
+    const grandNetDue     = dealDetails.reduce((s,d)=>s+d.netDue,        0);
+    const grandDealProfit = dealDetails.reduce((s,d)=>s+d.dealProfit,    0);
+
+    // ── 4. بناء الـ HTML ──
+    const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3});
+    const fmtP = n => ((+n||0)*100).toFixed(1)+'%';
+    const statusColor = s => s==='CLOSED'?'#16a34a':s==='IN PROGRESS'?'#d97706':'#2563eb';
+    const statusLabel = s => s==='CLOSED'?'مغلقة':s==='IN PROGRESS'?'جارية':s==='OPEN'?'مفتوحة':s;
+
+    const dealBlocks = dealDetails.map(d => `
+      <!-- ══ صفقة ${d.fn} ══ -->
+      <div style="border:1.5px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:24px;page-break-inside:avoid">
+
+        <!-- رأس الصفقة -->
+        <div style="background:#1a1a2e;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:16px;font-weight:900;font-family:monospace">${d.fn}</span>
+            <span style="background:#ffffff22;padding:2px 10px;border-radius:20px;font-size:11px">${d.supplier}</span>
+            <span style="background:${statusColor(d.status)}33;color:${statusColor(d.status)};border:1px solid ${statusColor(d.status)}55;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${statusLabel(d.status)}</span>
+          </div>
+          <div style="font-size:12px;opacity:.7">${d.poDate ? 'تاريخ الصفقة: '+d.poDate.split('T')[0] : ''}</div>
+        </div>
+
+        <div style="padding:16px">
+
+          <!-- شركاء الصفقة -->
+          <div style="margin-bottom:14px">
+            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">شركاء الصفقة</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              ${d.allPartners.map(p=>`
+                <div style="background:${p.partner===partnerName?'#fef3c7':'#f1f5f9'};border:1px solid ${p.partner===partnerName?'#f59e0b':'#e2e8f0'};border-radius:8px;padding:6px 12px;font-size:12px">
+                  <span style="font-weight:700;color:${p.partner===partnerName?'#92400e':'#475569'}">${p.partner}</span>
+                  <span style="color:#94a3b8;margin-right:6px">${p.share_percent}%</span>
+                </div>`).join('')}
+            </div>
+          </div>
+
+          <!-- السيارات -->
+          <div style="margin-bottom:14px">
+            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+              السيارات (${d.vehicles.length} سيارة)
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:#f8fafc">
+                  <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">#</th>
+                  <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">الموديل</th>
+                  <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">رقم الشاصي</th>
+                  <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">سعر الشراء</th>
+                  <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">حصة الشريك (${fmtP(d.share)})</th>
+                  <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">الحالة</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${d.vehicles.map((v,i)=>{
+                  const sold = d.sales.find(s=>s.vin===v.vin);
+                  return `<tr style="border-bottom:1px solid #f1f5f9">
+                    <td style="padding:7px 10px;color:#94a3b8">${i+1}</td>
+                    <td style="padding:7px 10px;font-weight:600">${v.model||v.make||'—'} ${v.year||''}</td>
+                    <td style="padding:7px 10px;font-family:monospace;color:#2563eb;font-size:11px">${v.vin||'—'}</td>
+                    <td style="padding:7px 10px;font-family:monospace;font-weight:600">${fmt2(v.purchase_price)}</td>
+                    <td style="padding:7px 10px;font-family:monospace;color:#d97706">${fmt2((+v.purchase_price||0)*d.share)}</td>
+                    <td style="padding:7px 10px">
+                      ${sold
+                        ? `<span style="background:#f0fdf4;color:#16a34a;border:1px solid #86efac;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">✓ مباع — ${fmt2(sold.sale_price)}</span>`
+                        : `<span style="background:#fef9ec;color:#d97706;border:1px solid #fcd34d;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">في المخزن</span>`}
+                    </td>
+                  </tr>`;
+                }).join('')}
+                <tr style="background:#f8fafc;font-weight:700">
+                  <td colspan="3" style="padding:8px 10px;color:#64748b">الإجمالي</td>
+                  <td style="padding:8px 10px;font-family:monospace">${fmt2(d.totalPurchase)}</td>
+                  <td style="padding:8px 10px;font-family:monospace;color:#d97706">${fmt2(d.myPurchase)}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- المصاريف -->
+          ${d.expenses.length ? `
+          <div style="margin-bottom:14px">
+            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+              المصاريف (${d.expenses.length} بند)
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:#fff1f2">
+                  <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #fecaca;color:#dc2626">البيان</th>
+                  <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #fecaca;color:#dc2626">النوع</th>
+                  <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #fecaca;color:#dc2626">التاريخ</th>
+                  <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #fecaca;color:#dc2626">المبلغ</th>
+                  <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #fecaca;color:#dc2626">حصة الشريك</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${d.expenses.map(e=>`
+                <tr style="border-bottom:1px solid #fff1f2">
+                  <td style="padding:6px 10px">${e.description||'—'}</td>
+                  <td style="padding:6px 10px"><span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:10px;font-size:10px">${e.exp_type||e.category||'—'}</span></td>
+                  <td style="padding:6px 10px;color:#94a3b8">${(e.expense_date||e.exp_date||'').split('T')[0]||'—'}</td>
+                  <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2(e.amount)}</td>
+                  <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2((+e.amount||0)*d.share)}</td>
+                </tr>`).join('')}
+                <tr style="background:#fff1f2;font-weight:700">
+                  <td colspan="3" style="padding:7px 10px;color:#dc2626">إجمالي المصاريف</td>
+                  <td style="padding:7px 10px;font-family:monospace;color:#dc2626">${fmt2(d.totalExp)}</td>
+                  <td style="padding:7px 10px;font-family:monospace;color:#dc2626">${fmt2(d.myExpenses)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>` : ''}
+
+          <!-- المبيعات -->
+          ${d.sales.length ? `
+          <div style="margin-bottom:14px">
+            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+              المبيعات (${d.sales.length} فاتورة)
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:#f0fdf4">
+                  <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #86efac;color:#16a34a">الشاصي</th>
+                  <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #86efac;color:#16a34a">العميل</th>
+                  <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #86efac;color:#16a34a">التاريخ</th>
+                  <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #86efac;color:#16a34a">سعر البيع</th>
+                  <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #86efac;color:#16a34a">حصة الشريك</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${d.sales.map(s=>`
+                <tr style="border-bottom:1px solid #f0fdf4">
+                  <td style="padding:6px 10px;font-family:monospace;color:#2563eb;font-size:11px">${s.vin||'—'}</td>
+                  <td style="padding:6px 10px">${s.customer||'—'}</td>
+                  <td style="padding:6px 10px;color:#94a3b8">${(s.sale_date||'').split('T')[0]||'—'}</td>
+                  <td style="padding:6px 10px;font-family:monospace;color:#16a34a;font-weight:700">${fmt2(s.sale_price)}</td>
+                  <td style="padding:6px 10px;font-family:monospace;color:#16a34a">${fmt2((+s.sale_price||0)*d.share)}</td>
+                </tr>`).join('')}
+                <tr style="background:#f0fdf4;font-weight:700">
+                  <td colspan="3" style="padding:7px 10px;color:#16a34a">إجمالي المبيعات</td>
+                  <td style="padding:7px 10px;font-family:monospace;color:#16a34a">${fmt2(d.totalSales)}</td>
+                  <td style="padding:7px 10px;font-family:monospace;color:#16a34a">${fmt2(d.mySales)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>` : ''}
+
+          <!-- ملخص الصفقة للشريك -->
+          <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:14px">
+            <div style="font-size:11px;font-weight:700;color:#888;margin-bottom:10px">ملخص الصفقة — حصة ${partnerName} (${fmtP(d.share)})</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+              <div style="background:#fff;border-radius:8px;padding:10px;text-align:center;border:1px solid #e2e8f0">
+                <div style="font-size:10px;color:#888;margin-bottom:4px">حصته من تكلفة الشراء</div>
+                <div style="font-family:monospace;font-weight:700;color:#2563eb">${fmt2(d.myPurchase)}</div>
+              </div>
+              <div style="background:#fff;border-radius:8px;padding:10px;text-align:center;border:1px solid #e2e8f0">
+                <div style="font-size:10px;color:#888;margin-bottom:4px">حصته من المصاريف</div>
+                <div style="font-family:monospace;font-weight:700;color:#dc2626">${fmt2(d.myExpenses)}</div>
+              </div>
+              <div style="background:#fff;border-radius:8px;padding:10px;text-align:center;border:1px solid #e2e8f0">
+                <div style="font-size:10px;color:#888;margin-bottom:4px">حصته من المبيعات</div>
+                <div style="font-family:monospace;font-weight:700;color:#16a34a">${fmt2(d.mySales)}</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+              <div style="background:${d.myProfit>=0?'#f0fdf4':'#fff1f2'};border-radius:8px;padding:10px;text-align:center;border:1px solid ${d.myProfit>=0?'#86efac':'#fca5a5'}">
+                <div style="font-size:10px;color:#888;margin-bottom:4px">ربح / خسارة الشريك</div>
+                <div style="font-family:monospace;font-weight:900;font-size:16px;color:${d.myProfit>=0?'#16a34a':'#dc2626'}">${d.myProfit>=0?'+':''}${fmt2(d.myProfit)}</div>
+              </div>
+              <div style="background:#f0fdf4;border-radius:8px;padding:10px;text-align:center;border:1px solid #86efac">
+                <div style="font-size:10px;color:#888;margin-bottom:4px">ربح الصفقة الكلي</div>
+                <div style="font-family:monospace;font-weight:700;color:${d.dealProfit>=0?'#16a34a':'#dc2626'}">${fmt2(d.dealProfit)}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- الحركات المالية للشريك -->
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">الحركات المالية</div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:#1e293b;color:#fff">
+                  <th style="padding:8px 10px;text-align:right">التاريخ</th>
+                  <th style="padding:8px 10px;text-align:right">البيان</th>
+                  <th style="padding:8px 10px;text-align:center">رأس مال دفع</th>
+                  <th style="padding:8px 10px;text-align:center">رأس مال استرد</th>
+                  <th style="padding:8px 10px;text-align:center">أرباح</th>
+                  <th style="padding:8px 10px;text-align:center">سلف</th>
+                  <th style="padding:8px 10px;text-align:right">مستند</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${d.payments.map(p=>`
+                <tr style="background:#eff6ff;border-bottom:1px solid #dbeafe">
+                  <td style="padding:7px 10px;color:#64748b">${(p.pay_date||'').split('T')[0]||'—'}</td>
+                  <td style="padding:7px 10px;font-weight:600;color:#1d4ed8">دفع رأس مال</td>
+                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:#2563eb;font-weight:700">${fmt2(p.amount)}</td>
+                  <td style="padding:7px 10px;text-align:center;color:#94a3b8">—</td>
+                  <td style="padding:7px 10px;text-align:center;color:#94a3b8">—</td>
+                  <td style="padding:7px 10px;text-align:center;color:#94a3b8">—</td>
+                  <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#94a3b8">${p.document||p.ref_no||'—'}</td>
+                </tr>`).join('')}
+                ${d.payouts.map(p=>`
+                <tr style="border-bottom:1px solid #f1f5f9">
+                  <td style="padding:7px 10px;color:#64748b">${(p.pay_date||'').split('T')[0]||'—'}</td>
+                  <td style="padding:7px 10px;font-weight:600">${p.payout_type||'صرف'}</td>
+                  <td style="padding:7px 10px;text-align:center;color:#94a3b8">—</td>
+                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${+p.capital_amount?'#d97706':'#94a3b8'}">${+p.capital_amount?fmt2(p.capital_amount):'—'}</td>
+                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${+p.profit_amount?'#16a34a':'#94a3b8'}">${+p.profit_amount?fmt2(p.profit_amount):'—'}</td>
+                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${+p.advance_amount?'#dc2626':'#94a3b8'}">${+p.advance_amount?fmt2(p.advance_amount):'—'}</td>
+                  <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#94a3b8">${p.document||p.pay_id||'—'}</td>
+                </tr>`).join('')}
+              </tbody>
+              <tfoot>
+                <tr style="background:#1e293b;color:#fff;font-weight:700">
+                  <td colspan="2" style="padding:8px 10px">الإجمالي</td>
+                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#60a5fa">${fmt2(d.capitalPaid)}</td>
+                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#fbbf24">${fmt2(d.capitalRet)}</td>
+                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#4ade80">${fmt2(d.profitTaken)}</td>
+                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#f87171">${fmt2(d.advances)}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+
+            <!-- الرصيد النهائي للصفقة -->
+            <div style="margin-top:10px;background:${d.netDue>=0?'#f0fdf4':'#fff1f2'};border:2px solid ${d.netDue>=0?'#86efac':'#fca5a5'};border-radius:10px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:2px">الرصيد المستحق للشريك من هذه الصفقة</div>
+                <div style="font-size:10px;color:#94a3b8">رأس مال مدفوع + أرباح - إجمالي المسحوبات</div>
+                <div style="font-size:10px;color:#94a3b8">${fmt2(d.capitalPaid)} + ${fmt2(d.myProfit)} - ${fmt2(d.totalWithdrawn)}</div>
+              </div>
+              <div style="font-size:24px;font-weight:900;font-family:monospace;color:${d.netDue>=0?'#16a34a':'#dc2626'}">${d.netDue>=0?'+':''}${fmt2(d.netDue)}</div>
+            </div>
+          </div>
+
+        </div>
+      </div>`).join('');
+
+    // ── الملخص الشامل (لو أكثر من صفقة) ──
+    const summaryBlock = dealDetails.length > 1 ? `
+      <div style="background:#1a1a2e;color:#fff;border-radius:12px;padding:20px;margin-bottom:24px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:14px;opacity:.7;letter-spacing:.5px">الملخص الشامل — كل الصفقات</div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px">
+          ${dealDetails.map(d=>`
+          <div style="background:#ffffff11;border-radius:8px;padding:10px;border-right:3px solid ${d.netDue>=0?'#4ade80':'#f87171'}">
+            <div style="font-size:11px;opacity:.7;margin-bottom:4px">${d.fn} — ${d.supplier}</div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:11px;opacity:.6">حصة ${fmtP(d.share)}</span>
+              <span style="font-family:monospace;font-weight:700;color:${d.netDue>=0?'#4ade80':'#f87171'}">${d.netDue>=0?'+':''}${fmt2(d.netDue)}</span>
+            </div>
+          </div>`).join('')}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;border-top:1px solid #ffffff22;padding-top:14px">
+          <div style="text-align:center">
+            <div style="font-size:10px;opacity:.6;margin-bottom:4px">إجمالي رأس المال</div>
+            <div style="font-family:monospace;font-size:16px;font-weight:700;color:#60a5fa">${fmt2(grandCapital)}</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:10px;opacity:.6;margin-bottom:4px">إجمالي الأرباح</div>
+            <div style="font-family:monospace;font-size:16px;font-weight:700;color:${grandMyProfit>=0?'#4ade80':'#f87171'}">${fmt2(grandMyProfit)}</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:10px;opacity:.6;margin-bottom:4px">إجمالي المسحوبات</div>
+            <div style="font-family:monospace;font-size:16px;font-weight:700;color:#fbbf24">${fmt2(grandWithdrawn)}</div>
+          </div>
+          <div style="text-align:center;background:${grandNetDue>=0?'#16a34a33':'#dc262633'};border-radius:8px;padding:8px">
+            <div style="font-size:10px;opacity:.8;margin-bottom:4px">الرصيد الكلي المستحق</div>
+            <div style="font-family:monospace;font-size:20px;font-weight:900;color:${grandNetDue>=0?'#4ade80':'#f87171'}">${grandNetDue>=0?'+':''}${fmt2(grandNetDue)}</div>
+          </div>
+        </div>
+      </div>` : '';
+
+    // ── التجميع الكامل ──
+    const fullHTML = `
+      <div id="partnerStatementContent" style="background:var(--bg,#f8fafc);min-width:min(800px,95vw);max-width:900px;font-family:'Cairo',sans-serif;direction:rtl">
+
+        <!-- هيدر الكشف -->
+        <div style="background:#1a1a2e;color:#fff;padding:20px 24px;border-radius:12px 12px 0 0;display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-size:22px;font-weight:900;margin-bottom:4px">${partnerName}</div>
+            <div style="font-size:13px;opacity:.7">كشف حساب شامل — نظام ${sys}</div>
+            <div style="font-size:12px;opacity:.5;margin-top:2px">${fileNoFilter ? 'صفقة: '+fileNoFilter : dealDetails.length+' صفقة'} · ${new Date().toLocaleDateString('ar-KW')}</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button id="partnerPdfBtn" onclick="exportPartnerStatementPDF()" style="background:#e6930a;color:#000;border:none;border-radius:8px;padding:8px 16px;font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer">📥 تصدير PDF</button>
+            <button onclick="printPartnerStatement()" style="background:#ffffff22;color:#fff;border:1px solid #ffffff44;border-radius:8px;padding:8px 16px;font-family:'Cairo',sans-serif;font-size:12px;cursor:pointer">🖨️ طباعة</button>
+            <button onclick="document.getElementById('partnerStatementOverlay').remove()" style="background:#ffffff11;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-family:'Cairo',sans-serif;font-size:12px;cursor:pointer">✕ إغلاق</button>
+          </div>
+        </div>
+
+        <div style="padding:20px;max-height:75vh;overflow-y:auto">
+          ${summaryBlock}
+          ${dealBlocks}
+        </div>
+
+      </div>`;
+
+    overlay.innerHTML = `<div style="max-height:90vh;overflow:hidden;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5)">${fullHTML}</div>`;
+
+  } catch(e) {
+    overlay.remove();
+    toast('خطأ في إعداد الكشف: '+e.message,'err');
+    console.error(e);
+  }
+}
+
+// ── تصدير كشف الشريك PDF ──
+async function exportPartnerStatementPDF() {
+  const content = document.getElementById('partnerStatementContent');
+  if (!content) return;
+
+  const btn = document.getElementById('partnerPdfBtn');
+  if (btn) { btn.textContent = '⏳ جاري التصدير...'; btn.disabled = true; }
+
+  try {
+    // Load libraries if not loaded
+    if (!window.html2canvas) {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    }
+    if (!window.jspdf) {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    }
+
+    const { jsPDF } = window.jspdf;
+
+    // Temporarily expand content for capture
+    const scrollEl = content.closest('[style*="overflow"]');
+    const origMaxH = scrollEl ? scrollEl.style.maxHeight : null;
+    const origOverflow = scrollEl ? scrollEl.style.overflow : null;
+    if (scrollEl) { scrollEl.style.maxHeight = 'none'; scrollEl.style.overflow = 'visible'; }
+
+    const canvas = await html2canvas(content, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#f8fafc',
+      logging: false,
+      scrollX: 0,
+      scrollY: -window.scrollY,
     });
 
-    const rows = [
-      ...((payments||[]).map(p => `<tr style="background:var(--blue-dim)">
-        <td class="mono text-muted">${fmtDate(p.pay_date)}</td>
-        <td>دفعة رأس مال</td>
-        <td class="mono text-blue">${fmt(p.amount)}</td>
-        <td>—</td><td>—</td><td>—</td>
-        <td class="mono text-muted">${p.document||'—'}</td>
-      </tr>`)),
-      ...((payouts||[]).map(p => `<tr>
-        <td class="mono text-muted">${fmtDate(p.pay_date)}</td>
-        <td>${p.payout_type||'—'}</td>
-        <td>—</td>
-        <td class="mono text-amber">${+p.capital_amount?fmt(p.capital_amount):'—'}</td>
-        <td class="mono text-green">${+p.profit_amount?fmt(p.profit_amount):'—'}</td>
-        <td class="mono text-red">${+p.advance_amount?fmt(p.advance_amount):'—'}</td>
-        <td class="mono text-muted">${p.document||'—'}</td>
-      </tr>`)),
-    ].join('');
+    // Restore
+    if (scrollEl) { scrollEl.style.maxHeight = origMaxH; scrollEl.style.overflow = origOverflow; }
 
-    const html = `<div style="padding:20px;font-family:Cairo,sans-serif;background:#fff;border-radius:12px;min-width:700px;max-width:800px">
-      <div style="font-size:18px;font-weight:700;margin-bottom:4px">${partner}</div>
-      <div style="font-size:13px;color:#888;margin-bottom:16px">ملف ${fileNo} — حصة ${(bal.share*100).toFixed(1)}%</div>
+    const imgData  = canvas.toDataURL('image/jpeg', 0.92);
+    const pdf      = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+    const pageW    = pdf.internal.pageSize.getWidth();
+    const pageH    = pdf.internal.pageSize.getHeight();
+    const margin   = 10;
+    const imgW     = pageW - margin * 2;
+    const imgH     = (canvas.height * imgW) / canvas.width;
+    const totalPages = Math.ceil(imgH / (pageH - margin * 2));
 
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
-        <div style="background:#f0f9ff;border-radius:8px;padding:12px;text-align:center">
-          <div style="font-size:11px;color:#888;margin-bottom:4px">رأس المال المدفوع</div>
-          <div style="font-size:16px;font-weight:700;color:#2563eb">${fmt(bal.capitalPaid)}</div>
-        </div>
-        <div style="background:${bal.profit>=0?'#f0fdf4':'#fff1f2'};border-radius:8px;padding:12px;text-align:center">
-          <div style="font-size:11px;color:#888;margin-bottom:4px">ربح/خسارة مستحق</div>
-          <div style="font-size:16px;font-weight:700;color:${bal.profit>=0?'#16a34a':'#dc2626'}">${fmt(bal.profit)}</div>
-        </div>
-        <div style="background:#fffbeb;border-radius:8px;padding:12px;text-align:center">
-          <div style="font-size:11px;color:#888;margin-bottom:4px">إجمالي المسحوبات</div>
-          <div style="font-size:16px;font-weight:700;color:#d97706">${fmt(bal.totalWithdrawn)}</div>
-        </div>
-        <div style="background:${bal.netDue>=0?'#f0fdf4':'#fff1f2'};border-radius:8px;padding:12px;text-align:center">
-          <div style="font-size:11px;color:#888;margin-bottom:4px">المتبقي المستحق</div>
-          <div style="font-size:16px;font-weight:700;color:${bal.netDue>=0?'#16a34a':'#dc2626'}">${fmt(bal.netDue)}</div>
-        </div>
-      </div>
+    for (let i = 0; i < totalPages; i++) {
+      if (i > 0) pdf.addPage();
+      const srcY  = i * (pageH - margin * 2) * (canvas.width / imgW);
+      const sliceH = Math.min((pageH - margin * 2) * (canvas.width / imgW), canvas.height - srcY);
+      const sliceCanvas  = document.createElement('canvas');
+      sliceCanvas.width  = canvas.width;
+      sliceCanvas.height = sliceH;
+      sliceCanvas.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+      const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
+      pdf.addImage(sliceData, 'JPEG', margin, margin, imgW, sliceH * (imgW / canvas.width));
+    }
 
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead><tr style="background:#1a1a1a;color:#fff">
-          <th style="padding:8px;text-align:right">التاريخ</th>
-          <th style="padding:8px;text-align:right">النوع</th>
-          <th style="padding:8px">رأس مال داخل</th>
-          <th style="padding:8px">رأس مال خارج</th>
-          <th style="padding:8px">أرباح</th>
-          <th style="padding:8px">سلف</th>
-          <th style="padding:8px">مستند</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
+    // Build filename
+    const partnerName = content.querySelector('[style*="font-size:22px"]')?.textContent?.trim() || 'شريك';
+    const dateStr = new Date().toISOString().split('T')[0];
+    pdf.save(`كشف_حساب_${partnerName}_${dateStr}.pdf`);
+    toast('✅ تم تصدير PDF بنجاح', 'ok');
 
-      <div style="margin-top:12px;padding:10px 14px;background:#f8f9fa;border-radius:8px;font-size:12px;color:#888;text-align:center">
-        ${bal.dealProfit >= 0 ? '✅ الصفقة رابحة' : '⚠️ الصفقة خاسرة'} — صافي ربح الصفقة: <strong style="color:${bal.dealProfit>=0?'#16a34a':'#dc2626'}">${fmt(bal.dealProfit)}</strong>
-      </div>
-    </div>`;
+  } catch(e) {
+    toast('خطأ في التصدير: ' + e.message, 'err');
+    console.error(e);
+  } finally {
+    if (btn) { btn.textContent = '📥 تصدير PDF'; btn.disabled = false; }
+  }
+}
 
-    // Open in floating overlay
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px';
-    overlay.innerHTML = `<div style="position:relative;max-height:90vh;overflow-y:auto;border-radius:12px">
-      <button onclick="this.closest('div[style*=fixed]').remove()" style="position:sticky;top:10px;float:left;background:#1a1a1a;color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:16px;z-index:1">✕</button>
-      ${html}
-    </div>`;
-    overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
-    document.body.appendChild(overlay);
-  } catch(e) { toast('خطأ: '+e.message,'err'); console.error(e); }
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+// للطباعة
+function printPartnerStatement() {
+  const content = document.getElementById('partnerStatementContent');
+  if (!content) return;
+  const w = window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html dir="rtl"><head>
+    <meta charset="UTF-8">
+    <title>كشف حساب شريك</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:'Cairo',sans-serif;direction:rtl;background:#fff;padding:20px;font-size:12px;color:#1a1a2e}
+      @media print{body{padding:10px}@page{margin:15mm;size:A4}}
+      table{border-collapse:collapse;width:100%}
+      th,td{padding:6px 8px}
+    </style>
+  </head><body>${content.outerHTML}<script>window.onload=()=>window.print()<\/script></body></html>`);
+  w.document.close();
+}
+
+function openPartnerStatementFromReport() {
+  const partner = el('report-partner-select')?.value;
+  if (!partner) { toast('اختر شريكاً أولاً','err'); return; }
+  showPartnerStatement(partner);
+}
+
+// Backward compat
+async function showPartnerDealStatement(fileNo, partner, sys) {
+  await showPartnerStatement(partner, fileNo);
 }
 
 // ════════════════════════════════════════
@@ -8623,32 +9136,120 @@ async function runReport() {
 
   try {
     if (type === 'profit') {
-      const [sales, expenses, payments] = await Promise.all([
+      // جلب كل البيانات المطلوبة
+      const [sales, expenses, deals, opexItems] = await Promise.all([
         apiGetDateRange('sales',    'sale_date',    from, to),
         apiGetDateRange('expenses', 'expense_date', from, to),
-        apiGetDateRange('payments', 'pay_date',     from, to),
+        apiGet('purchase_orders',   { select:'file_no,total_purchase,supplier,status', system_type:`eq.${sys}` }),
+        fetchOpexForJournal(from, to, sys),
       ]);
-      const ts = (sales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
-      const te = (expenses||[]).reduce((s,r)=>s+(+r.amount||0),0);
-      const tp = (payments||[]).reduce((s,r)=>s+(+r.amount||0),0);
-      const profit = ts - te - tp;
-      el('reportKpis').innerHTML = `
-        <div class="j-kpi"><div class="j-kpi-label">إجمالي المبيعات</div><div class="j-kpi-val text-green">${fmt(ts)}</div></div>
-        <div class="j-kpi"><div class="j-kpi-label">المصاريف</div><div class="j-kpi-val text-red">${fmt(te)}</div></div>
-        <div class="j-kpi"><div class="j-kpi-label">دفعات للموردين</div><div class="j-kpi-val text-amber">${fmt(tp)}</div></div>
-        <div class="j-kpi"><div class="j-kpi-label">صافي الربح</div><div class="j-kpi-val" style="color:${profit>=0?'var(--green)':'var(--red)'}">${fmt(profit)}</div></div>`;
+
+      // تكلفة الشراء من purchase_orders
+      const dealCostMap = {};
+      (deals||[]).forEach(d => { dealCostMap[d.file_no] = +d.total_purchase||0; });
+
+      // تجميع بالملف
       const fileMap = {};
-      const add = (arr, key, field) => (arr||[]).forEach(r => { fileMap[r.file_no]=fileMap[r.file_no]||{sales:0,expenses:0,payments:0}; fileMap[r.file_no][key]+= +r[field]||0; });
-      add(sales,'sales','sale_price'); add(expenses,'expenses','amount'); add(payments,'payments','amount');
-      reportState.data = Object.entries(fileMap).map(([fn,v])=>({file:fn,...v,profit:v.sales-v.expenses-v.payments}));
-      const rows = reportState.data.map(v=>`<tr onclick="openViewer('${v.file}')" style="cursor:pointer">
-        <td><span class="mono text-amber">${v.file}</span></td>
-        <td class="mono text-green">${fmt(v.sales)}</td>
-        <td class="mono text-red">${fmt(v.expenses)}</td>
-        <td class="mono text-amber">${fmt(v.payments)}</td>
-        <td class="mono" style="font-weight:700;color:${v.profit>=0?'var(--green)':'var(--red)'}">${fmt(v.profit)}</td>
-      </tr>`).join('');
-      el('reportTable').innerHTML = rows ? `<table class="data-table"><thead><tr><th>الملف</th><th style="color:var(--green)">مبيعات</th><th style="color:var(--red)">مصاريف</th><th style="color:var(--accent)">دفعات مورد</th><th>صافي ربح</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('📈','لا توجد بيانات في هذه الفترة');
+      const ensureFile = (fn, supplier='') => {
+        if (!fileMap[fn]) fileMap[fn] = { file:fn, supplier, purchase:0, expenses:0, sales:0 };
+      };
+      (deals||[]).forEach(d => {
+        ensureFile(d.file_no, d.supplier);
+        fileMap[d.file_no].purchase = +d.total_purchase||0;
+      });
+      (sales||[]).forEach(r => {
+        ensureFile(r.file_no);
+        fileMap[r.file_no].sales += +r.sale_price||0;
+      });
+      (expenses||[]).forEach(r => {
+        if (!r.file_no) return;
+        ensureFile(r.file_no);
+        fileMap[r.file_no].expenses += +r.amount||0;
+      });
+
+      // حساب الأرباح
+      const rows_data = Object.values(fileMap).map(v => ({
+        ...v,
+        fullCost: v.purchase + v.expenses,
+        profit:   v.sales - v.purchase - v.expenses,
+      })).sort((a,b) => b.profit - a.profit);
+
+      // KPIs الإجمالية
+      const ts       = rows_data.reduce((s,v)=>s+v.sales, 0);
+      const tp       = rows_data.reduce((s,v)=>s+v.purchase, 0);
+      const te       = rows_data.reduce((s,v)=>s+v.expenses, 0);
+      const dealProfit = ts - tp - te;
+      const opexTotal  = (opexItems||[]).reduce((s,r)=>s+(+r.amount||0), 0);
+      const netProfit  = dealProfit - opexTotal;
+
+      el('reportKpis').innerHTML = `
+        <div class="j-kpi" style="border-right:3px solid var(--green)">
+          <div class="j-kpi-label">إجمالي المبيعات</div>
+          <div class="j-kpi-val text-green">${fmt(ts)}</div>
+        </div>
+        <div class="j-kpi" style="border-right:3px solid var(--blue)">
+          <div class="j-kpi-label">تكلفة الشراء</div>
+          <div class="j-kpi-val text-blue">${fmt(tp)}</div>
+        </div>
+        <div class="j-kpi" style="border-right:3px solid var(--red)">
+          <div class="j-kpi-label">مصاريف الصفقات</div>
+          <div class="j-kpi-val text-red">${fmt(te)}</div>
+        </div>
+        <div class="j-kpi" style="border-right:3px solid var(--accent);background:var(--accent-dim)">
+          <div class="j-kpi-label">ربح الصفقات</div>
+          <div class="j-kpi-val" style="color:${dealProfit>=0?'var(--green)':'var(--red)'};font-size:20px">${fmt(dealProfit)}</div>
+        </div>
+        <div class="j-kpi" style="border-right:3px solid var(--purple)">
+          <div class="j-kpi-label">المصاريف التشغيلية</div>
+          <div class="j-kpi-val text-purple">${fmt(opexTotal)}</div>
+          <div style="font-size:10px;color:var(--text2);margin-top:2px">إيجار، رواتب، إلخ</div>
+        </div>
+        <div class="j-kpi" style="border-right:3px solid ${netProfit>=0?'var(--green)':'var(--red)'};background:${netProfit>=0?'var(--green-dim)':'var(--red-dim)'}">
+          <div class="j-kpi-label">صافي ربح الشركة</div>
+          <div class="j-kpi-val" style="color:${netProfit>=0?'var(--green)':'var(--red)'};font-size:20px;font-weight:900">${fmt(netProfit)}</div>
+          <div style="font-size:10px;color:var(--text2);margin-top:2px">بعد خصم التشغيلية</div>
+        </div>`;
+
+      reportState.data = rows_data;
+      const tableRows = rows_data.map(v=>`
+        <tr onclick="openViewer('${v.file}')" style="cursor:pointer">
+          <td><span class="mono text-amber" style="font-weight:700">${v.file}</span></td>
+          <td style="color:var(--text2);font-size:12px">${v.supplier||'—'}</td>
+          <td class="mono text-blue">${fmt(v.purchase)}</td>
+          <td class="mono text-red">${fmt(v.expenses)}</td>
+          <td class="mono" style="color:var(--text2)">${fmt(v.fullCost)}</td>
+          <td class="mono text-green">${fmt(v.sales)}</td>
+          <td class="mono" style="font-weight:700;color:${v.profit>=0?'var(--green)':'var(--red)'}">
+            ${v.profit>=0?'▲':'▼'} ${fmt(Math.abs(v.profit))}
+          </td>
+        </tr>`).join('');
+
+      // صف الإجماليات
+      const totalRow = `
+        <tr style="background:var(--card2);font-weight:700;border-top:2px solid var(--border)">
+          <td colspan="2" style="font-weight:700">الإجمالي</td>
+          <td class="mono text-blue">${fmt(tp)}</td>
+          <td class="mono text-red">${fmt(te)}</td>
+          <td class="mono">${fmt(tp+te)}</td>
+          <td class="mono text-green">${fmt(ts)}</td>
+          <td class="mono" style="font-weight:900;color:${dealProfit>=0?'var(--green)':'var(--red)'}">
+            ${dealProfit>=0?'▲':'▼'} ${fmt(Math.abs(dealProfit))}
+          </td>
+        </tr>`;
+
+      el('reportTable').innerHTML = tableRows
+        ? `<table class="data-table">
+            <thead><tr>
+              <th>الملف</th><th>المورد</th>
+              <th style="color:var(--blue)">تكلفة الشراء</th>
+              <th style="color:var(--red)">مصاريف الصفقة</th>
+              <th>التكلفة الكاملة</th>
+              <th style="color:var(--green)">المبيعات</th>
+              <th>الربح / الخسارة</th>
+            </tr></thead>
+            <tbody>${tableRows}${totalRow}</tbody>
+           </table>`
+        : emptyHTML('📈','لا توجد بيانات في هذه الفترة');
 
     } else if (type === 'sales') {
       const data = await apiGetDateRange('sales','sale_date',from,to,{order:'sale_date.desc'});
@@ -8677,21 +9278,47 @@ async function runReport() {
       el('reportTable').innerHTML = rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>البيان</th><th>النوع</th><th>المبلغ</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('💸','لا توجد مصاريف');
 
     } else if (type === 'partners') {
-      const [payouts, payments] = await Promise.all([
+      const [payouts, payments, allPartnerDeals] = await Promise.all([
         apiGetDateRange('partner_payouts','pay_date',from,to,{order:'pay_date.desc'}),
         apiGetDateRange('payments','pay_date',from,to),
+        apiGet('partners_master',{ select:'partner', system_type:`eq.${sys}` }),
       ]);
-      const tp = (payments||[]).reduce((s,r)=>s+(+r.amount||0),0);
+
+      // قائمة الشركاء الفريدة
+      const uniquePartners = [...new Set((allPartnerDeals||[]).map(p=>p.partner))].filter(Boolean);
+
+      const tp  = (payments||[]).reduce((s,r)=>s+(+r.amount||0),0);
       const tpo = (payouts||[]).reduce((s,r)=>s+(+r.amount||0),0);
       reportState.data = payouts||[];
+
       el('reportKpis').innerHTML = `
         <div class="j-kpi"><div class="j-kpi-label">دفعات للموردين</div><div class="j-kpi-val text-cyan">${fmt(tp)}</div></div>
-        <div class="j-kpi"><div class="j-kpi-label">صرف للشركاء</div><div class="j-kpi-val text-purple">${fmt(tpo)}</div></div>`;
+        <div class="j-kpi"><div class="j-kpi-label">صرف للشركاء</div><div class="j-kpi-val text-purple">${fmt(tpo)}</div></div>
+        <div class="j-kpi" style="border-right:3px solid var(--accent)">
+          <div class="j-kpi-label">كشف شامل لشريك</div>
+          <div style="margin-top:6px">
+            <select id="report-partner-select" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:100%">
+              <option value="">اختر شريكاً...</option>
+              ${uniquePartners.map(p=>`<option value="${p}">${p}</option>`).join('')}
+            </select>
+            <button onclick="openPartnerStatementFromReport()" class="btn btn-primary btn-sm" style="margin-top:6px;width:100%">📋 عرض الكشف</button>
+          </div>
+        </div>`;
+
       const rows = (payouts||[]).map(p=>`<tr>
-        <td class="mono text-muted">${fmtDate(p.pay_date)}</td><td class="mono text-amber">${p.file_no||'—'}</td>
-        <td>${p.partner||'—'}</td><td>${p.payout_type||'—'}</td>
-        <td class="mono text-purple">${fmt(p.amount)}</td></tr>`).join('');
-      el('reportTable').innerHTML = rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>الشريك</th><th>النوع</th><th>المبلغ</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('👥','لا توجد بيانات');
+        <td class="mono text-muted">${fmtDate(p.pay_date)}</td>
+        <td class="mono text-amber">${p.file_no||'—'}</td>
+        <td>${p.partner||'—'}</td>
+        <td>${p.payout_type||'—'}</td>
+        <td class="mono text-purple">${fmt(p.amount)}</td>
+        <td><button class="btn btn-secondary btn-sm" onclick="showPartnerStatement('${p.partner}')">📋 كشف شامل</button></td>
+      </tr>`).join('');
+      el('reportTable').innerHTML = rows
+        ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>الشريك</th><th>النوع</th><th>المبلغ</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        : emptyHTML('👥','لا توجد بيانات');
+    }
+    if (type === 'opex') {
+      await loadOpexReport(from, to);
     }
   } catch(e) { el('reportTable').innerHTML = errHTML('خطأ: '+e.message); console.error(e); }
 }
@@ -8910,18 +9537,6 @@ function applyRoleRestrictions() {
   // Hide admin-only sidebar section (الإدارة) for non-admins
   const adminNav = el('nav-section-admin');
   if (adminNav) adminNav.style.display = isAdmin ? '' : 'none';
-}
-
-// Guard: block delete API calls if no permission (second layer of protection)
-const _origApiDelete = apiDelete;
-async function apiDelete(table, matchParams) {
-  // Allow only admins to delete from data tables
-  const protectedTables = ['purchase_orders','vehicles','sales','expenses','payments','collections','partner_payouts','contacts'];
-  if (protectedTables.includes(table) && !can('delete')) {
-    toast('🔒 ليس لديك صلاحية الحذف', 'err');
-    throw new Error('غير مصرح بالحذف');
-  }
-  return _origApiDelete(table, matchParams);
 }
 
 // ════════════════════════════════════════
@@ -9665,6 +10280,326 @@ async function submitEditCollection() {
   } catch(e) { showFieldErr('ecError','خطأ: '+e.message); }
 }
 
+// ════════════════════════════════════════
+// OPERATING EXPENSES (مصاريف تشغيلية)
+// ════════════════════════════════════════
+
+const OPEX_TYPES = ['رواتب','إيجارات','عمولات','نظافة','ضيافة','مصروفات حكومية','أخرى'];
+const OPEX_COLORS = {
+  'رواتب':'var(--blue)', 'إيجارات':'var(--purple)', 'عمولات':'var(--accent)',
+  'نظافة':'var(--cyan)', 'ضيافة':'var(--green)', 'مصروفات حكومية':'var(--red)', 'أخرى':'var(--text2)'
+};
+
+async function showOpex() {
+  hideAllViews();
+  el('opexView').style.display = 'block';
+  el('topBarTitle').textContent = 'المصاريف التشغيلية';
+  el('topBarSub').textContent   = `نظام ${state.system}`;
+  if(el('opexSystemLabel')) el('opexSystemLabel').textContent = `نظام ${state.system}`;
+  navActive('nav-opex');
+  sessionStorage.setItem('tm_last_view','opex');
+  await loadOpex();
+}
+
+async function loadOpex() {
+  const wrap = el('opexTableBody');
+  if (!wrap) return;
+  setLoading('opexTableBody');
+
+  const typeFilter = el('opex-filter-type')?.value || '';
+  const fromFilter = el('opex-filter-from')?.value || '';
+  const toFilter   = el('opex-filter-to')?.value   || '';
+
+  try {
+    const params = { select:'*', system_type:`eq.${state.system}`, order:'exp_date.desc' };
+    if (typeFilter) params.exp_type = `eq.${typeFilter}`;
+    if (fromFilter) params['exp_date'] = `gte.${fromFilter}`;
+    if (toFilter)   params['exp_date_end'] = `lte.${toFilter}`;
+
+    // Build URL manually for date range
+    let url = `${SB_URL}/rest/v1/operating_expenses?system_type=eq.${encodeURIComponent(state.system)}&order=exp_date.desc&select=*`;
+    if (typeFilter) url += `&exp_type=eq.${encodeURIComponent(typeFilter)}`;
+    if (fromFilter) url += `&exp_date=gte.${encodeURIComponent(fromFilter)}`;
+    if (toFilter)   url += `&exp_date=lte.${encodeURIComponent(toFilter)}`;
+
+    const res  = await fetch(url, { headers: headers() });
+    const data = res.ok ? await res.json() : [];
+
+    // KPIs
+    renderOpexKpis(data);
+
+    if (!data.length) {
+      wrap.innerHTML = `<div class="empty-state"><div class="e-icon">💼</div><p>لا توجد مصاريف تشغيلية</p><small>اضغط "إضافة مصروف" لتسجيل أول مصروف</small></div>`;
+      return;
+    }
+
+    wrap.innerHTML = `
+      <table class="data-table">
+        <thead><tr>
+          <th>الرقم المرجعي</th><th>النوع</th><th>الوصف / البيان</th>
+          <th>المستفيد</th><th>المبلغ</th><th>طريقة الدفع</th>
+          <th>المستند</th><th>التاريخ</th><th>ملاحظات</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${data.map(r => `<tr>
+            <td class="mono" style="font-size:11px;color:var(--purple);font-weight:700">${r.ref_no||'—'}</td>
+            <td><span style="background:var(--purple-dim);color:var(--purple);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap">${r.exp_type||'—'}</span></td>
+            <td style="font-weight:600">${r.description||'—'}</td>
+            <td style="color:var(--text2)">${r.beneficiary||'—'}</td>
+            <td class="mono text-red" style="font-weight:700">${fmt(r.amount)}</td>
+            <td>${r.pay_method||'—'}</td>
+            <td class="mono">${r.document||'—'}</td>
+            <td class="mono">${fmtDate(r.exp_date)}</td>
+            <td style="color:var(--text2);font-size:12px">${r.notes||''}</td>
+            <td>
+              <div style="display:flex;gap:4px">
+                <button class="btn btn-secondary btn-sm" onclick="openEditOpexModal(${r.id})">✏️</button>
+                ${can('delete') ? `<button class="btn btn-secondary btn-sm" onclick="deleteOpex(${r.id})" style="color:var(--red)">🗑</button>` : ''}
+              </div>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) {
+    wrap.innerHTML = `<div class="alert alert-err" style="margin:16px">⚠️ خطأ: ${e.message}</div>`;
+  }
+}
+
+function renderOpexKpis(data) {
+  const kpis = el('opexKpis');
+  if (!kpis) return;
+  const total = data.reduce((s,r) => s + (+r.amount||0), 0);
+
+  // Group by type
+  const byType = {};
+  data.forEach(r => {
+    const t = r.exp_type || 'أخرى';
+    byType[t] = (byType[t]||0) + (+r.amount||0);
+  });
+
+  const topType = Object.entries(byType).sort((a,b)=>b[1]-a[1])[0];
+
+  kpis.innerHTML = `
+    <div class="vkpi" style="border-right:3px solid var(--purple)">
+      <div class="vkpi-label">إجمالي التشغيلية</div>
+      <div class="vkpi-val" style="color:var(--purple)">${fmt(total)}</div>
+      <div style="font-size:10px;color:var(--text2);margin-top:3px">${data.length} قيد</div>
+    </div>
+    ${Object.entries(byType).map(([type, amt]) => `
+    <div class="vkpi" style="border-right:3px solid ${OPEX_COLORS[type]||'var(--text2)'}">
+      <div class="vkpi-label">${type}</div>
+      <div class="vkpi-val" style="color:${OPEX_COLORS[type]||'var(--text2)'}">${fmt(amt)}</div>
+      <div style="font-size:10px;color:var(--text2);margin-top:3px">${((amt/total)*100).toFixed(0)}% من الإجمالي</div>
+    </div>`).join('')}`;
+}
+
+function onOpexTypeChange() {
+  const type = el('opex-type').value;
+  const wrap = el('opex-other-wrap');
+  if (wrap) wrap.style.display = type === 'أخرى' ? 'block' : 'none';
+}
+
+function openOpexModal() {
+  el('opex-id').value          = '';
+  el('opexModalTitle').textContent = 'إضافة مصروف تشغيلي';
+  el('opex-type').value        = '';
+  el('opex-desc').value        = '';
+  el('opex-amount').value      = '';
+  el('opex-date').value        = today();
+  el('opex-method').value      = 'تحويل بنكي';
+  el('opex-doc').value         = '';
+  el('opex-beneficiary').value = '';
+  el('opex-notes').value       = '';
+  el('opexError').style.display = 'none';
+  if(el('opex-other-wrap')) el('opex-other-wrap').style.display = 'none';
+  el('opexSubmitBtn').textContent = '💾 حفظ';
+  el('opexSubmitBtn').onclick = submitOpex;
+  openModal('opexModal');
+}
+
+async function openEditOpexModal(id) {
+  try {
+    const data = await apiGet('operating_expenses', { select:'*', id:`eq.${id}` });
+    const r = data?.[0];
+    if (!r) { toast('لم يُعثر على البيانات','err'); return; }
+    el('opex-id').value          = r.id;
+    el('opexModalTitle').textContent = 'تعديل مصروف تشغيلي';
+    el('opex-type').value        = OPEX_TYPES.includes(r.exp_type) ? r.exp_type : 'أخرى';
+    el('opex-desc').value        = r.description   || '';
+    el('opex-amount').value      = r.amount        || '';
+    el('opex-date').value        = r.exp_date      || '';
+    el('opex-method').value      = r.pay_method    || 'تحويل بنكي';
+    el('opex-doc').value         = r.document      || '';
+    el('opex-beneficiary').value = r.beneficiary   || '';
+    el('opex-notes').value       = r.notes         || '';
+    el('opexError').style.display = 'none';
+    if (!OPEX_TYPES.includes(r.exp_type) || r.exp_type === 'أخرى') {
+      if(el('opex-other-wrap'))  el('opex-other-wrap').style.display  = 'block';
+      if(el('opex-other-label')) el('opex-other-label').value = r.exp_type !== 'أخرى' ? r.exp_type : '';
+    } else {
+      if(el('opex-other-wrap')) el('opex-other-wrap').style.display = 'none';
+    }
+    el('opexSubmitBtn').textContent = '💾 حفظ التعديل';
+    el('opexSubmitBtn').onclick = submitEditOpex;
+    openModal('opexModal');
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
+async function submitOpex() {
+  const type        = el('opex-type').value;
+  const otherLabel  = el('opex-other-label')?.value?.trim() || '';
+  const finalType   = type === 'أخرى' ? (otherLabel || 'أخرى') : type;
+  const desc        = el('opex-desc').value.trim();
+  const amount      = parseFloat(el('opex-amount').value);
+  const date        = el('opex-date').value;
+  const method      = el('opex-method').value;
+  const doc         = el('opex-doc').value.trim();
+  const beneficiary = el('opex-beneficiary').value.trim();
+  const notes       = el('opex-notes').value.trim();
+
+  if (!finalType || !desc || !amount || !date) {
+    showFieldErr('opexError','يرجى ملء الحقول المطلوبة: النوع، الوصف، المبلغ، التاريخ');
+    return;
+  }
+
+  try {
+    const refNo = await genSeqRef('OPEX', state.system, null, 'operating_expenses') || `OPEX-${state.system}-${Date.now()}`;
+    const payload = {
+      system_type: state.system, ref_no: refNo,
+      exp_type: finalType, description: desc, amount,
+      exp_date: date, pay_method: method,
+      document: doc||null, beneficiary: beneficiary||null, notes: notes||null
+    };
+    await apiPost('operating_expenses', payload);
+    await logAudit('INSERT','operating_expenses', null, null, payload);
+    closeModal('opexModal');
+    toast('✅ تم تسجيل المصروف التشغيلي','ok');
+    await loadOpex();
+  } catch(e) { showFieldErr('opexError','خطأ: '+e.message); }
+}
+
+async function submitEditOpex() {
+  const id          = el('opex-id').value;
+  const type        = el('opex-type').value;
+  const otherLabel  = el('opex-other-label')?.value?.trim() || '';
+  const finalType   = type === 'أخرى' ? (otherLabel || 'أخرى') : type;
+  const desc        = el('opex-desc').value.trim();
+  const amount      = parseFloat(el('opex-amount').value);
+  const date        = el('opex-date').value;
+  const method      = el('opex-method').value;
+  const doc         = el('opex-doc').value.trim();
+  const beneficiary = el('opex-beneficiary').value.trim();
+  const notes       = el('opex-notes').value.trim();
+
+  if (!finalType || !desc || !amount || !date) {
+    showFieldErr('opexError','يرجى ملء الحقول المطلوبة');
+    return;
+  }
+  try {
+    await apiPatch('operating_expenses', { id:`eq.${id}` }, {
+      exp_type: finalType, description: desc, amount,
+      exp_date: date, pay_method: method,
+      document: doc||null, beneficiary: beneficiary||null, notes: notes||null
+    });
+    closeModal('opexModal');
+    toast('✅ تم تعديل المصروف','ok');
+    await loadOpex();
+  } catch(e) { showFieldErr('opexError','خطأ: '+e.message); }
+}
+
+async function deleteOpex(id) {
+  showConfirm('حذف مصروف تشغيلي', 'سيتم حذف هذا المصروف نهائياً. لا يمكن التراجع.', async () => {
+    try {
+      await apiDelete('operating_expenses', { id:`eq.${id}` });
+      toast('✅ تم الحذف','ok');
+      await loadOpex();
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
+
+function exportOpexExcel() {
+  const rows = document.querySelectorAll('#opexTableBody table tbody tr');
+  if (!rows.length) { toast('لا توجد بيانات للتصدير','err'); return; }
+  const data = [['الرقم','النوع','الوصف','المستفيد','المبلغ','طريقة الدفع','المستند','التاريخ','ملاحظات']];
+  rows.forEach(tr => {
+    const cells = tr.querySelectorAll('td');
+    data.push([
+      cells[0]?.textContent?.trim()||'',
+      cells[1]?.textContent?.trim()||'',
+      cells[2]?.textContent?.trim()||'',
+      cells[3]?.textContent?.trim()||'',
+      cells[4]?.textContent?.trim()||'',
+      cells[5]?.textContent?.trim()||'',
+      cells[6]?.textContent?.trim()||'',
+      cells[7]?.textContent?.trim()||'',
+      cells[8]?.textContent?.trim()||'',
+    ]);
+  });
+  exportToExcel([{ name:'المصاريف التشغيلية', data }], `OPEX_${state.system}_${today()}`);
+}
+
+// ── Inject opex into Journal ──
+// Called from loadJournal — adds operating_expenses to journal entries
+async function fetchOpexForJournal(from, to, sys) {
+  try {
+    let url = `${SB_URL}/rest/v1/operating_expenses?system_type=eq.${encodeURIComponent(sys)}&exp_date=gte.${encodeURIComponent(from)}&exp_date=lte.${encodeURIComponent(to)}&order=exp_date.desc&select=*`;
+    const res = await fetch(url, { headers: headers() });
+    return res.ok ? await res.json() : [];
+  } catch(e) { return []; }
+}
+
+// ── Opex in Reports ──
+async function loadOpexReport(from, to) {
+  const wrap = el('reportTable');
+  const kpis = el('reportKpis');
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>`;
+
+  try {
+    let url = `${SB_URL}/rest/v1/operating_expenses?system_type=eq.${encodeURIComponent(state.system)}&select=*&order=exp_date.desc`;
+    if (from) url += `&exp_date=gte.${encodeURIComponent(from)}`;
+    if (to)   url += `&exp_date=lte.${encodeURIComponent(to)}`;
+    const res  = await fetch(url, { headers: headers() });
+    const data = res.ok ? await res.json() : [];
+
+    const total = data.reduce((s,r) => s + (+r.amount||0), 0);
+    const byType = {};
+    data.forEach(r => { const t=r.exp_type||'أخرى'; byType[t]=(byType[t]||0)+(+r.amount||0); });
+
+    kpis.innerHTML = `
+      <div class="vkpi" style="border-right:3px solid var(--purple)">
+        <div class="vkpi-label">الإجمالي</div>
+        <div class="vkpi-val" style="color:var(--purple)">${fmt(total)}</div>
+      </div>
+      ${Object.entries(byType).map(([t,v])=>`
+      <div class="vkpi" style="border-right:3px solid ${OPEX_COLORS[t]||'var(--text2)'}">
+        <div class="vkpi-label">${t}</div>
+        <div class="vkpi-val">${fmt(v)}</div>
+      </div>`).join('')}`;
+
+    if (!data.length) { wrap.innerHTML = `<div class="empty-state"><div class="e-icon">💼</div><p>لا توجد مصاريف في هذه الفترة</p></div>`; return; }
+
+    wrap.innerHTML = `
+      <table class="data-table">
+        <thead><tr>
+          <th>الرقم</th><th>النوع</th><th>الوصف</th><th>المستفيد</th>
+          <th>المبلغ</th><th>طريقة الدفع</th><th>التاريخ</th>
+        </tr></thead>
+        <tbody>
+          ${data.map(r=>`<tr>
+            <td class="mono" style="font-size:11px;color:var(--purple)">${r.ref_no||'—'}</td>
+            <td><span style="background:var(--purple-dim);color:var(--purple);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${r.exp_type||'—'}</span></td>
+            <td>${r.description||'—'}</td>
+            <td style="color:var(--text2)">${r.beneficiary||'—'}</td>
+            <td class="mono text-red">${fmt(r.amount)}</td>
+            <td>${r.pay_method||'—'}</td>
+            <td class="mono">${fmtDate(r.exp_date)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) { wrap.innerHTML = errHTML(e.message); }
+}
+
 // PWA Install prompt
 let _pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
@@ -9778,6 +10713,80 @@ function installPWA() {
 <button class="pwa-fab pwa-install-btn" onclick="installPWA()">
   📲 تثبيت التطبيق
 </button>
+
+<!-- OPEX MODAL -->
+<div class="modal-overlay" id="opexModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--purple-dim)">💼</div>
+      <h3 id="opexModalTitle">إضافة مصروف تشغيلي</h3>
+      <button class="modal-close" onclick="closeModal('opexModal')">✕</button>
+    </div>
+    <div class="modal-body"><div class="form-col">
+      <input type="hidden" id="opex-id">
+      <div class="form-row">
+        <div class="field">
+          <label>نوع المصروف *</label>
+          <select id="opex-type" onchange="onOpexTypeChange()">
+            <option value="">— اختر —</option>
+            <option>رواتب</option>
+            <option>إيجارات</option>
+            <option>عمولات</option>
+            <option>نظافة</option>
+            <option>ضيافة</option>
+            <option>مصروفات حكومية</option>
+            <option>أخرى</option>
+          </select>
+        </div>
+        <div class="field" id="opex-other-wrap" style="display:none">
+          <label>تحديد النوع *</label>
+          <input type="text" id="opex-other-label" placeholder="أدخل نوع المصروف">
+        </div>
+      </div>
+      <div class="field">
+        <label>الوصف / البيان *</label>
+        <input type="text" id="opex-desc" placeholder="مثال: راتب شهر مايو، إيجار مكتب الكويت...">
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>المبلغ *</label>
+          <input type="number" id="opex-amount" placeholder="0.000" min="0" step="0.001">
+        </div>
+        <div class="field">
+          <label>التاريخ *</label>
+          <input type="date" id="opex-date">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>طريقة الدفع</label>
+          <select id="opex-method">
+            <option>تحويل بنكي</option>
+            <option>نقد</option>
+            <option>شيك</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>رقم المستند</label>
+          <input type="text" id="opex-doc" placeholder="رقم التحويل أو الإيصال">
+        </div>
+      </div>
+      <div class="field">
+        <label>المستفيد / الجهة</label>
+        <input type="text" id="opex-beneficiary" placeholder="اسم الموظف أو الجهة...">
+      </div>
+      <div class="field">
+        <label>ملاحظات</label>
+        <textarea id="opex-notes" rows="2" placeholder="..."></textarea>
+      </div>
+      <div id="opexError" class="alert alert-err" style="display:none"></div>
+    </div></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('opexModal')">إلغاء</button>
+      <button class="btn btn-primary" id="opexSubmitBtn" onclick="submitOpex()">💾 حفظ</button>
+    </div>
+  </div>
+</div>
 
 <!-- EDIT PAYMENT MODAL -->
 <div class="modal-overlay" id="editPaymentModal">
