@@ -6564,7 +6564,7 @@ async function submitQuickExpense() {
     const refNo = (await genSeqRef('EXP', state.system, fileNo, 'expenses')) || `EXP-${fileNo}-${Date.now()}`;
     const data = { system_type:state.system, file_no:fileNo, description:desc,
       pay_id:refNo, category:type, amount, pay_method:method, document:doc||null,
-      expense_date:date, notes:notes||null, ref_no:refNo };
+      exp_date:date, expense_date:date, notes:notes||null, ref_no:refNo };
     await apiPost('expenses', data);
     await logAudit('INSERT','expenses',fileNo,null,data);
     closeModal('quickExpenseModal');
@@ -6976,12 +6976,11 @@ function getJournalDateRange() {
     return { from: t, to: t };
   }
   if (journalState.period === 'week') {
-    const now = new Date();
-    const day  = now.getDay(); // 0=Sun, 1=Mon...
-    const diff = day === 0 ? -6 : 1 - day; // go back to Monday
-    const mon  = new Date(now); mon.setDate(now.getDate() + diff);
-    const sun  = new Date(mon); sun.setDate(mon.getDate() + 6);
-    return { from: toDate(mon), to: toDate(sun) };
+    const now  = new Date();
+    const day  = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+    const sun  = new Date(now); sun.setDate(now.getDate() - day);       // الأحد = بداية الأسبوع
+    const sat  = new Date(sun); sat.setDate(sun.getDate() + 6);         // السبت = نهاية الأسبوع
+    return { from: toDate(sun), to: toDate(sat) };
   }
   if (journalState.period === 'month') {
     const now  = new Date();
@@ -8416,7 +8415,7 @@ async function exportDealExcel(fileNo) {
       { name:'مبيعات', headers:['التاريخ','الفاتورة','VIN','العميل','السعر','ملاحظات'],
         data:(sales||[]).map(s=>[s.sale_date,s.inv_no,s.vin,s.customer,+s.sale_price||0,s.notes||'']) },
       { name:'مصاريف', headers:['التاريخ','البيان','النوع','المبلغ','طريقة الدفع'],
-        data:(expenses||[]).map(e=>[e.expense_date,e.description,e.category,+e.amount||0,e.pay_method||'']) },
+        data:(expenses||[]).map(e=>[e.exp_date||e.expense_date,e.description,e.category,+e.amount||0,e.pay_method||'']) },
       { name:'دفعات المورد', headers:['التاريخ','الدافع','المبلغ','طريقة الدفع','المستند'],
         data:(payments||[]).map(p=>[p.pay_date,p.payer,+p.amount||0,p.pay_method||'',p.document||'']) },
       { name:'تحصيلات', headers:['التاريخ','العميل','المبلغ','طريقة الدفع'],
@@ -8463,7 +8462,7 @@ async function printCurrentReport() {
   } else if (type === 'expenses') {
     tableHtml = `<table>
       <thead><tr><th>التاريخ</th><th>الملف</th><th>البيان</th><th>النوع</th><th>المبلغ</th></tr></thead>
-      <tbody>${data.map(e=>`<tr><td>${e.expense_date||e.created_at?.split('T')[0]||''}</td><td>${e.file_no||''}</td><td>${e.description||''}</td><td>${e.category||e.exp_type||''}</td><td class="red">${fmt(e.amount)}</td></tr>`).join('')}</tbody>
+      <tbody>${data.map(e=>`<tr><td>${e.exp_date||e.expense_date||e.created_at?.split('T')[0]||''}</td><td>${e.file_no||''}</td><td>${e.description||''}</td><td>${e.category||e.exp_type||''}</td><td class="red">${fmt(e.amount)}</td></tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="red"><strong>${fmt(data.reduce((s,r)=>s+(+r.amount||0),0))}</strong></td></tr></tfoot>
     </table>`;
   } else if (type === 'partners') {
@@ -8495,7 +8494,7 @@ async function exportCurrentReportExcel() {
   const rows = {
     profit:   data.map(d=>[d.file, d.sales, d.expenses, d.payments, d.profit]),
     sales:    data.map(s=>[s.sale_date, s.file_no, s.vin, s.customer, +s.sale_price||0]),
-    expenses: data.map(e=>[e.expense_date, e.file_no, e.description, e.category||e.exp_type||'', +e.amount||0]),
+    expenses: data.map(e=>[e.exp_date||e.expense_date, e.file_no, e.description, e.category||e.exp_type||'', +e.amount||0]),
     partners: data.map(p=>[p.pay_date, p.file_no, p.partner, p.payout_type, +p.amount||0]),
   };
   exportToExcel([{ name: titles[type], headers: headers[type], data: rows[type] }], titles[type]);
@@ -9850,7 +9849,7 @@ async function runReport() {
         <div class="j-kpi"><div class="j-kpi-label">عدد المصاريف</div><div class="j-kpi-val">${(data||[]).length}</div></div>
         <div class="j-kpi"><div class="j-kpi-label">إجمالي</div><div class="j-kpi-val text-red">${fmt(total)}</div></div>`;
       const rows = (data||[]).map(e=>`<tr>
-        <td class="mono text-muted">${fmtDate(e.expense_date)}</td><td class="mono text-amber">${e.file_no||'—'}</td>
+        <td class="mono text-muted">${fmtDate(e.exp_date||e.expense_date)}</td><td class="mono text-amber">${e.file_no||'—'}</td>
         <td>${e.description||'—'}</td><td>${e.exp_type||e.category||'—'}</td>
         <td class="mono text-red">${fmt(e.amount)}</td></tr>`).join('');
       el('reportTable').innerHTML = rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>البيان</th><th>النوع</th><th>المبلغ</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('💸','لا توجد مصاريف');
@@ -10479,7 +10478,7 @@ async function loadDealStatement(fn, sys) {
       apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGet('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
-      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'expense_date.asc' }),
+      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.asc' }),
       apiGet('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.asc' }),
       apiGet('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.asc' }),
       apiGet('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
@@ -10503,7 +10502,7 @@ async function loadDealStatement(fn, sys) {
       ...(payments||[]).map(p=>({ date:p.pay_date, type:'دفعة للمورد', icon:'💳', color:'var(--cyan)',
         party:p.payer||'—', debit:0, credit:+p.amount,
         desc:`دفعة من ${p.payer||'—'}`, extra:`${p.pay_method||''}${p.document?' · '+p.document:''}` })),
-      ...(expenses||[]).map(e=>({ date:e.expense_date, type:'مصروف', icon:'💸', color:'var(--red)',
+      ...(expenses||[]).map(e=>({ date:e.exp_date||e.expense_date, type:'مصروف', icon:'💸', color:'var(--red)',
         party:e.vendor||'—', debit:0, credit:+e.amount,
         desc:e.category||e.description||'مصروف', extra:`${e.pay_method||''}` })),
       ...(sales||[]).map(s=>({ date:s.sale_date, type:'بيع', icon:'🤝', color:'var(--green)',
