@@ -1363,7 +1363,8 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
     <div class="sidebar-search">
       <div class="search-box">
         <span class="s-icon2">🔍</span>
-        <input type="text" id="vinSearch" placeholder="بحث بـ VIN..." onkeyup="searchVin(this.value)">
+        <input type="text" id="vinSearch" placeholder="بحث بـ VIN..." 
+          onkeyup="if(event.key==='Enter'||this.value.length>=6)searchVin(this.value);if(!this.value)document.getElementById('vin-card-overlay')?.remove()">
       </div>
     </div>
 
@@ -1540,7 +1541,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         <div class="top-bar-sub" id="topBarSub">نظام BOX</div>
       </div>
       <div class="top-bar-actions">
-        <button class="btn btn-primary btn-sm" onclick="openModal('newFileModal')">
+        <button class="btn btn-primary btn-sm" onclick="openNewFileModal()">
           ➕ ملف جديد
         </button>
         <button class="btn btn-secondary btn-sm" onclick="loadDashboard()">
@@ -6640,21 +6641,114 @@ async function submitQuickPayout() {
 
 // VIN Search
 async function searchVin(q) {
-  if (!q || q.length < 3) return;
+  if (!q || q.length < 3) {
+    el('vin-card-overlay')?.remove();
+    return;
+  }
   try {
-    const data = await apiGet('vehicles', {
-      select: 'vin,file_no,model,vehicle_type',
-      system_type: `eq.${state.system}`,
-      vin: `ilike.*${q}*`
-    });
-    if (data && data.length) {
-      const v = data[0];
-      toast(`🔍 VIN وُجد في الملف: ${v.file_no}`, 'ok');
-      openViewer(v.file_no);
-    } else {
+    const [vehicles, sales] = await Promise.all([
+      apiGet('vehicles', {
+        select: '*',
+        system_type: `eq.${state.system}`,
+        vin: `ilike.*${q}*`,
+        limit: 5
+      }),
+      apiGet('sales', {
+        select: 'vin,sale_price,sale_date,customer,inv_no',
+        system_type: `eq.${state.system}`,
+        vin: `ilike.*${q}*`
+      })
+    ]);
+
+    el('vin-card-overlay')?.remove();
+
+    if (!vehicles?.length) {
       toast('لم يُعثر على هذا الـ VIN', 'err');
+      return;
     }
-  } catch(e) {}
+
+    const v    = vehicles[0];
+    const sale = (sales||[]).find(s => s.vin === v.vin);
+    const isSold = !!sale;
+    const days = Math.floor((Date.now() - new Date(v.created_at||Date.now()).getTime()) / 864e5);
+
+    const card = document.createElement('div');
+    card.id = 'vin-card-overlay';
+    card.style.cssText = `
+      position:fixed;top:0;left:0;right:0;bottom:0;
+      background:rgba(0,0,0,.5);z-index:9999;
+      display:flex;align-items:center;justify-content:center;padding:20px
+    `;
+    card.onclick = e => { if(e.target===card) card.remove(); };
+
+    card.innerHTML = `
+      <div style="background:var(--card);border-radius:var(--radius);padding:0;max-width:480px;width:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:fadeSlideIn .25s ease">
+
+        <!-- Header -->
+        <div style="background:${isSold?'var(--green)':'var(--purple)'};padding:16px 20px;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-size:11px;color:#ffffff99;margin-bottom:2px">${isSold?'✅ مباعة':'🏭 في المخزن'}</div>
+            <div style="font-size:18px;font-weight:700;color:#fff;font-family:monospace">${v.vin||'—'}</div>
+          </div>
+          <button onclick="document.getElementById('vin-card-overlay').remove()"
+            style="background:#ffffff22;border:none;color:#fff;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px;font-family:'Cairo',sans-serif">✕</button>
+        </div>
+
+        <!-- Body -->
+        <div style="padding:20px">
+
+          <!-- Vehicle info -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+            <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+              <div style="font-size:10px;color:var(--text2);margin-bottom:3px">الموديل</div>
+              <div style="font-size:14px;font-weight:700">${v.model||v.make||'—'} ${v.year||''}</div>
+            </div>
+            <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+              <div style="font-size:10px;color:var(--text2);margin-bottom:3px">رقم الملف</div>
+              <div style="font-size:14px;font-weight:700;color:var(--accent)">${v.file_no||'—'}</div>
+            </div>
+            <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+              <div style="font-size:10px;color:var(--text2);margin-bottom:3px">تكلفة الشراء</div>
+              <div style="font-size:14px;font-weight:700;color:var(--blue);font-family:monospace">${fmt(v.purchase_price)}</div>
+            </div>
+            <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+              <div style="font-size:10px;color:var(--text2);margin-bottom:3px">${isSold?'سعر البيع':'في المخزن منذ'}</div>
+              <div style="font-size:14px;font-weight:700;color:${isSold?'var(--green)':'var(--accent)'};font-family:monospace">
+                ${isSold ? fmt(sale.sale_price) : days+' يوم'}
+              </div>
+            </div>
+          </div>
+
+          <!-- Sale info if sold -->
+          ${isSold ? `
+          <div style="background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:12px;margin-bottom:16px">
+            <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">تفاصيل البيع</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+              <div><span style="color:var(--text2)">العميل: </span><span style="font-weight:600">${sale.customer||'—'}</span></div>
+              <div><span style="color:var(--text2)">تاريخ البيع: </span><span style="font-weight:600">${fmtDate(sale.sale_date)}</span></div>
+              <div><span style="color:var(--text2)">رقم الفاتورة: </span><span style="font-family:monospace">${sale.inv_no||'—'}</span></div>
+              <div><span style="color:var(--text2)">الربح: </span><span style="font-weight:700;color:${(+sale.sale_price-(+v.purchase_price||0))>=0?'var(--green)':'var(--red)'}">
+                ${fmt((+sale.sale_price||0)-(+v.purchase_price||0))}
+              </span></div>
+            </div>
+          </div>` : ''}
+
+          <!-- Actions -->
+          <div style="display:flex;gap:8px">
+            <button onclick="document.getElementById('vin-card-overlay').remove();openViewer('${v.file_no}')"
+              class="btn btn-primary" style="flex:1">
+              📁 فتح الصفقة ${v.file_no}
+            </button>
+            <button onclick="document.getElementById('vin-card-overlay').remove()"
+              class="btn btn-secondary">إغلاق</button>
+          </div>
+
+        </div>
+      </div>`;
+
+    document.body.appendChild(card);
+
+  } catch(e) { toast('خطأ في البحث: '+e.message, 'err'); }
 }
 
 // ════════════════════════════════════════
@@ -6874,23 +6968,23 @@ function setJournalPeriod(period) {
 }
 
 function getJournalDateRange() {
-  const now = new Date();
   const pad = n => String(n).padStart(2,'0');
   const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 
   if (journalState.period === 'today') {
-    const t = toDate(now);
+    const t = toDate(new Date());
     return { from: t, to: t };
   }
   if (journalState.period === 'week') {
-    const day = now.getDay();
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-    const mon = new Date(now.setDate(diff));
-    const sun = new Date(now);
-    sun.setDate(mon.getDate() + 6);
+    const now = new Date();
+    const day  = now.getDay(); // 0=Sun, 1=Mon...
+    const diff = day === 0 ? -6 : 1 - day; // go back to Monday
+    const mon  = new Date(now); mon.setDate(now.getDate() + diff);
+    const sun  = new Date(mon); sun.setDate(mon.getDate() + 6);
     return { from: toDate(mon), to: toDate(sun) };
   }
   if (journalState.period === 'month') {
+    const now  = new Date();
     const from = `${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;
     const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
     return { from, to: toDate(last) };
@@ -6898,7 +6992,7 @@ function getJournalDateRange() {
   if (journalState.period === 'custom') {
     return { from: el('jDateFrom').value, to: el('jDateTo').value };
   }
-  return { from: toDate(now), to: toDate(now) };
+  return { from: toDate(new Date()), to: toDate(new Date()) };
 }
 
 async function loadJournal() {
@@ -6923,8 +7017,8 @@ async function loadJournal() {
 
     const [sales, collections, expenses, payments, payouts, opexItems] = await Promise.all([
       apiGetRange('sales',                'sale_date',    from, to),
-      apiGetRange('collections',          'paid_date',    from, to),
-      apiGetRange('expenses',             'expense_date', from, to),
+      apiGetRange('collections',          'due_date',     from, to),
+      apiGetRange('expenses',             'exp_date',     from, to),
       apiGetRange('payments',             'pay_date',     from, to),
       apiGetRange('partner_payouts',      'pay_date',     from, to),
       fetchOpexForJournal(from, to, sys),
@@ -11228,7 +11322,7 @@ function renderDrillDown(type) {
 
   // ── صافي الربح ──
   else if (type === 'profit') {
-    el('dd-title').textContent = `📈 تفاصيل الربح — ${periodLabel}`;
+    el('dd-title').textContent = `📈 نتائج العمليات — ${periodLabel}`;
     const sales   = d.periodSales  || [];
     const deals   = d.periodDeals  || [];
     const exps    = d.periodExp    || [];
