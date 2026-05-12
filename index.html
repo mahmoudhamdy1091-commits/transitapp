@@ -1211,7 +1211,17 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 .sett-sys-box{background:var(--accent-dim);color:var(--accent)}
 .sett-sys-tr{background:var(--blue-dim);color:var(--blue)}
 
-/* Period buttons */
+/* Approval Queue */
+.approval-filter-btn{background:var(--card2);border:1px solid var(--border);color:var(--text2);font-size:12px;padding:6px 12px;border-radius:var(--radius-sm);cursor:pointer;font-family:'Cairo',sans-serif;transition:all .15s}
+.approval-filter-btn.active{background:var(--accent);border-color:var(--accent);color:#000;font-weight:700}
+.approval-row{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;cursor:pointer;transition:all .15s}
+.approval-row:hover{border-color:var(--accent);transform:translateX(-2px)}
+.approval-row-icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.approval-row-body{flex:1;min-width:0}
+.approval-row-title{font-size:13px;font-weight:600;margin-bottom:2px}
+.approval-row-meta{font-size:11px;color:var(--text2)}
+.approval-row-amount{font-family:var(--mono);font-weight:700;font-size:14px;flex-shrink:0}
+.approval-row-actions{display:flex;gap:6px;flex-shrink:0}
 .dash-period-btn{background:transparent;border:none;color:var(--text2);font-size:12px;font-weight:500;padding:6px 12px;border-radius:6px;cursor:pointer;transition:all .15s;font-family:'Cairo',sans-serif;white-space:nowrap}
 .dash-period-btn:hover{background:var(--card);color:var(--text)}
 .dash-period-btn.active{background:var(--card);color:var(--accent);font-weight:700}
@@ -1510,6 +1520,10 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           <span class="ns-arrow">▼</span>
         </div>
         <div class="nav-section-items">
+          <div class="nav-item" id="nav-approval" onclick="showApprovalQueue()">
+            <span class="ni-icon">✅</span><span>الموافقات</span>
+            <span id="approval-badge" style="display:none;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;margin-right:auto"></span>
+          </div>
           <div class="nav-item" id="nav-activity" onclick="showActivityLog()">
             <span class="ni-icon">🕵️</span><span>سجل النشاط</span>
           </div>
@@ -2017,24 +2031,92 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
       <!-- ACTIVITY LOG VIEW -->
       <div id="activityView" style="display:none">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-          <div style="font-size:16px;font-weight:900">🕵️ سجل النشاط</div>
-          <div style="display:flex;gap:8px">
-            <select id="actFilter-user" onchange="renderActivityLog()"
-              style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px">
-              <option value="">كل المستخدمين</option>
-            </select>
-            <select id="actFilter-action" onchange="renderActivityLog()"
-              style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px">
-              <option value="">كل العمليات</option>
-              <option value="INSERT">إضافة</option>
-              <option value="UPDATE">تعديل</option>
-              <option value="DELETE">حذف</option>
-            </select>
-            <button class="btn btn-secondary btn-sm" onclick="loadActivityLog()">🔄 تحديث</button>
+
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-size:16px;font-weight:900">🕵️ سجل النشاط</div>
+            <div style="font-size:12px;color:var(--text2)" id="activity-subtitle">آخر 200 عملية</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadActivityLog()">🔄 تحديث</button>
+        </div>
+
+        <!-- Filters -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px">
+          <select id="actFilter-action" onchange="renderActivityLog()"
+            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <option value="">كل العمليات</option>
+            <option value="INSERT">➕ إضافة</option>
+            <option value="UPDATE">✏️ تعديل</option>
+            <option value="DELETE">🗑 حذف</option>
+          </select>
+          <select id="actFilter-user" onchange="renderActivityLog()"
+            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <option value="">كل المستخدمين</option>
+          </select>
+          <select id="actFilter-table" onchange="renderActivityLog()"
+            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <option value="">كل الجداول</option>
+            <option value="purchase_orders">أوامر الشراء</option>
+            <option value="sales">المبيعات</option>
+            <option value="expenses">المصاريف</option>
+            <option value="payments">الدفعات</option>
+            <option value="collections">التحصيلات</option>
+            <option value="partner_payouts">صرف الشركاء</option>
+            <option value="vehicles">السيارات</option>
+          </select>
+          <input type="date" id="actFilter-from" onchange="renderActivityLog()"
+            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <span style="color:var(--text2);font-size:12px">—</span>
+          <input type="date" id="actFilter-to" onchange="renderActivityLog()"
+            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <button class="btn btn-secondary btn-sm" onclick="clearActivityFilters()">✕ مسح</button>
+        </div>
+
+        <div id="activityTableWrap" class="data-table-wrap"></div>
+
+        <!-- Detail overlay -->
+        <div id="activity-detail" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:20px">
+          <div style="background:var(--card);border-radius:var(--radius);width:min(600px,95vw);max-height:80vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:fadeSlideIn .25s ease">
+            <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+              <div style="font-size:13px;font-weight:700" id="act-detail-title">تفاصيل العملية</div>
+              <button onclick="el('activity-detail').style.display='none'" style="background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-family:'Cairo',sans-serif;font-size:13px">✕</button>
+            </div>
+            <div id="act-detail-body" style="padding:16px 20px;overflow-y:auto;flex:1;font-size:12px"></div>
           </div>
         </div>
-        <div id="activityTableWrap" class="data-table-wrap"></div>
+
+      </div>
+
+      <!-- ════ APPROVAL QUEUE ════ -->
+      <div id="approvalView" style="display:none">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div>
+            <div style="font-size:16px;font-weight:900">✅ قائمة الموافقات</div>
+            <div style="font-size:12px;color:var(--text2)" id="approval-subtitle">العمليات المعلقة للمراجعة</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary btn-sm" onclick="loadApprovalQueue()">🔄 تحديث</button>
+            <button class="btn btn-primary btn-sm" onclick="approveAll()" id="approve-all-btn" style="display:none">✅ موافقة على الكل</button>
+          </div>
+        </div>
+
+        <!-- فلتر النوع -->
+        <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+          <button class="btn btn-sm approval-filter-btn active" id="af-all"       onclick="filterApproval('all')">الكل <span id="af-count-all"        style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn"        id="af-sale"      onclick="filterApproval('sale')">🧾 مبيعات <span id="af-count-sale"       style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn"        id="af-expense"   onclick="filterApproval('expense')">💸 مصاريف <span id="af-count-expense"     style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn"        id="af-collection" onclick="filterApproval('collection')">💰 تحصيلات <span id="af-count-collection" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn"        id="af-payment"   onclick="filterApproval('payment')">💳 دفعات مورد <span id="af-count-payment"   style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn"        id="af-payout"    onclick="filterApproval('payout')">👥 صرف شركاء <span id="af-count-payout"    style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+        </div>
+
+        <!-- القائمة -->
+        <div id="approval-list">
+          <div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>
+        </div>
+
       </div>
 
       <!-- SETTINGS VIEW -->
@@ -2378,8 +2460,15 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       <div class="divider-label">١ — بيانات الصفقة</div>
       <div class="form-row">
         <div class="field">
-          <label>رقم الملف</label>
-          <input type="text" id="nf-fileNo" placeholder="مثال: BOX-001" style="direction:ltr">
+          <label style="display:flex;align-items:center;justify-content:space-between">
+            رقم الملف
+            <span style="font-size:10px;background:var(--accent-dim);color:var(--accent);padding:1px 7px;border-radius:10px;font-weight:700">🔄 تلقائي</span>
+          </label>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="nf-fileNo" placeholder="مثال: BOX-001" style="direction:ltr;flex:1">
+            <button type="button" onclick="regenFileNo()" title="توليد رقم جديد"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;cursor:pointer;font-size:13px;flex-shrink:0">🔄</button>
+          </div>
         </div>
         <div class="field">
           <label>التاريخ *</label>
@@ -2613,8 +2702,15 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       <div class="divider-label">بيانات الفاتورة</div>
       <div class="form-row">
         <div class="field">
-          <label>رقم الفاتورة / Invoice No *</label>
-          <input type="text" id="sale-invNo" placeholder="INV-2025-001">
+          <label style="display:flex;align-items:center;justify-content:space-between">
+            رقم الفاتورة *
+            <span style="font-size:10px;background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-weight:700">🔄 تلقائي</span>
+          </label>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="sale-invNo" placeholder="INV-BOX-001-001" style="direction:ltr;flex:1">
+            <button type="button" onclick="regenInvNo()" title="توليد رقم جديد"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;cursor:pointer;font-size:13px;flex-shrink:0">🔄</button>
+          </div>
         </div>
         <div class="field">
           <label>تاريخ الفاتورة / Date *</label>
@@ -3779,6 +3875,9 @@ async function loadDashboard() {
 
     // ── لو كان drill-down مفتوح، نحدثه ──
     if (_ddState.type) renderDrillDown(_ddState.type);
+
+    // تحديث badge الموافقات
+    if (can('roles')) updateApprovalBadge();
 
   } catch(e) {
     showErr('dealsTableBody', 'خطأ في تحميل البيانات: ' + e.message);
@@ -5857,7 +5956,7 @@ async function submitExpense() {
         expense_date:date,
         notes:       exp.notes || null,
         ref_no:      refNo
-      };
+      , post_status:'draft'};
       await apiPost('expenses', data);
       await logAudit('INSERT','expenses', expFileNo, null, data);
     }
@@ -5901,7 +6000,7 @@ async function submitPayment() {
       payer, amount, pay_method: method,
       document: doc||null, pay_date: date,
       notes: notes||null
-    };
+    , post_status:'draft'};
     await apiPost('payments', data);
     await logAudit('INSERT','payments',fn,null,data);
     const poArr = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
@@ -6155,7 +6254,7 @@ async function submitSale() {
       const data = {
         system_type: state.system, file_no: item.fileNo||fn,
         inv_no: invNo, vin: item.vin||null, customer,
-        sale_price: item.price, sale_date: date, notes: item.vnote||notes||null
+        sale_price: item.price, sale_date: date, post_status:'draft', notes: item.vnote||notes||null
       };
       await apiPost('sales', data);
       insertedSales.push(data);
@@ -6326,7 +6425,7 @@ async function submitCollection() {
       pay_method: method, document: doc||null,
       due_date: due||null, paid_date: paid||null, notes: notes||null,
       ref_no: refNo
-    };
+    , post_status:'draft'};
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
     if (cust) await postLedger({ contactName:cust, contactType:'customer', date:paid||today(),
@@ -6823,7 +6922,7 @@ async function submitQuickSale() {
   }
   try {
     const data = { system_type:state.system, file_no:fileNo, vin, customer,
-      invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null };
+      invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:'draft'};
     await apiPost('sales', data);
     await logAudit('INSERT','sales',fileNo,null,data);
     await postLedger({ contactName:customer, contactType:'customer', date,
@@ -6869,7 +6968,7 @@ async function submitQuickCollection() {
       vin: vin||null, amount, pay_method: method,
       document: doc||null, due_date: due||null,
       paid_date: paid, notes: notes||null, ref_no: refNo
-    };
+    , post_status:'draft'};
     await apiPost('collections', data);
     await logAudit('INSERT','collections', fileNo, null, data);
     if (customer) await postLedger({
@@ -6902,7 +7001,7 @@ async function submitQuickExpense() {
     const refNo = (await genSeqRef('EXP', state.system, fileNo, 'expenses')) || `EXP-${fileNo}-${Date.now()}`;
     const data = { system_type:state.system, file_no:fileNo, description:desc,
       pay_id:refNo, category:type, amount, pay_method:method, document:doc||null,
-      exp_date:date, expense_date:date, notes:notes||null, ref_no:refNo };
+      exp_date: date, expense_date:date, notes:notes||null, ref_no:refNo };
     await apiPost('expenses', data);
     await logAudit('INSERT','expenses',fileNo,null,data);
     closeModal('quickExpenseModal');
@@ -6982,7 +7081,7 @@ async function submitQuickPayment() {
     const supplierName = el('qp-card-supplier')?.textContent || '';
     const data = { system_type:state.system, file_no:fileNo, payer, amount,
       pay_id:refNo, ref_no:refNo,
-      pay_method:method, document:doc||null, pay_date:date, notes:notes||null };
+      pay_method:method, document:doc||null, pay_date: date, notes:notes||null };
     await apiPost('payments', data);
     await logAudit('INSERT','payments', fileNo, null, data);
     if (supplierName && supplierName !== '—') {
@@ -7027,7 +7126,7 @@ async function submitQuickPayout() {
     } catch(e) {}
     const data = { system_type:state.system, file_no:fileNo, partner,
       pay_id, payout_type:type, amount, pay_method:method, document:doc||null,
-      pay_date:date, notes:notes||null };
+      pay_date: date, notes:notes||null };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
     await postLedger({ contactName:partner, contactType:'partner', date,
@@ -8448,7 +8547,7 @@ async function deleteContact(id, name) {
 // hideAllViews helper
 // ════════════════════════════════════════
 function hideAllViews() {
-  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView']
+  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView']
     .forEach(id => {
       const e = el(id);
       if (e) {
@@ -8599,13 +8698,19 @@ async function submitEditVehicle() {
 }
 
 
-// apiDelete helper — includes permission guard
+// apiDelete helper — includes permission guard + auto audit log
 const apiDelete = async function(table, matchParams) {
   const protectedTables = ['purchase_orders','vehicles','sales','expenses','payments','collections','partner_payouts','contacts'];
   if (protectedTables.includes(table) && !can('delete')) {
     toast('🔒 ليس لديك صلاحية الحذف', 'err');
     throw new Error('غير مصرح بالحذف');
   }
+  // Log the delete action
+  try {
+    const fileNo = matchParams?.file_no?.replace('eq.','') || matchParams?.id?.replace('eq.','') || null;
+    logAudit('DELETE', table, fileNo, null, matchParams, `حذف من جدول ${table}`);
+  } catch(e) {}
+
   let url = `${SB_URL}/rest/v1/${table}?`;
   for (const [k,v] of Object.entries(matchParams)) url += `${k}=${encodeURIComponent(v)}&`;
   let res = await fetch(url, { method:'DELETE', headers: headers({'Prefer':'return=representation'}) });
@@ -9658,6 +9763,35 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       // الرصيد المستحق
       const netDue = capitalPaid + myProfit - totalWithdrawn;
 
+      // ما دفعه كل شركاء الصفقة (مش بس الشريك المطلوب)
+      const allPartnersPayments = await apiGet('payments', {
+        select:'payer,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}`
+      });
+
+      // احسب ما دفعه كل شريك فعلاً
+      const paidByPartner = {};
+      (allPartnersPayments||[]).forEach(p => {
+        paidByPartner[p.payer] = (paidByPartner[p.payer]||0) + (+p.amount||0);
+      });
+
+      // حصة كل شريك المفروض يدفعها
+      const shouldPayMap = {};
+      (allPartners||[]).forEach(p => {
+        shouldPayMap[p.partner] = totalPurchase * ((+p.share_percent||0)/100);
+      });
+
+      // الديون بين الشركاء
+      const partnerDebts = [];
+      (allPartners||[]).forEach(p => {
+        const name      = p.partner;
+        const shouldPay = shouldPayMap[name] || 0;
+        const didPay    = paidByPartner[name] || 0;
+        const diff      = didPay - shouldPay; // موجب = دفع زيادة، سالب = دفع أقل
+        if (Math.abs(diff) > 0.001) {
+          partnerDebts.push({ name, shouldPay, didPay, diff });
+        }
+      });
+
       return {
         fn, share, poData, vehicles: vehicles||[], expenses: expenses||[],
         sales: sales||[], allPartners: allPartners||[],
@@ -9667,6 +9801,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         capitalPaid, capitalRet, profitTaken, advances, totalWithdrawn, netDue,
         status: poData.status || '—', supplier: poData.supplier || '—',
         poDate: poData.po_date || poData.created_at || '',
+        partnerDebts, paidByPartner, shouldPayMap,
       };
     }));
 
@@ -9850,6 +9985,62 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
             </div>
           </div>
 
+          <!-- ديون بين الشركاء -->
+          ${d.partnerDebts && d.partnerDebts.length ? `
+          <div style="margin-bottom:14px">
+            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">⚖️ تسوية بين الشركاء</div>
+            <div style="background:#f8fafc;border-radius:8px;padding:12px;border:1px solid #e2e8f0">
+              <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <thead>
+                  <tr style="background:#f1f5f9">
+                    <th style="padding:7px 10px;text-align:right;color:#64748b">الشريك</th>
+                    <th style="padding:7px 10px;text-align:right;color:#64748b">حصته المفروض</th>
+                    <th style="padding:7px 10px;text-align:right;color:#64748b">دفع فعلاً</th>
+                    <th style="padding:7px 10px;text-align:right;color:#64748b">الفرق</th>
+                    <th style="padding:7px 10px;text-align:right;color:#64748b">الوضع</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(d.allPartners||[]).map(p => {
+                    const should = d.shouldPayMap[p.partner] || 0;
+                    const did    = d.paidByPartner[p.partner] || 0;
+                    const diff   = did - should;
+                    const isMe   = p.partner === partnerName;
+                    return `<tr style="border-bottom:1px solid #f1f5f9;${isMe?'background:#fef9ec;font-weight:700':''}">
+                      <td style="padding:7px 10px">${p.partner}${isMe?' ★':''}</td>
+                      <td style="padding:7px 10px;font-family:monospace">${fmt2(should)}</td>
+                      <td style="padding:7px 10px;font-family:monospace">${fmt2(did)}</td>
+                      <td style="padding:7px 10px;font-family:monospace;color:${diff>0?'#16a34a':diff<0?'#dc2626':'#64748b'};font-weight:700">
+                        ${diff>0?'+':''}${fmt2(diff)}
+                      </td>
+                      <td style="padding:7px 10px">
+                        ${diff > 0.001 
+                          ? `<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">دفع زيادة — يستحق ${fmt2(diff)}</span>`
+                          : diff < -0.001
+                          ? `<span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">مدين بـ ${fmt2(Math.abs(diff))}</span>`
+                          : `<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">✓ مسوّى</span>`}
+                      </td>
+                    </tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+              ${d.partnerDebts.length ? `
+              <div style="margin-top:10px;padding:10px;background:#fff;border-radius:6px;border:1px solid #e2e8f0;font-size:12px">
+                ${d.partnerDebts.filter(x=>x.diff>0).map(creditor => {
+                  const debtors = d.partnerDebts.filter(x=>x.diff<0);
+                  return debtors.map(debtor => `
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                      <span style="color:#dc2626;font-weight:700">${debtor.name}</span>
+                      <span style="color:#64748b">مدين لـ</span>
+                      <span style="color:#16a34a;font-weight:700">${creditor.name}</span>
+                      <span style="color:#64748b">بمبلغ</span>
+                      <span style="font-family:monospace;font-weight:700;color:#1d4ed8">${fmt2(Math.min(Math.abs(debtor.diff), creditor.diff))}</span>
+                    </div>`).join('');
+                }).join('')}
+              </div>` : ''}
+            </div>
+          </div>` : ''}
+
           <!-- الحركات المالية للشريك -->
           <div>
             <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">الحركات المالية</div>
@@ -9913,6 +10104,16 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         </div>
       </div>`).join('');
 
+    // حساب إجمالي الديون للشريك المطلوب عبر كل الصفقات
+    const totalOverpaid  = dealDetails.reduce((s,d) => {
+      const diff = (d.paidByPartner?.[partnerName]||0) - (d.shouldPayMap?.[partnerName]||0);
+      return s + (diff > 0 ? diff : 0);
+    }, 0);
+    const totalUnderpaid = dealDetails.reduce((s,d) => {
+      const diff = (d.paidByPartner?.[partnerName]||0) - (d.shouldPayMap?.[partnerName]||0);
+      return s + (diff < 0 ? Math.abs(diff) : 0);
+    }, 0);
+
     // ── الملخص الشامل (لو أكثر من صفقة) ──
     const summaryBlock = dealDetails.length > 1 ? `
       <div style="background:#1a1a2e;color:#fff;border-radius:12px;padding:20px;margin-bottom:24px">
@@ -9945,6 +10146,26 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
             <div style="font-family:monospace;font-size:20px;font-weight:900;color:${grandNetDue>=0?'#4ade80':'#f87171'}">${grandNetDue>=0?'+':''}${fmt2(grandNetDue)}</div>
           </div>
         </div>
+        ${(totalOverpaid > 0.001 || totalUnderpaid > 0.001) ? `
+        <div style="margin-top:12px;border-top:1px solid #ffffff22;padding-top:12px">
+          <div style="font-size:11px;opacity:.7;margin-bottom:8px">⚖️ وضع التسوية مع الشركاء</div>
+          ${totalOverpaid > 0.001 ? `
+          <div style="background:#16a34a22;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:6px">
+            <span style="color:#4ade80;font-weight:700">${partnerName}</span>
+            <span style="opacity:.8"> دفع زيادة عن حصته بإجمالي </span>
+            <span style="font-family:monospace;font-weight:900;color:#4ade80">+${fmt2(totalOverpaid)}</span>
+            <span style="opacity:.8"> — يستحق استردادها من الشركاء</span>
+          </div>` : ''}
+          ${totalUnderpaid > 0.001 ? `
+          <div style="background:#dc262622;border-radius:6px;padding:8px 12px;font-size:12px">
+            <span style="color:#f87171;font-weight:700">${partnerName}</span>
+            <span style="opacity:.8"> لم يدفع كامل حصته — متبقي عليه </span>
+            <span style="font-family:monospace;font-weight:900;color:#f87171">${fmt2(totalUnderpaid)}</span>
+          </div>` : ''}
+        </div>` : `
+        <div style="margin-top:10px;border-top:1px solid #ffffff22;padding-top:10px;text-align:center;font-size:11px;opacity:.6">
+          ✓ التسوية مع الشركاء مكتملة
+        </div>`}
       </div>` : '';
 
     // ── التجميع الكامل ──
@@ -10746,59 +10967,145 @@ async function loadActivityLog() {
   } catch(e) { el('activityTableWrap').innerHTML = errHTML('خطأ: '+e.message); }
 }
 
+function clearActivityFilters() {
+  ['actFilter-action','actFilter-user','actFilter-table','actFilter-from','actFilter-to']
+    .forEach(id => { const e = el(id); if(e) e.value = ''; });
+  renderActivityLog();
+}
+
 function renderActivityLog() {
-  const filterUser   = el('actFilter-user')?.value || '';
+  const filterUser   = el('actFilter-user')?.value   || '';
   const filterAction = el('actFilter-action')?.value || '';
+  const filterTable  = el('actFilter-table')?.value  || '';
+  const filterFrom   = el('actFilter-from')?.value   || '';
+  const filterTo     = el('actFilter-to')?.value     || '';
+
   let list = _activityData;
-  if (filterUser)   list = list.filter(r => r.user_email === filterUser);
-  if (filterAction) list = list.filter(r => r.action === filterAction);
+  if (filterUser)   list = list.filter(r => r.user_email  === filterUser);
+  if (filterAction) list = list.filter(r => r.action      === filterAction);
+  if (filterTable)  list = list.filter(r => r.table_name  === filterTable);
+  if (filterFrom)   list = list.filter(r => (r.created_at||'') >= filterFrom);
+  if (filterTo)     list = list.filter(r => (r.created_at||'').split('T')[0] <= filterTo);
+
+  if(el('activity-subtitle')) el('activity-subtitle').textContent = `${list.length} سجل`;
 
   if (!list.length) { el('activityTableWrap').innerHTML = emptyHTML('🕵️','لا توجد سجلات'); return; }
 
   const actionColors = { INSERT:'var(--green)', UPDATE:'var(--accent)', DELETE:'var(--red)' };
-  const actionLabels = { INSERT:'إضافة', UPDATE:'تعديل', DELETE:'حذف' };
+  const actionLabels = { INSERT:'➕ إضافة', UPDATE:'✏️ تعديل', DELETE:'🗑 حذف' };
   const actionBg     = { INSERT:'var(--green-dim)', UPDATE:'var(--accent-dim)', DELETE:'var(--red-dim)' };
+  const tableLabels  = {
+    purchase_orders:'أوامر الشراء', sales:'المبيعات', expenses:'المصاريف',
+    payments:'الدفعات', collections:'التحصيلات', partner_payouts:'صرف الشركاء',
+    vehicles:'السيارات', contacts:'جهات الاتصال', user_roles:'المستخدمين',
+    operating_expenses:'التشغيلية',
+  };
 
   const rows = list.map(r => {
-    const dt = r.created_at ? new Date(r.created_at).toLocaleString('ar-EG') : '—';
-    const email = r.user_email || 'غير معروف';
+    const dt       = r.created_at ? new Date(r.created_at).toLocaleString('ar-KW') : '—';
+    const email    = r.user_email || 'غير معروف';
     const initials = email[0]?.toUpperCase() || '?';
-    return `<tr>
-      <td style="padding:10px 14px;font-size:11px;color:var(--text3);white-space:nowrap">${dt}</td>
-      <td style="padding:10px 14px">
+    const hasDetail= r.new_val || r.old_val || r.notes;
+    return `
+    <tr onclick="${hasDetail ? `showActivityDetail('${r.id}')` : ''}"
+      style="cursor:${hasDetail?'pointer':'default'};transition:background .1s"
+      onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
+      <td style="padding:9px 12px;font-size:11px;color:var(--text2);white-space:nowrap">${dt}</td>
+      <td style="padding:9px 12px">
         <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:28px;height:28px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--accent)">${initials}</div>
-          <span style="font-size:12px;font-weight:600">${email}</span>
+          <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:var(--accent);flex-shrink:0">${initials}</div>
+          <span style="font-size:12px">${email}</span>
         </div>
       </td>
-      <td style="padding:10px 14px">
-        <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;background:${actionBg[r.action]||'var(--card2)'};color:${actionColors[r.action]||'var(--text2)'}">
+      <td style="padding:9px 12px">
+        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:${actionBg[r.action]||'var(--card2)'};color:${actionColors[r.action]||'var(--text2)'}">
           ${actionLabels[r.action]||r.action}
         </span>
       </td>
-      <td style="padding:10px 14px;font-size:12px;color:var(--text2)">${r.table_name||'—'}</td>
-      <td style="padding:10px 14px;font-size:12px;font-weight:700;color:var(--accent)">${r.file_no||'—'}</td>
-      <td style="padding:10px 14px;font-size:11px;color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.notes||'—'}</td>
+      <td style="padding:9px 12px;font-size:12px;color:var(--text2)">${tableLabels[r.table_name]||r.table_name||'—'}</td>
+      <td style="padding:9px 12px;font-size:12px;font-weight:700;color:var(--accent);font-family:monospace">${r.file_no||'—'}</td>
+      <td style="padding:9px 12px;font-size:11px;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.notes||'—'}</td>
+      <td style="padding:9px 12px">${hasDetail ? '<span style="font-size:10px;color:var(--blue)">تفاصيل ←</span>' : ''}</td>
     </tr>`;
   }).join('');
 
   el('activityTableWrap').innerHTML = `
     <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-      <table style="width:100%;border-collapse:collapse">
-        <thead>
-          <tr style="background:var(--card2);border-bottom:1px solid var(--border)">
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">الوقت</th>
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">المستخدم</th>
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">العملية</th>
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">الجدول</th>
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">رقم الملف</th>
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">ملاحظات</th>
-          </tr>
-        </thead>
+      <table class="data-table">
+        <thead><tr>
+          <th>الوقت</th><th>المستخدم</th><th>العملية</th>
+          <th>الجدول</th><th>رقم الملف</th><th>ملاحظات</th><th></th>
+        </tr></thead>
         <tbody>${rows}</tbody>
       </table>
-    </div>
-    <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:left">إجمالي: ${list.length} سجل</div>`;
+    </div>`;
+}
+
+function showActivityDetail(id) {
+  const r = _activityData.find(x => String(x.id) === String(id));
+  if (!r) return;
+
+  const actionColors = { INSERT:'var(--green)', UPDATE:'var(--accent)', DELETE:'var(--red)' };
+  const actionLabels = { INSERT:'➕ إضافة', UPDATE:'✏️ تعديل', DELETE:'🗑 حذف' };
+
+  let detailHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">المستخدم</div>
+        <div style="font-weight:600">${r.user_email||'—'}</div>
+      </div>
+      <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">الوقت</div>
+        <div style="font-weight:600;font-size:11px">${r.created_at ? new Date(r.created_at).toLocaleString('ar-KW') : '—'}</div>
+      </div>
+      <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">العملية</div>
+        <div style="font-weight:700;color:${actionColors[r.action]||'var(--text)'}">${actionLabels[r.action]||r.action}</div>
+      </div>
+      <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">الملف</div>
+        <div style="font-weight:700;color:var(--accent);font-family:monospace">${r.file_no||'—'}</div>
+      </div>
+    </div>`;
+
+  if (r.notes) {
+    detailHTML += `
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">ملاحظات</div>
+      <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px;font-size:12px">${r.notes}</div>
+    </div>`;
+  }
+
+  // Old/New values
+  if (r.old_value) {
+    try {
+      const old = typeof r.old_value === 'string' ? JSON.parse(r.old_value) : r.old_value;
+      detailHTML += `
+      <div style="margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px">القيمة قبل التعديل</div>
+        <div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px;font-family:monospace;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">
+          ${JSON.stringify(old, null, 2)}
+        </div>
+      </div>`;
+    } catch(e) { detailHTML += `<div style="margin-bottom:12px;font-size:11px;color:var(--text2)">القيمة القديمة: ${r.old_value}</div>`; }
+  }
+
+  if (r.new_value) {
+    try {
+      const nw = typeof r.new_value === 'string' ? JSON.parse(r.new_value) : r.new_value;
+      detailHTML += `
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:6px">البيانات المضافة / بعد التعديل</div>
+        <div style="background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:10px;font-family:monospace;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">
+          ${JSON.stringify(nw, null, 2)}
+        </div>
+      </div>`;
+    } catch(e) { detailHTML += `<div style="font-size:11px;color:var(--text2)">البيانات: ${r.new_value}</div>`; }
+  }
+
+  el('act-detail-title').textContent = `🕵️ تفاصيل — ${r.table_name||'—'} — ${r.file_no||'—'}`;
+  el('act-detail-body').innerHTML = detailHTML;
+  el('activity-detail').style.display = 'flex';
 }
 
 // ════════════════════════════════════════
@@ -11934,6 +12241,255 @@ function renderDDChart(entries, color) {
   }).join('');
   labelsWrap.innerHTML = entries.slice(0,10).map(([label])=>`
     <div style="flex:1;text-align:center;font-size:9px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${label}</div>`).join('');
+}
+
+// ── Regenerate file number ──
+async function regenFileNo() {
+  try {
+    const sys  = state.system;
+    const all  = await apiGet('purchase_orders', { select:'file_no', system_type:`eq.${sys}`, order:'created_at.desc' });
+    const nums = (all||[]).map(d => { const m=(d.file_no||'').match(/(\d+)$/); return m?parseInt(m[1]):0; });
+    const next = (nums.length ? Math.max(...nums) : 0) + 1;
+    el('nf-fileNo').value = `${sys}-${String(next).padStart(3,'0')}`;
+    el('nf-fileNo').style.borderColor = 'var(--accent)';
+    setTimeout(() => el('nf-fileNo').style.borderColor = '', 1000);
+  } catch(e) { toast('خطأ في توليد الرقم','err'); }
+}
+
+// ── Regenerate invoice number ──
+async function regenInvNo() {
+  try {
+    const fn  = state.currentFileNo || el('nf-fileNo')?.value?.trim();
+    const sys = state.system;
+    if (!fn) { toast('حدد رقم الملف أولاً','err'); return; }
+    const existing = await apiGet('sales', { select:'inv_no', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'created_at.desc' });
+    const nums = (existing||[]).map(s => { const m=(s.inv_no||'').match(/(\d+)$/); return m?parseInt(m[1]):0; });
+    const next = (nums.length ? Math.max(...nums) : 0) + 1;
+    el('sale-invNo').value = `INV-${fn}-${String(next).padStart(3,'0')}`;
+    el('sale-invNo').style.borderColor = 'var(--green)';
+    setTimeout(() => el('sale-invNo').style.borderColor = '', 1000);
+  } catch(e) { toast('خطأ في توليد رقم الفاتورة','err'); }
+}
+
+// ════════════════════════════════════════
+// APPROVAL QUEUE
+// ════════════════════════════════════════
+const approvalState = { all: [], filtered: [], currentType: 'all', currentItem: null };
+
+const APPROVAL_CONFIG = {
+  sale:       { icon:'🧾', label:'بيع',         color:'var(--green)',  table:'sales',           amountField:'sale_price',   dateField:'sale_date',  descFields:['inv_no','customer','vin'] },
+  expense:    { icon:'💸', label:'مصروف',       color:'var(--red)',    table:'expenses',         amountField:'amount',       dateField:'exp_date',   descFields:['description','exp_type','file_no'] },
+  collection: { icon:'💰', label:'تحصيل',       color:'var(--blue)',   table:'collections',      amountField:'amount',       dateField:'paid_date',  descFields:['inv_no','customer','file_no'] },
+  payment:    { icon:'💳', label:'دفعة مورد',   color:'var(--cyan)',   table:'payments',         amountField:'amount',       dateField:'pay_date',   descFields:['payer','file_no','pay_method'] },
+  payout:     { icon:'👥', label:'صرف شريك',   color:'var(--purple)', table:'partner_payouts',  amountField:'amount',       dateField:'pay_date',   descFields:['partner','payout_type','file_no'] },
+};
+
+async function showApprovalQueue() {
+  if (!can('roles')) { toast('🔒 هذه الصفحة للمدراء فقط','err'); return; }
+  hideAllViews();
+  el('approvalView').style.display = 'block';
+  el('topBarTitle').textContent = 'قائمة الموافقات';
+  navActive('nav-approval');
+  sessionStorage.setItem('tm_last_view','approval');
+  await loadApprovalQueue();
+}
+
+async function loadApprovalQueue() {
+  const wrap = el('approval-list');
+  setLoading('approval-list');
+
+  try {
+    const sys = state.system;
+
+    // جيب كل البنود المعلقة من كل الجداول بالتوازي
+    const [sales, expenses, collections, payments, payouts] = await Promise.all([
+      apiGet('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+      apiGet('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+      apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+    ]);
+
+    // دمج كل البنود مع نوعها
+    approvalState.all = [
+      ...(sales||[]).map(r       => ({...r, _type:'sale',       _amount:+r.sale_price||0,  _date:r.sale_date,  _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.vin||'—'}`,       _file:r.file_no })),
+      ...(expenses||[]).map(r    => ({...r, _type:'expense',    _amount:+r.amount||0,       _date:r.exp_date||r.expense_date, _desc:`${r.description||'—'} · ${r.exp_type||'—'} · ${r.file_no||'—'}`, _file:r.file_no })),
+      ...(collections||[]).map(r => ({...r, _type:'collection', _amount:+r.amount||0,       _date:r.paid_date||r.due_date,    _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.file_no||'—'}`,      _file:r.file_no })),
+      ...(payments||[]).map(r    => ({...r, _type:'payment',    _amount:+r.amount||0,       _date:r.pay_date,   _desc:`${r.payer||'—'} · ${r.file_no||'—'} · ${r.pay_method||'—'}`,  _file:r.file_no })),
+      ...(payouts||[]).map(r     => ({...r, _type:'payout',     _amount:+r.amount||0,       _date:r.pay_date,   _desc:`${r.partner||'—'} · ${r.payout_type||'—'} · ${r.file_no||'—'}`, _file:r.file_no })),
+    ].sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
+
+    // تحديث الـ badge في الـ sidebar
+    const total = approvalState.all.length;
+    const badge = el('approval-badge');
+    if (badge) { badge.textContent = total || ''; badge.style.display = total ? '' : 'none'; }
+
+    // تحديث الـ subtitle
+    if (el('approval-subtitle')) el('approval-subtitle').textContent = `${total} عملية معلقة للمراجعة`;
+
+    // تحديث counts
+    Object.keys(APPROVAL_CONFIG).forEach(type => {
+      const cnt = el(`af-count-${type}`);
+      if (cnt) cnt.textContent = approvalState.all.filter(r=>r._type===type).length || '';
+    });
+    const cntAll = el('af-count-all');
+    if (cntAll) cntAll.textContent = total || '';
+
+    // زر موافقة على الكل
+    if (el('approve-all-btn')) el('approve-all-btn').style.display = total ? '' : 'none';
+
+    filterApproval(approvalState.currentType);
+
+  } catch(e) {
+    wrap.innerHTML = `<div class="alert alert-err">خطأ: ${e.message}</div>`;
+  }
+}
+
+function filterApproval(type) {
+  approvalState.currentType = type;
+  document.querySelectorAll('.approval-filter-btn').forEach(b => b.classList.remove('active'));
+  el('af-' + type)?.classList.add('active');
+
+  approvalState.filtered = type === 'all'
+    ? approvalState.all
+    : approvalState.all.filter(r => r._type === type);
+
+  renderApprovalList();
+}
+
+function renderApprovalList() {
+  const wrap = el('approval-list');
+  const items = approvalState.filtered;
+
+  if (!items.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="e-icon">✅</div><p>لا توجد عمليات معلقة</p><small>كل العمليات تمت الموافقة عليها</small></div>`;
+    return;
+  }
+
+  wrap.innerHTML = items.map(r => {
+    const cfg = APPROVAL_CONFIG[r._type];
+    return `
+    <div class="approval-row" onclick="openApprovalDetail('${r._type}','${r.id}')">
+      <div class="approval-row-icon" style="background:${cfg.color}22;color:${cfg.color}">${cfg.icon}</div>
+      <div class="approval-row-body">
+        <div class="approval-row-title">${cfg.label} — ${r._desc}</div>
+        <div class="approval-row-meta">
+          ${fmtDate(r._date)} 
+          ${r._file ? `· <span style="color:var(--accent);font-family:monospace">${r._file}</span>` : ''}
+          · <span style="color:var(--text2)">${r.ref_no||r.pay_id||r.inv_no||'—'}</span>
+        </div>
+      </div>
+      <div class="approval-row-amount" style="color:${cfg.color}">${fmt(r._amount)}</div>
+      <div class="approval-row-actions" onclick="event.stopPropagation()">
+        <button class="btn btn-sm" onclick="approveItem('${r._type}','${r.id}')"
+          style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);padding:4px 10px">✓</button>
+        <button class="btn btn-sm" onclick="rejectItem('${r._type}','${r.id}')"
+          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);padding:4px 10px">✗</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function openApprovalDetail(type, id) {
+  const cfg  = APPROVAL_CONFIG[type];
+  const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+  if (!item) return;
+
+  approvalState.currentItem = { type, id, item };
+
+  el('approval-detail-title').innerHTML = `${cfg.icon} تفاصيل ${cfg.label}`;
+  el('approval-approve-btn').onclick = () => approveFromDetail();
+  el('approval-reject-btn').onclick  = () => rejectFromDetail();
+
+  // بناء جدول التفاصيل
+  const fields = Object.entries(item).filter(([k]) => !k.startsWith('_') && k !== 'post_status');
+  el('approval-detail-body').innerHTML = `
+    <div style="background:${cfg.color}11;border:1px solid ${cfg.color}33;border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:11px;color:${cfg.color};font-weight:700;margin-bottom:2px">${cfg.label}</div>
+        <div style="font-size:12px;color:var(--text2)">${item._desc}</div>
+      </div>
+      <div style="font-size:20px;font-weight:900;color:${cfg.color};font-family:monospace">${fmt(item._amount)}</div>
+    </div>
+    <table class="data-table" style="font-size:12px">
+      <tbody>
+        ${fields.map(([k,v]) => v !== null && v !== undefined && v !== '' ? `
+        <tr>
+          <td style="color:var(--text2);font-weight:500;width:40%">${k}</td>
+          <td style="font-family:monospace">${v}</td>
+        </tr>` : '').join('')}
+      </tbody>
+    </table>`;
+
+  el('approval-detail').style.display = 'flex';
+}
+
+function closeApprovalDetail() {
+  el('approval-detail').style.display = 'none';
+  approvalState.currentItem = null;
+}
+
+async function approveItem(type, id) {
+  const cfg = APPROVAL_CONFIG[type];
+  try {
+    await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'posted' });
+    toast(`✅ تمت الموافقة على ${cfg.label}`,'ok');
+    await loadApprovalQueue();
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
+async function rejectItem(type, id) {
+  const cfg = APPROVAL_CONFIG[type];
+  showConfirm(`رفض ${cfg.label}`, 'سيتم حذف هذه العملية نهائياً. هل أنت متأكد؟', async () => {
+    try {
+      await apiDelete(cfg.table, { id:`eq.${id}` });
+      toast(`تم رفض وحذف ${cfg.label}`,'ok');
+      await loadApprovalQueue();
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
+
+async function approveFromDetail() {
+  if (!approvalState.currentItem) return;
+  const { type, id } = approvalState.currentItem;
+  closeApprovalDetail();
+  await approveItem(type, id);
+}
+
+async function rejectFromDetail() {
+  if (!approvalState.currentItem) return;
+  const { type, id } = approvalState.currentItem;
+  closeApprovalDetail();
+  await rejectItem(type, id);
+}
+
+async function approveAll() {
+  const items = approvalState.filtered;
+  if (!items.length) return;
+  showConfirm(`موافقة على الكل`, `هل تريد الموافقة على ${items.length} عملية دفعة واحدة؟`, async () => {
+    try {
+      await Promise.all(items.map(r => apiPatch(APPROVAL_CONFIG[r._type].table, { id:`eq.${r.id}` }, { post_status:'posted' })));
+      toast(`✅ تمت الموافقة على ${items.length} عملية`,'ok');
+      await loadApprovalQueue();
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
+
+// تحديث badge في الـ sidebar عند تحميل أي صفحة
+async function updateApprovalBadge() {
+  try {
+    const sys = state.system;
+    const [s,e,c,p,po] = await Promise.all([
+      apiGet('sales',           { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
+      apiGet('expenses',        { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
+      apiGet('collections',     { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
+      apiGet('payments',        { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
+      apiGet('partner_payouts', { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
+    ]);
+    const total = (s?.length||0)+(e?.length||0)+(c?.length||0)+(p?.length||0)+(po?.length||0);
+    const badge = el('approval-badge');
+    if (badge) { badge.textContent = total||''; badge.style.display = total?'':'none'; }
+  } catch(e) {}
 }
 
 // PWA Install prompt
