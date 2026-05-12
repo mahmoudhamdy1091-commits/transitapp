@@ -1168,6 +1168,8 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 .j-type-expense{border-right:3px solid var(--red)}
 .j-type-payment{border-right:3px solid var(--cyan)}
 .j-type-payout{border-right:3px solid var(--purple)}
+.j-type-purchase{border-right:3px solid var(--accent)}
+.j-type-opex{border-right:3px solid var(--text3)}
 /* Autocomplete dropdown */
 .ac-wrap{position:relative;width:100%}
 .ac-list{
@@ -1558,7 +1560,6 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         <div class="top-bar-sub" id="topBarSub">نظام BOX</div>
       </div>
       <div class="top-bar-actions">
-        <button class="btn btn-secondary btn-sm view-filter-btn" onclick="toggleViewFilter()" title="تبديل عرض البيانات" style="font-size:12px">👁 المرحَّل فقط</button>
         <button class="btn btn-primary btn-sm" onclick="openNewFileModal()">
           ➕ ملف جديد
         </button>
@@ -1853,12 +1854,13 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
             <div style="margin-right:auto;display:flex;align-items:center;gap:8px">
               <select id="jTypeFilter" onchange="renderJournalEntries()" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 12px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
                 <option value="all">كل الحركات</option>
-                <option value="sale">بيع</option>
-                <option value="collection">تحصيل</option>
-                <option value="expense">مصروف صفقة</option>
-                <option value="payment">دفعة مورد</option>
-                <option value="payout">صرف شريك</option>
-                <option value="opex">مصروف تشغيلي</option>
+                <option value="purchase">📋 سند شراء</option>
+                <option value="sale">🤝 بيع</option>
+                <option value="collection">💰 تحصيل</option>
+                <option value="expense">💸 مصروف صفقة</option>
+                <option value="payment">💳 دفعة مورد</option>
+                <option value="payout">👥 صرف شريك</option>
+                <option value="opex">💼 مصروف تشغيلي</option>
               </select>
               <button class="btn btn-secondary btn-sm" onclick="loadJournal()">🔄 تحديث</button>
             </div>
@@ -2105,13 +2107,12 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
         <!-- فلتر النوع -->
         <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
-          <button class="btn btn-sm approval-filter-btn active" id="af-all"        onclick="filterApproval('all')">الكل <span id="af-count-all" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn"        id="af-purchase"   onclick="filterApproval('purchase')">📋 شراء <span id="af-count-purchase" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn"        id="af-sale"       onclick="filterApproval('sale')">🧾 مبيعات <span id="af-count-sale" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn"        id="af-expense"    onclick="filterApproval('expense')">💸 مصاريف <span id="af-count-expense" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn active" id="af-all"       onclick="filterApproval('all')">الكل <span id="af-count-all"        style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn"        id="af-sale"      onclick="filterApproval('sale')">🧾 مبيعات <span id="af-count-sale"       style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn"        id="af-expense"   onclick="filterApproval('expense')">💸 مصاريف <span id="af-count-expense"     style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
           <button class="btn btn-sm approval-filter-btn"        id="af-collection" onclick="filterApproval('collection')">💰 تحصيلات <span id="af-count-collection" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn"        id="af-payment"    onclick="filterApproval('payment')">💳 دفعات مورد <span id="af-count-payment" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn"        id="af-payout"     onclick="filterApproval('payout')">👥 صرف شركاء <span id="af-count-payout" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn"        id="af-payment"   onclick="filterApproval('payment')">💳 دفعات مورد <span id="af-count-payment"   style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn"        id="af-payout"    onclick="filterApproval('payout')">👥 صرف شركاء <span id="af-count-payout"    style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
         </div>
 
         <!-- القائمة -->
@@ -2246,24 +2247,6 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
                 <tr><td>🏢 الوصول للأنظمة (BOX / TRANSIT)</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">الكل</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">حسب الإعداد</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">حسب الإعداد</td></tr>
               </tbody>
             </table>
-          </div>
-
-          <!-- إعداد المدير -->
-          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;margin-top:14px">
-            <div style="font-size:13px;font-weight:700;margin-bottom:12px">👑 إعداد خاص بدور المدير</div>
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--card2);border-radius:var(--radius-sm);border:1px solid var(--border)">
-              <div>
-                <div style="font-size:13px;font-weight:600">إدخالات المدير تُرحَّل</div>
-                <div style="font-size:11px;color:var(--text2);margin-top:2px">فوراً بدون موافقة — أو تدخل الـ Approval Queue مثل الموظف</div>
-              </div>
-              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex-shrink:0">
-                <span style="font-size:12px;color:var(--text2);font-weight:600;min-width:90px;text-align:left" id="adminPostLabel">ترحيل فوري ✓</span>
-                <div onclick="toggleAdminPostSetting()" id="adminPostToggle"
-                  style="width:46px;height:26px;border-radius:13px;background:var(--green);cursor:pointer;position:relative;transition:background .25s;box-shadow:0 2px 6px rgba(0,0,0,.1)">
-                  <div id="adminPostKnob" style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:3px;right:3px;transition:transform .25s;box-shadow:0 1px 4px rgba(0,0,0,.2)"></div>
-                </div>
-              </label>
-            </div>
           </div>
         </div>
 
@@ -3720,7 +3703,6 @@ function initApp() {
   });
   loadUserRoleFromDB();
   updateSystemUI();
-  updateViewFilterUI();
 }
 
 // ════════════════════════════════════════
@@ -3795,11 +3777,11 @@ async function loadDashboard() {
 
   try {
     const [deals, vehicles, allSales, allExpenses, collections, drafts] = await Promise.all([
-      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, order:'created_at.desc', ...postFilter() }),
+      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, order:'created_at.desc' }),
       apiGet('vehicles',        { select:'*', system_type:`eq.${sys}` }),
-      apiGet('sales',           { select:'*', system_type:`eq.${sys}`, ...postFilter() }),
-      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, ...postFilter() }),
-      apiGet('collections',     { select:'*', system_type:`eq.${sys}`, ...postFilter() }),
+      apiGet('sales',           { select:'*', system_type:`eq.${sys}` }),
+      apiGet('expenses',        { select:'*', system_type:`eq.${sys}` }),
+      apiGet('collections',     { select:'*', system_type:`eq.${sys}` }),
       apiGet('journal_entries', { select:'id', system_type:`eq.${sys}`, post_status:'eq.draft' }),
     ]);
 
@@ -4235,12 +4217,12 @@ async function loadSummaryTab(fn, sys) {
   try {
     const [vehicles, payments, expenses, sales, collections, partners, payouts, poArr] = await Promise.all([
       apiGet('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, ...postFilter() }),
-      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, ...postFilter() }),
-      apiGet('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, ...postFilter() }),
-      apiGet('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, ...postFilter() }),
+      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGet('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGet('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGet('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, ...postFilter() }),
+      apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGet('purchase_orders', { select:'total_purchase,supplier', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
@@ -4443,7 +4425,7 @@ async function loadVehiclesTab(fn, sys) {
 
 async function loadPaymentsTab(fn, sys) {
   try {
-    const data = await apiGet('payments', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc', ...postFilter() });
+    const data = await apiGet('payments', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc' });
     if (!data?.length) { el('paymentsTable').innerHTML = emptyHTML('💳','لا توجد دفعات'); return; }
     const total = data.reduce((s,p)=>s+(+p.amount||0),0);
     const csvRows = data.map(p=>[p.ref_no||'—', p.payer||'—', +p.amount||0, p.pay_method||'—', p.document||'—', p.pay_date||'—', p.notes||'']);
@@ -4481,7 +4463,7 @@ async function loadPaymentsTab(fn, sys) {
 
 async function loadExpensesTab(fn, sys) {
   try {
-    const data = await apiGet('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.desc', ...postFilter() });
+    const data = await apiGet('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.desc' });
     if (!data?.length) { el('expensesTable').innerHTML = emptyHTML('💸','لا توجد مصاريف'); return; }
     const total = data.reduce((s,e)=>s+(+e.amount||0),0);
     const csvRows = data.map(e=>[e.ref_no||'—', e.description||'—', e.exp_type||'—', +e.amount||0, e.pay_method||'—', e.document||'—', e.exp_date||'—']);
@@ -4519,7 +4501,7 @@ async function loadExpensesTab(fn, sys) {
 
 async function loadSalesTab(fn, sys) {
   try {
-    const data = await apiGet('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc', ...postFilter() });
+    const data = await apiGet('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' });
     state.currentSales = data || [];
     if (!data?.length) { el('salesTable').innerHTML = emptyHTML('🤝','لا توجد مبيعات'); return; }
     const total = data.reduce((s,v)=>s+(+v.sale_price||0),0);
@@ -4786,7 +4768,7 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
 
 async function loadCollectionsTab(fn, sys) {
   try {
-    const data = await apiGet('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.desc', ...postFilter() });
+    const data = await apiGet('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.desc' });
     if (!data?.length) { el('collectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
     const total = data.reduce((s,c)=>s+(+c.amount||0),0);
     const csvRows = data.map(c=>[c.ref_no||'—', c.inv_no||'—', c.customer||'—', c.vin||'—', +c.amount||0, c.pay_method||'—', c.due_date||'—', c.paid_date||'—']);
@@ -4825,7 +4807,7 @@ async function loadCollectionsTab(fn, sys) {
 
 async function loadPayoutsTab(fn, sys) {
   try {
-    const data = await apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc', ...postFilter() });
+    const data = await apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc' });
     if (!data?.length) { el('payoutsTable').innerHTML = emptyHTML('👥','لا توجد صرف للشركاء بعد'); return; }
     const total     = data.reduce((s,p)=>s+(+p.amount||0),0);
     const capTotal  = data.reduce((s,p)=>s+(+p.capital_amount||0),0);
@@ -5610,8 +5592,7 @@ async function submitNewFile() {
       total_purchase: finalTotal,
       vehicle_count:  vehicles.length,
       status:         'OPEN',
-      notes:          notes || null,
-      post_status:    entryStatus()
+      notes:          notes || null
     };
     await apiPost('purchase_orders', poData);
 
@@ -5619,7 +5600,7 @@ async function submitNewFile() {
     if (finalTotal > 0) {
       try { await apiDelete('ledger_entries', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, source_table:`eq.purchase_orders` }); } catch(e) {}
       const vinList = vehicles.filter(v=>v.vin).map(v=>v.vin).join(' / ');
-      if (entryStatus()==='posted') await postLedger({ contactName:supplier, contactType:'supplier', date:poDate||today(),
+      await postLedger({ contactName:supplier, contactType:'supplier', date:poDate||today(),
         description:`شراء ${vehicles.length} سيارة${vinList?' — شواصي: '+vinList:''} — ملف ${fileNo}${poNo?' — PO: '+poNo:''}`,
         debit: finalTotal, sourceTable:'purchase_orders', fileNo });
     }
@@ -5655,7 +5636,7 @@ async function submitNewFile() {
           notes: `حصة ${p.share}% — دفع مقدماً`
         });
         // Ledger: partner paid (credit partner account)
-        if (entryStatus()==='posted') await postLedger({ contactName:p.name, contactType:'partner', date:poDate||today(),
+        await postLedger({ contactName:p.name, contactType:'partner', date:poDate||today(),
           description:`دفعة شريك — ملف ${fileNo}`,
           credit: p.paid, sourceTable:'payments', fileNo });
       }
@@ -5664,6 +5645,9 @@ async function submitNewFile() {
     // 5. Audit
     await logAudit('INSERT','purchase_orders', fileNo, null, poData);
     // Save to journal
+    await saveDraft('purchase', fileNo,
+      `سند شراء — ${supplier}${poNo?' — PO: '+poNo:''}`,
+      finalTotal, 'purchase_orders', null);
     closeModal('newFileModal');
     toast(`✅ تم إنشاء الملف ${fileNo} — ${vehicles.length} سيارة`, 'ok');
     await loadDashboard();
@@ -5990,7 +5974,7 @@ async function submitExpense() {
         expense_date:date,
         notes:       exp.notes || null,
         ref_no:      refNo
-      , post_status:entryStatus()};
+      , post_status:'draft'};
       await apiPost('expenses', data);
       await logAudit('INSERT','expenses', expFileNo, null, data);
     }
@@ -6034,18 +6018,18 @@ async function submitPayment() {
       payer, amount, pay_method: method,
       document: doc||null, pay_date: date,
       notes: notes||null
-    , post_status:entryStatus()};
+    , post_status:'draft'};
     await apiPost('payments', data);
     await logAudit('INSERT','payments',fn,null,data);
     const poArr = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
     if (supplierName) {
-      if (entryStatus()==='posted') await postLedger({ contactName:supplierName, contactType:'supplier', date,
+      await postLedger({ contactName:supplierName, contactType:'supplier', date,
         description:`[${refNo}] دفعة للمورد — ملف ${fn} — دافع: ${payer}`,
         credit: amount, sourceTable:'payments', fileNo: fn });
     }
     if (payer && payer !== supplierName) {
-      if (entryStatus()==='posted') await postLedger({ contactName:payer, contactType:'partner', date,
+      await postLedger({ contactName:payer, contactType:'partner', date,
         description:`[${refNo}] دفع للمورد ${supplierName||'المورد'} — ملف ${fn}`,
         debit: amount, sourceTable:'payments', fileNo: fn });
     }
@@ -6288,7 +6272,7 @@ async function submitSale() {
       const data = {
         system_type: state.system, file_no: item.fileNo||fn,
         inv_no: invNo, vin: item.vin||null, customer,
-        sale_price: item.price, sale_date: date, post_status:entryStatus(), notes: item.vnote||notes||null
+        sale_price: item.price, sale_date: date, post_status:'draft', notes: item.vnote||notes||null
       };
       await apiPost('sales', data);
       insertedSales.push(data);
@@ -6297,7 +6281,7 @@ async function submitSale() {
 
     // Ledger: customer becomes debtor
     const fileNos = [...new Set(saleItems.map(i=>i.fileNo||fn))].join(', ');
-    if (entryStatus()==='posted') await postLedger({ contactName:customer, contactType:'customer', date,
+    await postLedger({ contactName:customer, contactType:'customer', date,
       description:`فاتورة ${invNo} — ${saleItems.length} سيارة — ملفات: ${fileNos}`,
       debit: totalPrice, sourceTable:'sales', fileNo: fn });
 
@@ -6459,10 +6443,10 @@ async function submitCollection() {
       pay_method: method, document: doc||null,
       due_date: due||null, paid_date: paid||null, notes: notes||null,
       ref_no: refNo
-    , post_status:entryStatus()};
+    , post_status:'draft'};
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
-    if (entryStatus()==='posted' && cust) await postLedger({ contactName:cust, contactType:'customer', date:paid||today(),
+    if (cust) await postLedger({ contactName:cust, contactType:'customer', date:paid||today(),
       description:`[${refNo}] تحصيل فاتورة ${invNo||''}${vin?' — شاصي: '+vin:''} — ملف ${fn}`,
       credit: amount, sourceTable:'collections', fileNo: fn });
     closeModal('collectionModal');
@@ -6661,12 +6645,11 @@ async function submitPayout() {
       system_type: state.system, file_no: fn, partner,
       pay_id, payout_type: type, amount,
       capital_amount: capitalAmt, profit_amount: profitAmt, advance_amount: advanceAmt,
-      pay_method: method, document: doc||null, pay_date: date, notes: notes||null,
-      post_status: entryStatus()
+      pay_method: method, document: doc||null, pay_date: date, notes: notes||null
     };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fn,null,data);
-    if (entryStatus()==='posted') await postLedger({ contactName:partner, contactType:'partner', date,
+    await postLedger({ contactName:partner, contactType:'partner', date,
       description:`[${pay_id}] ${type} — ملف ${fn}`,
       debit: amount, sourceTable:'partner_payouts', fileNo: fn });
     closeModal('payoutModal');
@@ -6957,10 +6940,10 @@ async function submitQuickSale() {
   }
   try {
     const data = { system_type:state.system, file_no:fileNo, vin, customer,
-      invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:entryStatus()};
+      invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:'draft'};
     await apiPost('sales', data);
     await logAudit('INSERT','sales',fileNo,null,data);
-    if (entryStatus()==='posted') await postLedger({ contactName:customer, contactType:'customer', date,
+    await postLedger({ contactName:customer, contactType:'customer', date,
       description:`بيع سيارة ${vin} — ملف ${fileNo}`,
       debit: price, sourceTable:'sales', fileNo });
     closeModal('quickSaleModal');
@@ -7003,10 +6986,10 @@ async function submitQuickCollection() {
       vin: vin||null, amount, pay_method: method,
       document: doc||null, due_date: due||null,
       paid_date: paid, notes: notes||null, ref_no: refNo
-    , post_status:entryStatus()};
+    , post_status:'draft'};
     await apiPost('collections', data);
     await logAudit('INSERT','collections', fileNo, null, data);
-    if (entryStatus()==='posted' && customer) await postLedger({
+    if (customer) await postLedger({
       contactName: customer, contactType: 'customer', date: paid,
       description: `[${refNo}] تحصيل فاتورة ${invNo} — ملف ${fileNo}`,
       credit: amount, sourceTable: 'collections', fileNo
@@ -7116,17 +7099,16 @@ async function submitQuickPayment() {
     const supplierName = el('qp-card-supplier')?.textContent || '';
     const data = { system_type:state.system, file_no:fileNo, payer, amount,
       pay_id:refNo, ref_no:refNo,
-      pay_method:method, document:doc||null, pay_date: date, notes:notes||null,
-      post_status: entryStatus() };
+      pay_method:method, document:doc||null, pay_date: date, notes:notes||null };
     await apiPost('payments', data);
     await logAudit('INSERT','payments', fileNo, null, data);
     if (supplierName && supplierName !== '—') {
-      if (entryStatus()==='posted') await postLedger({ contactName:supplierName, contactType:'supplier', date,
+      await postLedger({ contactName:supplierName, contactType:'supplier', date,
         description:`[${refNo}] دفعة للمورد — ملف ${fileNo} — دافع: ${payer}`,
         credit:amount, sourceTable:'payments', fileNo });
     }
     if (payer && payer !== supplierName) {
-      if (entryStatus()==='posted') await postLedger({ contactName:payer, contactType:'partner', date,
+      await postLedger({ contactName:payer, contactType:'partner', date,
         description:`[${refNo}] دفع للمورد ${supplierName||''} — ملف ${fileNo}`,
         debit:amount, sourceTable:'payments', fileNo });
     }
@@ -7162,10 +7144,10 @@ async function submitQuickPayout() {
     } catch(e) {}
     const data = { system_type:state.system, file_no:fileNo, partner,
       pay_id, payout_type:type, amount, pay_method:method, document:doc||null,
-      pay_date: date, notes:notes||null, post_status: entryStatus() };
+      pay_date: date, notes:notes||null };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
-    if (entryStatus()==='posted') await postLedger({ contactName:partner, contactType:'partner', date,
+    await postLedger({ contactName:partner, contactType:'partner', date,
       description:`صرف شريك — ملف ${fileNo}`,
       debit:amount, sourceTable:'partner_payouts', fileNo });
     closeModal('quickPayoutModal');
@@ -7551,7 +7533,8 @@ async function loadJournal() {
       return res.json();
     }
 
-    const [sales, expenses, payments, payouts, opexItems] = await Promise.all([
+    const [purchases, sales, expenses, payments, payouts, opexItems] = await Promise.all([
+      apiGetRange('purchase_orders',  'po_date',   from, to),
       apiGetRange('sales',           'sale_date', from, to),
       apiGetRange('expenses',        'exp_date',  from, to),
       apiGetRange('payments',        'pay_date',  from, to),
@@ -7572,6 +7555,22 @@ async function loadJournal() {
 
     // Normalize entries
     const entries = [
+      ...(purchases||[]).map(r=>({
+        type:'purchase',
+        date: r.po_date||r.created_at?.split('T')[0]||from,
+        amount: +r.total_purchase||0, sign:-1,
+        title:`سند شراء — ${r.supplier||''}`,
+        status: r.post_status||'posted',
+        meta:[
+          r.file_no?`<span style="background:var(--accent-dim);color:var(--accent);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.file_no}</span>`:'',
+          r.supplier?`مورد: ${r.supplier}`:'',
+          r.po_no?`PO: ${r.po_no}`:'',
+          r.vehicle_count?`سيارات: ${r.vehicle_count}`:'',
+          r.po_date?`تاريخ: ${r.po_date}`:'',
+          r.notes?`ملاحظة: ${r.notes}`:'',
+        ],
+        fileNo: r.file_no, raw: r,
+      })),
       ...(sales||[]).map(r=>({
         type:'sale', date: r.sale_date||r.created_at?.split('T')[0]||from,
         amount: +r.sale_price||0, sign:+1,
@@ -7675,6 +7674,7 @@ async function loadJournal() {
 
 function renderJournalKpis(entries) {
   const groups = {
+    purchase:   entries.filter(e=>e.type==='purchase'),
     sale:       entries.filter(e=>e.type==='sale'),
     expenses:   entries.filter(e=>e.type==='expense'||e.type==='opex'),
     collection: entries.filter(e=>e.type==='collection'),
@@ -7683,6 +7683,7 @@ function renderJournalKpis(entries) {
   };
 
   const totals = {
+    purchase:   groups.purchase.reduce((s,e)=>s+e.amount,0),
     sale:       groups.sale.reduce((s,e)=>s+e.amount,0),
     expenses:   groups.expenses.reduce((s,e)=>s+e.amount,0),
     collection: groups.collection.reduce((s,e)=>s+e.amount,0),
@@ -7691,11 +7692,12 @@ function renderJournalKpis(entries) {
   };
 
   const config = [
-    { key:'sale',       label:'مبيعات',       icon:'🧾', color:'var(--green)',  filterVal:'sale'       },
-    { key:'expenses',   label:'مصاريف',       icon:'💸', color:'var(--red)',    filterVal:'expense'    },
-    { key:'collection', label:'تحصيلات',      icon:'💰', color:'var(--blue)',   filterVal:'collection' },
-    { key:'payment',    label:'دفعات مورد',   icon:'💳', color:'var(--cyan)',   filterVal:'payment'    },
-    { key:'payout',     label:'صرف شركاء',    icon:'👥', color:'var(--purple)', filterVal:'payout'     },
+    { key:'purchase',   label:'سندات شراء',   icon:'📋', color:'var(--accent)',  filterVal:'purchase'   },
+    { key:'sale',       label:'مبيعات',        icon:'🧾', color:'var(--green)',  filterVal:'sale'       },
+    { key:'expenses',   label:'مصاريف',        icon:'💸', color:'var(--red)',    filterVal:'expense'    },
+    { key:'collection', label:'تحصيلات',       icon:'💰', color:'var(--blue)',   filterVal:'collection' },
+    { key:'payment',    label:'دفعات مورد',    icon:'💳', color:'var(--cyan)',   filterVal:'payment'    },
+    { key:'payout',     label:'صرف شركاء',     icon:'👥', color:'var(--purple)', filterVal:'payout'     },
   ];
 
   el('journalKpis').innerHTML = config.map(c => `
@@ -7826,6 +7828,7 @@ function renderJournalEntries() {
   });
 
   const typeConfig = {
+    purchase:   { icon:'📋', bg:'var(--accent-dim)',  label:'سند شراء',       amountColor:'var(--accent)' },
     sale:       { icon:'🤝', bg:'var(--green-dim)',   label:'بيع',            amountColor:'var(--green)'  },
     collection: { icon:'💰', bg:'var(--blue-dim)',    label:'تحصيل',          amountColor:'var(--blue)'   },
     expense:    { icon:'💸', bg:'var(--red-dim)',     label:'مصروف',          amountColor:'var(--red)'    },
@@ -9324,65 +9327,6 @@ function fillRowFromLicense(row, data) {
   // Highlight row briefly
   row.style.background = 'var(--green-dim)';
   setTimeout(() => row.style.background = '', 2000);
-}
-
-// ════════════════════════════════════════
-// ════════════════════════════════════════
-// ENTRY STATUS — من يدخل وإعداد المدير
-// ════════════════════════════════════════
-function isAdminUser() { return _currentRole === 'admin'; }
-function adminPostsImmediately() { return localStorage.getItem('tm_admin_post') !== 'draft'; }
-function entryStatus() {
-  if (isAdminUser() && adminPostsImmediately()) return 'posted';
-  return 'draft';
-}
-function toggleAdminPostSetting() {
-  const newVal = adminPostsImmediately() ? 'draft' : 'posted';
-  localStorage.setItem('tm_admin_post', newVal);
-  updateAdminPostToggleUI();
-  toast(newVal === 'draft' ? '✅ إدخالات المدير ستحتاج موافقة' : '✅ إدخالات المدير ستُرحَّل فوراً', 'ok');
-}
-function updateAdminPostToggleUI() {
-  const immediate = adminPostsImmediately();
-  const toggle = document.getElementById('adminPostToggle');
-  const knob   = document.getElementById('adminPostKnob');
-  const label  = document.getElementById('adminPostLabel');
-  if (!toggle) return;
-  toggle.style.background = immediate ? 'var(--green)' : 'var(--border2)';
-  if (knob)  knob.style.transform = immediate ? 'translateX(0)' : 'translateX(-18px)';
-  if (label) label.textContent    = immediate ? 'ترحيل فوري ✓' : 'يحتاج موافقة';
-}
-
-// ════════════════════════════════════════
-// VIEW FILTER — عرض posted فقط أو الكل
-// ════════════════════════════════════════
-// true = يعرض posted فقط | false = يعرض الكل (posted + draft)
-let _showPostedOnly = localStorage.getItem('tm_show_posted') !== 'false';
-
-function postFilter() {
-  // يرجع object للـ apiGet — لو posted only يضيف فلتر
-  return _showPostedOnly ? { post_status: 'eq.posted' } : {};
-}
-
-function toggleViewFilter() {
-  _showPostedOnly = !_showPostedOnly;
-  localStorage.setItem('tm_show_posted', _showPostedOnly);
-  updateViewFilterUI();
-  // إعادة تحميل الصفحة الحالية
-  const view = sessionStorage.getItem('tm_last_view') || 'dashboard';
-  if (view === 'dashboard')  loadDashboard();
-  else if (view === 'viewer' && state.currentFileNo) loadViewerTab(state.currentTab);
-  else if (view === 'journal') loadJournal();
-  toast(_showPostedOnly ? '👁 عرض المرحَّل فقط' : '👁 عرض الكل (posted + draft)', 'ok');
-}
-
-function updateViewFilterUI() {
-  document.querySelectorAll('.view-filter-btn').forEach(btn => {
-    btn.innerHTML = _showPostedOnly
-      ? '👁 المرحَّل فقط'
-      : '👁 الكل';
-    btn.title = _showPostedOnly ? 'اضغط لعرض الكل' : 'اضغط لعرض المرحَّل فقط';
-  });
 }
 
 // ════════════════════════════════════════
@@ -11215,7 +11159,6 @@ function switchSettTab(name) {
   const tab   = el('stab-' + name);
   if (panel) panel.style.display = 'block';
   if (tab)   tab.classList.add('active');
-  if (name === 'roles') updateAdminPostToggleUI();
 }
 
 async function showSettings() {
@@ -12373,16 +12316,15 @@ async function regenInvNo() {
 const approvalState = { all: [], filtered: [], currentType: 'all', currentItem: null };
 
 const APPROVAL_CONFIG = {
-  purchase:   { icon:'📋', label:'سند شراء',     color:'var(--accent)',  table:'purchase_orders',  amountField:'total_purchase', dateField:'po_date',   descFields:['file_no','supplier','po_no'] },
-  sale:       { icon:'🧾', label:'بيع',           color:'var(--green)',  table:'sales',            amountField:'sale_price',     dateField:'sale_date', descFields:['inv_no','customer','vin'] },
-  expense:    { icon:'💸', label:'مصروف',         color:'var(--red)',    table:'expenses',         amountField:'amount',         dateField:'exp_date',  descFields:['description','exp_type','file_no'] },
-  collection: { icon:'💰', label:'تحصيل',         color:'var(--blue)',   table:'collections',      amountField:'amount',         dateField:'paid_date', descFields:['inv_no','customer','file_no'] },
-  payment:    { icon:'💳', label:'دفعة مورد',     color:'var(--cyan)',   table:'payments',         amountField:'amount',         dateField:'pay_date',  descFields:['payer','file_no','pay_method'] },
-  payout:     { icon:'👥', label:'صرف شريك',     color:'var(--purple)', table:'partner_payouts',  amountField:'amount',         dateField:'pay_date',  descFields:['partner','payout_type','file_no'] },
+  sale:       { icon:'🧾', label:'بيع',         color:'var(--green)',  table:'sales',           amountField:'sale_price',   dateField:'sale_date',  descFields:['inv_no','customer','vin'] },
+  expense:    { icon:'💸', label:'مصروف',       color:'var(--red)',    table:'expenses',         amountField:'amount',       dateField:'exp_date',   descFields:['description','exp_type','file_no'] },
+  collection: { icon:'💰', label:'تحصيل',       color:'var(--blue)',   table:'collections',      amountField:'amount',       dateField:'paid_date',  descFields:['inv_no','customer','file_no'] },
+  payment:    { icon:'💳', label:'دفعة مورد',   color:'var(--cyan)',   table:'payments',         amountField:'amount',       dateField:'pay_date',   descFields:['payer','file_no','pay_method'] },
+  payout:     { icon:'👥', label:'صرف شريك',   color:'var(--purple)', table:'partner_payouts',  amountField:'amount',       dateField:'pay_date',   descFields:['partner','payout_type','file_no'] },
 };
 
 async function showApprovalQueue() {
-  if (!can('roles') && !can('approve')) { toast('🔒 ليس لديك صلاحية الموافقات','err'); return; }
+  if (!can('roles')) { toast('🔒 هذه الصفحة للمدراء فقط','err'); return; }
   hideAllViews();
   el('approvalView').style.display = 'block';
   el('topBarTitle').textContent = 'قائمة الموافقات';
@@ -12397,8 +12339,9 @@ async function loadApprovalQueue() {
 
   try {
     const sys = state.system;
-    const [purchases, sales, expenses, collections, payments, payouts] = await Promise.all([
-      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+
+    // جيب كل البنود المعلقة من كل الجداول بالتوازي
+    const [sales, expenses, collections, payments, payouts] = await Promise.all([
       apiGet('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
       apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
       apiGet('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
@@ -12406,26 +12349,34 @@ async function loadApprovalQueue() {
       apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
     ]);
 
+    // دمج كل البنود مع نوعها
     approvalState.all = [
-      ...(purchases||[]).map(r   => ({...r, _type:'purchase',   _amount:+r.total_purchase||0, _date:r.po_date,    _desc:`${r.file_no||'—'} · ${r.supplier||'—'} · ${r.vehicle_count||0} سيارة`,   _file:r.file_no })),
-      ...(sales||[]).map(r       => ({...r, _type:'sale',       _amount:+r.sale_price||0,     _date:r.sale_date,  _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.vin||'—'}`,                  _file:r.file_no })),
-      ...(expenses||[]).map(r    => ({...r, _type:'expense',    _amount:+r.amount||0,         _date:r.exp_date||r.expense_date, _desc:`${r.description||'—'} · ${r.exp_type||'—'}`,                _file:r.file_no })),
-      ...(collections||[]).map(r => ({...r, _type:'collection', _amount:+r.amount||0,         _date:r.paid_date||r.due_date,    _desc:`${r.inv_no||'—'} · ${r.customer||'—'}`,                     _file:r.file_no })),
-      ...(payments||[]).map(r    => ({...r, _type:'payment',    _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.payer||'—'} · ${r.file_no||'—'}`,                                    _file:r.file_no })),
-      ...(payouts||[]).map(r     => ({...r, _type:'payout',     _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.partner||'—'} · ${r.payout_type||'—'}`,                              _file:r.file_no })),
+      ...(sales||[]).map(r       => ({...r, _type:'sale',       _amount:+r.sale_price||0,  _date:r.sale_date,  _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.vin||'—'}`,       _file:r.file_no })),
+      ...(expenses||[]).map(r    => ({...r, _type:'expense',    _amount:+r.amount||0,       _date:r.exp_date||r.expense_date, _desc:`${r.description||'—'} · ${r.exp_type||'—'} · ${r.file_no||'—'}`, _file:r.file_no })),
+      ...(collections||[]).map(r => ({...r, _type:'collection', _amount:+r.amount||0,       _date:r.paid_date||r.due_date,    _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.file_no||'—'}`,      _file:r.file_no })),
+      ...(payments||[]).map(r    => ({...r, _type:'payment',    _amount:+r.amount||0,       _date:r.pay_date,   _desc:`${r.payer||'—'} · ${r.file_no||'—'} · ${r.pay_method||'—'}`,  _file:r.file_no })),
+      ...(payouts||[]).map(r     => ({...r, _type:'payout',     _amount:+r.amount||0,       _date:r.pay_date,   _desc:`${r.partner||'—'} · ${r.payout_type||'—'} · ${r.file_no||'—'}`, _file:r.file_no })),
     ].sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
 
+    // تحديث الـ badge في الـ sidebar
     const total = approvalState.all.length;
     const badge = el('approval-badge');
     if (badge) { badge.textContent = total || ''; badge.style.display = total ? '' : 'none'; }
+
+    // تحديث الـ subtitle
     if (el('approval-subtitle')) el('approval-subtitle').textContent = `${total} عملية معلقة للمراجعة`;
+
+    // تحديث counts
     Object.keys(APPROVAL_CONFIG).forEach(type => {
       const cnt = el(`af-count-${type}`);
       if (cnt) cnt.textContent = approvalState.all.filter(r=>r._type===type).length || '';
     });
     const cntAll = el('af-count-all');
     if (cntAll) cntAll.textContent = total || '';
+
+    // زر موافقة على الكل
     if (el('approve-all-btn')) el('approve-all-btn').style.display = total ? '' : 'none';
+
     filterApproval(approvalState.currentType);
 
   } catch(e) {
@@ -12518,49 +12469,11 @@ function closeApprovalDetail() {
 }
 
 async function approveItem(type, id) {
-  const cfg  = APPROVAL_CONFIG[type];
-  const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+  const cfg = APPROVAL_CONFIG[type];
   try {
     await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'posted' });
-
-    // كتابة القيود المحاسبية بعد الموافقة
-    if (item) {
-      const sys = state.system;
-      if (type === 'purchase') {
-        if (item.supplier && +item.total_purchase > 0) {
-          try { await apiDelete('ledger_entries', { system_type:`eq.${sys}`, file_no:`eq.${item.file_no}`, source_table:`eq.purchase_orders` }); } catch(e){}
-          await postLedger({ contactName:item.supplier, contactType:'supplier', date:item.po_date||today(),
-            description:`شراء ${item.vehicle_count||0} سيارة — ملف ${item.file_no}${item.po_no?' — PO:'+item.po_no:''}`,
-            debit:+item.total_purchase, sourceTable:'purchase_orders', fileNo:item.file_no });
-        }
-      } else if (type === 'payment') {
-        const poArr = await apiGet('purchase_orders',{ select:'supplier', system_type:`eq.${sys}`, file_no:`eq.${item.file_no}` });
-        const sup = poArr?.[0]?.supplier||'';
-        if (sup) await postLedger({ contactName:sup, contactType:'supplier', date:item.pay_date,
-          description:`[${item.ref_no||item.pay_id}] دفعة للمورد — ملف ${item.file_no} — دافع: ${item.payer||'—'}`,
-          credit:+item.amount, sourceTable:'payments', fileNo:item.file_no });
-        if (item.payer && item.payer !== sup)
-          await postLedger({ contactName:item.payer, contactType:'partner', date:item.pay_date,
-            description:`[${item.ref_no||item.pay_id}] دفع للمورد ${sup||''} — ملف ${item.file_no}`,
-            debit:+item.amount, sourceTable:'payments', fileNo:item.file_no });
-      } else if (type === 'sale') {
-        if (item.customer) await postLedger({ contactName:item.customer, contactType:'customer', date:item.sale_date,
-          description:`فاتورة ${item.inv_no||'—'} — سيارة ${item.vin||'—'} — ملف ${item.file_no}`,
-          debit:+item.sale_price, sourceTable:'sales', fileNo:item.file_no });
-      } else if (type === 'collection') {
-        if (item.customer) await postLedger({ contactName:item.customer, contactType:'customer', date:item.paid_date||item.due_date||today(),
-          description:`[${item.ref_no||item.pay_id}] تحصيل فاتورة ${item.inv_no||''} — ملف ${item.file_no}`,
-          credit:+item.amount, sourceTable:'collections', fileNo:item.file_no });
-      } else if (type === 'payout') {
-        await postLedger({ contactName:item.partner, contactType:'partner', date:item.pay_date,
-          description:`[${item.pay_id}] ${item.payout_type||''} — ملف ${item.file_no}`,
-          debit:+item.amount, sourceTable:'partner_payouts', fileNo:item.file_no });
-      }
-    }
-
-    toast(`✅ تمت الموافقة على ${cfg.label}`, 'ok');
+    toast(`✅ تمت الموافقة على ${cfg.label}`,'ok');
     await loadApprovalQueue();
-    updateApprovalBadge();
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
