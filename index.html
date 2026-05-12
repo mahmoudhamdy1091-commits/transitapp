@@ -2017,7 +2017,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
           <div style="display:flex;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;gap:2px">
             <button class="btn btn-sm journal-period-btn active" id="rtype-profit"   onclick="setReportType('profit')">📈 الأرباح</button>
-            <button class="btn btn-sm journal-period-btn"        id="rtype-cashflow" onclick="setReportType('cashflow')">💵 التدفقات النقدية</button>
+            <button class="btn btn-sm journal-period-btn" id="rtype-cashflow" onclick="setReportType('cashflow')">💵 التدفقات النقدية</button>
             <button class="btn btn-sm journal-period-btn" id="rtype-sales"   onclick="setReportType('sales')">💹 المبيعات</button>
             <button class="btn btn-sm journal-period-btn" id="rtype-expenses" onclick="setReportType('expenses')">💸 المصاريف</button>
             <button class="btn btn-sm journal-period-btn" id="rtype-partners" onclick="setReportType('partners')">👥 الشركاء</button>
@@ -2733,7 +2733,15 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           </div>
         </div>
       </div>
-      <input type="hidden" id="sale-fileNo">
+      <div class="form-row">
+        <div class="field">
+          <label>رقم الملف *</label>
+          <select id="sale-fileNo" onchange="onSaleFileChange(this.value)"
+            style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;width:100%">
+            <option value="">— اختر الملف —</option>
+          </select>
+        </div>
+      </div>
 
       <!-- Vehicles Table -->
       <div class="divider-label">
@@ -4757,9 +4765,8 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
 </body>
 </html>`;
 
-  const w = window.open('', '_blank', 'width=900,height=700,scrollbars=yes');
-  w.document.write(html);
-  w.document.close();
+  openPrintOverlay(html);
+
   // WhatsApp option after print
   setTimeout(() => {
     if (confirm('إرسال الفاتورة عبر واتساب؟')) {
@@ -5034,9 +5041,8 @@ async function printPayoutVoucher(payoutId) {
 </div>
 </body></html>`;
 
-    const w = window.open('','_blank');
-    w.document.write(html);
-    w.document.close();
+    openPrintOverlay(html);
+
   } catch(e) { toast('خطأ في الطباعة: '+e.message,'err'); }
 }
 
@@ -5603,7 +5609,7 @@ async function submitNewFile() {
     if (finalTotal > 0) {
       try { await apiDelete('ledger_entries', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, source_table:`eq.purchase_orders` }); } catch(e) {}
       const vinList = vehicles.filter(v=>v.vin).map(v=>v.vin).join(' / ');
-      await postLedger({ contactName:supplier, contactType:'supplier', date:poDate||today(),
+      if (entryStatus()==='posted') await postLedger({ contactName:supplier, contactType:'supplier', date:poDate||today(),
         description:`شراء ${vehicles.length} سيارة${vinList?' — شواصي: '+vinList:''} — ملف ${fileNo}${poNo?' — PO: '+poNo:''}`,
         debit: finalTotal, sourceTable:'purchase_orders', fileNo });
     }
@@ -5639,7 +5645,7 @@ async function submitNewFile() {
           notes: `حصة ${p.share}% — دفع مقدماً`
         });
         // Ledger: partner paid (credit partner account)
-        await postLedger({ contactName:p.name, contactType:'partner', date:poDate||today(),
+        if (entryStatus()==='posted') await postLedger({ contactName:p.name, contactType:'partner', date:poDate||today(),
           description:`دفعة شريك — ملف ${fileNo}`,
           credit: p.paid, sourceTable:'payments', fileNo });
       }
@@ -5977,7 +5983,7 @@ async function submitExpense() {
         expense_date:date,
         notes:       exp.notes || null,
         ref_no:      refNo
-      , post_status:'draft'};
+      , post_status:entryStatus()};
       await apiPost('expenses', data);
       await logAudit('INSERT','expenses', expFileNo, null, data);
     }
@@ -6021,18 +6027,18 @@ async function submitPayment() {
       payer, amount, pay_method: method,
       document: doc||null, pay_date: date,
       notes: notes||null
-    , post_status:'draft'};
+    , post_status:entryStatus()};
     await apiPost('payments', data);
     await logAudit('INSERT','payments',fn,null,data);
     const poArr = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
     if (supplierName) {
-      await postLedger({ contactName:supplierName, contactType:'supplier', date,
+      if (entryStatus()==='posted') await postLedger({ contactName:supplierName, contactType:'supplier', date,
         description:`[${refNo}] دفعة للمورد — ملف ${fn} — دافع: ${payer}`,
         credit: amount, sourceTable:'payments', fileNo: fn });
     }
     if (payer && payer !== supplierName) {
-      await postLedger({ contactName:payer, contactType:'partner', date,
+      if (entryStatus()==='posted') await postLedger({ contactName:payer, contactType:'partner', date,
         description:`[${refNo}] دفع للمورد ${supplierName||'المورد'} — ملف ${fn}`,
         debit: amount, sourceTable:'payments', fileNo: fn });
     }
@@ -6275,7 +6281,7 @@ async function submitSale() {
       const data = {
         system_type: state.system, file_no: item.fileNo||fn,
         inv_no: invNo, vin: item.vin||null, customer,
-        sale_price: item.price, sale_date: date, post_status:'draft', notes: item.vnote||notes||null
+        sale_price: item.price, sale_date: date, post_status:entryStatus(), notes: item.vnote||notes||null
       };
       await apiPost('sales', data);
       insertedSales.push(data);
@@ -6284,7 +6290,7 @@ async function submitSale() {
 
     // Ledger: customer becomes debtor
     const fileNos = [...new Set(saleItems.map(i=>i.fileNo||fn))].join(', ');
-    await postLedger({ contactName:customer, contactType:'customer', date,
+    if (entryStatus()==='posted') await postLedger({ contactName:customer, contactType:'customer', date,
       description:`فاتورة ${invNo} — ${saleItems.length} سيارة — ملفات: ${fileNos}`,
       debit: totalPrice, sourceTable:'sales', fileNo: fn });
 
@@ -6446,10 +6452,10 @@ async function submitCollection() {
       pay_method: method, document: doc||null,
       due_date: due||null, paid_date: paid||null, notes: notes||null,
       ref_no: refNo
-    , post_status:'draft'};
+    , post_status:entryStatus()};
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
-    if (cust) await postLedger({ contactName:cust, contactType:'customer', date:paid||today(),
+    if (entryStatus()==='posted' && cust) await postLedger({ contactName:cust, contactType:'customer', date:paid||today(),
       description:`[${refNo}] تحصيل فاتورة ${invNo||''}${vin?' — شاصي: '+vin:''} — ملف ${fn}`,
       credit: amount, sourceTable:'collections', fileNo: fn });
     closeModal('collectionModal');
@@ -6652,7 +6658,7 @@ async function submitPayout() {
     };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fn,null,data);
-    await postLedger({ contactName:partner, contactType:'partner', date,
+    if (entryStatus()==='posted') await postLedger({ contactName:partner, contactType:'partner', date,
       description:`[${pay_id}] ${type} — ملف ${fn}`,
       debit: amount, sourceTable:'partner_payouts', fileNo: fn });
     closeModal('payoutModal');
@@ -6943,10 +6949,10 @@ async function submitQuickSale() {
   }
   try {
     const data = { system_type:state.system, file_no:fileNo, vin, customer,
-      invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:'draft'};
+      invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:entryStatus()};
     await apiPost('sales', data);
     await logAudit('INSERT','sales',fileNo,null,data);
-    await postLedger({ contactName:customer, contactType:'customer', date,
+    if (entryStatus()==='posted') await postLedger({ contactName:customer, contactType:'customer', date,
       description:`بيع سيارة ${vin} — ملف ${fileNo}`,
       debit: price, sourceTable:'sales', fileNo });
     closeModal('quickSaleModal');
@@ -6989,10 +6995,10 @@ async function submitQuickCollection() {
       vin: vin||null, amount, pay_method: method,
       document: doc||null, due_date: due||null,
       paid_date: paid, notes: notes||null, ref_no: refNo
-    , post_status:'draft'};
+    , post_status:entryStatus()};
     await apiPost('collections', data);
     await logAudit('INSERT','collections', fileNo, null, data);
-    if (customer) await postLedger({
+    if (entryStatus()==='posted' && customer) await postLedger({
       contactName: customer, contactType: 'customer', date: paid,
       description: `[${refNo}] تحصيل فاتورة ${invNo} — ملف ${fileNo}`,
       credit: amount, sourceTable: 'collections', fileNo
@@ -7106,12 +7112,12 @@ async function submitQuickPayment() {
     await apiPost('payments', data);
     await logAudit('INSERT','payments', fileNo, null, data);
     if (supplierName && supplierName !== '—') {
-      await postLedger({ contactName:supplierName, contactType:'supplier', date,
+      if (entryStatus()==='posted') await postLedger({ contactName:supplierName, contactType:'supplier', date,
         description:`[${refNo}] دفعة للمورد — ملف ${fileNo} — دافع: ${payer}`,
         credit:amount, sourceTable:'payments', fileNo });
     }
     if (payer && payer !== supplierName) {
-      await postLedger({ contactName:payer, contactType:'partner', date,
+      if (entryStatus()==='posted') await postLedger({ contactName:payer, contactType:'partner', date,
         description:`[${refNo}] دفع للمورد ${supplierName||''} — ملف ${fileNo}`,
         debit:amount, sourceTable:'payments', fileNo });
     }
@@ -7150,7 +7156,7 @@ async function submitQuickPayout() {
       pay_date: date, notes:notes||null };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
-    await postLedger({ contactName:partner, contactType:'partner', date,
+    if (entryStatus()==='posted') await postLedger({ contactName:partner, contactType:'partner', date,
       description:`صرف شريك — ملف ${fileNo}`,
       debit:amount, sourceTable:'partner_payouts', fileNo });
     closeModal('quickPayoutModal');
@@ -7559,18 +7565,17 @@ async function loadJournal() {
     // Normalize entries
     const entries = [
       ...(purchases||[]).map(r=>({
-        type:'purchase',
-        date: r.po_date||r.created_at?.split('T')[0]||from,
-        amount: +r.total_purchase||0, sign:-1,
+        type:'purchase', date:r.po_date||r.created_at?.split('T')[0]||from,
+        amount:+r.total_purchase||0, sign:-1,
         title:`سند شراء — ${r.supplier||''}`,
-        status: r.post_status||'posted',
+        status:r.post_status||'posted',
         meta:[
           r.file_no?`<span style="background:var(--accent-dim);color:var(--accent);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.file_no}</span>`:'',
           r.supplier?`مورد: ${r.supplier}`:'',
           r.po_no?`PO: ${r.po_no}`:'',
           r.vehicle_count?`${r.vehicle_count} سيارة`:'',
         ].filter(Boolean),
-        fileNo: r.file_no, raw: r,
+        fileNo:r.file_no, raw:r,
       })),
       ...(sales||[]).map(r=>({
         type:'sale', date: r.sale_date||r.created_at?.split('T')[0]||from,
@@ -7826,7 +7831,7 @@ function renderJournalEntries() {
   });
 
   const typeConfig = {
-    purchase:   { icon:'📋', bg:'var(--accent-dim)', label:'سند شراء',  amountColor:'var(--accent)'  },
+    purchase:   { icon:'📋', bg:'var(--accent-dim)', label:'سند شراء', amountColor:'var(--accent)' },
     sale:       { icon:'🤝', bg:'var(--green-dim)',   label:'بيع',            amountColor:'var(--green)'  },
     collection: { icon:'💰', bg:'var(--blue-dim)',    label:'تحصيل',          amountColor:'var(--blue)'   },
     expense:    { icon:'💸', bg:'var(--red-dim)',     label:'مصروف',          amountColor:'var(--red)'    },
@@ -7974,7 +7979,8 @@ function printSection(title, subtitle, tableHtml, summaryHtml='') {
   ${tableHtml}
   <div class="footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('ar-KW')} · Transit Cars System</div>
 </div></body></html>`;
-  const w = window.open('','_blank'); w.document.write(html); w.document.close();
+  openPrintOverlay(html);
+
 }
 
 function exportBtns(csvFn, printFn) {
@@ -8413,9 +8419,8 @@ function printLedgerStatement() {
 
 </div></body></html>`;
 
-  const w = window.open('','_blank');
-  w.document.write(html);
-  w.document.close();
+  openPrintOverlay(html);
+
 }
 
 // ════════════════════════════════════════
@@ -8789,59 +8794,27 @@ function exportToExcel(sheets, filename) {
   XLSX.writeFile(wb, filename + '.xlsx');
 }
 
-// ── PDF/PRINT via new window ──
-function printDocument(html, title) {
-  const w = window.open('', '_blank', 'width=1000,height=800,scrollbars=yes');
-  w.document.write(`<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<title>${title}</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a1a; font-size:12px; background:#fff; direction:rtl; }
-  .page { max-width:1000px; margin:0 auto; padding:24px 28px; }
-  .print-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; padding-bottom:14px; border-bottom:3px solid #1a1a1a; }
-  .logo-area .company { font-size:20px; font-weight:800; }
-  .logo-area .sub { font-size:12px; color:#666; margin-top:2px; }
-  .doc-title { font-size:24px; font-weight:800; text-align:left; }
-  .doc-subtitle { font-size:13px; color:#e6930a; font-weight:700; text-align:left; margin-top:4px; }
-  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:11px; }
-  thead tr { background:#1a1a1a; color:#fff; }
-  thead th { padding:8px 10px; text-align:right; font-weight:600; }
-  tbody tr { border-bottom:1px solid #eee; }
-  tbody tr:nth-child(even) { background:#fafafa; }
-  tbody td { padding:7px 10px; }
-  tfoot tr { background:#f0f0f0; font-weight:700; }
-  tfoot td { padding:8px 10px; }
-  .kpi-row { display:grid; gap:10px; margin:12px 0; }
-  .kpi-box { background:#f8f9fa; border-radius:6px; padding:10px 14px; border-right:3px solid #e6930a; }
-  .kpi-label { font-size:10px; color:#888; margin-bottom:2px; }
-  .kpi-val { font-size:16px; font-weight:700; }
-  .section-title { font-size:14px; font-weight:700; margin:16px 0 8px; padding-bottom:4px; border-bottom:1px solid #ddd; }
-  .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
-  .info-box { background:#f8f9fa; border-radius:6px; padding:10px 14px; }
-  .info-row { display:flex; justify-content:space-between; padding:3px 0; font-size:12px; border-bottom:1px solid #eee; }
-  .info-row:last-child { border:none; }
-  .info-label { color:#666; }
-  .info-val { font-weight:600; }
-  .footer { text-align:center; margin-top:20px; padding-top:12px; border-top:1px solid #eee; color:#999; font-size:10px; }
-  .green { color:#16a34a; } .red { color:#dc2626; } .blue { color:#2563eb; } .amber { color:#d97706; }
-  .no-print { display:flex; gap:8px; justify-content:center; margin-bottom:16px; }
-  @media print { .no-print { display:none !important; } body { font-size:11px; } .page { padding:12px; } }
-</style>
-</head>
-<body>
-<div class="page">
-  <div class="no-print">
-    <button onclick="window.print()" style="background:#1a1a1a;color:#fff;border:none;padding:8px 24px;border-radius:6px;font-size:13px;cursor:pointer">🖨️ طباعة / Print</button>
-    <button onclick="window.close()" style="background:#f1f1f1;border:1px solid #ddd;padding:8px 16px;border-radius:6px;font-size:13px;cursor:pointer">✕ إغلاق</button>
-  </div>
-  ${html}
-</div>
-</body></html>`);
-  w.document.close();
+// ── PRINT OVERLAY — no popup needed ──
+const PRINT_STYLES = `*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Cairo','Segoe UI',Arial,sans-serif;color:#1a1a1a;font-size:12px;direction:rtl}.print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1a1a1a}.logo-area .company{font-size:20px;font-weight:800}.logo-area .sub{font-size:12px;color:#666;margin-top:2px}.doc-title{font-size:24px;font-weight:800;text-align:left}.doc-subtitle{font-size:13px;color:#e6930a;font-weight:700;text-align:left;margin-top:4px}table{width:100%;border-collapse:collapse;margin:12px 0;font-size:11px}thead tr{background:#1a1a1a;color:#fff}thead th{padding:8px 10px;text-align:right;font-weight:600}tbody tr{border-bottom:1px solid #eee}tbody tr:nth-child(even){background:#fafafa}tbody td{padding:7px 10px}tfoot tr{background:#f0f0f0;font-weight:700}tfoot td{padding:8px 10px}.kpi-row{display:grid;gap:10px;margin:12px 0}.kpi-box{background:#f8f9fa;border-radius:6px;padding:10px 14px;border-right:3px solid #e6930a}.kpi-label{font-size:10px;color:#888;margin-bottom:2px}.kpi-val{font-size:16px;font-weight:700}.section-title{font-size:14px;font-weight:700;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid #ddd}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}.info-box{background:#f8f9fa;border-radius:6px;padding:10px 14px}.info-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px solid #eee}.info-row:last-child{border:none}.info-label{color:#666}.info-val{font-weight:600}.footer{text-align:center;margin-top:20px;padding-top:12px;border-top:1px solid #eee;color:#999;font-size:10px}.green{color:#16a34a}.red{color:#dc2626}.blue{color:#2563eb}.amber{color:#d97706}.page{max-width:700px;margin:0 auto;padding:20px}.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:18px;border-bottom:3px solid #1a1a1a}.company-name{font-size:22px;font-weight:900}.amount-box{background:#1a1a1a;color:#fff;border-radius:10px;padding:20px 28px;text-align:center;margin-bottom:22px}.amount-value{font-size:32px;font-weight:900}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-bottom:28px}.sig-box{text-align:center;padding-top:44px;border-top:1px solid #ccc}.notes-box{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:22px}`;
+
+function openPrintOverlay(html, title) {
+  const overlay = document.getElementById('printOverlay');
+  const body    = document.getElementById('printOverlayBody');
+  const titleEl = document.getElementById('printOverlayTitle');
+  if (!overlay || !body) { console.warn('printOverlay not found'); return; }
+  if (titleEl) titleEl.textContent = title || 'معاينة الطباعة';
+  body.innerHTML = `<style>${PRINT_STYLES}</style>${html}`;
+  overlay.style.display = 'block';
+  document.body.style.overflow = 'hidden';
 }
+function closePrintOverlay() {
+  const o = document.getElementById('printOverlay');
+  if (o) o.style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePrintOverlay(); });
+function printDocument(html, title) { openPrintOverlay(html, title); }
+
 
 function docHeader(title, subtitle, fileNo) {
   return `<div class="print-header">
@@ -9328,6 +9301,30 @@ function fillRowFromLicense(row, data) {
 }
 
 // ════════════════════════════════════════
+// ═══════════════════════════════════
+// ENTRY STATUS
+// ═══════════════════════════════════
+function isAdminUser() { return _currentRole === 'admin'; }
+function adminPostsImmediately() { return localStorage.getItem('tm_admin_post') !== 'draft'; }
+function entryStatus() {
+  if (isAdminUser() && adminPostsImmediately()) return 'posted';
+  return 'draft';
+}
+function toggleAdminPostSetting() {
+  const newVal = adminPostsImmediately() ? 'draft' : 'posted';
+  localStorage.setItem('tm_admin_post', newVal);
+  updateAdminPostToggleUI();
+  toast(newVal === 'draft' ? '✅ إدخالات المدير ستحتاج موافقة' : '✅ إدخالات المدير ستُرحَّل فوراً', 'ok');
+}
+function updateAdminPostToggleUI() {
+  const immediate = adminPostsImmediately();
+  const t=document.getElementById('adminPostToggle'), k=document.getElementById('adminPostKnob'), l=document.getElementById('adminPostLabel');
+  if(!t) return;
+  t.style.background = immediate ? 'var(--green)' : 'var(--border2)';
+  if(k) k.style.transform = immediate ? 'translateX(0)' : 'translateX(-18px)';
+  if(l) l.textContent = immediate ? 'ترحيل فوري ✓' : 'يحتاج موافقة';
+}
+
 // DRAFT / POST SYSTEM
 // ════════════════════════════════════════
 
@@ -9341,7 +9338,7 @@ async function saveDraft(entryType, fileNo, description, amount, refTable, refId
       file_no:     fileNo   || null,
       description: description,
       amount:      amount   || 0,
-      post_status: 'draft',
+      post_status:entryStatus(),
       ref_table:   refTable || null,
       ref_id:      refId    || null,
     });
@@ -10324,8 +10321,7 @@ function loadScript(src) {
 function printPartnerStatement() {
   const content = document.getElementById('partnerStatementContent');
   if (!content) return;
-  const w = window.open('','_blank');
-  w.document.write(`<!DOCTYPE html><html dir="rtl"><head>
+  openPrintOverlay(`<!DOCTYPE html><html dir="rtl"><head>
     <meta charset="UTF-8">
     <title>كشف حساب شريك</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
@@ -10337,7 +10333,7 @@ function printPartnerStatement() {
       th,td{padding:6px 8px}
     </style>
   </head><body>${content.outerHTML}<script>window.onload=()=>window.print()<\/script></body></html>`);
-  w.document.close();
+
 }
 
 function openPartnerStatementFromReport() {
@@ -10446,8 +10442,8 @@ function showReport(type) {
   sessionStorage.setItem('tm_last_view','report:'+type);
   hideAllViews();
   el('reportsView').style.display = 'block';
-  const _rt = { profit:'الأرباح والخسائر', cashflow:'التدفقات النقدية', sales:'المبيعات', expenses:'المصاريف', partners:'الشركاء', opex:'التشغيلية' };
-  el('topBarTitle').textContent = _rt[type] || 'التقارير';
+  const _rt={profit:'الأرباح والخسائر',cashflow:'التدفقات النقدية',sales:'المبيعات',expenses:'المصاريف',partners:'الشركاء',opex:'التشغيلية'};
+  el('topBarTitle').textContent = _rt[type]||'التقارير';
   navActive('');
   const now = new Date();
   const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0');
@@ -10665,7 +10661,7 @@ async function runReport() {
 }
 
 // ════════════════════════════════════════
-// CASH FLOW REPORT — تقرير التدفقات النقدية
+// CASH FLOW REPORT
 // ════════════════════════════════════════
 async function runCashFlowReport(from, to, sys) {
   el('reportKpis').innerHTML = '';
@@ -10684,15 +10680,12 @@ async function runCashFlowReport(from, to, sys) {
       cfGet('partner_payouts', 'pay_date'),
       fetchOpexForJournal(from, to, sys),
     ]);
-
-    const inCollections = (collections||[]).reduce((s,r)=>s+(+r.amount||0), 0);
-    const outPayments   = (payments||[]).reduce((s,r)=>s+(+r.amount||0), 0);
-    const outExpenses   = (expenses||[]).reduce((s,r)=>s+(+r.amount||0), 0);
-    const outPayouts    = (payouts||[]).reduce((s,r)=>s+(+r.amount||0), 0);
-    const outOpex       = (opexItems||[]).reduce((s,r)=>s+(+r.amount||0), 0);
-    const totalIn  = inCollections;
-    const totalOut = outPayments + outExpenses + outPayouts + outOpex;
-    const netFlow  = totalIn - totalOut;
+    const inC  = (collections||[]).reduce((s,r)=>s+(+r.amount||0),0);
+    const outP = (payments||[]).reduce((s,r)=>s+(+r.amount||0),0);
+    const outE = (expenses||[]).reduce((s,r)=>s+(+r.amount||0),0);
+    const outPo= (payouts||[]).reduce((s,r)=>s+(+r.amount||0),0);
+    const outO = (opexItems||[]).reduce((s,r)=>s+(+r.amount||0),0);
+    const totalIn=inC, totalOut=outP+outE+outPo+outO, net=totalIn-totalOut;
 
     el('reportKpis').innerHTML = `
       <div class="j-kpi" style="border-right:3px solid var(--green);background:var(--green-dim)">
@@ -10705,104 +10698,50 @@ async function runCashFlowReport(from, to, sys) {
         <div class="j-kpi-val text-red" style="font-size:20px;font-weight:900">${fmt(totalOut)}</div>
         <div style="font-size:10px;color:var(--text2);margin-top:2px">دفعات + مصاريف + صرف + تشغيلية</div>
       </div>
-      <div class="j-kpi" style="border-right:3px solid ${netFlow>=0?'var(--green)':'var(--red)'};background:${netFlow>=0?'var(--green-dim)':'var(--red-dim)'}">
+      <div class="j-kpi" style="border-right:3px solid ${net>=0?'var(--green)':'var(--red)'};background:${net>=0?'var(--green-dim)':'var(--red-dim)'}">
         <div class="j-kpi-label">💵 صافي التدفق</div>
-        <div class="j-kpi-val" style="color:${netFlow>=0?'var(--green)':'var(--red)'};font-size:22px;font-weight:900">
-          ${netFlow>=0?'+':''}${fmt(netFlow)}
-        </div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">${netFlow>=0?'▲ موجب':'▼ سالب'}</div>
+        <div class="j-kpi-val" style="color:${net>=0?'var(--green)':'var(--red)'};font-size:22px;font-weight:900">${net>=0?'+':''}${fmt(net)}</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">${net>=0?'▲ موجب':'▼ سالب'}</div>
       </div>`;
 
-    const breakdown = [
-      { label:'تحصيلات العملاء', amount:inCollections, dir:+1, icon:'💰', color:'var(--green)',  count:(collections||[]).length },
-      { label:'دفعات للموردين',   amount:outPayments,   dir:-1, icon:'💳', color:'var(--cyan)',   count:(payments||[]).length    },
-      { label:'مصاريف الصفقات',   amount:outExpenses,   dir:-1, icon:'💸', color:'var(--red)',    count:(expenses||[]).length    },
-      { label:'صرف الشركاء',      amount:outPayouts,    dir:-1, icon:'👥', color:'var(--purple)', count:(payouts||[]).length     },
-      { label:'مصاريف تشغيلية',   amount:outOpex,       dir:-1, icon:'💼', color:'var(--text2)',  count:(opexItems||[]).length   },
+    const breakdown=[
+      {label:'تحصيلات العملاء',amount:inC, dir:+1,icon:'💰',color:'var(--green)', count:(collections||[]).length},
+      {label:'دفعات للموردين', amount:outP,dir:-1,icon:'💳',color:'var(--cyan)',  count:(payments||[]).length},
+      {label:'مصاريف الصفقات', amount:outE,dir:-1,icon:'💸',color:'var(--red)',   count:(expenses||[]).length},
+      {label:'صرف الشركاء',    amount:outPo,dir:-1,icon:'👥',color:'var(--purple)',count:(payouts||[]).length},
+      {label:'مصاريف تشغيلية',amount:outO,dir:-1,icon:'💼',color:'var(--text2)', count:(opexItems||[]).length},
     ];
 
-    const months = {};
-    const addM = (d, amt, dir) => {
-      if (!d) return;
-      const m = d.slice(0,7);
-      if (!months[m]) months[m] = { in:0, out:0 };
-      if (dir > 0) months[m].in  += amt; else months[m].out += amt;
-    };
-    (collections||[]).forEach(r => addM(r.paid_date||r.due_date, +r.amount||0, +1));
-    (payments||[]).forEach(r    => addM(r.pay_date,  +r.amount||0, -1));
-    (expenses||[]).forEach(r    => addM(r.exp_date||r.expense_date, +r.amount||0, -1));
-    (payouts||[]).forEach(r     => addM(r.pay_date,  +r.amount||0, -1));
-    (opexItems||[]).forEach(r   => addM(r.exp_date,  +r.amount||0, -1));
+    const months={};
+    const addM=(d,a,dir)=>{if(!d)return;const m=d.slice(0,7);if(!months[m])months[m]={in:0,out:0};if(dir>0)months[m].in+=a;else months[m].out+=a;};
+    (collections||[]).forEach(r=>addM(r.paid_date||r.due_date,+r.amount||0,+1));
+    (payments||[]).forEach(r=>addM(r.pay_date,+r.amount||0,-1));
+    (expenses||[]).forEach(r=>addM(r.exp_date||r.expense_date,+r.amount||0,-1));
+    (payouts||[]).forEach(r=>addM(r.pay_date,+r.amount||0,-1));
+    (opexItems||[]).forEach(r=>addM(r.exp_date,+r.amount||0,-1));
+    const mks=Object.keys(months).sort();
+    const mx=Math.max(...mks.map(m=>Math.max(months[m].in,months[m].out)),1);
+    const bar=(v,c)=>`<div style="height:6px;background:${c};border-radius:3px;width:${Math.round(v/mx*100)}%;margin-top:3px;min-width:${v>0?'4px':'0'}"></div>`;
 
-    const monthKeys = Object.keys(months).sort();
-    const maxVal    = Math.max(...monthKeys.map(m=>Math.max(months[m].in, months[m].out)), 1);
-    const bar = (v, color) => `<div style="height:6px;background:${color};border-radius:3px;width:${Math.round(v/maxVal*100)}%;margin-top:3px;min-width:${v>0?'4px':'0'}"></div>`;
-
-    const monthRows = monthKeys.map(m => {
-      const net = months[m].in - months[m].out;
-      return `<tr>
-        <td style="font-family:monospace">${m}</td>
-        <td><div class="mono text-green">${fmt(months[m].in)}</div>${bar(months[m].in,'var(--green)')}</td>
-        <td><div class="mono text-red">${fmt(months[m].out)}</div>${bar(months[m].out,'var(--red)')}</td>
-        <td class="mono" style="font-weight:700;color:${net>=0?'var(--green)':'var(--red)'}">${net>=0?'+':''}${fmt(net)}</td>
-      </tr>`;
+    const detailRows=breakdown.map(b=>{
+      const base=b.dir>0?totalIn:totalOut;
+      const pct=base>0?Math.round(b.amount/base*100):0;
+      return `<tr><td><div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">${b.icon}</span><div><div style="font-weight:600;font-size:13px">${b.label}</div><div style="font-size:11px;color:var(--text2)">${b.count} عملية</div></div></div></td><td style="text-align:center"><span style="background:${b.dir>0?'var(--green-dim)':'var(--red-dim)'};color:${b.dir>0?'var(--green)':'var(--red)'};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">${b.dir>0?'↑ داخل':'↓ خارج'}</span></td><td class="mono" style="font-weight:700;color:${b.color};font-size:14px">${fmt(b.amount)}</td><td><div style="background:var(--card2);border-radius:4px;height:8px;overflow:hidden;min-width:80px"><div style="width:${pct}%;height:100%;background:${b.color};border-radius:4px"></div></div><div style="font-size:10px;color:var(--text2);margin-top:2px">${pct}%</div></td></tr>`;
     }).join('');
 
-    const detailRows = breakdown.map(b => {
-      const base = b.dir > 0 ? totalIn : totalOut;
-      const pct  = base > 0 ? Math.round(b.amount/base*100) : 0;
-      return `<tr>
-        <td><div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:18px">${b.icon}</span>
-          <div><div style="font-weight:600;font-size:13px">${b.label}</div>
-          <div style="font-size:11px;color:var(--text2)">${b.count} عملية</div></div>
-        </div></td>
-        <td style="text-align:center"><span style="background:${b.dir>0?'var(--green-dim)':'var(--red-dim)'};color:${b.dir>0?'var(--green)':'var(--red)'};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">${b.dir>0?'↑ داخل':'↓ خارج'}</span></td>
-        <td class="mono" style="font-weight:700;color:${b.color};font-size:14px">${fmt(b.amount)}</td>
-        <td><div style="background:var(--card2);border-radius:4px;height:8px;overflow:hidden;min-width:80px"><div style="width:${pct}%;height:100%;background:${b.color};border-radius:4px"></div></div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">${pct}%</div></td>
-      </tr>`;
-    }).join('');
+    const monthRows=mks.map(m=>{const n=months[m].in-months[m].out;return `<tr><td style="font-family:monospace">${m}</td><td><div class="mono text-green">${fmt(months[m].in)}</div>${bar(months[m].in,'var(--green)')}</td><td><div class="mono text-red">${fmt(months[m].out)}</div>${bar(months[m].out,'var(--red)')}</td><td class="mono" style="font-weight:700;color:${n>=0?'var(--green)':'var(--red)'}">${n>=0?'+':''}${fmt(n)}</td></tr>`;}).join('');
 
-    reportState.data = breakdown.map(b=>({ البند:b.label, الاتجاه:b.dir>0?'داخل':'خارج', المبلغ:b.amount, العمليات:b.count }));
-
-    el('reportTable').innerHTML = `
+    reportState.data=breakdown.map(b=>({البند:b.label,الاتجاه:b.dir>0?'داخل':'خارج',المبلغ:b.amount,العمليات:b.count}));
+    el('reportTable').innerHTML=`
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px;display:flex;justify-content:space-between">
-          <span>📊 تفصيل مصادر التدفق</span>
-          <span style="font-size:11px;color:var(--text2)">${from} — ${to}</span>
-        </div>
-        <table class="data-table">
-          <thead><tr><th>البند</th><th style="text-align:center">الاتجاه</th><th>المبلغ</th><th style="min-width:120px">النسبة</th></tr></thead>
-          <tbody>${detailRows}</tbody>
-          <tfoot style="background:var(--card2)">
-            <tr><td colspan="2" style="padding:10px 16px;font-weight:700">صافي التدفق النقدي</td>
-            <td class="mono" style="padding:10px 16px;font-weight:900;font-size:15px;color:${netFlow>=0?'var(--green)':'var(--red)'}">
-              ${netFlow>=0?'+':''}${fmt(netFlow)}</td><td></td></tr>
-          </tfoot>
-        </table>
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px;display:flex;justify-content:space-between"><span>📊 تفصيل مصادر التدفق</span><span style="font-size:11px;color:var(--text2)">${from} — ${to}</span></div>
+        <table class="data-table"><thead><tr><th>البند</th><th style="text-align:center">الاتجاه</th><th>المبلغ</th><th style="min-width:120px">النسبة</th></tr></thead><tbody>${detailRows}</tbody>
+        <tfoot style="background:var(--card2)"><tr><td colspan="2" style="padding:10px 16px;font-weight:700">صافي التدفق النقدي</td><td class="mono" style="padding:10px 16px;font-weight:900;font-size:15px;color:${net>=0?'var(--green)':'var(--red)'}">${net>=0?'+':''}${fmt(net)}</td><td></td></tr></tfoot></table>
       </div>
-      ${monthKeys.length>1?`
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px">📅 التحليل الشهري</div>
-        <table class="data-table">
-          <thead><tr><th>الشهر</th><th style="color:var(--green)">↑ داخل</th><th style="color:var(--red)">↓ خارج</th><th>الصافي</th></tr></thead>
-          <tbody>${monthRows}</tbody>
-          <tfoot style="background:var(--card2)">
-            <tr><td style="padding:10px 16px;font-weight:700">الإجمالي</td>
-            <td class="mono text-green" style="padding:10px 16px;font-weight:700">${fmt(totalIn)}</td>
-            <td class="mono text-red" style="padding:10px 16px;font-weight:700">${fmt(totalOut)}</td>
-            <td class="mono" style="padding:10px 16px;font-weight:900;color:${netFlow>=0?'var(--green)':'var(--red)'}">
-              ${netFlow>=0?'+':''}${fmt(netFlow)}</td></tr>
-          </tfoot>
-        </table>
-      </div>`:''}`;
-
-  } catch(e) {
-    el('reportTable').innerHTML = `<div class="empty-state"><div class="e-icon">⚠️</div><p>خطأ: ${e.message}</p></div>`;
-    console.error(e);
-  }
+      ${mks.length>1?`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden"><div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px">📅 التحليل الشهري</div><table class="data-table"><thead><tr><th>الشهر</th><th style="color:var(--green)">↑ داخل</th><th style="color:var(--red)">↓ خارج</th><th>الصافي</th></tr></thead><tbody>${monthRows}</tbody><tfoot style="background:var(--card2)"><tr><td style="padding:10px 16px;font-weight:700">الإجمالي</td><td class="mono text-green" style="padding:10px 16px;font-weight:700">${fmt(totalIn)}</td><td class="mono text-red" style="padding:10px 16px;font-weight:700">${fmt(totalOut)}</td><td class="mono" style="padding:10px 16px;font-weight:900;color:${net>=0?'var(--green)':'var(--red)'}">${net>=0?'+':''}${fmt(net)}</td></tr></tfoot></table></div>`:''}`;
+  } catch(e) { el('reportTable').innerHTML=`<div class="empty-state"><div class="e-icon">⚠️</div><p>خطأ: ${e.message}</p></div>`; console.error(e); }
 }
+
 
 function exportReportCSV() {
   if (!reportState.data?.length) { toast('لا توجد بيانات للتصدير','err'); return; }
@@ -11607,7 +11546,8 @@ async function printDealStatement(fileNo) {
   <table><thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>الطرف</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
   <tbody>${rows}</tbody></table>
   <scr` + `ipt>window.onload=()=>window.print()<` + `/scr` + `ipt></body></html>`;
-  const w = window.open('','_blank'); w.document.write(html); w.document.close();
+  openPrintOverlay(html);
+
 }
 
 function exportDealStatementExcel() {
@@ -12459,6 +12399,7 @@ async function regenInvNo() {
 const approvalState = { all: [], filtered: [], currentType: 'all', currentItem: null };
 
 const APPROVAL_CONFIG = {
+  purchase:   { icon:'📋', label:'سند شراء',   color:'var(--accent)',  table:'purchase_orders', amountField:'total_purchase', dateField:'po_date',   descFields:['file_no','supplier','po_no'] },
   sale:       { icon:'🧾', label:'بيع',         color:'var(--green)',  table:'sales',           amountField:'sale_price',   dateField:'sale_date',  descFields:['inv_no','customer','vin'] },
   expense:    { icon:'💸', label:'مصروف',       color:'var(--red)',    table:'expenses',         amountField:'amount',       dateField:'exp_date',   descFields:['description','exp_type','file_no'] },
   collection: { icon:'💰', label:'تحصيل',       color:'var(--blue)',   table:'collections',      amountField:'amount',       dateField:'paid_date',  descFields:['inv_no','customer','file_no'] },
@@ -12484,7 +12425,8 @@ async function loadApprovalQueue() {
     const sys = state.system;
 
     // جيب كل البنود المعلقة من كل الجداول بالتوازي
-    const [sales, expenses, collections, payments, payouts] = await Promise.all([
+    const [purchases, sales, expenses, collections, payments, payouts] = await Promise.all([
+      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
       apiGet('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
       apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
       apiGet('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
@@ -12494,6 +12436,7 @@ async function loadApprovalQueue() {
 
     // دمج كل البنود مع نوعها
     approvalState.all = [
+      ...(purchases||[]).map(r=>({...r, _type:'purchase', _amount:+r.total_purchase||0, _date:r.po_date, _desc:`${r.file_no||'—'} · ${r.supplier||'—'} · ${r.vehicle_count||0} سيارة`, _file:r.file_no })),
       ...(sales||[]).map(r       => ({...r, _type:'sale',       _amount:+r.sale_price||0,  _date:r.sale_date,  _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.vin||'—'}`,       _file:r.file_no })),
       ...(expenses||[]).map(r    => ({...r, _type:'expense',    _amount:+r.amount||0,       _date:r.exp_date||r.expense_date, _desc:`${r.description||'—'} · ${r.exp_type||'—'} · ${r.file_no||'—'}`, _file:r.file_no })),
       ...(collections||[]).map(r => ({...r, _type:'collection', _amount:+r.amount||0,       _date:r.paid_date||r.due_date,    _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.file_no||'—'}`,      _file:r.file_no })),
@@ -13237,5 +13180,9 @@ function installPWA() {
   </div>
 </div>
 
+
+<!-- PRINT OVERLAY -->
+<div id="printOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:#fff;overflow-y:auto"><div id="printOverlayToolbar" style="position:sticky;top:0;z-index:1;background:#1a1a1a;display:flex;align-items:center;gap:10px;padding:10px 20px"><span style="color:#fff;font-family:Cairo,sans-serif;font-size:14px;font-weight:700;flex:1" id="printOverlayTitle">معاينة الطباعة</span><button onclick="window.print()" style="background:#e6930a;color:#000;border:none;padding:8px 20px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;font-weight:700;cursor:pointer">🖨️ طباعة</button><button onclick="closePrintOverlay()" style="background:#444;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;cursor:pointer">✕ إغلاق</button></div><div id="printOverlayBody" style="padding:24px;max-width:1000px;margin:0 auto"></div></div>
+<style>@media print{body>*:not(#printOverlay){display:none!important}#printOverlay{display:block!important;position:static!important}#printOverlayToolbar{display:none!important}}</style>
 </body>
 </html>
