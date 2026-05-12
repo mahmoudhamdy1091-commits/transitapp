@@ -2888,7 +2888,18 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           <option value="توزيع أرباح">توزيع أرباح فقط</option>
           <option value="رأس مال + أرباح">رأس مال + أرباح (مقسّم)</option>
           <option value="سلفة">سلفة (دين على الشريك)</option>
+          <option value="سحب عام">سحب عام من الرصيد المتراكم</option>
         </select>
+      </div>
+
+      <!-- رصيد الشريك المتراكم — يظهر عند السحب العام -->
+      <div id="pout-account-card" style="display:none;background:var(--purple-dim);border:1px solid var(--purple);border-radius:var(--radius-sm);padding:12px;margin-bottom:4px">
+        <div style="font-size:11px;font-weight:700;color:var(--purple);margin-bottom:8px">رصيد الشريك المتراكم</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px">
+          <div><span style="color:var(--text2)">إجمالي الأرباح: </span><span id="pacc-profits" style="font-weight:700;color:var(--green)"></span></div>
+          <div><span style="color:var(--text2)">سحوبات سابقة: </span><span id="pacc-withdrawn" style="font-weight:700;color:var(--red)"></span></div>
+          <div><span style="color:var(--text2)">الرصيد المتاح: </span><span id="pacc-balance" style="font-weight:700;font-size:15px;color:var(--purple)"></span></div>
+        </div>
       </div>
 
       <!-- Simple amount (for single type) -->
@@ -4346,6 +4357,10 @@ async function loadSummaryTab(fn, sys) {
                 style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
                 📊 كل الصفقات
               </button>
+              <button onclick="event.stopPropagation();openPartnerAccountLedger('${p.partner}')"
+                style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+                📒 جاري الشريك
+              </button>
             </div>
           </div>
         </div>`;
@@ -5631,12 +5646,11 @@ async function submitNewFile() {
       `سند شراء — ${supplier}${poNo?' — PO: '+poNo:''}`,
       finalTotal, 'purchase_orders', null);
     closeModal('newFileModal');
-    toast(`✅ تم إنشاء الملف ${fileNo} — ${vehicles.length} سيارة`, 'ok');
     await loadDashboard();
     showDashboard();
+    toast(`✅ تم إنشاء الملف ${fileNo} — ${vehicles.length} سيارة`, 'ok');
+    // الطباعة اختيارية — يضغط المستخدم زر الطباعة من داخل الملف
 
-    // ✅ طباعة سند الشراء تلقائياً
-    setTimeout(() => printPurchaseOrder(fileNo), 600);
 
   } catch(e) {
     showFieldErr('nfError','خطأ: ' + e.message);
@@ -8755,6 +8769,10 @@ function exportToExcel(sheets, filename) {
 // ── PDF/PRINT via new window ──
 function printDocument(html, title) {
   const w = window.open('', '_blank', 'width=1000,height=800,scrollbars=yes');
+  if (!w) {
+    toast('⚠️ المتصفح حجب نافذة الطباعة — يرجى السماح بالنوافذ المنبثقة ثم المحاولة مجدداً', 'err');
+    return;
+  }
   w.document.write(`<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -12492,6 +12510,274 @@ async function updateApprovalBadge() {
   } catch(e) {}
 }
 
+// ════════════════════════════════════════
+// جاري الشريك — Partner Account Ledger
+// ════════════════════════════════════════
+const partnerAccountState = { partner: null, entries: [] };
+
+async function openPartnerAccountLedger(partnerName) {
+  partnerAccountState.partner = partnerName;
+  el('pa-partner-name').textContent = partnerName;
+  el('pa-ledger-table').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
+  openModal('partnerAccountModal');
+  await loadPartnerAccountLedger();
+}
+
+async function loadPartnerAccountLedger() {
+  const partner = partnerAccountState.partner;
+  const sys     = state.system;
+  if (!partner) return;
+
+  try {
+    // جيب كل الصفقات اللي فيها الشريك
+    const [allDeals, allPayouts, accountEntries] = await Promise.all([
+      apiGet('partners_master',   { select:'file_no,share_percent', system_type:`eq.${sys}`, partner:`eq.${partner}` }),
+      apiGet('partner_payouts',   { select:'*', system_type:`eq.${sys}`, partner:`eq.${partner}`, order:'pay_date.desc' }),
+      apiGet('partner_accounts',  { select:'*', system_type:`eq.${sys}`, partner:`eq.${partner}`, order:'entry_date.desc' }),
+    ]);
+
+    // احسب الأرباح من كل الصفقات
+    let totalProfits = 0;
+    const dealEntries = [];
+    for (const pm of (allDeals||[])) {
+      try {
+        const [po, sales, expenses] = await Promise.all([
+          apiGet('purchase_orders', { select:'total_purchase', system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
+          apiGet('sales',           { select:'sale_price',     system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
+          apiGet('expenses',        { select:'amount',         system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
+        ]);
+        const share      = (+pm.share_percent||0)/100;
+        const totalPurch = +po?.[0]?.total_purchase||0;
+        const totalSale  = (sales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
+        const totalExp   = (expenses||[]).reduce((s,r)=>s+(+r.amount||0),0);
+        const profit     = (totalSale - totalPurch - totalExp) * share;
+        if (Math.abs(profit) > 0.001) {
+          totalProfits += profit;
+          dealEntries.push({
+            type:'profit_credit', file_no:pm.file_no,
+            amount:profit, entry_date:'—',
+            description:`ربح صفقة ${pm.file_no} (${pm.share_percent}%)`,
+            _sign: +1
+          });
+        }
+      } catch(e) {}
+    }
+
+    // صرف على صفقات
+    const dealPayouts = (allPayouts||[]).map(p => ({
+      ...p,
+      type:'deal_payout',
+      description:`صرف ${p.payout_type||''} — ${p.file_no||'—'}`,
+      _sign: -1
+    }));
+
+    // سحوبات عامة وسلف من partner_accounts
+    const generalEntries = (accountEntries||[]).map(e => ({
+      ...e,
+      _sign: e.entry_type === 'general_withdraw' || e.entry_type === 'advance' ? -1 : +1
+    }));
+
+    // دمج كل الحركات
+    const allEntries = [
+      ...dealEntries,
+      ...dealPayouts,
+      ...generalEntries,
+    ].sort((a,b) => {
+      const da = a.entry_date||a.pay_date||'0';
+      const db = b.entry_date||b.pay_date||'0';
+      return db.localeCompare(da);
+    });
+
+    partnerAccountState.entries = allEntries;
+
+    // KPIs
+    const totalDebits  = allEntries.filter(e=>e._sign>0).reduce((s,e)=>s+(+e.amount||0),0);
+    const totalCredits = allEntries.filter(e=>e._sign<0).reduce((s,e)=>s+(+e.amount||0),0);
+    const balance      = totalDebits - totalCredits;
+
+    el('pa-summary-kpis').innerHTML = `
+      <div class="j-kpi" style="border-right:3px solid var(--green)">
+        <div class="j-kpi-label">إجمالي الأرباح</div>
+        <div class="j-kpi-val text-green">${fmt(totalProfits)}</div>
+      </div>
+      <div class="j-kpi" style="border-right:3px solid var(--red)">
+        <div class="j-kpi-label">إجمالي السحوبات</div>
+        <div class="j-kpi-val text-red">${fmt(totalCredits)}</div>
+      </div>
+      <div class="j-kpi" style="border-right:3px solid var(--purple);background:var(--purple-dim)">
+        <div class="j-kpi-label">الرصيد المتاح</div>
+        <div class="j-kpi-val" style="color:${balance>=0?'var(--green)':'var(--red)'};">${fmt(balance)}</div>
+      </div>
+      <div class="j-kpi" style="border-right:3px solid var(--blue)">
+        <div class="j-kpi-label">عدد الصفقات</div>
+        <div class="j-kpi-val text-blue">${(allDeals||[]).length}</div>
+      </div>`;
+
+    // Store balance for withdraw modal
+    partnerAccountState.balance = balance;
+
+    renderPartnerAccountLedger();
+  } catch(e) {
+    el('pa-ledger-table').innerHTML = `<div class="alert alert-err">خطأ: ${e.message}</div>`;
+  }
+}
+
+function renderPartnerAccountLedger() {
+  const filterType = el('pa-filter-type')?.value || '';
+  let entries = partnerAccountState.entries;
+  if (filterType) entries = entries.filter(e => (e.type||e.entry_type) === filterType);
+
+  const typeLabels = {
+    profit_credit:'أرباح مرصودة', capital_credit:'رأس مال مرصود',
+    general_withdraw:'سحب عام', advance:'سلفة', deal_payout:'صرف صفقة'
+  };
+  const typeColors = {
+    profit_credit:'var(--green)', capital_credit:'var(--blue)',
+    general_withdraw:'var(--red)', advance:'var(--amber)', deal_payout:'var(--purple)'
+  };
+
+  if (!entries.length) {
+    el('pa-ledger-table').innerHTML = emptyHTML('📒','لا توجد حركات');
+    return;
+  }
+
+  let runningBalance = 0;
+  const rows = [...entries].reverse().map(e => {
+    const type   = e.type || e.entry_type;
+    const sign   = e._sign || (type==='general_withdraw'||type==='advance'||type==='deal_payout' ? -1 : +1);
+    const amount = +e.amount || 0;
+    runningBalance += sign * amount;
+    const balance = runningBalance;
+    return { e, type, sign, amount, balance };
+  }).reverse().map(({e, type, sign, amount, balance}) => {
+    const color = typeColors[type] || 'var(--text2)';
+    const date  = e.entry_date||e.pay_date||e.created_at?.split('T')[0]||'—';
+    return `<tr>
+      <td class="mono" style="font-size:11px;color:var(--text2)">${fmtDate(date)}</td>
+      <td>
+        <span style="background:${color}22;color:${color};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">
+          ${typeLabels[type]||type}
+        </span>
+      </td>
+      <td style="font-size:12px">${e.description||'—'}</td>
+      <td class="mono text-amber" style="font-size:11px">${e.file_no||'—'}</td>
+      <td class="mono" style="color:${sign>0?'var(--green)':'var(--red)'};font-weight:700">
+        ${sign>0?'+':'−'}${fmt(amount)}
+      </td>
+      <td class="mono" style="font-weight:700;color:${balance>=0?'var(--blue)':'var(--red)'}">
+        ${fmt(balance)}
+      </td>
+      <td style="font-size:11px;color:var(--text2)">${e.document||e.notes||'—'}</td>
+    </tr>`;
+  }).join('');
+
+  el('pa-ledger-table').innerHTML = `
+    <table class="data-table" style="font-size:12px">
+      <thead><tr>
+        <th>التاريخ</th><th>النوع</th><th>البيان</th>
+        <th>الملف</th><th>المبلغ</th><th>الرصيد</th><th>ملاحظات</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function openGeneralWithdrawModal() {
+  el('gw-amount').value  = '';
+  el('gw-date').value    = today();
+  el('gw-doc').value     = '';
+  el('gw-notes').value   = '';
+  el('gwError').style.display = 'none';
+  const balance = partnerAccountState.balance || 0;
+  if(el('gw-available')) el('gw-available').textContent = fmt(balance);
+  el('gw-available').style.color = balance > 0 ? 'var(--purple)' : 'var(--red)';
+  openModal('generalWithdrawModal');
+}
+
+async function submitGeneralWithdraw() {
+  const partner = partnerAccountState.partner;
+  const amount  = parseFloat(el('gw-amount').value);
+  const date    = el('gw-date').value;
+  const method  = el('gw-method').value;
+  const doc     = el('gw-doc').value.trim();
+  const notes   = el('gw-notes').value.trim();
+
+  if (!amount || !date) { showFieldErr('gwError','يرجى ملء المبلغ والتاريخ'); return; }
+
+  const balance = partnerAccountState.balance || 0;
+  if (amount > balance + 0.001) {
+    const go = confirm(`⚠️ المبلغ (${fmt(amount)}) أكبر من الرصيد المتاح (${fmt(balance)}).\nهل تريد المتابعة؟`);
+    if (!go) return;
+  }
+
+  try {
+    await apiPost('partner_accounts', {
+      system_type: state.system,
+      partner, entry_type:'general_withdraw',
+      amount, entry_date:date,
+      description:`سحب عام — ${partner}`,
+      document:doc||null, notes:notes||null
+    });
+    await logAudit('INSERT','partner_accounts', null, null, {partner, amount, date});
+    closeModal('generalWithdrawModal');
+    toast(`✅ تم تسجيل السحب العام — ${fmt(amount)}`,'ok');
+    await loadPartnerAccountLedger();
+  } catch(e) { showFieldErr('gwError','خطأ: '+e.message); }
+}
+
+// تحديث onPayoutTypeChange لإظهار رصيد الشريك عند السحب العام
+// (يتم patch الدالة الموجودة بإضافة منطق السحب العام)
+const _patchPayoutType = () => {
+  const orig = window.onPayoutTypeChange;
+  window.onPayoutTypeChange = function() {
+    orig && orig();
+    const type    = el('pout-type')?.value;
+    const accCard = el('pout-account-card');
+    if (!accCard) return;
+    if (type === 'سحب عام') {
+      accCard.style.display = 'block';
+      loadPartnerAccountBalance();
+    } else {
+      accCard.style.display = 'none';
+    }
+  };
+};
+// تطبيق الـ patch بعد تحميل الصفحة
+document.addEventListener('DOMContentLoaded', _patchPayoutType);
+
+async function loadPartnerAccountBalance() {
+  const partner = el('pout-partner')?.value;
+  if (!partner) return;
+  try {
+    const [allDeals, allPayouts, accountEntries] = await Promise.all([
+      apiGet('partners_master',  { select:'file_no,share_percent', system_type:`eq.${state.system}`, partner:`eq.${partner}` }),
+      apiGet('partner_payouts',  { select:'amount', system_type:`eq.${state.system}`, partner:`eq.${partner}` }),
+      apiGet('partner_accounts', { select:'amount,entry_type', system_type:`eq.${state.system}`, partner:`eq.${partner}` }),
+    ]);
+
+    let totalProfits = 0;
+    for (const pm of (allDeals||[])) {
+      try {
+        const [po, sales, exp] = await Promise.all([
+          apiGet('purchase_orders',{select:'total_purchase',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
+          apiGet('sales',{select:'sale_price',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
+          apiGet('expenses',{select:'amount',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
+        ]);
+        const share = (+pm.share_percent||0)/100;
+        const profit = ((sales||[]).reduce((s,r)=>s+(+r.sale_price||0),0) - (+po?.[0]?.total_purchase||0) - (exp||[]).reduce((s,e)=>s+(+e.amount||0),0)) * share;
+        totalProfits += profit;
+      } catch(e) {}
+    }
+
+    const totalPayouts = (allPayouts||[]).reduce((s,p)=>s+(+p.amount||0),0);
+    const generalWithdrawn = (accountEntries||[]).filter(e=>e.entry_type==='general_withdraw'||e.entry_type==='advance').reduce((s,e)=>s+(+e.amount||0),0);
+    const balance = totalProfits - totalPayouts - generalWithdrawn;
+
+    if(el('pacc-profits'))   el('pacc-profits').textContent   = fmt(totalProfits);
+    if(el('pacc-withdrawn')) el('pacc-withdrawn').textContent = fmt(totalPayouts + generalWithdrawn);
+    if(el('pacc-balance'))   { el('pacc-balance').textContent = fmt(balance); el('pacc-balance').style.color = balance>=0?'var(--purple)':'var(--red)'; }
+  } catch(e) {}
+}
+
 // PWA Install prompt
 let _pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
@@ -12591,6 +12877,93 @@ function installPWA() {
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('opexModal')">إلغاء</button>
       <button class="btn btn-primary" id="opexSubmitBtn" onclick="submitOpex()">💾 حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- PARTNER ACCOUNT LEDGER -->
+<div class="modal-overlay" id="partnerAccountModal">
+  <div class="modal modal-lg" style="max-width:800px">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--purple-dim)">📒</div>
+      <h3>جاري الشريك — <span id="pa-partner-name"></span></h3>
+      <button class="modal-close" onclick="closeModal('partnerAccountModal')">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- رصيد ملخص -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px" id="pa-summary-kpis"></div>
+
+      <!-- فلتر النوع -->
+      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <select id="pa-filter-type" onchange="renderPartnerAccountLedger()"
+          style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <option value="">كل الحركات</option>
+          <option value="profit_credit">أرباح مرصودة</option>
+          <option value="capital_credit">رأس مال مرصود</option>
+          <option value="general_withdraw">سحب عام</option>
+          <option value="advance">سلفة</option>
+          <option value="deal_payout">صرف صفقة</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="loadPartnerAccountLedger()">🔄 تحديث</button>
+        <button class="btn btn-primary btn-sm" onclick="openGeneralWithdrawModal()" style="margin-right:auto">➕ سحب عام</button>
+      </div>
+
+      <!-- جدول الحركات -->
+      <div id="pa-ledger-table" style="max-height:400px;overflow-y:auto"></div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('partnerAccountModal')">إغلاق</button>
+      <button class="btn btn-primary btn-sm" onclick="exportPartnerAccountPDF()">📥 PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- GENERAL WITHDRAW MODAL -->
+<div class="modal-overlay" id="generalWithdrawModal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--purple-dim)">💸</div>
+      <h3>سحب عام من رصيد الشريك</h3>
+      <button class="modal-close" onclick="closeModal('generalWithdrawModal')">✕</button>
+    </div>
+    <div class="modal-body"><div class="form-col">
+      <div id="gw-balance-card" style="background:var(--purple-dim);border:1px solid var(--purple);border-radius:var(--radius-sm);padding:10px;margin-bottom:12px;font-size:12px">
+        <span style="color:var(--text2)">الرصيد المتاح: </span>
+        <span id="gw-available" style="font-weight:900;font-size:16px;color:var(--purple)"></span>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>المبلغ *</label>
+          <input type="number" id="gw-amount" placeholder="0.000" min="0" step="0.001">
+        </div>
+        <div class="field">
+          <label>التاريخ *</label>
+          <input type="date" id="gw-date">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>طريقة الدفع</label>
+          <select id="gw-method">
+            <option>تحويل بنكي</option><option>نقد</option><option>شيك</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>رقم المستند</label>
+          <input type="text" id="gw-doc" placeholder="رقم التحويل">
+        </div>
+      </div>
+      <div class="field">
+        <label>ملاحظات</label>
+        <textarea id="gw-notes" rows="2" placeholder="..."></textarea>
+      </div>
+      <div id="gwError" class="alert alert-err" style="display:none"></div>
+    </div></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('generalWithdrawModal')">إلغاء</button>
+      <button class="btn btn-primary" onclick="submitGeneralWithdraw()">💾 حفظ السحب</button>
     </div>
   </div>
 </div>
