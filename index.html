@@ -1301,6 +1301,25 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- ══ PRINT OVERLAY ══ -->
+<div id="printOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:#fff;overflow-y:auto">
+  <div id="printOverlayToolbar" style="position:sticky;top:0;z-index:1;background:#1a1a1a;display:flex;align-items:center;gap:10px;padding:10px 20px">
+    <span style="color:#fff;font-family:Cairo,sans-serif;font-size:14px;font-weight:700;flex:1" id="printOverlayTitle">معاينة الطباعة</span>
+    <button onclick="window.print()" style="background:var(--accent,#e6930a);color:#000;border:none;padding:8px 20px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;font-weight:700;cursor:pointer">🖨️ طباعة</button>
+    <button onclick="closePrintOverlay()" style="background:#444;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;cursor:pointer">✕ إغلاق</button>
+  </div>
+  <div id="printOverlayBody" style="padding:24px;max-width:1000px;margin:0 auto"></div>
+</div>
+
+<style>
+@media print {
+  body > *:not(#printOverlay) { display:none !important; }
+  #printOverlay { display:block !important; position:static !important; overflow:visible !important; }
+  #printOverlayToolbar { display:none !important; }
+  #printOverlayBody { padding:0 !important; }
+}
+</style>
 </head>
 <body>
 
@@ -4751,9 +4770,7 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
 </body>
 </html>`;
 
-  const w = window.open('', '_blank', 'width=900,height=700,scrollbars=yes');
-  w.document.write(html);
-  w.document.close();
+  openPrintOverlay(html);
   // WhatsApp option after print
   setTimeout(() => {
     if (confirm('إرسال الفاتورة عبر واتساب؟')) {
@@ -5028,9 +5045,7 @@ async function printPayoutVoucher(payoutId) {
 </div>
 </body></html>`;
 
-    const w = window.open('','_blank');
-    w.document.write(html);
-    w.document.close();
+    openPrintOverlay(html);
   } catch(e) { toast('خطأ في الطباعة: '+e.message,'err'); }
 }
 
@@ -5597,7 +5612,7 @@ async function submitNewFile() {
     if (finalTotal > 0) {
       try { await apiDelete('ledger_entries', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, source_table:`eq.purchase_orders` }); } catch(e) {}
       const vinList = vehicles.filter(v=>v.vin).map(v=>v.vin).join(' / ');
-      if (isAdminUser()) await postLedger({ contactName:supplier, contactType:'supplier', date:poDate||today(),
+      await postLedger({ contactName:supplier, contactType:'supplier', date:poDate||today(),
         description:`شراء ${vehicles.length} سيارة${vinList?' — شواصي: '+vinList:''} — ملف ${fileNo}${poNo?' — PO: '+poNo:''}`,
         debit: finalTotal, sourceTable:'purchase_orders', fileNo });
     }
@@ -5633,7 +5648,7 @@ async function submitNewFile() {
           notes: `حصة ${p.share}% — دفع مقدماً`
         });
         // Ledger: partner paid (credit partner account)
-        if (isAdminUser()) await postLedger({ contactName:p.name, contactType:'partner', date:poDate||today(),
+        await postLedger({ contactName:p.name, contactType:'partner', date:poDate||today(),
           description:`دفعة شريك — ملف ${fileNo}`,
           credit: p.paid, sourceTable:'payments', fileNo });
       }
@@ -5971,7 +5986,7 @@ async function submitExpense() {
         expense_date:date,
         notes:       exp.notes || null,
         ref_no:      refNo
-      , post_status:entryStatus()};
+      , post_status:'draft'};
       await apiPost('expenses', data);
       await logAudit('INSERT','expenses', expFileNo, null, data);
     }
@@ -6015,17 +6030,17 @@ async function submitPayment() {
       payer, amount, pay_method: method,
       document: doc||null, pay_date: date,
       notes: notes||null
-    , post_status:entryStatus()};
+    , post_status:'draft'};
     await apiPost('payments', data);
     await logAudit('INSERT','payments',fn,null,data);
     const poArr = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
-    if (isAdminUser() && supplierName) {
+    if (supplierName) {
       await postLedger({ contactName:supplierName, contactType:'supplier', date,
         description:`[${refNo}] دفعة للمورد — ملف ${fn} — دافع: ${payer}`,
         credit: amount, sourceTable:'payments', fileNo: fn });
     }
-    if (isAdminUser() && payer && payer !== supplierName) {
+    if (payer && payer !== supplierName) {
       await postLedger({ contactName:payer, contactType:'partner', date,
         description:`[${refNo}] دفع للمورد ${supplierName||'المورد'} — ملف ${fn}`,
         debit: amount, sourceTable:'payments', fileNo: fn });
@@ -6269,7 +6284,7 @@ async function submitSale() {
       const data = {
         system_type: state.system, file_no: item.fileNo||fn,
         inv_no: invNo, vin: item.vin||null, customer,
-        sale_price: item.price, sale_date: date, post_status:entryStatus(), notes: item.vnote||notes||null
+        sale_price: item.price, sale_date: date, post_status:'draft', notes: item.vnote||notes||null
       };
       await apiPost('sales', data);
       insertedSales.push(data);
@@ -6278,7 +6293,7 @@ async function submitSale() {
 
     // Ledger: customer becomes debtor
     const fileNos = [...new Set(saleItems.map(i=>i.fileNo||fn))].join(', ');
-    if (isAdminUser()) await postLedger({ contactName:customer, contactType:'customer', date,
+    await postLedger({ contactName:customer, contactType:'customer', date,
       description:`فاتورة ${invNo} — ${saleItems.length} سيارة — ملفات: ${fileNos}`,
       debit: totalPrice, sourceTable:'sales', fileNo: fn });
 
@@ -6440,10 +6455,10 @@ async function submitCollection() {
       pay_method: method, document: doc||null,
       due_date: due||null, paid_date: paid||null, notes: notes||null,
       ref_no: refNo
-    , post_status:entryStatus()};
+    , post_status:'draft'};
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
-    if (isAdminUser() && cust) await postLedger({ contactName:cust, contactType:'customer', date:paid||today(),
+    if (cust) await postLedger({ contactName:cust, contactType:'customer', date:paid||today(),
       description:`[${refNo}] تحصيل فاتورة ${invNo||''}${vin?' — شاصي: '+vin:''} — ملف ${fn}`,
       credit: amount, sourceTable:'collections', fileNo: fn });
     closeModal('collectionModal');
@@ -6646,7 +6661,7 @@ async function submitPayout() {
     };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fn,null,data);
-    if (isAdminUser()) await postLedger({ contactName:partner, contactType:'partner', date,
+    await postLedger({ contactName:partner, contactType:'partner', date,
       description:`[${pay_id}] ${type} — ملف ${fn}`,
       debit: amount, sourceTable:'partner_payouts', fileNo: fn });
     closeModal('payoutModal');
@@ -6937,10 +6952,10 @@ async function submitQuickSale() {
   }
   try {
     const data = { system_type:state.system, file_no:fileNo, vin, customer,
-      invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:entryStatus()};
+      invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:'draft'};
     await apiPost('sales', data);
     await logAudit('INSERT','sales',fileNo,null,data);
-    if (isAdminUser()) await postLedger({ contactName:customer, contactType:'customer', date,
+    await postLedger({ contactName:customer, contactType:'customer', date,
       description:`بيع سيارة ${vin} — ملف ${fileNo}`,
       debit: price, sourceTable:'sales', fileNo });
     closeModal('quickSaleModal');
@@ -6983,10 +6998,10 @@ async function submitQuickCollection() {
       vin: vin||null, amount, pay_method: method,
       document: doc||null, due_date: due||null,
       paid_date: paid, notes: notes||null, ref_no: refNo
-    , post_status:entryStatus()};
+    , post_status:'draft'};
     await apiPost('collections', data);
     await logAudit('INSERT','collections', fileNo, null, data);
-    if (isAdminUser() && customer) await postLedger({
+    if (customer) await postLedger({
       contactName: customer, contactType: 'customer', date: paid,
       description: `[${refNo}] تحصيل فاتورة ${invNo} — ملف ${fileNo}`,
       credit: amount, sourceTable: 'collections', fileNo
@@ -7099,12 +7114,12 @@ async function submitQuickPayment() {
       pay_method:method, document:doc||null, pay_date: date, notes:notes||null };
     await apiPost('payments', data);
     await logAudit('INSERT','payments', fileNo, null, data);
-    if (isAdminUser() && supplierName && supplierName !== '—') {
+    if (supplierName && supplierName !== '—') {
       await postLedger({ contactName:supplierName, contactType:'supplier', date,
         description:`[${refNo}] دفعة للمورد — ملف ${fileNo} — دافع: ${payer}`,
         credit:amount, sourceTable:'payments', fileNo });
     }
-    if (isAdminUser() && payer && payer !== supplierName) {
+    if (payer && payer !== supplierName) {
       await postLedger({ contactName:payer, contactType:'partner', date,
         description:`[${refNo}] دفع للمورد ${supplierName||''} — ملف ${fileNo}`,
         debit:amount, sourceTable:'payments', fileNo });
@@ -7144,7 +7159,7 @@ async function submitQuickPayout() {
       pay_date: date, notes:notes||null };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
-    if (isAdminUser()) await postLedger({ contactName:partner, contactType:'partner', date,
+    await postLedger({ contactName:partner, contactType:'partner', date,
       description:`صرف شريك — ملف ${fileNo}`,
       debit:amount, sourceTable:'partner_payouts', fileNo });
     closeModal('quickPayoutModal');
@@ -7952,7 +7967,7 @@ function printSection(title, subtitle, tableHtml, summaryHtml='') {
   ${tableHtml}
   <div class="footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('ar-KW')} · Transit Cars System</div>
 </div></body></html>`;
-  const w = window.open('','_blank'); w.document.write(html); w.document.close();
+  openPrintOverlay(html);
 }
 
 function exportBtns(csvFn, printFn) {
@@ -8391,9 +8406,7 @@ function printLedgerStatement() {
 
 </div></body></html>`;
 
-  const w = window.open('','_blank');
-  w.document.write(html);
-  w.document.close();
+  openPrintOverlay(html);
 }
 
 // ════════════════════════════════════════
@@ -8767,58 +8780,70 @@ function exportToExcel(sheets, filename) {
   XLSX.writeFile(wb, filename + '.xlsx');
 }
 
-// ── PDF/PRINT via new window ──
+// ── PRINT via in-page overlay — لا يحتاج popup permission ──
+const PRINT_STYLES = `
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Cairo','Segoe UI',Arial,sans-serif;color:#1a1a1a;font-size:12px;direction:rtl}
+  .print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1a1a1a}
+  .logo-area .company{font-size:20px;font-weight:800}
+  .logo-area .sub{font-size:12px;color:#666;margin-top:2px}
+  .doc-title{font-size:24px;font-weight:800;text-align:left}
+  .doc-subtitle{font-size:13px;color:#e6930a;font-weight:700;text-align:left;margin-top:4px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:11px}
+  thead tr{background:#1a1a1a;color:#fff}
+  thead th{padding:8px 10px;text-align:right;font-weight:600}
+  tbody tr{border-bottom:1px solid #eee}
+  tbody tr:nth-child(even){background:#fafafa}
+  tbody td{padding:7px 10px}
+  tfoot tr{background:#f0f0f0;font-weight:700}
+  tfoot td{padding:8px 10px}
+  .kpi-row{display:grid;gap:10px;margin:12px 0}
+  .kpi-box{background:#f8f9fa;border-radius:6px;padding:10px 14px;border-right:3px solid #e6930a}
+  .kpi-label{font-size:10px;color:#888;margin-bottom:2px}
+  .kpi-val{font-size:16px;font-weight:700}
+  .section-title{font-size:14px;font-weight:700;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid #ddd}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+  .info-box{background:#f8f9fa;border-radius:6px;padding:10px 14px}
+  .info-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px solid #eee}
+  .info-row:last-child{border:none}
+  .info-label{color:#666}
+  .info-val{font-weight:600}
+  .footer{text-align:center;margin-top:20px;padding-top:12px;border-top:1px solid #eee;color:#999;font-size:10px}
+  .green{color:#16a34a} .red{color:#dc2626} .blue{color:#2563eb} .amber{color:#d97706}
+  /* voucher styles */
+  .page{max-width:700px;margin:0 auto;padding:20px}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:18px;border-bottom:3px solid #1a1a1a}
+  .company-name{font-size:22px;font-weight:900}
+  .amount-box{background:#1a1a1a;color:#fff;border-radius:10px;padding:20px 28px;text-align:center;margin-bottom:22px}
+  .amount-value{font-size:32px;font-weight:900}
+  .sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-bottom:28px}
+  .sig-box{text-align:center;padding-top:44px;border-top:1px solid #ccc}
+  .notes-box{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:22px}
+`;
+
+function openPrintOverlay(html, title = '') {
+  const overlay = document.getElementById('printOverlay');
+  const body    = document.getElementById('printOverlayBody');
+  const titleEl = document.getElementById('printOverlayTitle');
+  if (!overlay || !body) return;
+  if (titleEl) titleEl.textContent = title || 'معاينة الطباعة';
+  body.innerHTML = `<style>${PRINT_STYLES}</style>${html}`;
+  overlay.style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+
+function closePrintOverlay() {
+  const overlay = document.getElementById('printOverlay');
+  if (overlay) overlay.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+// Keyboard ESC to close
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePrintOverlay(); });
+
+// printDocument — الآن يستخدم الـ overlay
 function printDocument(html, title) {
-  const w = window.open('', '_blank', 'width=1000,height=800,scrollbars=yes');
-  w.document.write(`<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<title>${title}</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a1a; font-size:12px; background:#fff; direction:rtl; }
-  .page { max-width:1000px; margin:0 auto; padding:24px 28px; }
-  .print-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; padding-bottom:14px; border-bottom:3px solid #1a1a1a; }
-  .logo-area .company { font-size:20px; font-weight:800; }
-  .logo-area .sub { font-size:12px; color:#666; margin-top:2px; }
-  .doc-title { font-size:24px; font-weight:800; text-align:left; }
-  .doc-subtitle { font-size:13px; color:#e6930a; font-weight:700; text-align:left; margin-top:4px; }
-  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:11px; }
-  thead tr { background:#1a1a1a; color:#fff; }
-  thead th { padding:8px 10px; text-align:right; font-weight:600; }
-  tbody tr { border-bottom:1px solid #eee; }
-  tbody tr:nth-child(even) { background:#fafafa; }
-  tbody td { padding:7px 10px; }
-  tfoot tr { background:#f0f0f0; font-weight:700; }
-  tfoot td { padding:8px 10px; }
-  .kpi-row { display:grid; gap:10px; margin:12px 0; }
-  .kpi-box { background:#f8f9fa; border-radius:6px; padding:10px 14px; border-right:3px solid #e6930a; }
-  .kpi-label { font-size:10px; color:#888; margin-bottom:2px; }
-  .kpi-val { font-size:16px; font-weight:700; }
-  .section-title { font-size:14px; font-weight:700; margin:16px 0 8px; padding-bottom:4px; border-bottom:1px solid #ddd; }
-  .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
-  .info-box { background:#f8f9fa; border-radius:6px; padding:10px 14px; }
-  .info-row { display:flex; justify-content:space-between; padding:3px 0; font-size:12px; border-bottom:1px solid #eee; }
-  .info-row:last-child { border:none; }
-  .info-label { color:#666; }
-  .info-val { font-weight:600; }
-  .footer { text-align:center; margin-top:20px; padding-top:12px; border-top:1px solid #eee; color:#999; font-size:10px; }
-  .green { color:#16a34a; } .red { color:#dc2626; } .blue { color:#2563eb; } .amber { color:#d97706; }
-  .no-print { display:flex; gap:8px; justify-content:center; margin-bottom:16px; }
-  @media print { .no-print { display:none !important; } body { font-size:11px; } .page { padding:12px; } }
-</style>
-</head>
-<body>
-<div class="page">
-  <div class="no-print">
-    <button onclick="window.print()" style="background:#1a1a1a;color:#fff;border:none;padding:8px 24px;border-radius:6px;font-size:13px;cursor:pointer">🖨️ طباعة / Print</button>
-    <button onclick="window.close()" style="background:#f1f1f1;border:1px solid #ddd;padding:8px 16px;border-radius:6px;font-size:13px;cursor:pointer">✕ إغلاق</button>
-  </div>
-  ${html}
-</div>
-</body></html>`);
-  w.document.close();
+  openPrintOverlay(html, title);
 }
 
 function docHeader(title, subtitle, fileNo) {
@@ -9308,12 +9333,6 @@ function fillRowFromLicense(row, data) {
 // ════════════════════════════════════════
 // DRAFT / POST SYSTEM
 // ════════════════════════════════════════
-
-// هل المستخدم الحالي مدير؟ — يُستخدم لتحديد draft أم posted فوراً
-function isAdminUser() { return _currentRole === 'admin'; }
-
-// يرجع post_status المناسب حسب الدور
-function entryStatus() { return isAdminUser() ? 'posted' : 'draft'; }
 
 // Save any operation as Draft first, then Post
 async function saveDraft(entryType, fileNo, description, amount, refTable, refId) {
@@ -10308,20 +10327,13 @@ function loadScript(src) {
 function printPartnerStatement() {
   const content = document.getElementById('partnerStatementContent');
   if (!content) return;
-  const w = window.open('','_blank');
-  w.document.write(`<!DOCTYPE html><html dir="rtl"><head>
-    <meta charset="UTF-8">
-    <title>كشف حساب شريك</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-    <style>
-      *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:'Cairo',sans-serif;direction:rtl;background:#fff;padding:20px;font-size:12px;color:#1a1a2e}
-      @media print{body{padding:10px}@page{margin:15mm;size:A4}}
-      table{border-collapse:collapse;width:100%}
-      th,td{padding:6px 8px}
-    </style>
-  </head><body>${content.outerHTML}<script>window.onload=()=>window.print()<\/script></body></html>`);
-  w.document.close();
+  const html = `<style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Cairo',sans-serif;direction:rtl;background:#fff;padding:20px;font-size:12px;color:#1a1a2e}
+    table{border-collapse:collapse;width:100%}
+    th,td{padding:6px 8px}
+  </style>${content.outerHTML}`;
+  openPrintOverlay(html, 'كشف حساب شريك');
 }
 
 function openPartnerStatementFromReport() {
@@ -11446,7 +11458,7 @@ async function printDealStatement(fileNo) {
   <table><thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>الطرف</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
   <tbody>${rows}</tbody></table>
   <scr` + `ipt>window.onload=()=>window.print()<` + `/scr` + `ipt></body></html>`;
-  const w = window.open('','_blank'); w.document.write(html); w.document.close();
+  openPrintOverlay(html);
 }
 
 function exportDealStatementExcel() {
@@ -12298,16 +12310,15 @@ async function regenInvNo() {
 const approvalState = { all: [], filtered: [], currentType: 'all', currentItem: null };
 
 const APPROVAL_CONFIG = {
-  purchase:   { icon:'📋', label:'سند شراء',     color:'var(--accent)',  table:'purchase_orders',  amountField:'total_purchase', dateField:'po_date',    descFields:['file_no','supplier','po_no'] },
-  sale:       { icon:'🧾', label:'بيع',           color:'var(--green)',  table:'sales',            amountField:'sale_price',     dateField:'sale_date',  descFields:['inv_no','customer','vin'] },
-  expense:    { icon:'💸', label:'مصروف',         color:'var(--red)',    table:'expenses',         amountField:'amount',         dateField:'exp_date',   descFields:['description','exp_type','file_no'] },
-  collection: { icon:'💰', label:'تحصيل',         color:'var(--blue)',   table:'collections',      amountField:'amount',         dateField:'paid_date',  descFields:['inv_no','customer','file_no'] },
-  payment:    { icon:'💳', label:'دفعة مورد',     color:'var(--cyan)',   table:'payments',         amountField:'amount',         dateField:'pay_date',   descFields:['payer','file_no','pay_method'] },
-  payout:     { icon:'👥', label:'صرف شريك',     color:'var(--purple)', table:'partner_payouts',  amountField:'amount',         dateField:'pay_date',   descFields:['partner','payout_type','file_no'] },
+  sale:       { icon:'🧾', label:'بيع',         color:'var(--green)',  table:'sales',           amountField:'sale_price',   dateField:'sale_date',  descFields:['inv_no','customer','vin'] },
+  expense:    { icon:'💸', label:'مصروف',       color:'var(--red)',    table:'expenses',         amountField:'amount',       dateField:'exp_date',   descFields:['description','exp_type','file_no'] },
+  collection: { icon:'💰', label:'تحصيل',       color:'var(--blue)',   table:'collections',      amountField:'amount',       dateField:'paid_date',  descFields:['inv_no','customer','file_no'] },
+  payment:    { icon:'💳', label:'دفعة مورد',   color:'var(--cyan)',   table:'payments',         amountField:'amount',       dateField:'pay_date',   descFields:['payer','file_no','pay_method'] },
+  payout:     { icon:'👥', label:'صرف شريك',   color:'var(--purple)', table:'partner_payouts',  amountField:'amount',       dateField:'pay_date',   descFields:['partner','payout_type','file_no'] },
 };
 
 async function showApprovalQueue() {
-  if (!can('approve') && !can('roles')) { toast('🔒 ليس لديك صلاحية الموافقات','err'); return; }
+  if (!can('roles')) { toast('🔒 هذه الصفحة للمدراء فقط','err'); return; }
   hideAllViews();
   el('approvalView').style.display = 'block';
   el('topBarTitle').textContent = 'قائمة الموافقات';
@@ -12324,8 +12335,7 @@ async function loadApprovalQueue() {
     const sys = state.system;
 
     // جيب كل البنود المعلقة من كل الجداول بالتوازي
-    const [purchases, sales, expenses, collections, payments, payouts] = await Promise.all([
-      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+    const [sales, expenses, collections, payments, payouts] = await Promise.all([
       apiGet('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
       apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
       apiGet('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
@@ -12335,12 +12345,11 @@ async function loadApprovalQueue() {
 
     // دمج كل البنود مع نوعها
     approvalState.all = [
-      ...(purchases||[]).map(r    => ({...r, _type:'purchase',   _amount:+r.total_purchase||0, _date:r.po_date,    _desc:`${r.file_no||'—'} · ${r.supplier||'—'} · ${r.vehicle_count||0} سيارة`, _file:r.file_no })),
-      ...(sales||[]).map(r        => ({...r, _type:'sale',       _amount:+r.sale_price||0,     _date:r.sale_date,  _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.vin||'—'}`,               _file:r.file_no })),
-      ...(expenses||[]).map(r     => ({...r, _type:'expense',    _amount:+r.amount||0,         _date:r.exp_date||r.expense_date, _desc:`${r.description||'—'} · ${r.exp_type||'—'} · ${r.file_no||'—'}`, _file:r.file_no })),
-      ...(collections||[]).map(r  => ({...r, _type:'collection', _amount:+r.amount||0,         _date:r.paid_date||r.due_date,    _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.file_no||'—'}`,      _file:r.file_no })),
-      ...(payments||[]).map(r     => ({...r, _type:'payment',    _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.payer||'—'} · ${r.file_no||'—'} · ${r.pay_method||'—'}`,          _file:r.file_no })),
-      ...(payouts||[]).map(r      => ({...r, _type:'payout',     _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.partner||'—'} · ${r.payout_type||'—'} · ${r.file_no||'—'}`,       _file:r.file_no })),
+      ...(sales||[]).map(r       => ({...r, _type:'sale',       _amount:+r.sale_price||0,  _date:r.sale_date,  _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.vin||'—'}`,       _file:r.file_no })),
+      ...(expenses||[]).map(r    => ({...r, _type:'expense',    _amount:+r.amount||0,       _date:r.exp_date||r.expense_date, _desc:`${r.description||'—'} · ${r.exp_type||'—'} · ${r.file_no||'—'}`, _file:r.file_no })),
+      ...(collections||[]).map(r => ({...r, _type:'collection', _amount:+r.amount||0,       _date:r.paid_date||r.due_date,    _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.file_no||'—'}`,      _file:r.file_no })),
+      ...(payments||[]).map(r    => ({...r, _type:'payment',    _amount:+r.amount||0,       _date:r.pay_date,   _desc:`${r.payer||'—'} · ${r.file_no||'—'} · ${r.pay_method||'—'}`,  _file:r.file_no })),
+      ...(payouts||[]).map(r     => ({...r, _type:'payout',     _amount:+r.amount||0,       _date:r.pay_date,   _desc:`${r.partner||'—'} · ${r.payout_type||'—'} · ${r.file_no||'—'}`, _file:r.file_no })),
     ].sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
 
     // تحديث الـ badge في الـ sidebar
@@ -12454,56 +12463,10 @@ function closeApprovalDetail() {
 }
 
 async function approveItem(type, id) {
-  const cfg  = APPROVAL_CONFIG[type];
-  const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+  const cfg = APPROVAL_CONFIG[type];
   try {
-    // 1. غيّر الحالة لـ posted
     await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'posted' });
-
-    // 2. اكتب القيود المحاسبية (كانت معلقة لأن المدخِل موظف)
-    if (item) {
-      const sys = state.system;
-      if (type === 'purchase') {
-        if (item.supplier && +item.total_purchase > 0) {
-          try { await apiDelete('ledger_entries', { system_type:`eq.${sys}`, file_no:`eq.${item.file_no}`, source_table:`eq.purchase_orders` }); } catch(e){}
-          await postLedger({ contactName:item.supplier, contactType:'supplier',
-            date:item.po_date||today(),
-            description:`شراء ${item.vehicle_count||0} سيارة — ملف ${item.file_no}${item.po_no?' — PO:'+item.po_no:''}`,
-            debit:+item.total_purchase, sourceTable:'purchase_orders', fileNo:item.file_no });
-        }
-      }
-      else if (type === 'payment') {
-        const poArr = await apiGet('purchase_orders',{ select:'supplier', system_type:`eq.${sys}`, file_no:`eq.${item.file_no}` });
-        const sup = poArr?.[0]?.supplier || '';
-        if (sup) await postLedger({ contactName:sup, contactType:'supplier', date:item.pay_date,
-          description:`[${item.ref_no||item.pay_id}] دفعة للمورد — ملف ${item.file_no} — دافع: ${item.payer||'—'}`,
-          credit:+item.amount, sourceTable:'payments', fileNo:item.file_no });
-        if (item.payer && item.payer !== sup)
-          await postLedger({ contactName:item.payer, contactType:'partner', date:item.pay_date,
-            description:`[${item.ref_no||item.pay_id}] دفع للمورد ${sup||'المورد'} — ملف ${item.file_no}`,
-            debit:+item.amount, sourceTable:'payments', fileNo:item.file_no });
-      }
-      else if (type === 'sale') {
-        if (item.customer)
-          await postLedger({ contactName:item.customer, contactType:'customer', date:item.sale_date,
-            description:`فاتورة ${item.inv_no||'—'} — سيارة ${item.vin||'—'} — ملف ${item.file_no}`,
-            debit:+item.sale_price, sourceTable:'sales', fileNo:item.file_no });
-      }
-      else if (type === 'collection') {
-        if (item.customer)
-          await postLedger({ contactName:item.customer, contactType:'customer', date:item.paid_date||item.due_date||today(),
-            description:`[${item.ref_no||item.pay_id}] تحصيل فاتورة ${item.inv_no||''} — ملف ${item.file_no}`,
-            credit:+item.amount, sourceTable:'collections', fileNo:item.file_no });
-      }
-      else if (type === 'payout') {
-        await postLedger({ contactName:item.partner, contactType:'partner', date:item.pay_date,
-          description:`[${item.pay_id}] ${item.payout_type||''} — ملف ${item.file_no}`,
-          debit:+item.amount, sourceTable:'partner_payouts', fileNo:item.file_no });
-      }
-      // expense: لا يوجد قيد محاسبي مباشر
-    }
-
-    toast(`✅ تمت الموافقة على ${cfg.label}`, 'ok');
+    toast(`✅ تمت الموافقة على ${cfg.label}`,'ok');
     await loadApprovalQueue();
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
