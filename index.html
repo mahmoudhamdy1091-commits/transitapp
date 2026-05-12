@@ -2197,53 +2197,37 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         </div>
 
         <!-- ── TAB: الأدوار والصلاحيات ── -->
-        <div id="sett-panel-roles" class="sett-panel" style="display:none;max-width:760px">
+        <div id="sett-panel-roles" class="sett-panel" style="display:none;max-width:780px">
 
-          <div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 14px;font-size:12px;color:var(--accent);margin-bottom:16px">
-            ⚡ الأدوار الثلاثة ثابتة في النظام. الجدول أدناه يوضح صلاحيات كل دور.
+          <div style="background:var(--blue-dim);border:1px solid var(--blue);border-radius:var(--radius-sm);padding:10px 14px;font-size:12px;color:var(--blue);margin-bottom:16px">
+            💡 يمكنك تخصيص صلاحيات كل دور بشكل مستقل. صلاحيات المدير ثابتة دائماً. التغييرات تُطبَّق فوراً بعد الحفظ.
           </div>
 
           <!-- Role Cards -->
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
             <div style="background:var(--card);border:2px solid var(--accent);border-radius:var(--radius);padding:16px;text-align:center">
               <div style="font-size:28px;margin-bottom:8px">👑</div>
-              <div style="font-weight:700;font-size:14px;margin-bottom:6px">مدير كامل</div>
-              <div style="font-size:11px;color:var(--text2);line-height:1.6">وصول كامل لجميع الميزات والإعدادات والمستخدمين</div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px">مدير كامل</div>
+              <span style="font-size:11px;background:var(--accent-dim);color:var(--accent);padding:2px 8px;border-radius:10px;font-weight:700">🔒 صلاحيات ثابتة</span>
             </div>
             <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center">
               <div style="font-size:28px;margin-bottom:8px">👤</div>
-              <div style="font-weight:700;font-size:14px;margin-bottom:6px">موظف</div>
-              <div style="font-size:11px;color:var(--text2);line-height:1.6">يضيف ويعدّل البيانات، لا يحذف ولا يدير المستخدمين</div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px">موظف</div>
+              <span style="font-size:11px;background:var(--green-dim);color:var(--green);padding:2px 8px;border-radius:10px;font-weight:700">✏️ قابل للتخصيص</span>
             </div>
             <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center">
               <div style="font-size:28px;margin-bottom:8px">👁</div>
-              <div style="font-weight:700;font-size:14px;margin-bottom:6px">مشاهدة فقط</div>
-              <div style="font-size:11px;color:var(--text2);line-height:1.6">يقرأ التقارير والبيانات فقط، لا يعدّل أي شيء</div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px">مشاهدة فقط</div>
+              <span style="font-size:11px;background:var(--green-dim);color:var(--green);padding:2px 8px;border-radius:10px;font-weight:700">✏️ قابل للتخصيص</span>
             </div>
           </div>
 
-          <!-- Permissions Table -->
-          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-            <table class="data-table" style="table-layout:fixed">
-              <thead>
-                <tr>
-                  <th style="width:55%">الصلاحية</th>
-                  <th style="text-align:center;width:15%">👑 مدير</th>
-                  <th style="text-align:center;width:15%">👤 موظف</th>
-                  <th style="text-align:center;width:15%">👁 مشاهدة</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td>📋 إضافة وتعديل الصفقات</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
-                <tr><td>🗑 حذف الصفقات والبيانات</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
-                <tr><td>💸 إضافة مصاريف ومبيعات وتحصيلات</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
-                <tr><td>📊 عرض التقارير والكشوفات</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td></tr>
-                <tr><td>🖨️ طباعة وتصدير Excel / PDF</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td></tr>
-                <tr><td>👥 إدارة جهات الاتصال</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
-                <tr><td>🔐 إدارة المستخدمين والصلاحيات</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
-                <tr><td>🏢 الوصول للأنظمة (BOX / TRANSIT)</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">الكل</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">حسب الإعداد</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">حسب الإعداد</td></tr>
-              </tbody>
-            </table>
+          <!-- Permissions Editor — يتبنى ديناميكياً -->
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:14px">🔐 تخصيص الصلاحيات</div>
+            <div id="sett-perm-editor">
+              <div class="loading"><div class="spinner"></div></div>
+            </div>
           </div>
         </div>
 
@@ -5646,11 +5630,12 @@ async function submitNewFile() {
       `سند شراء — ${supplier}${poNo?' — PO: '+poNo:''}`,
       finalTotal, 'purchase_orders', null);
     closeModal('newFileModal');
+    toast(`✅ تم إنشاء الملف ${fileNo} — ${vehicles.length} سيارة`, 'ok');
     await loadDashboard();
     showDashboard();
-    toast(`✅ تم إنشاء الملف ${fileNo} — ${vehicles.length} سيارة`, 'ok');
-    // الطباعة اختيارية — يضغط المستخدم زر الطباعة من داخل الملف
 
+    // ✅ طباعة سند الشراء تلقائياً
+    setTimeout(() => printPurchaseOrder(fileNo), 600);
 
   } catch(e) {
     showFieldErr('nfError','خطأ: ' + e.message);
@@ -8769,10 +8754,6 @@ function exportToExcel(sheets, filename) {
 // ── PDF/PRINT via new window ──
 function printDocument(html, title) {
   const w = window.open('', '_blank', 'width=1000,height=800,scrollbars=yes');
-  if (!w) {
-    toast('⚠️ المتصفح حجب نافذة الطباعة — يرجى السماح بالنوافذ المنبثقة ثم المحاولة مجدداً', 'err');
-    return;
-  }
   w.document.write(`<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -10796,15 +10777,56 @@ async function deletePayoutEntry(payoutId, fileNo, silent=false) {
 // ════════════════════════════════════════
 // FEATURE 2 — ROLES & PERMISSIONS
 // ════════════════════════════════════════
-const ROLES = {
-  admin:    { label:'👑 مدير كامل',  edit:true,  delete:true,  transactions:true,  roles:true  },
-  employee: { label:'👤 موظف',       edit:true,  delete:false, transactions:true,  roles:false },
-  readonly: { label:'👁 مشاهدة',     edit:false, delete:false, transactions:false, roles:false },
+// ════════════════════════════════════════
+// PERMISSIONS SYSTEM
+// ════════════════════════════════════════
+
+// الصلاحيات الكاملة وتعريفها
+const PERM_DEFS = [
+  { key:'edit',         label:'✏️ إضافة وتعديل الصفقات',              adminLocked: true  },
+  { key:'delete',       label:'🗑 حذف البيانات',                        adminLocked: true  },
+  { key:'transactions', label:'💳 إضافة عمليات (دفعات / مبيعات / مصاريف / تحصيلات / صرف شركاء)', adminLocked: true },
+  { key:'approve',      label:'✅ الموافقة على العمليات (Approval Queue)', adminLocked: true },
+  { key:'reports',      label:'📊 عرض تقارير الأرباح والكشوفات المالية', adminLocked: true },
+  { key:'export',       label:'📥 تصدير Excel / PDF / طباعة',           adminLocked: true  },
+  { key:'contacts',     label:'👥 إدارة جهات الاتصال (إضافة / تعديل)', adminLocked: true  },
+  { key:'roles',        label:'🔐 إدارة المستخدمين والإعدادات',         adminLocked: true  },
+];
+
+// القيم الافتراضية لكل دور
+const ROLES_DEFAULTS = {
+  admin:    { edit:true,  delete:true,  transactions:true,  approve:true,  reports:true,  export:true,  contacts:true,  roles:true  },
+  employee: { edit:true,  delete:false, transactions:true,  approve:false, reports:false, export:true,  contacts:true,  roles:false },
+  readonly: { edit:false, delete:false, transactions:false, approve:false, reports:true,  export:true,  contacts:false, roles:false },
 };
+
+const ROLE_LABELS = {
+  admin:    '👑 مدير كامل',
+  employee: '👤 موظف',
+  readonly: '👁 مشاهدة فقط',
+};
+
+// تحميل الصلاحيات المخصصة من localStorage (أو الافتراضية)
+function loadRolesConfig() {
+  try {
+    const saved = localStorage.getItem('tm_roles_config');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // admin دايماً كامل الصلاحيات — لا يتغير
+      parsed.admin = { ...ROLES_DEFAULTS.admin };
+      return parsed;
+    }
+  } catch(e) {}
+  return JSON.parse(JSON.stringify(ROLES_DEFAULTS));
+}
+
+let ROLES = loadRolesConfig();
 
 let _currentRole = localStorage.getItem('tm_role') || 'admin';
 
-function can(action) { return ROLES[_currentRole]?.[action] !== false; }
+function can(action) {
+  return ROLES[_currentRole]?.[action] === true;
+}
 
 function openRolesModal() {
   openModal('rolesModal');
@@ -10819,11 +10841,12 @@ function setRole(role) {
 
 function updateRoleUI(role) {
   document.querySelectorAll('.role-btn').forEach(b => b.classList.toggle('active', b.dataset.role === role));
-  const r = ROLES[role];
-  el('perm-edit').innerHTML        = r.edit         ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-no">❌ ممنوع</span>';
-  el('perm-delete').innerHTML      = r.delete        ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-no">❌ ممنوع</span>';
-  el('perm-transactions').innerHTML= r.transactions  ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-no">❌ ممنوع</span>';
-  el('perm-roles').innerHTML       = r.roles         ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-limited">🔒 مدير فقط</span>';
+  const r = ROLES[role] || ROLES_DEFAULTS[role];
+  const yn = v => v ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-no">❌ ممنوع</span>';
+  if (el('perm-edit'))         el('perm-edit').innerHTML         = yn(r.edit);
+  if (el('perm-delete'))       el('perm-delete').innerHTML       = yn(r.delete);
+  if (el('perm-transactions')) el('perm-transactions').innerHTML = yn(r.transactions);
+  if (el('perm-roles'))        el('perm-roles').innerHTML        = r.roles ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-limited">🔒 مدير فقط</span>';
 }
 
 function saveRole() {
@@ -10831,29 +10854,118 @@ function saveRole() {
   localStorage.setItem('tm_role', _currentRole);
   applyRoleRestrictions();
   closeModal('rolesModal');
-  toast(`✅ تم الحفظ — الدور: ${ROLES[_currentRole].label}`,'ok');
+  toast(`✅ تم الحفظ — الدور: ${ROLE_LABELS[_currentRole]}`,'ok');
+}
+
+// ════════════════════════════════════════
+// PERMISSIONS EDITOR — Settings → Roles Tab
+// ════════════════════════════════════════
+function renderPermissionsEditor() {
+  const container = el('sett-perm-editor');
+  if (!container) return;
+
+  const roles = ['employee', 'readonly'];
+
+  container.innerHTML = `
+    <div style="overflow-x:auto">
+    <table class="data-table" style="table-layout:fixed;min-width:540px">
+      <thead>
+        <tr>
+          <th style="width:50%">الصلاحية</th>
+          <th style="text-align:center;width:17%">👑 مدير<br><span style="font-size:10px;font-weight:400;color:var(--text3)">ثابت</span></th>
+          <th style="text-align:center;width:17%">👤 موظف</th>
+          <th style="text-align:center;width:16%">👁 مشاهدة</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${PERM_DEFS.map(p => `
+        <tr>
+          <td style="font-size:12px">${p.label}</td>
+          <td style="text-align:center;color:var(--green);font-size:16px">✓</td>
+          ${roles.map(role => `
+          <td style="text-align:center">
+            <input type="checkbox" id="perm-${role}-${p.key}"
+              ${ROLES[role]?.[p.key] ? 'checked' : ''}
+              onchange="onPermChange('${role}','${p.key}',this.checked)"
+              style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer">
+          </td>`).join('')}
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn btn-secondary btn-sm" onclick="resetPermissionsToDefault()">🔄 استعادة الافتراضية</button>
+      <button class="btn btn-primary btn-sm" onclick="savePermissions()">💾 حفظ الصلاحيات</button>
+    </div>
+  `;
+}
+
+function onPermChange(role, key, value) {
+  if (!ROLES[role]) ROLES[role] = { ...ROLES_DEFAULTS[role] };
+  ROLES[role][key] = value;
+}
+
+function savePermissions() {
+  // admin دايماً كامل
+  ROLES.admin = { ...ROLES_DEFAULTS.admin };
+  localStorage.setItem('tm_roles_config', JSON.stringify(ROLES));
+  applyRoleRestrictions();
+  toast('✅ تم حفظ الصلاحيات وتطبيقها فوراً', 'ok');
+}
+
+function resetPermissionsToDefault() {
+  if (!confirm('إعادة ضبط كل الصلاحيات للافتراضية؟')) return;
+  ROLES = JSON.parse(JSON.stringify(ROLES_DEFAULTS));
+  localStorage.removeItem('tm_roles_config');
+  renderPermissionsEditor();
+  applyRoleRestrictions();
+  toast('✅ تم إعادة الضبط', 'ok');
 }
 
 function applyRoleRestrictions() {
-  const canDel   = can('delete');
-  const canTx    = can('transactions');
-  const isAdmin  = can('roles');
+  const canDel      = can('delete');
+  const canTx       = can('transactions');
+  const canApprove  = can('approve');
+  const canReports  = can('reports');
+  const canExport   = can('export');
+  const canContacts = can('contacts');
+  const isAdmin     = can('roles');
 
-  // Hide static delete buttons
+  // حذف
   document.querySelectorAll('.btn-danger, #nfDeleteBtn').forEach(btn => {
     btn.style.display = canDel ? '' : 'none';
   });
-  // Hide add/edit buttons for readonly
+
+  // إضافة عمليات
   document.querySelectorAll('#nfSubmitBtn, #saleSubmitBtn, #paymentSubmitBtn, #expSubmitBtn').forEach(btn => {
     btn.style.display = canTx ? '' : 'none';
   });
-  // Quick expense fab
   const fab = el('quickExpFab');
   if (fab) fab.style.display = canTx && state.currentFileNo ? 'flex' : 'none';
 
-  // Hide admin-only sidebar section (الإدارة) for non-admins
+  // Approval Queue — للمدراء والمعتمدين
+  const approvalNav = el('nav-approval');
+  if (approvalNav) approvalNav.style.display = (canApprove || isAdmin) ? '' : 'none';
+
+  // إخفاء قسم الإدارة كاملاً لو مش admin (بس ظهّر الموافقات لو canApprove)
   const adminNav = el('nav-section-admin');
-  if (adminNav) adminNav.style.display = isAdmin ? '' : 'none';
+  if (adminNav) {
+    adminNav.style.display = (isAdmin || canApprove) ? '' : 'none';
+    // إخفاء Settings وActivity لو مش admin
+    const settNav = el('nav-settings');
+    const actNav  = el('nav-activity');
+    if (settNav) settNav.style.display = isAdmin ? '' : 'none';
+    if (actNav)  actNav.style.display  = isAdmin ? '' : 'none';
+  }
+
+  // تصدير — إخفاء أزرار Export لو مش مسموح
+  document.querySelectorAll('[onclick*="exportCSV"],[onclick*="exportToExcel"],[onclick*="exportDeal"],[onclick*="exportPurchase"],[onclick*="printDocument"],[onclick*="printSection"],[onclick*="printDeal"],[onclick*="printPurchase"]').forEach(btn => {
+    btn.style.display = canExport ? '' : 'none';
+  });
+
+  // جهات الاتصال — إخفاء زر إضافة
+  const addContactBtn = document.querySelector('[onclick="openContactModal()"]');
+  if (addContactBtn) addContactBtn.style.display = canContacts ? '' : 'none';
 }
 
 // ════════════════════════════════════════
@@ -11138,6 +11250,7 @@ function switchSettTab(name) {
   const tab   = el('stab-' + name);
   if (panel) panel.style.display = 'block';
   if (tab)   tab.classList.add('active');
+  if (name === 'roles') renderPermissionsEditor();
 }
 
 async function showSettings() {
@@ -12303,7 +12416,7 @@ const APPROVAL_CONFIG = {
 };
 
 async function showApprovalQueue() {
-  if (!can('roles')) { toast('🔒 هذه الصفحة للمدراء فقط','err'); return; }
+  if (!can('approve') && !can('roles')) { toast('🔒 ليس لديك صلاحية الموافقات','err'); return; }
   hideAllViews();
   el('approvalView').style.display = 'block';
   el('topBarTitle').textContent = 'قائمة الموافقات';
