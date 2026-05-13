@@ -646,6 +646,48 @@ async function loadDashboard() {
     if(el('badge-open'))     el('badge-open').textContent     = (deals||[]).filter(d=>d.status==='OPEN').length || '';
     if(el('badge-progress')) el('badge-progress').textContent = (deals||[]).filter(d=>d.status==='IN PROGRESS').length || '';
 
+    // ── مستحق للموردين ──
+    const supplierDue = (deals||[]).map(d => {
+      const paid = (allExpenses||[]).filter(e=>false).reduce((s,e)=>s+0,0); // placeholder
+      const totalPaid = 0; // سيُحسب من payments
+      return { file_no: d.file_no, supplier: d.supplier||'—', total: +d.total_purchase||0 };
+    });
+    try {
+      const allPayments = await apiGet('payments', { select:'file_no,amount', system_type:`eq.${sys}` });
+      const paidMap = {};
+      (allPayments||[]).forEach(p => { paidMap[p.file_no] = (paidMap[p.file_no]||0) + (+p.amount||0); });
+      const duelist = (deals||[]).map(d => ({
+        file_no: d.file_no, supplier: d.supplier||'—',
+        due: (+d.total_purchase||0) - (paidMap[d.file_no]||0)
+      })).filter(d => d.due > 0.01).sort((a,b) => b.due - a.due);
+      const totalDue = duelist.reduce((s,d) => s + d.due, 0);
+      if (el('dash-supplier-due')) el('dash-supplier-due').textContent = fmt(totalDue);
+      if (el('dash-supplier-due-list')) {
+        el('dash-supplier-due-list').innerHTML = duelist.length
+          ? duelist.slice(0,3).map(d =>
+              `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+                <span style="color:var(--text)">${d.supplier} <span style="color:var(--accent);font-family:monospace;font-size:10px">${d.file_no}</span></span>
+                <span style="font-family:monospace;color:var(--red);font-weight:700">${fmt(d.due)}</span>
+              </div>`).join('') + (duelist.length > 3 ? `<div style="font-size:10px;color:var(--text2);margin-top:4px">+ ${duelist.length-3} صفقة أخرى</div>` : '')
+          : '<div style="color:var(--green);font-size:11px">✓ لا توجد مستحقات</div>';
+      }
+    } catch(e) {}
+
+    // ── تحصيلات متأخرة ──
+    const overdueItems = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date < todayStr)
+      .sort((a,b) => a.due_date > b.due_date ? 1 : -1);
+    const overdueTotal = overdueItems.reduce((s,c) => s + (+c.amount||0), 0);
+    if (el('dash-overdue-amt')) el('dash-overdue-amt').textContent = fmt(overdueTotal);
+    if (el('dash-overdue-list')) {
+      el('dash-overdue-list').innerHTML = overdueItems.length
+        ? overdueItems.slice(0,3).map(c =>
+            `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+              <span style="color:var(--text)">${c.customer||'—'} <span style="color:var(--text2);font-size:10px">${c.due_date}</span></span>
+              <span style="font-family:monospace;color:var(--accent);font-weight:700">${fmt(c.amount)}</span>
+            </div>`).join('') + (overdueItems.length > 3 ? `<div style="font-size:10px;color:var(--text2);margin-top:4px">+ ${overdueItems.length-3} فاتورة أخرى</div>` : '')
+        : '<div style="color:var(--green);font-size:11px">✓ لا توجد تحصيلات متأخرة</div>';
+    }
+
     // ── Alerts ──
     renderDashAlerts(overdueList, upcomingList, stockVehicles, draftCount, deals||[]);
 
@@ -675,44 +717,45 @@ async function loadDashboard() {
   }
 }
 
-// ── Performance Chart (مبيعات + مصاريف + ربح) ──
-function renderDashPerfChart(sales, expenses, from, to, days) {
+// ── Performance Chart — Stacked Bar ──
+function renderDashPerfChart(sales, expenses, from, to, days, deals) {
   const chartWrap  = el('dash-perf-chart');
   const labelsWrap = el('dash-perf-labels');
   if (!chartWrap) return;
 
-  // تقسيم الفترة لنقاط
   const fromD = new Date(from), toD = new Date(to);
   const totalDays = Math.round((toD - fromD) / 864e5) + 1;
   let buckets = [];
 
   if (totalDays <= 14) {
-    // يومي
     for (let i = 0; i < totalDays; i++) {
       const d = new Date(fromD); d.setDate(d.getDate() + i);
       const ds = d.toISOString().split('T')[0];
-      buckets.push({ label: `${d.getDate()}/${d.getMonth()+1}`, from: ds, to: ds, sales:0, exp:0 });
+      buckets.push({ label: `${d.getDate()}/${d.getMonth()+1}`, from:ds, to:ds, purchase:0, exp:0, sales:0 });
     }
   } else if (totalDays <= 60) {
-    // أسبوعي
     let cur = new Date(fromD);
     while (cur <= toD) {
-      const wEnd = new Date(cur); wEnd.setDate(wEnd.getDate() + 6);
+      const wEnd = new Date(cur); wEnd.setDate(wEnd.getDate()+6);
       if (wEnd > toD) wEnd.setTime(toD.getTime());
-      buckets.push({ label: `${cur.getDate()}/${cur.getMonth()+1}`, from: cur.toISOString().split('T')[0], to: wEnd.toISOString().split('T')[0], sales:0, exp:0 });
-      cur = new Date(wEnd); cur.setDate(cur.getDate() + 1);
+      buckets.push({ label:`${cur.getDate()}/${cur.getMonth()+1}`, from:cur.toISOString().split('T')[0], to:wEnd.toISOString().split('T')[0], purchase:0, exp:0, sales:0 });
+      cur = new Date(wEnd); cur.setDate(cur.getDate()+1);
     }
   } else {
-    // شهري
     let cur = new Date(fromD.getFullYear(), fromD.getMonth(), 1);
     while (cur <= toD) {
       const mEnd = new Date(cur.getFullYear(), cur.getMonth()+1, 0);
-      buckets.push({ label: cur.toLocaleDateString('en-GB',{month:'short'}), from: cur.toISOString().split('T')[0], to: mEnd.toISOString().split('T')[0], sales:0, exp:0 });
+      buckets.push({ label:cur.toLocaleDateString('en-GB',{month:'short'}), from:cur.toISOString().split('T')[0], to:mEnd.toISOString().split('T')[0], purchase:0, exp:0, sales:0 });
       cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1);
     }
   }
 
   // توزيع البيانات
+  (deals||[]).forEach(d => {
+    const date = d.po_date||'';
+    const b = buckets.find(bk => date >= bk.from && date <= bk.to);
+    if (b) b.purchase += +d.total_purchase||0;
+  });
   sales.forEach(s => {
     const d = s.sale_date||s.created_at?.split('T')[0]||'';
     const b = buckets.find(bk => d >= bk.from && d <= bk.to);
@@ -723,41 +766,45 @@ function renderDashPerfChart(sales, expenses, from, to, days) {
     const b = buckets.find(bk => d >= bk.from && d <= bk.to);
     if (b) b.exp += +e.amount||0;
   });
-  buckets.forEach(b => b.profit = b.sales - b.exp);
+  buckets.forEach(b => b.profit = b.sales - b.purchase - b.exp);
 
-  const maxVal = Math.max(...buckets.map(b => Math.max(b.sales, b.exp, Math.abs(b.profit))), 1);
-  const CHART_H = 100;
+  const fmtK = v => v >= 1000 ? (v/1000).toFixed(1)+'K' : v > 0 ? v.toFixed(0) : '';
+  const CHART_H = 110;
 
-  chartWrap.innerHTML = buckets.map((b,i) => {
-    const sH = Math.max((b.sales/maxVal)*CHART_H, b.sales>0?3:0);
-    const eH = Math.max((b.exp/maxVal)*CHART_H,   b.exp>0?3:0);
-    const pH = Math.max((Math.abs(b.profit)/maxVal)*CHART_H, b.profit!==0?3:0);
-    const pColor = b.profit >= 0 ? 'var(--accent)' : 'var(--red)';
-    const sAmt = b.sales  > 0 ? (b.sales>=1000?(b.sales/1000).toFixed(1)+'K':b.sales.toFixed(0))  : '';
-    const eAmt = b.exp    > 0 ? (b.exp>=1000?(b.exp/1000).toFixed(1)+'K':b.exp.toFixed(0))        : '';
-    const pAmt = b.profit !== 0 ? (Math.abs(b.profit)>=1000?(Math.abs(b.profit)/1000).toFixed(1)+'K':Math.abs(b.profit).toFixed(0)) : '';
+  // Stacked Bar: كل بار = purchase (أزرق) + exp (أحمر) مكدسين، وبار المبيعات جنبهم (أخضر)
+  const maxVal = Math.max(...buckets.map(b => Math.max(b.purchase + b.exp, b.sales, 1)), 1);
+
+  chartWrap.style.cssText = 'display:flex;gap:6px;align-items:flex-end;height:' + CHART_H + 'px;margin-bottom:8px;padding-top:14px';
+
+  chartWrap.innerHTML = buckets.map(b => {
+    const stackH = Math.max(((b.purchase + b.exp) / maxVal) * CHART_H, (b.purchase+b.exp)>0?4:0);
+    const purH   = stackH > 0 ? Math.round((b.purchase / (b.purchase+b.exp||1)) * stackH) : 0;
+    const expH   = stackH - purH;
+    const salH   = Math.max((b.sales / maxVal) * CHART_H, b.sales>0?4:0);
+    const pColor = b.profit >= 0 ? 'var(--green)' : 'var(--red)';
+    const tooltip = `مشتريات: ${fmtK(b.purchase)} | مصروفات: ${fmtK(b.exp)} | مبيعات: ${fmtK(b.sales)} | ربح: ${fmtK(Math.abs(b.profit))}`;
     return `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0">
-      <div style="display:flex;gap:2px;align-items:flex-end;height:${CHART_H}px;width:100%">
-        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px">
-          <div style="font-size:8px;color:var(--green);min-height:10px;text-align:center">${sAmt}</div>
-          <div style="width:100%;height:${sH}px;background:var(--green);border-radius:2px 2px 0 0;min-height:${b.sales>0?2:0}px"></div>
+    <div style="flex:1;display:flex;gap:2px;align-items:flex-end;min-width:0" title="${tooltip}">
+      <!-- Stacked: مشتريات + مصروفات -->
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;position:relative">
+        ${b.purchase+b.exp > 0 ? `<div style="font-size:8px;color:var(--text2);position:absolute;top:-12px;white-space:nowrap">${fmtK(b.purchase+b.exp)}</div>` : ''}
+        <div style="width:100%;display:flex;flex-direction:column;border-radius:3px 3px 0 0;overflow:hidden">
+          <div style="width:100%;height:${purH}px;background:var(--blue);min-height:${b.purchase>0?2:0}px"></div>
+          <div style="width:100%;height:${expH}px;background:var(--red);min-height:${b.exp>0?2:0}px"></div>
         </div>
-        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px">
-          <div style="font-size:8px;color:var(--red);min-height:10px;text-align:center">${eAmt}</div>
-          <div style="width:100%;height:${eH}px;background:var(--red);border-radius:2px 2px 0 0;min-height:${b.exp>0?2:0}px"></div>
-        </div>
-        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px">
-          <div style="font-size:8px;color:${pColor};min-height:10px;text-align:center">${pAmt}</div>
-          <div style="width:100%;height:${pH}px;background:${pColor};border-radius:2px 2px 0 0;min-height:${b.profit!==0?2:0}px"></div>
-        </div>
+      </div>
+      <!-- مبيعات -->
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;position:relative">
+        ${b.sales > 0 ? `<div style="font-size:8px;color:var(--green);position:absolute;top:-12px;white-space:nowrap">${fmtK(b.sales)}</div>` : ''}
+        <div style="width:100%;height:${salH}px;background:var(--green);border-radius:3px 3px 0 0;min-height:${b.sales>0?2:0}px"></div>
       </div>
     </div>`;
   }).join('');
 
   if (labelsWrap) {
-    labelsWrap.innerHTML = buckets.map(b => `
-      <div style="flex:1;text-align:center;font-size:9px;color:var(--text2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.label}</div>`).join('');
+    labelsWrap.innerHTML = buckets.map(b =>
+      `<div style="flex:1;text-align:center;font-size:9px;color:var(--text2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.label}</div>`
+    ).join('');
   }
 }
 

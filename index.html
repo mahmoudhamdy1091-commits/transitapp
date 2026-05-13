@@ -283,28 +283,16 @@
 
         <!-- KPIs — كل كارت قابل للضغط -->
         <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:14px" id="kpiGrid">
-          <div class="kpi-card kpi-green kpi-clickable" onclick="toggleDrillDown('sales')" id="kpi-card-sales">
-            <div class="kpi-top"><span class="kpi-label">المبيعات</span><div class="kpi-icon">💹</div></div>
-            <div class="kpi-val" id="kpi-sales">—</div>
-            <div class="kpi-sub" id="kpi-sales-sub">في الفترة</div>
-            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
-          </div>
-          <div class="kpi-card kpi-blue kpi-clickable" onclick="toggleDrillDown('collections')" id="kpi-card-collections">
-            <div class="kpi-top"><span class="kpi-label">التحصيلات</span><div class="kpi-icon">💰</div></div>
-            <div class="kpi-val" id="kpi-collections">—</div>
-            <div class="kpi-sub" id="kpi-collections-sub">في الفترة</div>
+          <div class="kpi-card kpi-blue kpi-clickable" onclick="toggleDrillDown('purchase')" id="kpi-card-purchase">
+            <div class="kpi-top"><span class="kpi-label">المشتريات</span><div class="kpi-icon">📋</div></div>
+            <div class="kpi-val" id="kpi-purchase">—</div>
+            <div class="kpi-sub" id="kpi-purchase-sub">في الفترة</div>
             <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
           </div>
           <div class="kpi-card kpi-red kpi-clickable" onclick="toggleDrillDown('expenses')" id="kpi-card-expenses">
-            <div class="kpi-top"><span class="kpi-label">المصاريف</span><div class="kpi-icon">💸</div></div>
+            <div class="kpi-top"><span class="kpi-label">المصروفات</span><div class="kpi-icon">💸</div></div>
             <div class="kpi-val" id="kpi-month-exp">—</div>
             <div class="kpi-sub" id="kpi-month-exp-sub">في الفترة</div>
-            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
-          </div>
-          <div class="kpi-card kpi-blue kpi-clickable" onclick="toggleDrillDown('purchase')" id="kpi-card-purchase">
-            <div class="kpi-top"><span class="kpi-label">تكلفة الشراء</span><div class="kpi-icon">📋</div></div>
-            <div class="kpi-val" id="kpi-purchase">—</div>
-            <div class="kpi-sub" id="kpi-purchase-sub">في الفترة</div>
             <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
           </div>
           <div class="kpi-card kpi-amber kpi-clickable" onclick="toggleDrillDown('fullcost')" id="kpi-card-fullcost">
@@ -313,8 +301,14 @@
             <div class="kpi-sub" id="kpi-fullcost-sub">شراء + مصاريف</div>
             <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
           </div>
+          <div class="kpi-card kpi-green kpi-clickable" onclick="toggleDrillDown('sales')" id="kpi-card-sales">
+            <div class="kpi-top"><span class="kpi-label">المبيعات</span><div class="kpi-icon">💹</div></div>
+            <div class="kpi-val" id="kpi-sales">—</div>
+            <div class="kpi-sub" id="kpi-sales-sub">في الفترة</div>
+            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
+          </div>
           <div class="kpi-card kpi-green kpi-clickable" onclick="toggleDrillDown('profit')" id="kpi-card-profit">
-            <div class="kpi-top"><span class="kpi-label">صافي الربح</span><div class="kpi-icon">📈</div></div>
+            <div class="kpi-top"><span class="kpi-label">الأرباح / الخسائر</span><div class="kpi-icon">📈</div></div>
             <div class="kpi-val" id="kpi-profit">—</div>
             <div class="kpi-sub" id="kpi-profit-sub">مبيعات - تكلفة</div>
             <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
@@ -324,6 +318,24 @@
             <div class="kpi-val" id="kpi-stock">—</div>
             <div class="kpi-sub" id="kpi-stock-sub">لم تُباع بعد</div>
             <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
+          </div>
+        </div>
+
+        <!-- مستحقات وتحصيلات -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px" id="dash-obligations-row">
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <div style="font-size:12px;font-weight:700;color:var(--red)">🔴 مستحق للموردين</div>
+              <div style="font-size:18px;font-weight:900;color:var(--red);font-family:monospace" id="dash-supplier-due">—</div>
+            </div>
+            <div id="dash-supplier-due-list" style="font-size:11px;color:var(--text2)"></div>
+          </div>
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <div style="font-size:12px;font-weight:700;color:var(--accent)">🟠 تحصيلات متأخرة من العملاء</div>
+              <div style="font-size:18px;font-weight:900;color:var(--accent);font-family:monospace" id="dash-overdue-amt">—</div>
+            </div>
+            <div id="dash-overdue-list" style="font-size:11px;color:var(--text2)"></div>
           </div>
         </div>
 
@@ -358,8 +370,9 @@
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
               <div style="font-size:12px;font-weight:700">📊 أداء الفترة</div>
               <div style="display:flex;gap:12px;font-size:10px;color:var(--text2)">
+                <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;background:var(--blue);border-radius:2px;display:inline-block"></span>مشتريات</span>
+                <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;background:var(--red);border-radius:2px;display:inline-block"></span>مصروفات</span>
                 <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;background:var(--green);border-radius:2px;display:inline-block"></span>مبيعات</span>
-                <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;background:var(--red);border-radius:2px;display:inline-block"></span>مصاريف</span>
                 <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;background:var(--accent);border-radius:2px;display:inline-block"></span>ربح</span>
               </div>
             </div>
