@@ -1372,16 +1372,20 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
     </div>
 
     <div class="sidebar-search">
-      <div class="search-box">
+      <div class="search-box" style="position:relative">
         <span class="s-icon2">🔍</span>
-        <input type="text" id="vinSearch" placeholder="بحث بـ VIN..." 
-          onkeyup="if(event.key==='Enter'||this.value.length>=6)searchVin(this.value);if(!this.value)document.getElementById('vin-card-overlay')?.remove()">
+        <input type="text" id="vinSearch" placeholder="بحث بـ VIN..."
+          autocomplete="off"
+          oninput="searchVinDropdown(this.value)"
+          onkeydown="if(event.key==='Escape'){closeVinDropdown();this.value='';}"
+          style="padding-left:8px">
+        <div id="vinDropdown" style="display:none;position:absolute;top:100%;right:0;left:0;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);z-index:9999;max-height:240px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.2);margin-top:2px"></div>
       </div>
     </div>
 
     <div class="sidebar-nav">
 
-      <!-- الرئيسية — دايماً ظاهرة -->
+      <!-- ═══ الرئيسية ═══ -->
       <div class="nav-section nav-section-fixed">
         <div class="nav-section-items open">
           <div class="nav-item active" id="nav-dashboard" onclick="showDashboard()">
@@ -1393,59 +1397,66 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         </div>
       </div>
 
-      <div style="height:1px;background:var(--border);margin:6px 8px"></div>
-
-      <!-- ⚡ أوامر سريعة -->
+      <!-- ═══ المعاملات ═══ -->
       <div class="nav-section">
         <div class="nav-section-title open" onclick="toggleNav(this)">
-          <span>⚡ أوامر سريعة</span>
+          <span>📋 المعاملات</span>
           <span class="ns-arrow">▼</span>
         </div>
         <div class="nav-section-items open">
-          <div class="nav-item" onclick="openNewFileModal()" style="color:var(--accent);font-weight:700">
-            <span class="ni-icon">📋</span><span>سند شراء جديد</span>
+          <div class="nav-item" onclick="showTransactions('deals')">
+            <span class="ni-icon">📁</span><span>الصفقات</span>
           </div>
-          <div class="nav-item" onclick="openSaleModal()" style="color:var(--green);font-weight:700">
-            <span class="ni-icon">🧾</span><span>فاتورة بيع</span>
+          <div class="nav-item" onclick="showTransactions('sales')">
+            <span class="ni-icon">🧾</span><span>المبيعات</span>
           </div>
-          <div class="nav-item" onclick="openQuickModal('collection')" style="color:var(--blue);font-weight:700">
-            <span class="ni-icon">💰</span><span>تحصيل</span>
+          <div class="nav-item" onclick="showTransactions('expenses')">
+            <span class="ni-icon">💸</span><span>المصاريف</span>
           </div>
-          <div class="nav-item" onclick="openQuickModal('payment')" style="color:var(--cyan);font-weight:700">
-            <span class="ni-icon">💳</span><span>دفعة مورد</span>
+          <div class="nav-item" onclick="showTransactions('collections')">
+            <span class="ni-icon">💰</span><span>التحصيلات</span>
           </div>
-          <div class="nav-item" onclick="openQuickModal('expense')" style="color:var(--red);font-weight:700">
-            <span class="ni-icon">💸</span><span>مصروف</span>
+          <div class="nav-item" onclick="showTransactions('payments')">
+            <span class="ni-icon">💳</span><span>دفعات الموردين</span>
           </div>
-          <div class="nav-item" onclick="openPayoutModal()" style="color:var(--purple);font-weight:700">
-            <span class="ni-icon">👥</span><span>صرف شريك</span>
+          <div class="nav-item" onclick="showTransactions('payouts')">
+            <span class="ni-icon">👥</span><span>مسحوبات الشركاء</span>
+          </div>
+          <div class="nav-item" onclick="showTransactions('opex')">
+            <span class="ni-icon">💼</span><span>مصروفات عامة</span>
           </div>
         </div>
       </div>
 
-      <!-- 📁 الصفقات -->
+      <!-- ═══ التقارير ═══ -->
       <div class="nav-section">
         <div class="nav-section-title" onclick="toggleNav(this)">
-          <span>📁 الصفقات</span>
+          <span>📈 التقارير</span>
           <span class="ns-arrow">▼</span>
         </div>
         <div class="nav-section-items">
-          <div class="nav-item" onclick="showDashboard();document.getElementById('dealsTableBody')?.scrollIntoView({behavior:'smooth'})">
-            <span class="ni-icon">📋</span><span>كل الصفقات</span>
+          <div class="nav-item" onclick="showReport('profit')">
+            <span class="ni-icon">📈</span><span>الأرباح والخسائر</span>
           </div>
-          <div class="nav-item" onclick="showAllSales()">
-            <span class="ni-icon">🤝</span><span>المبيعات</span>
+          <div class="nav-item" onclick="showReport('cashflow')">
+            <span class="ni-icon">💵</span><span>التدفقات النقدية</span>
           </div>
-          <div class="nav-item" onclick="showAllCollections()">
-            <span class="ni-icon">💰</span><span>التحصيلات</span>
+          <div class="nav-item" onclick="showReport('sales')">
+            <span class="ni-icon">💹</span><span>تقرير المبيعات</span>
           </div>
-          <div class="nav-item" onclick="showVehiclesReport()">
-            <span class="ni-icon">🚗</span><span>السيارات</span>
+          <div class="nav-item" onclick="showReport('expenses')">
+            <span class="ni-icon">💸</span><span>تقرير المصاريف</span>
+          </div>
+          <div class="nav-item" onclick="showReport('partners')">
+            <span class="ni-icon">🤲</span><span>تقرير الشركاء</span>
+          </div>
+          <div class="nav-item" onclick="showReport('opex')">
+            <span class="ni-icon">💼</span><span>تقرير التشغيلية</span>
           </div>
         </div>
       </div>
 
-      <!-- 👤 الحسابات -->
+      <!-- ═══ الحسابات ═══ -->
       <div class="nav-section">
         <div class="nav-section-title" onclick="toggleNav(this)">
           <span>👤 الحسابات</span>
@@ -1476,48 +1487,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         </div>
       </div>
 
-      <!-- 💼 المصاريف التشغيلية -->
-      <div class="nav-section">
-        <div class="nav-section-title" onclick="toggleNav(this)">
-          <span>💼 التشغيلية</span>
-          <span class="ns-arrow">▼</span>
-        </div>
-        <div class="nav-section-items">
-          <div class="nav-item" id="nav-opex" onclick="showOpex()">
-            <span class="ni-icon">💼</span><span>المصاريف التشغيلية</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 📈 التقارير -->
-      <div class="nav-section">
-        <div class="nav-section-title" onclick="toggleNav(this)">
-          <span>📈 التقارير</span>
-          <span class="ns-arrow">▼</span>
-        </div>
-        <div class="nav-section-items">
-          <div class="nav-item" onclick="showReport('profit')">
-            <span class="ni-icon">📈</span><span>الأرباح والخسائر</span>
-          </div>
-          <div class="nav-item" onclick="showReport('cashflow')">
-            <span class="ni-icon">💵</span><span>التدفقات النقدية</span>
-          </div>
-          <div class="nav-item" onclick="showReport('partners')">
-            <span class="ni-icon">🤲</span><span>تقرير الشركاء</span>
-          </div>
-          <div class="nav-item" onclick="showReport('sales')">
-            <span class="ni-icon">💹</span><span>تقرير المبيعات</span>
-          </div>
-          <div class="nav-item" onclick="showReport('expenses')">
-            <span class="ni-icon">💸</span><span>تقرير المصاريف</span>
-          </div>
-          <div class="nav-item" onclick="showReport('opex')">
-            <span class="ni-icon">💼</span><span>تقرير التشغيلية</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- ⚙️ الإدارة -->
+      <!-- ═══ الإدارة ═══ -->
       <div class="nav-section" id="nav-section-admin">
         <div class="nav-section-title" onclick="toggleNav(this)">
           <span>⚙️ الإدارة</span>
@@ -1525,7 +1495,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         </div>
         <div class="nav-section-items">
           <div class="nav-item" id="nav-approval" onclick="showApprovalQueue()">
-            <span class="ni-icon">✅</span><span>الموافقات</span>
+            <span class="ni-icon">🔍</span><span>المراجعة</span>
             <span id="approval-badge" style="display:none;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;margin-right:auto"></span>
           </div>
           <div class="nav-item" id="nav-activity" onclick="showActivityLog()">
@@ -1862,7 +1832,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
                 <option value="expense">مصروف صفقة</option>
                 <option value="payment">دفعة مورد</option>
                 <option value="payout">صرف شريك</option>
-                <option value="opex">مصروف تشغيلي</option>
+                <option value="opex">💼 مصروف عام</option>
               </select>
               <button class="btn btn-secondary btn-sm" onclick="loadJournal()">🔄 تحديث</button>
             </div>
@@ -1873,8 +1843,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
             <span style="font-size:11px;color:var(--text2);font-weight:500;margin-left:8px">تسجيل سريع:</span>
             <button class="btn btn-sm" onclick="openNewFileModal()"         style="background:var(--accent-dim);border:1px solid var(--accent);color:var(--accent)">📋 شراء</button>
             <button class="btn btn-sm" onclick="openSaleModal()"            style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);margin-right:4px">🧾 بيع</button>
-            <button class="btn btn-sm" onclick="openQuickModal('collection')" style="background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);margin-right:4px">💰 تحصيل</button>
-            <button class="btn btn-sm" onclick="openQuickModal('payment')"  style="background:var(--cyan-dim);border:1px solid var(--cyan);color:var(--cyan);margin-right:4px">💳 دفعة مورد</button>
+
             <button class="btn btn-sm" onclick="openExpenseModal()"         style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);margin-right:4px">💸 مصروف</button>
             <button class="btn btn-sm" onclick="openQuickModal('payout')"   style="background:var(--purple-dim);border:1px solid var(--purple);color:var(--purple);margin-right:4px">👥 صرف شريك</button>
           </div>
@@ -2026,6 +1995,13 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           <input type="date" id="r-from" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
           <span style="color:var(--text2)">—</span>
           <input type="date" id="r-to" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
+          <!-- فلتر posted/draft -->
+          <select id="r-post-filter" onchange="runReport()"
+            style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px">
+            <option value="posted">✅ مرحَّل فقط</option>
+            <option value="all">📊 الكل (posted + draft)</option>
+            <option value="draft">⏳ معلق فقط</option>
+          </select>
           <button class="btn btn-primary btn-sm" onclick="runReport()">🔍 تشغيل</button>
           <button class="btn btn-secondary btn-sm" onclick="printCurrentReport()">🖨️ طباعة</button>
           <button class="btn btn-secondary btn-sm" onclick="exportCurrentReportExcel()">📊 Excel</button>
@@ -2097,9 +2073,9 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       <!-- ════ APPROVAL QUEUE ════ -->
       <div id="approvalView" style="display:none">
 
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
           <div>
-            <div style="font-size:16px;font-weight:900">✅ قائمة الموافقات</div>
+            <div style="font-size:16px;font-weight:900">🔍 المراجعة</div>
             <div style="font-size:12px;color:var(--text2)" id="approval-subtitle">العمليات المعلقة للمراجعة</div>
           </div>
           <div style="display:flex;gap:8px">
@@ -2110,13 +2086,13 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 
         <!-- فلتر النوع -->
         <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
-          <button class="btn btn-sm approval-filter-btn active" id="af-all"       onclick="filterApproval('all')">الكل <span id="af-count-all"        style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn" id="af-purchase" onclick="filterApproval('purchase')">📋 شراء <span id="af-count-purchase" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn"        id="af-sale"      onclick="filterApproval('sale')">🧾 مبيعات <span id="af-count-sale"       style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn"        id="af-expense"   onclick="filterApproval('expense')">💸 مصاريف <span id="af-count-expense"     style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn"        id="af-collection" onclick="filterApproval('collection')">💰 تحصيلات <span id="af-count-collection" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn"        id="af-payment"   onclick="filterApproval('payment')">💳 دفعات مورد <span id="af-count-payment"   style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn"        id="af-payout"    onclick="filterApproval('payout')">👥 صرف شركاء <span id="af-count-payout"    style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn active" id="af-all"        onclick="filterApproval('all')">الكل <span id="af-count-all" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn" id="af-purchase"  onclick="filterApproval('purchase')">📋 شراء <span id="af-count-purchase" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn" id="af-sale"      onclick="filterApproval('sale')">🧾 مبيعات <span id="af-count-sale" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn" id="af-expense"   onclick="filterApproval('expense')">💸 مصاريف <span id="af-count-expense" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn" id="af-collection" onclick="filterApproval('collection')">💰 تحصيلات <span id="af-count-collection" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn" id="af-payment"   onclick="filterApproval('payment')">💳 دفعات مورد <span id="af-count-payment" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn" id="af-payout"    onclick="filterApproval('payout')">👥 صرف شركاء <span id="af-count-payout" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
         </div>
 
         <!-- القائمة -->
@@ -2124,6 +2100,28 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           <div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>
         </div>
 
+      </div>
+
+      <!-- ════ APPROVAL DETAIL MODAL ════ -->
+      <div class="modal-overlay" id="approvalDetailModal" style="display:none">
+        <div class="modal" style="max-width:600px">
+          <div class="modal-header">
+            <div class="modal-icon" id="ad-icon" style="background:var(--accent-dim)">📋</div>
+            <h3 id="ad-title">تفاصيل العملية</h3>
+            <button class="modal-close" onclick="closeModal('approvalDetailModal')">✕</button>
+          </div>
+          <div class="modal-body">
+            <div id="ad-body"></div>
+          </div>
+          <div class="modal-footer" style="justify-content:space-between">
+            <button class="btn btn-danger btn-sm" onclick="rejectFromDetail()">🗑 حذف</button>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary" onclick="closeModal('approvalDetailModal')">إغلاق</button>
+              <button class="btn btn-blue" id="ad-edit-btn" onclick="editFromDetail()">✏️ تعديل</button>
+              <button class="btn btn-success" onclick="approveFromDetail()">✓ موافقة</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- SETTINGS VIEW -->
@@ -2390,7 +2388,47 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         <div class="data-table-wrap"><div id="vr-table"></div></div>
       </div>
 
-    </div><!-- /content-area -->
+    
+      <!-- ════ TRANSACTIONS VIEW ════ -->
+      <div id="transactionsView" style="display:none">
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-size:16px;font-weight:900" id="tx-title">📋 المعاملات</div>
+            <div style="font-size:12px;color:var(--text2)" id="tx-subtitle"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="exportTxPDF()">🖨️ PDF</button>
+            <button class="btn btn-secondary btn-sm" onclick="exportTxExcel()">📊 Excel</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadTransactions()">🔄 تحديث</button>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
+          <input type="date" id="tx-from"
+            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <span style="color:var(--text2)">—</span>
+          <input type="date" id="tx-to"
+            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <select id="tx-post-filter" onchange="loadTransactions()"
+            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <option value="posted">✅ مرحَّل فقط</option>
+            <option value="all">📊 الكل</option>
+            <option value="draft">⏳ معلق فقط</option>
+          </select>
+          <input type="text" id="tx-search" placeholder="🔍 بحث..." oninput="filterTxTable()"
+            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:160px">
+          <button class="btn btn-primary btn-sm" onclick="loadTransactions()">🔍 عرض</button>
+        </div>
+
+        <!-- KPIs -->
+        <div id="tx-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px"></div>
+
+        <!-- Table -->
+        <div class="data-table-wrap"><div id="tx-table"></div></div>
+      </div>
+</div><!-- /content-area -->
   </div><!-- /main-area -->
 </div><!-- /app-layout -->
 
@@ -3718,6 +3756,209 @@ function logout() {
   document.getElementById('appScreen').style.display   = 'none';
   document.getElementById('loginPass').value = '';
 }
+
+// ════════════════════════════════════════
+// TRANSACTIONS VIEW
+// ════════════════════════════════════════
+const TX_CONFIG = {
+  deals:       { title:'الصفقات',         icon:'📁', color:'var(--accent)',  table:'purchase_orders', amountField:'total_purchase', dateField:'po_date',   labelField:'supplier' },
+  sales:       { title:'المبيعات',         icon:'🧾', color:'var(--green)',  table:'sales',           amountField:'sale_price',     dateField:'sale_date', labelField:'customer' },
+  expenses:    { title:'المصاريف',         icon:'💸', color:'var(--red)',    table:'expenses',        amountField:'amount',         dateField:'exp_date',  labelField:'description' },
+  collections: { title:'التحصيلات',        icon:'💰', color:'var(--blue)',   table:'collections',     amountField:'amount',         dateField:'paid_date', labelField:'customer' },
+  payments:    { title:'دفعات الموردين',   icon:'💳', color:'var(--cyan)',   table:'payments',        amountField:'amount',         dateField:'pay_date',  labelField:'payer' },
+  payouts:     { title:'مسحوبات الشركاء', icon:'👥', color:'var(--purple)', table:'partner_payouts', amountField:'amount',         dateField:'pay_date',  labelField:'partner' },
+  opex:        { title:'مصروفات عامة',     icon:'💼', color:'var(--text2)',  table:'operating_expenses', amountField:'amount',    dateField:'exp_date',  labelField:'description' },
+};
+
+let _txType = 'deals';
+
+function showTransactions(type) {
+  _txType = type || 'deals';
+  const cfg = TX_CONFIG[_txType];
+  sessionStorage.setItem('tm_last_view', 'tx:'+_txType);
+
+  hideAllViews();
+  el('transactionsView').style.display = 'block';
+  el('topBarTitle').textContent = cfg.icon + ' ' + cfg.title;
+  navActive('');
+
+  // Set default date range (current month)
+  const now = new Date();
+  const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0');
+  if (!el('tx-from').value) el('tx-from').value = `${y}-${m}-01`;
+  if (!el('tx-to').value)   el('tx-to').value   = today();
+
+  el('tx-title').textContent = cfg.icon + ' ' + cfg.title;
+  loadTransactions();
+}
+
+async function loadTransactions() {
+  const type  = _txType;
+  const cfg   = TX_CONFIG[type];
+  const from  = el('tx-from').value;
+  const to    = el('tx-to').value;
+  const pf    = el('tx-post-filter')?.value || 'posted';
+  const sys   = state.system;
+
+  el('tx-table').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
+  el('tx-kpis').innerHTML  = '';
+
+  const toEOD = to + 'T23:59:59';
+
+  try {
+    let params = {
+      select: '*',
+      system_type: `eq.${sys}`,
+      order: `${cfg.dateField}.desc`
+    };
+    if (from) params[cfg.dateField] = `gte.${from}`;
+
+    // post_status filter
+    if (pf === 'posted') params.post_status = 'eq.posted';
+    else if (pf === 'draft') params.post_status = 'eq.draft';
+
+    let rows = [];
+    if (type === 'opex') {
+      // operating_expenses uses different fetch
+      const url = `${SB_URL}/rest/v1/operating_expenses?system_type=eq.${encodeURIComponent(sys)}&exp_date=gte.${encodeURIComponent(from)}&exp_date=lte.${encodeURIComponent(toEOD)}&order=exp_date.desc`;
+      const r = await fetch(url, { headers: headers() });
+      rows = r.ok ? await r.json() : [];
+    } else if (type === 'deals') {
+      rows = await apiGet('purchase_orders', params);
+    } else {
+      // Add to date filter
+      const url2 = `${SB_URL}/rest/v1/${cfg.table}?system_type=eq.${encodeURIComponent(sys)}&${cfg.dateField}=gte.${encodeURIComponent(from)}&${cfg.dateField}=lte.${encodeURIComponent(toEOD)}&order=${cfg.dateField}.desc${pf==='posted'?'&post_status=eq.posted':pf==='draft'?'&post_status=eq.draft':''}`;
+      const r2 = await fetch(url2, { headers: headers() });
+      rows = r2.ok ? await r2.json() : [];
+    }
+
+    rows = rows || [];
+
+    // Get audit_log for created_by
+    const tableIds = rows.map(r=>r.id).filter(Boolean);
+    let auditMap = {};
+    if (tableIds.length) {
+      try {
+        const audits = await apiGet('audit_log', {
+          select: 'ref_id,user_email',
+          action: 'eq.INSERT',
+          table_name: `eq.${cfg.table}`,
+          limit: '200'
+        });
+        (audits||[]).forEach(a => { if(a.ref_id) auditMap[String(a.ref_id)] = a.user_email; });
+      } catch(e) {}
+    }
+
+    // KPIs
+    const total = rows.reduce((s,r)=>s+(+r[cfg.amountField]||0), 0);
+    const draftCount  = rows.filter(r=>r.post_status==='draft').length;
+    const postedCount = rows.filter(r=>r.post_status==='posted'||!r.post_status).length;
+    el('tx-subtitle').textContent = `${rows.length} سجل · ${from} — ${to}`;
+
+    el('tx-kpis').innerHTML = `
+      <div class="j-kpi" style="border-right:3px solid ${cfg.color}">
+        <div class="j-kpi-label">${cfg.icon} إجمالي ${cfg.title}</div>
+        <div class="j-kpi-val" style="color:${cfg.color};font-size:18px;font-weight:900">${fmt(total)}</div>
+      </div>
+      <div class="j-kpi"><div class="j-kpi-label">عدد السجلات</div><div class="j-kpi-val">${rows.length}</div></div>
+      ${pf==='all'?`<div class="j-kpi"><div class="j-kpi-label">✅ مرحَّل</div><div class="j-kpi-val text-green">${postedCount}</div></div>
+      <div class="j-kpi"><div class="j-kpi-label">⏳ معلق</div><div class="j-kpi-val" style="color:var(--accent)">${draftCount}</div></div>`:''}`;
+
+    // Store for export
+    window._txRows = rows;
+    window._txAuditMap = auditMap;
+    window._txCfg = cfg;
+
+    renderTxTable(rows, cfg, auditMap, type);
+
+  } catch(e) {
+    el('tx-table').innerHTML = `<div class="empty-state"><div class="e-icon">⚠️</div><p>خطأ: ${e.message}</p></div>`;
+    console.error(e);
+  }
+}
+
+function renderTxTable(rows, cfg, auditMap, type) {
+  if (!rows.length) {
+    el('tx-table').innerHTML = emptyHTML(cfg.icon, 'لا توجد سجلات في هذه الفترة');
+    return;
+  }
+
+  // Build columns based on type
+  const cols = {
+    deals:       [{k:'po_date',t:'التاريخ'},{k:'file_no',t:'رقم الملف'},{k:'supplier',t:'المورد'},{k:'vehicle_count',t:'سيارات'},{k:'total_purchase',t:'القيمة',mono:true},{k:'status',t:'الحالة'}],
+    sales:       [{k:'sale_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'inv_no',t:'الفاتورة'},{k:'customer',t:'العميل'},{k:'vin',t:'شاصي'},{k:'sale_price',t:'السعر',mono:true}],
+    expenses:    [{k:'exp_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'ref_no',t:'المرجع'},{k:'description',t:'الوصف'},{k:'exp_type',t:'النوع'},{k:'amount',t:'المبلغ',mono:true}],
+    collections: [{k:'paid_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'inv_no',t:'الفاتورة'},{k:'customer',t:'العميل'},{k:'amount',t:'المبلغ',mono:true}],
+    payments:    [{k:'pay_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'ref_no',t:'المرجع'},{k:'payer',t:'الدافع'},{k:'pay_method',t:'الطريقة'},{k:'amount',t:'المبلغ',mono:true}],
+    payouts:     [{k:'pay_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'pay_id',t:'المرجع'},{k:'partner',t:'الشريك'},{k:'payout_type',t:'النوع'},{k:'amount',t:'المبلغ',mono:true}],
+    opex:        [{k:'exp_date',t:'التاريخ'},{k:'ref_no',t:'المرجع'},{k:'description',t:'الوصف'},{k:'category',t:'الفئة'},{k:'amount',t:'المبلغ',mono:true}],
+  };
+
+  const typeCols = cols[type] || cols.sales;
+
+  const statusBadge = r => {
+    if (!r.post_status || r.post_status==='posted') return '<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">✅ مرحَّل</span>';
+    return '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">⏳ معلق</span>';
+  };
+
+  const thead = `<tr>${typeCols.map(c=>`<th>${c.t}</th>`).join('')}<th>بواسطة</th><th>الحالة</th></tr>`;
+
+  const tbody = rows.map(r => {
+    const cells = typeCols.map(col => {
+      let v = r[col.k] ?? '—';
+      if (col.k.includes('date')) v = fmtDate(v);
+      if (col.mono) v = `<span class="mono" style="color:${cfg.color};font-weight:700">${fmt(v)}</span>`;
+      return `<td>${v}</td>`;
+    }).join('');
+    const user = auditMap[String(r.id)] || '—';
+    const shortUser = user.split('@')[0];
+    const rowClick = type==='deals' ? `onclick="openViewer('${r.file_no}')" style="cursor:pointer"` : '';
+    return `<tr ${rowClick}>${cells}<td style="font-size:11px;color:var(--text2)">${shortUser}</td><td>${statusBadge(r)}</td></tr>`;
+  }).join('');
+
+  const total = rows.reduce((s,r)=>s+(+r[cfg.amountField]||0),0);
+  const tfoot = `<tr style="background:var(--card2);font-weight:700"><td colspan="${typeCols.length-1}">الإجمالي</td><td class="mono">${fmt(total)}</td><td colspan="2"></td></tr>`;
+
+  el('tx-table').innerHTML = `
+    <table class="data-table" id="tx-data-table">
+      <thead>${thead}</thead>
+      <tbody id="tx-tbody">${tbody}</tbody>
+      <tfoot>${tfoot}</tfoot>
+    </table>`;
+}
+
+function filterTxTable() {
+  const q = el('tx-search')?.value?.toLowerCase() || '';
+  const rows = document.querySelectorAll('#tx-tbody tr');
+  rows.forEach(r => {
+    r.style.display = !q || r.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+async function exportTxPDF() {
+  const table = el('tx-data-table');
+  if (!table) { toast('لا توجد بيانات','err'); return; }
+  const cfg = TX_CONFIG[_txType];
+  printDocument(`<h2 style="margin-bottom:16px">${cfg.icon} ${cfg.title}</h2>${table.outerHTML}`, cfg.title);
+}
+
+async function exportTxExcel() {
+  if (!window._txRows?.length) { toast('لا توجد بيانات','err'); return; }
+  const cfg = window._txCfg;
+  const rows = window._txRows;
+  const auditMap = window._txAuditMap || {};
+
+  const headers2 = Object.keys(rows[0]).filter(k=>!k.startsWith('_'));
+  headers2.push('created_by');
+  const data = rows.map(r => {
+    const row = headers2.slice(0,-1).map(k => r[k] ?? '');
+    row.push(auditMap[String(r.id)] || '');
+    return row;
+  });
+
+  exportToExcel([{ name: cfg.title, headers: headers2, data }], cfg.title + '_' + today());
+}
+
 
 function initApp() {
   document.getElementById('loginScreen').style.display = 'none';
@@ -6170,10 +6411,12 @@ function addSaleVehicleRow() {
   const tr = document.createElement('tr');
   tr.className = 'sale-v-row';
   const vehicles = state._saleAvailableVehicles || [];
-  const vOpts = ['<option value="">— اختر سيارة —</option>',
+  const vOpts = ['<option value="">— اختر سيارة (رقم الشاصي) —</option>',
     ...vehicles.map(v => {
-      const label = [v.model||v.vehicle_type, v.year, v.color].filter(Boolean).join(' · ') || (v.vin||'سيارة');
-      return `<option value="${v.id}" data-vin="${v.vin||''}" data-model="${v.model||v.vehicle_type||''}" data-plate="${v.plate||''}" data-color="${v.color||''}" data-year="${v.year||''}">${label}</option>`;
+      const vin = v.vin || '—';
+      const info = [v.model||v.vehicle_type, v.year, v.color].filter(Boolean).join(' · ');
+      // Label = VIN فقط (المعلومات الإضافية في data-* للـ JS)
+      return `<option value="${v.id}" data-vin="${v.vin||''}" data-model="${v.model||v.vehicle_type||''}" data-plate="${v.plate||''}" data-color="${v.color||''}" data-year="${v.year||''}" title="${info}">${vin}</option>`;
     })
   ].join('');
   tr.innerHTML = `
@@ -6214,16 +6457,17 @@ async function onSaleRowFileChange(sel) {
     const sales    = await apiGet('sales',    { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const soldVins = new Set((sales||[]).map(s=>s.vin));
     const avail    = (vehicles||[]).filter(v=>!soldVins.has(v.vin));
-    vehicleSel.innerHTML = '<option value="">-- اختر سيارة --</option>' +
+    vehicleSel.innerHTML = '<option value="">— اختر سيارة (رقم الشاصي) —</option>' +
       avail.map(v=>{
-        const label = [v.vin, v.model||v.vehicle_type, v.year, v.color, v.plate].filter(Boolean).join(' — ');
+        const info = [v.model||v.vehicle_type, v.year, v.color].filter(Boolean).join(' · ');
         return `<option value="${v.id}"
           data-vin="${v.vin||''}"
           data-model="${v.model||v.vehicle_type||''}"
           data-plate="${v.plate||''}"
           data-color="${v.color||''}"
           data-engine="${v.engine_size||''}"
-          data-year="${v.year||''}">${label}</option>`;
+          data-year="${v.year||''}"
+          title="${info}">${v.vin||'—'}</option>`;
       }).join('');
   } catch(e) { vehicleSel.innerHTML = '<option value="">خطأ في التحميل</option>'; }
 }
@@ -6379,7 +6623,7 @@ async function openCollectionModal() {
       return;
     }
 
-    el('col-invNo').innerHTML = '<option value="">— اختر فاتورة —</option>' +
+    el('col-invNo').innerHTML = '<option value="">— اختر بالشاصي أو الفاتورة —</option>' +
       pendingSales.map(s => `
         <option value="${s.inv_no}"
           data-customer="${s.customer||''}"
@@ -6387,7 +6631,7 @@ async function openCollectionModal() {
           data-total="${s.sale_price||0}"
           data-collected="${s.collected}"
           data-remaining="${s.remaining}">
-          ${s.inv_no||'—'} — ${s.customer||''} — باقي: ${fmt(s.remaining)}
+          ${s.vin||'—'}  |  ${s.inv_no||'—'} — ${s.customer||''}  (باقي: ${fmt(s.remaining)})
         </option>`).join('');
 
     // حفظ البيانات للاستخدام في onchange
@@ -6835,7 +7079,7 @@ async function loadQuickVins(fileNo) {
       const soldVins = new Set((sales||[]).map(s=>s.vin));
       const unsold   = (vehicles||[]).filter(v => !soldVins.has(v.vin));
       el('qs-vin').innerHTML = unsold.length
-        ? unsold.map(v=>`<option value="${v.vin}">${v.vin} — ${v.model||v.vehicle_type||''}</option>`).join('')
+        ? unsold.map(v=>`<option value="${v.vin}" title="${v.model||v.vehicle_type||''}">${v.vin}</option>`).join('')
         : '<option value="">— لا توجد سيارات متاحة في هذا الملف —</option>';
     } catch(e) {}
   }, 500);
@@ -6888,7 +7132,7 @@ async function loadQuickInvoices(fileNo) {
       return;
     }
 
-    invSel.innerHTML = '<option value="">— اختر فاتورة —</option>' +
+    invSel.innerHTML = '<option value="">— اختر بالشاصي أو الفاتورة —</option>' +
       pending.map(s => `
         <option value="${s.inv_no}"
           data-customer="${s.customer||''}"
@@ -6896,7 +7140,7 @@ async function loadQuickInvoices(fileNo) {
           data-total="${s.sale_price||0}"
           data-collected="${s.collected}"
           data-remaining="${s.remaining}">
-          ${s.inv_no} — ${s.customer||''} — باقي: ${fmt(s.remaining)}
+          ${s.vin||'—'}  |  ${s.inv_no} — ${s.customer||''}  (باقي: ${fmt(s.remaining)})
         </option>`).join('');
 
   } catch(e) {
@@ -7185,6 +7429,68 @@ async function submitQuickPayout() {
 }
 
 // VIN Search
+function closeVinDropdown() {
+  const dd = el('vinDropdown');
+  if (dd) dd.style.display = 'none';
+}
+
+let _vinSearchTimer = null;
+async function searchVinDropdown(q) {
+  const dd = el('vinDropdown');
+  if (!dd) return;
+
+  if (!q || q.length < 3) { dd.style.display = 'none'; return; }
+
+  dd.innerHTML = '<div style="padding:10px 14px;color:var(--text2);font-size:12px">⏳ جاري البحث...</div>';
+  dd.style.display = 'block';
+
+  clearTimeout(_vinSearchTimer);
+  _vinSearchTimer = setTimeout(async () => {
+    try {
+      const vehicles = await apiGet('vehicles', {
+        select: 'vin,model,vehicle_type,year,file_no,color',
+        system_type: `eq.${state.system}`,
+        vin: `ilike.*${q}*`,
+        limit: 10
+      });
+
+      if (!vehicles?.length) {
+        dd.innerHTML = '<div style="padding:10px 14px;color:var(--text2);font-size:12px">لا توجد نتائج</div>';
+        return;
+      }
+
+      dd.innerHTML = vehicles.map(v => {
+        const label = [v.model||v.vehicle_type, v.year, v.color].filter(Boolean).join(' · ');
+        return `
+        <div onclick="selectVinFromDropdown('${v.vin}')"
+          style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center"
+          onmouseenter="this.style.background='var(--card2)'" onmouseleave="this.style.background=''">
+          <div>
+            <div style="font-family:monospace;font-weight:700;color:var(--accent);font-size:13px;direction:ltr">${v.vin}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px">${label||'—'}</div>
+          </div>
+          <span style="font-size:11px;background:var(--accent-dim);color:var(--accent);padding:2px 8px;border-radius:10px;font-family:monospace;flex-shrink:0;margin-right:8px">${v.file_no||'—'}</span>
+        </div>`;
+      }).join('');
+
+    } catch(e) {
+      dd.innerHTML = `<div style="padding:10px 14px;color:var(--red);font-size:12px">خطأ: ${e.message}</div>`;
+    }
+  }, 300);
+}
+
+async function selectVinFromDropdown(vin) {
+  closeVinDropdown();
+  const inp = el('vinSearch');
+  if (inp) inp.value = vin;
+  await searchVin(vin);
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.sidebar-search')) closeVinDropdown();
+});
+
 async function searchVin(q) {
   if (!q || q.length < 3) {
     el('vin-card-overlay')?.remove();
@@ -7844,7 +8150,7 @@ function renderJournalEntries() {
     expense:    { icon:'💸', bg:'var(--red-dim)',     label:'مصروف',          amountColor:'var(--red)'    },
     payment:    { icon:'💳', bg:'var(--cyan-dim)',    label:'دفعة مورد',      amountColor:'var(--cyan)'   },
     payout:     { icon:'👥', bg:'var(--purple-dim)',  label:'صرف شريك',       amountColor:'var(--purple)' },
-    opex:       { icon:'💼', bg:'var(--purple-dim)',  label:'تشغيلي',         amountColor:'var(--purple)' },
+    opex:       { icon:'💼', bg:'var(--purple-dim)',  label:'مصروف عام',         amountColor:'var(--purple)' },
   };
 
   let html = '';
@@ -8595,7 +8901,7 @@ async function deleteContact(id, name) {
 // hideAllViews helper
 // ════════════════════════════════════════
 function hideAllViews() {
-  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView']
+  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView']
     .forEach(id => {
       const e = el(id);
       if (e) {
@@ -10650,28 +10956,57 @@ async function runCashFlowReport(from, to, sys) {
   el('reportTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري إعداد تقرير التدفقات...</div>';
   try {
     const toEOD = to + 'T23:59:59';
+    // جيب كل البيانات بدون فلتر post_status — التقرير يعرض الكل
     async function cfGet(table, dateCol) {
       const url = `${SB_URL}/rest/v1/${table}?system_type=eq.${encodeURIComponent(sys)}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`;
       const r = await fetch(url, { headers: headers() });
-      return r.ok ? r.json() : [];
+      if (!r.ok) return [];
+      return r.json();
     }
     const [collections, payments, expenses, payouts, opexItems] = await Promise.all([
-      cfGet('collections', 'paid_date'), cfGet('payments', 'pay_date'),
-      cfGet('expenses', 'exp_date'), cfGet('partner_payouts', 'pay_date'),
+      cfGet('collections',     'paid_date'),
+      cfGet('payments',        'pay_date'),
+      cfGet('expenses',        'exp_date'),
+      cfGet('partner_payouts', 'pay_date'),
       fetchOpexForJournal(from, to, sys),
     ]);
-    const inC=( collections||[]).reduce((s,r)=>s+(+r.amount||0),0);
-    const outP=(payments||[]).reduce((s,r)=>s+(+r.amount||0),0);
-    const outE=(expenses||[]).reduce((s,r)=>s+(+r.amount||0),0);
-    const outPo=(payouts||[]).reduce((s,r)=>s+(+r.amount||0),0);
-    const outO=(opexItems||[]).reduce((s,r)=>s+(+r.amount||0),0);
-    const totalIn=inC, totalOut=outP+outE+outPo+outO, net=totalIn-totalOut;
+
+    // فلتر post_status
+    const postFilter = el('r-post-filter')?.value || 'all';
+    const filterFn = arr => {
+      if (postFilter === 'all') return arr||[];
+      return (arr||[]).filter(r => {
+        if (postFilter === 'posted') return r.post_status === 'posted' || !r.post_status;
+        if (postFilter === 'draft')  return r.post_status === 'draft';
+        return true;
+      });
+    };
+
+    const inC   = filterFn(collections).reduce((s,r)=>s+(+r.amount||0),0);
+    const outP  = filterFn(payments).reduce((s,r)=>s+(+r.amount||0),0);
+    const outE  = filterFn(expenses).reduce((s,r)=>s+(+r.amount||0),0);
+    const outPo = filterFn(payouts).reduce((s,r)=>s+(+r.amount||0),0);
+    const outO  = filterFn(opexItems).reduce((s,r)=>s+(+r.amount||0),0);
+
+    const totalIn  = inC;
+    const totalOut = outP + outE + outPo + outO;
+    const net      = totalIn - totalOut;
+
+    const draftCount = (collections||[]).filter(r=>r.post_status==='draft').length +
+                       (payments||[]).filter(r=>r.post_status==='draft').length +
+                       (expenses||[]).filter(r=>r.post_status==='draft').length +
+                       (payouts||[]).filter(r=>r.post_status==='draft').length;
+
+    const draftNote = postFilter==='all' && draftCount > 0
+      ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:7px 12px;font-size:11px;color:#92400e;margin-top:8px">
+          ⏳ يشمل ${draftCount} عملية معلقة — غيّر الفلتر لعرض المرحَّل فقط
+         </div>` : '';
 
     el('reportKpis').innerHTML = `
       <div class="j-kpi" style="border-right:3px solid var(--green);background:var(--green-dim)">
         <div class="j-kpi-label">💚 إجمالي الداخل</div>
         <div class="j-kpi-val text-green" style="font-size:20px;font-weight:900">${fmt(totalIn)}</div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">تحصيلات العملاء</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">تحصيلات العملاء (${all(collections).length} عملية)</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--red);background:var(--red-dim)">
         <div class="j-kpi-label">❤️ إجمالي الخارج</div>
@@ -10682,23 +11017,24 @@ async function runCashFlowReport(from, to, sys) {
         <div class="j-kpi-label">💵 صافي التدفق</div>
         <div class="j-kpi-val" style="color:${net>=0?'var(--green)':'var(--red)'};font-size:22px;font-weight:900">${net>=0?'+':''}${fmt(net)}</div>
         <div style="font-size:10px;color:var(--text2);margin-top:2px">${net>=0?'▲ موجب':'▼ سالب'}</div>
-      </div>`;
+      </div>
+      ${draftNote}`;
 
     const breakdown=[
-      {label:'تحصيلات العملاء',amount:inC, dir:+1,icon:'💰',color:'var(--green)', count:(collections||[]).length},
-      {label:'دفعات للموردين', amount:outP,dir:-1,icon:'💳',color:'var(--cyan)',  count:(payments||[]).length},
-      {label:'مصاريف الصفقات', amount:outE,dir:-1,icon:'💸',color:'var(--red)',   count:(expenses||[]).length},
-      {label:'صرف الشركاء',    amount:outPo,dir:-1,icon:'👥',color:'var(--purple)',count:(payouts||[]).length},
-      {label:'مصاريف تشغيلية',amount:outO,dir:-1,icon:'💼',color:'var(--text2)', count:(opexItems||[]).length},
+      {label:'تحصيلات العملاء',amount:inC,  dir:+1,icon:'💰',color:'var(--green)', count:filterFn(collections).length},
+      {label:'دفعات للموردين', amount:outP,  dir:-1,icon:'💳',color:'var(--cyan)',  count:filterFn(payments).length},
+      {label:'مصاريف الصفقات', amount:outE,  dir:-1,icon:'💸',color:'var(--red)',   count:filterFn(expenses).length},
+      {label:'صرف الشركاء',    amount:outPo, dir:-1,icon:'👥',color:'var(--purple)',count:filterFn(payouts).length},
+      {label:'مصاريف تشغيلية',amount:outO,  dir:-1,icon:'💼',color:'var(--text2)', count:filterFn(opexItems).length},
     ];
 
     const months={};
     const addM=(d,a,dir)=>{if(!d)return;const m=d.slice(0,7);if(!months[m])months[m]={in:0,out:0};if(dir>0)months[m].in+=a;else months[m].out+=a;};
-    (collections||[]).forEach(r=>addM(r.paid_date||r.due_date,+r.amount||0,+1));
-    (payments||[]).forEach(r=>addM(r.pay_date,+r.amount||0,-1));
-    (expenses||[]).forEach(r=>addM(r.exp_date||r.expense_date,+r.amount||0,-1));
-    (payouts||[]).forEach(r=>addM(r.pay_date,+r.amount||0,-1));
-    (opexItems||[]).forEach(r=>addM(r.exp_date,+r.amount||0,-1));
+    filterFn(collections).forEach(r=>addM(r.paid_date||r.due_date,+r.amount||0,+1));
+    filterFn(payments).forEach(r=>addM(r.pay_date,+r.amount||0,-1));
+    filterFn(expenses).forEach(r=>addM(r.exp_date||r.expense_date,+r.amount||0,-1));
+    filterFn(payouts).forEach(r=>addM(r.pay_date,+r.amount||0,-1));
+    filterFn(opexItems).forEach(r=>addM(r.exp_date,+r.amount||0,-1));
     const mks=Object.keys(months).sort();
     const mx=Math.max(...mks.map(m=>Math.max(months[m].in,months[m].out)),1);
     const bar=(v,col)=>`<div style="height:6px;background:${col};border-radius:3px;width:${Math.round(v/mx*100)}%;margin-top:3px;min-width:${v>0?'4px':'0'}"></div>`;
@@ -12423,7 +12759,7 @@ async function showApprovalQueue() {
   if (!can('roles')) { toast('🔒 هذه الصفحة للمدراء فقط','err'); return; }
   hideAllViews();
   el('approvalView').style.display = 'block';
-  el('topBarTitle').textContent = 'قائمة الموافقات';
+  el('topBarTitle').textContent = 'المراجعة';
   navActive('nav-approval');
   sessionStorage.setItem('tm_last_view','approval');
   await loadApprovalQueue();
@@ -12447,6 +12783,15 @@ async function loadApprovalQueue() {
     ]);
 
     // دمج كل البنود مع نوعها
+    // جيب المستخدمين من audit_log
+    const allIds = [...(purchases||[]),...(sales||[]),...(expenses||[]),...(collections||[]),...(payments||[]),...(payouts||[])].map(r=>r.id).filter(Boolean);
+    let _auditUsers = {};
+    try {
+      const audits = await apiGet('audit_log',{ select:'ref_id,user_email', action:'eq.INSERT', limit:'500' });
+      (audits||[]).forEach(a=>{ if(a.ref_id) _auditUsers[String(a.ref_id)] = (a.user_email||'').split('@')[0]; });
+    } catch(e) {}
+    approvalState.auditUsers = _auditUsers;
+
     approvalState.all = [
       ...(purchases||[]).map(r    => ({...r, _type:'purchase',   _amount:+r.total_purchase||0, _date:r.po_date,    _desc:`${r.file_no||'—'} · ${r.supplier||'—'} · ${r.vehicle_count||0} سيارة`, _file:r.file_no })),
       ...(sales||[]).map(r        => ({...r, _type:'sale',       _amount:+r.sale_price||0,     _date:r.sale_date,  _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.vin||'—'}`,               _file:r.file_no })),
@@ -12511,132 +12856,108 @@ function renderApprovalList() {
       <div class="approval-row-body">
         <div class="approval-row-title">${cfg.label} — ${r._desc}</div>
         <div class="approval-row-meta">
-          ${fmtDate(r._date)} 
+          ${fmtDate(r._date)}
           ${r._file ? `· <span style="color:var(--accent);font-family:monospace">${r._file}</span>` : ''}
-          · <span style="color:var(--text2)">${r.ref_no||r.pay_id||r.inv_no||'—'}</span>
+          · <span style="color:var(--text2)">${r.ref_no||r.pay_id||r.inv_no||r.file_no||'—'}</span>
+          ${approvalState.auditUsers?.[String(r.id)] ? `· <span style="color:var(--blue);font-size:10px;font-weight:600">👤 ${approvalState.auditUsers[String(r.id)]}</span>` : ''}
         </div>
       </div>
       <div class="approval-row-amount" style="color:${cfg.color}">${fmt(r._amount)}</div>
       <div class="approval-row-actions" onclick="event.stopPropagation()">
         <button class="btn btn-sm" onclick="approveItem('${r._type}','${r.id}')"
-          style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);padding:4px 10px">✓</button>
+          style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);padding:4px 8px" title="موافقة">✓</button>
         <button class="btn btn-sm" onclick="rejectItem('${r._type}','${r.id}')"
-          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);padding:4px 10px">✗</button>
+          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);padding:4px 8px" title="حذف">🗑</button>
       </div>
     </div>`;
   }).join('');
 }
 
+
+const FIELD_LABELS = {
+  file_no:'رقم الملف', supplier:'المورد', po_no:'رقم PO', po_date:'تاريخ PO',
+  total_purchase:'قيمة الصفقة', vehicle_count:'عدد السيارات',
+  payer:'الدافع', amount:'المبلغ', pay_method:'طريقة الدفع', pay_date:'تاريخ الدفع',
+  document:'رقم المستند', notes:'ملاحظات', ref_no:'مرجع', pay_id:'رقم العملية',
+  description:'الوصف', exp_type:'النوع', exp_date:'التاريخ',
+  inv_no:'رقم الفاتورة', customer:'العميل', vin:'رقم الشاصي',
+  sale_price:'سعر البيع', sale_date:'تاريخ البيع',
+  due_date:'تاريخ الاستحقاق', paid_date:'تاريخ الدفع',
+  partner:'الشريك', payout_type:'نوع الصرف',
+  capital_amount:'رأس المال', profit_amount:'الأرباح', advance_amount:'السلفة',
+};
+const SKIP_FIELDS = new Set(['_type','_amount','_date','_desc','_file','post_status',
+  'created_at','updated_at','id','system_type','ref_table','ref_id','status','po_no']);
+
 async function openApprovalDetail(type, id) {
   const cfg  = APPROVAL_CONFIG[type];
   const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
-  if (!item) return;
+  if (!item || !cfg) return;
 
   approvalState.currentItem = { type, id, item };
 
-  el('approval-detail-title').innerHTML = `${cfg.icon} تفاصيل ${cfg.label}`;
-  el('approval-approve-btn').onclick = () => approveFromDetail();
-  el('approval-reject-btn').onclick  = () => rejectFromDetail();
+  el('ad-icon').textContent = cfg.icon;
+  el('ad-icon').style.background = cfg.color + '22';
+  el('ad-title').textContent = cfg.label + ' — مراجعة';
 
-  // بناء جدول التفاصيل
-  const fields = Object.entries(item).filter(([k]) => !k.startsWith('_') && k !== 'post_status');
-  el('approval-detail-body').innerHTML = `
-    <div style="background:${cfg.color}11;border:1px solid ${cfg.color}33;border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
+  const fields = Object.entries(item).filter(([k,v]) =>
+    !SKIP_FIELDS.has(k) && v !== null && v !== undefined && v !== ''
+  );
+
+  el('ad-body').innerHTML = `
+    <div style="background:${cfg.color}11;border:1px solid ${cfg.color}33;border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
       <div>
-        <div style="font-size:11px;color:${cfg.color};font-weight:700;margin-bottom:2px">${cfg.label}</div>
-        <div style="font-size:12px;color:var(--text2)">${item._desc}</div>
+        <div style="font-size:11px;color:${cfg.color};font-weight:700">${cfg.label}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">${item._desc}</div>
+        ${approvalState.auditUsers?.[String(item.id)]?`<div style="font-size:11px;color:var(--blue);margin-top:3px">👤 أُدخل بواسطة: ${approvalState.auditUsers[String(item.id)]}</div>`:''}
+        ${item._file?`<div style="font-size:11px;color:var(--accent);font-family:monospace;margin-top:2px">${item._file}</div>`:''}
       </div>
-      <div style="font-size:20px;font-weight:900;color:${cfg.color};font-family:monospace">${fmt(item._amount)}</div>
+      <div style="font-size:22px;font-weight:900;color:${cfg.color};font-family:monospace">${fmt(item._amount)}</div>
     </div>
     <table class="data-table" style="font-size:12px">
       <tbody>
-        ${fields.map(([k,v]) => v !== null && v !== undefined && v !== '' ? `
+        ${fields.map(([k,v])=>`
         <tr>
-          <td style="color:var(--text2);font-weight:500;width:40%">${k}</td>
-          <td style="font-family:monospace">${v}</td>
-        </tr>` : '').join('')}
+          <td style="color:var(--text2);font-weight:600;padding:7px 14px;width:42%">${FIELD_LABELS[k]||k}</td>
+          <td style="padding:7px 14px;font-family:${typeof v==='number'||String(v).match(/^[0-9.\-]+$/)?'monospace':'inherit'}">${v}</td>
+        </tr>`).join('')}
       </tbody>
     </table>`;
 
-  el('approval-detail').style.display = 'flex';
-}
-
-function closeApprovalDetail() {
-  el('approval-detail').style.display = 'none';
-  approvalState.currentItem = null;
-}
-
-async function approveItem(type, id) {
-  const cfg  = APPROVAL_CONFIG[type];
-  const item = approvalState.all.find(r => r._type===type && String(r.id)===String(id));
-  try {
-    await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'posted' });
-
-    // كتابة القيود المحاسبية بعد الموافقة
-    if (item) {
-      const sys = state.system;
-      if (type==='purchase') {
-        if (item.supplier && +item.total_purchase>0) {
-          try { await apiDelete('ledger_entries', { system_type:`eq.${sys}`, file_no:`eq.${item.file_no}`, source_table:`eq.purchase_orders` }); } catch(e){}
-          await postLedger({ contactName:item.supplier, contactType:'supplier', date:item.po_date||today(),
-            description:`شراء ${item.vehicle_count||0} سيارة — ملف ${item.file_no}${item.po_no?' — PO:'+item.po_no:''}`,
-            debit:+item.total_purchase, sourceTable:'purchase_orders', fileNo:item.file_no });
-        }
-      } else if (type==='payment') {
-        const poArr = await apiGet('purchase_orders',{ select:'supplier', system_type:`eq.${sys}`, file_no:`eq.${item.file_no}` });
-        const sup = poArr?.[0]?.supplier||'';
-        if (sup) await postLedger({ contactName:sup, contactType:'supplier', date:item.pay_date,
-          description:`[${item.ref_no||item.pay_id}] دفعة للمورد — ملف ${item.file_no} — دافع: ${item.payer||'—'}`,
-          credit:+item.amount, sourceTable:'payments', fileNo:item.file_no });
-        if (item.payer && item.payer!==sup)
-          await postLedger({ contactName:item.payer, contactType:'partner', date:item.pay_date,
-            description:`[${item.ref_no||item.pay_id}] دفع للمورد ${sup||''} — ملف ${item.file_no}`,
-            debit:+item.amount, sourceTable:'payments', fileNo:item.file_no });
-      } else if (type==='sale') {
-        if (item.customer) await postLedger({ contactName:item.customer, contactType:'customer', date:item.sale_date,
-          description:`فاتورة ${item.inv_no||'—'} — سيارة ${item.vin||'—'} — ملف ${item.file_no}`,
-          debit:+item.sale_price, sourceTable:'sales', fileNo:item.file_no });
-      } else if (type==='collection') {
-        if (item.customer) await postLedger({ contactName:item.customer, contactType:'customer', date:item.paid_date||item.due_date||today(),
-          description:`[${item.ref_no||item.pay_id}] تحصيل فاتورة ${item.inv_no||''} — ملف ${item.file_no}`,
-          credit:+item.amount, sourceTable:'collections', fileNo:item.file_no });
-      } else if (type==='payout') {
-        await postLedger({ contactName:item.partner, contactType:'partner', date:item.pay_date,
-          description:`[${item.pay_id}] ${item.payout_type||''} — ملف ${item.file_no}`,
-          debit:+item.amount, sourceTable:'partner_payouts', fileNo:item.file_no });
-      }
-    }
-
-    toast(`✅ تمت الموافقة على ${cfg.label}`, 'ok');
-    await loadApprovalQueue();
-    updateApprovalBadge();
-  } catch(e) { toast('خطأ: '+e.message,'err'); }
-}
-
-async function rejectItem(type, id) {
-  const cfg = APPROVAL_CONFIG[type];
-  showConfirm(`رفض ${cfg.label}`, 'سيتم حذف هذه العملية نهائياً. هل أنت متأكد؟', async () => {
-    try {
-      await apiDelete(cfg.table, { id:`eq.${id}` });
-      toast(`تم رفض وحذف ${cfg.label}`,'ok');
-      await loadApprovalQueue();
-    } catch(e) { toast('خطأ: '+e.message,'err'); }
-  });
+  openModal('approvalDetailModal');
 }
 
 async function approveFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id } = approvalState.currentItem;
-  closeApprovalDetail();
+  closeModal('approvalDetailModal');
   await approveItem(type, id);
 }
 
 async function rejectFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id } = approvalState.currentItem;
-  closeApprovalDetail();
+  closeModal('approvalDetailModal');
   await rejectItem(type, id);
 }
+
+async function editFromDetail() {
+  if (!approvalState.currentItem) return;
+  const { type, id, item } = approvalState.currentItem;
+  closeModal('approvalDetailModal');
+  const editMap = {
+    purchase:   async () => item?.file_no ? openNewFileModal(item.file_no) : toast('لا يمكن فتح الصفقة','err'),
+    payment:    async () => openEditPaymentModal(id),
+    expense:    async () => openEditExpenseModal(id),
+    collection: async () => openEditCollectionModal(id),
+    payout:     async () => openEditPayoutModal(id),
+    sale:       async () => { if(typeof openEditSaleModal==='function') openEditSaleModal(id); else toast('تعديل البيع غير متاح هنا','err'); },
+  };
+  const fn = editMap[type];
+  if (fn) await fn();
+  else toast('لا يوجد تعديل متاح لهذا النوع','err');
+}
+
 
 async function approveAll() {
   const items = approvalState.filtered;
