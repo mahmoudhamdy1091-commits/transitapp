@@ -598,8 +598,9 @@ async function loadDashboard() {
     const totSales      = periodSales.reduce((s,r)=>s+(+r.sale_price||0),0);
     const totExp        = periodExp.reduce((s,e)=>s+(+e.amount||0),0);
     const periodFileNos = new Set(periodSales.map(s=>s.file_no));
-    const periodDeals   = (deals||[]).filter(d => periodFileNos.has(d.file_no));
-    const totPurchase   = periodDeals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
+    const periodDeals        = (deals||[]).filter(d => periodFileNos.has(d.file_no));
+    const periodPurchaseDeals= (deals||[]).filter(d => d.po_date && d.po_date >= from && d.po_date <= to);
+    const totPurchase        = periodPurchaseDeals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
     const periodDealExp = (allExpenses||[]).filter(e => periodFileNos.has(e.file_no)).reduce((s,e)=>s+(+e.amount||0),0);
     const profit        = totSales - totPurchase - periodDealExp;
     const margin        = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
@@ -612,7 +613,7 @@ async function loadDashboard() {
 
     // ── حفظ البيانات للـ drill-down ──
     _ddState.data = {
-      periodSales, periodExp, periodDeals,
+      periodSales, periodExp, periodDeals, periodPurchaseDeals,
       periodCollections: (collections||[]).filter(c => {
         const d = c.due_date||c.paid_date||c.created_at?.split('T')[0]||'';
         return d >= from && d <= to;
@@ -625,6 +626,7 @@ async function loadDashboard() {
     const totFullCost    = totPurchase + periodDealExp;
 
     const setKpi = (id, val, color) => { const e = el(id); if(!e) return; animateCount(e, String(val), color); };
+    setKpi('kpi-purchase',    fmt(totPurchase),    'var(--blue)');
     setKpi('kpi-sales',       fmt(totSales),       'var(--green)');
     setKpi('kpi-collections', fmt(totCollections), 'var(--blue)');
     setKpi('kpi-month-exp',   fmt(totExp),         totExp>0?'var(--red)':'var(--text2)');
@@ -632,6 +634,7 @@ async function loadDashboard() {
     setKpi('kpi-profit',      fmt(profit),          profit>=0?'var(--green)':'var(--red)');
     setKpi('kpi-stock',       stockVehicles.length, stockVehicles.length>0?'var(--purple)':'var(--green)');
 
+    if(el('kpi-purchase-sub'))    el('kpi-purchase-sub').textContent    = `${periodPurchaseDeals.length} صفقة`;
     if(el('kpi-sales-sub'))       el('kpi-sales-sub').textContent       = `${periodSales.length} فاتورة`;
     if(el('kpi-collections-sub')) el('kpi-collections-sub').textContent = `${(_ddState.data.periodCollections||[]).length} قيد`;
     if(el('kpi-month-exp-sub'))   el('kpi-month-exp-sub').textContent   = `${periodExp.length} بند`;
@@ -9099,8 +9102,36 @@ function renderDrillDown(type) {
 
   const periodLabel = el('dash-period-label')?.textContent || '';
 
+  // ── تكلفة الشراء ──
+  if (type === 'purchase') {
+    el('dd-title').textContent = `📋 تفاصيل تكلفة الشراء — ${periodLabel}`;
+    const deals = d.periodPurchaseDeals || d.periodDeals || [];
+    const total = deals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
+    const bySupplier = {};
+    deals.forEach(d2=>{ bySupplier[d2.supplier||'غير محدد']=(bySupplier[d2.supplier||'غير محدد']||0)+(+d2.total_purchase||0); });
+    ddKpis.style.gridTemplateColumns = 'repeat(3,1fr)';
+    ddKpis.innerHTML = `
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--blue)">${fmt(total)}</div><div class="dd-kpi-lbl">إجمالي الشراء</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val">${deals.length}</div><div class="dd-kpi-lbl">عدد الصفقات</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val">${deals.reduce((s,d2)=>s+(+d2.vehicle_count||0),0)}</div><div class="dd-kpi-lbl">عدد السيارات</div></div>`;
+    renderDDChart(Object.entries(bySupplier).sort((a,b)=>b[1]-a[1]), 'var(--blue)');
+    ddTable.innerHTML = deals.length ? `
+      <table class="data-table"><thead><tr>
+        <th>رقم الملف</th><th>المورد</th><th>تاريخ PO</th><th>السيارات</th><th>تكلفة الشراء</th><th>الحالة</th>
+      </tr></thead><tbody>
+      ${deals.map(d2=>`<tr onclick="openViewer('${d2.file_no}')" style="cursor:pointer">
+        <td class="mono text-amber" style="font-weight:700">${d2.file_no}</td>
+        <td>${d2.supplier||'—'}</td>
+        <td class="mono">${fmtDate(d2.po_date)}</td>
+        <td style="text-align:center">${d2.vehicle_count||0}</td>
+        <td class="mono text-blue" style="font-weight:700">${fmt(d2.total_purchase)}</td>
+        <td><span class="badge badge-${statusClass(d2.status)}">${d2.status}</span></td>
+      </tr>`).join('')}
+      </tbody></table>` : emptyHTML('📋','لا توجد صفقات في هذه الفترة');
+  }
+
   // ── مبيعات ──
-  if (type === 'sales') {
+  else if (type === 'sales') {
     el('dd-title').textContent = `💹 تفاصيل المبيعات — ${periodLabel}`;
     const sales = d.periodSales || [];
     const total = sales.reduce((s,r)=>s+(+r.sale_price||0),0);

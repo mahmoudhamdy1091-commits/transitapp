@@ -282,7 +282,7 @@
         </div>
 
         <!-- KPIs — كل كارت قابل للضغط -->
-        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px" id="kpiGrid">
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:14px" id="kpiGrid">
           <div class="kpi-card kpi-green kpi-clickable" onclick="toggleDrillDown('sales')" id="kpi-card-sales">
             <div class="kpi-top"><span class="kpi-label">المبيعات</span><div class="kpi-icon">💹</div></div>
             <div class="kpi-val" id="kpi-sales">—</div>
@@ -299,6 +299,12 @@
             <div class="kpi-top"><span class="kpi-label">المصاريف</span><div class="kpi-icon">💸</div></div>
             <div class="kpi-val" id="kpi-month-exp">—</div>
             <div class="kpi-sub" id="kpi-month-exp-sub">في الفترة</div>
+            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
+          </div>
+          <div class="kpi-card kpi-blue kpi-clickable" onclick="toggleDrillDown('purchase')" id="kpi-card-purchase">
+            <div class="kpi-top"><span class="kpi-label">تكلفة الشراء</span><div class="kpi-icon">📋</div></div>
+            <div class="kpi-val" id="kpi-purchase">—</div>
+            <div class="kpi-sub" id="kpi-purchase-sub">في الفترة</div>
             <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
           </div>
           <div class="kpi-card kpi-amber kpi-clickable" onclick="toggleDrillDown('fullcost')" id="kpi-card-fullcost">
