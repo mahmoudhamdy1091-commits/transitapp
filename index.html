@@ -13953,6 +13953,23 @@ window.addEventListener('load', () => {
     } catch(e) { console.warn('je_exp wrap:', e.message); }
   };
 
+  // ── submitQuickExpense ──
+  const _origQExp = window.submitQuickExpense;
+  window.submitQuickExpense = async function() {
+    await _origQExp.apply(this, arguments);
+    try {
+      if (entryStatus()!=='posted') return;
+      const sys    = state.system;
+      const fileNo = document.getElementById('qe-fileNo')?.value||state.currentFileNo||'';
+      const desc   = document.getElementById('qe-desc')?.value?.trim()||'مصروف';
+      const type   = document.getElementById('qe-type')?.value||'أخرى';
+      const amount = parseFloat(document.getElementById('qe-amount')?.value)||0;
+      const method = document.getElementById('qe-method')?.value||'تحويل بنكي';
+      const date   = document.getElementById('qe-date')?.value||today();
+      await je_expense({sys,date,amount,fileNo,desc,expType:type,method});
+    } catch(e) { console.warn('je_qexp wrap:', e.message); }
+  };
+
   // ── submitPayout ──
   const _origPout = window.submitPayout;
   window.submitPayout = async function() {
