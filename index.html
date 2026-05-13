@@ -282,7 +282,8 @@
         </div>
 
         <!-- KPIs — كل كارت قابل للضغط -->
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:14px" id="kpiGrid">
+        <!-- صف 1: مؤشرات الأداء الرئيسية -->
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:10px" id="kpiGrid">
           <div class="kpi-card kpi-blue kpi-clickable" onclick="toggleDrillDown('purchase')" id="kpi-card-purchase">
             <div class="kpi-top"><span class="kpi-label">المشتريات</span><div class="kpi-icon">📋</div></div>
             <div class="kpi-val" id="kpi-purchase">—</div>
@@ -312,6 +313,22 @@
             <div class="kpi-val" id="kpi-profit">—</div>
             <div class="kpi-sub" id="kpi-profit-sub">مبيعات - تكلفة</div>
             <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
+          </div>
+        </div>
+
+        <!-- صف 2: المستحقات -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+          <div class="kpi-card kpi-red kpi-clickable" onclick="toggleDrillDown('purchase')" id="kpi-card-supplier-due"
+            style="padding:12px 16px">
+            <div class="kpi-top"><span class="kpi-label">🔴 مستحق للموردين</span></div>
+            <div class="kpi-val text-red" id="dash-supplier-due" style="font-size:18px">—</div>
+            <div id="dash-supplier-due-list" style="font-size:11px;margin-top:4px"></div>
+          </div>
+          <div class="kpi-card kpi-amber kpi-clickable" onclick="toggleDrillDown('collections')" id="kpi-card-overdue"
+            style="padding:12px 16px">
+            <div class="kpi-top"><span class="kpi-label">🟠 تحصيلات مستحقة من العملاء</span></div>
+            <div class="kpi-val" style="color:var(--accent);font-size:18px" id="dash-overdue-amt">—</div>
+            <div id="dash-overdue-list" style="font-size:11px;margin-top:4px"></div>
           </div>
           <div class="kpi-card kpi-purple kpi-clickable" onclick="toggleDrillDown('stock')" id="kpi-card-stock">
             <div class="kpi-top"><span class="kpi-label">في المخزن</span><div class="kpi-icon">🚗</div></div>
