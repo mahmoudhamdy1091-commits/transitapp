@@ -9387,21 +9387,20 @@ function renderDDChart(entries, color) {
   const labelsWrap = el('dd-chart-labels');
   if (!chartWrap||!chart||!entries.length) { if(chartWrap) chartWrap.style.display='none'; return; }
   chartWrap.style.display = 'block';
+  const CHART_H = 100;
   const max = Math.max(...entries.map(e=>Math.abs(+e[1]||0)), 1);
+  chart.style.cssText = `display:flex;gap:6px;align-items:flex-end;height:${CHART_H}px;border-bottom:1px solid var(--border);padding-bottom:0`;
   chart.innerHTML = entries.slice(0,10).map(([label,val])=>{
-    const pct = Math.max((Math.abs(+val)/max)*100, 3);
+    const h   = Math.max(Math.round((Math.abs(+val)/max)*CHART_H), +val!==0?4:0);
     const c   = +val >= 0 ? color : 'var(--red)';
-    const amt = Math.abs(+val) >= 1000 ? (Math.abs(+val)/1000).toFixed(1)+'K' : (+val).toFixed(0);
-    return `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0">
-      <div style="font-size:8px;color:${c};min-height:12px;text-align:center;font-weight:600">${amt}</div>
-      <div style="flex:1;width:100%;display:flex;align-items:flex-end">
-        <div style="width:100%;height:${pct}%;background:${c};border-radius:3px 3px 0 0;min-height:3px"></div>
-      </div>
+    const amt = Math.abs(+val) >= 1000 ? (Math.abs(+val)/1000).toFixed(1)+'K' : (+val||0).toFixed(0);
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:0;position:relative">
+      <div style="font-size:8px;color:${c};font-weight:600;margin-bottom:2px;white-space:nowrap">${amt}</div>
+      <div style="width:100%;height:${h}px;background:${c};border-radius:3px 3px 0 0"></div>
     </div>`;
   }).join('');
   labelsWrap.innerHTML = entries.slice(0,10).map(([label])=>`
-    <div style="flex:1;text-align:center;font-size:9px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${label}</div>`).join('');
+    <div style="flex:1;text-align:center;font-size:9px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;padding-top:4px">${label}</div>`).join('');
 }
 
 // ── Regenerate file number ──
