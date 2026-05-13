@@ -9919,7 +9919,6 @@ function installPWA() {
   }
 }
 
-</script>
 // ════════════════════════════════════════════════════════
 // POSTING ENGINE v2 — Double Entry Accounting
 // يعمل بجانب النظام القديم بدون أي تغيير فيه
