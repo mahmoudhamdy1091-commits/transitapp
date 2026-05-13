@@ -5907,7 +5907,9 @@ async function submitNewFile() {
     if (finalTotal > 0) {
       try { await apiDelete('ledger_entries', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, source_table:`eq.purchase_orders` }); } catch(e) {}
       const vinList = vehicles.filter(v=>v.vin).map(v=>v.vin).join(' / ');
-      if (entryStatus()==='posted') await postPurchaseEntry({ systemType:state.system, date:poDate||today(), amount:finalTotal, fileNo, supplierName:supplier, poId:null });
+      if (entryStatus()==='posted') await postLedger({ contactName:supplier, contactType:'supplier', date:poDate||today(),
+        description:`شراء ${vehicles.length} سيارة${vinList?' — شواصي: '+vinList:''} — ملف ${fileNo}${poNo?' — PO: '+poNo:''}`,
+        debit: finalTotal, sourceTable:'purchase_orders', fileNo });
     }
 
     // 3. Insert vehicles
@@ -5941,7 +5943,9 @@ async function submitNewFile() {
           notes: `حصة ${p.share}% — دفع مقدماً`
         });
         // Ledger: partner paid (credit partner account)
-        if (entryStatus()==='posted') await postPaymentEntry({ systemType:state.system, date:poDate||today(), amount:p.paid, fileNo, supplierName:supplier, payerName:p.name, payMethod:p.method||'تحويل بنكي', paymentId:null });
+        if (entryStatus()==='posted') await postLedger({ contactName:p.name, contactType:'partner', date:poDate||today(),
+          description:`دفعة شريك — ملف ${fileNo}`,
+          credit: p.paid, sourceTable:'payments', fileNo });
       }
     }
 
@@ -6280,7 +6284,6 @@ async function submitExpense() {
       , post_status:entryStatus()};
       await apiPost('expenses', data);
       await logAudit('INSERT','expenses', expFileNo, null, data);
-      if (entryStatus()==='posted') await postExpenseEntry({ systemType:state.system, date, amount:exp.amount, fileNo:expFileNo, description:exp.desc||'مصروف', expType:exp.type||'أخرى', payMethod:method, expenseId:null });
     }
     closeModal('expenseModal');
     toast(`✅ تم تسجيل ${expenses.length} مصروف`,'ok');
@@ -6328,7 +6331,14 @@ async function submitPayment() {
     const poArr = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
     if (supplierName) {
-      if (entryStatus()==='posted') await postPaymentEntry({ systemType:state.system, date, amount, fileNo:fn, supplierName, payerName:payer, payMethod:method, paymentId:null });
+      if (entryStatus()==='posted') await postLedger({ contactName:supplierName, contactType:'supplier', date,
+        description:`[${refNo}] دفعة للمورد — ملف ${fn} — دافع: ${payer}`,
+        credit: amount, sourceTable:'payments', fileNo: fn });
+    }
+    if (payer && payer !== supplierName) {
+      if (entryStatus()==='posted') await postLedger({ contactName:payer, contactType:'partner', date,
+        description:`[${refNo}] دفع للمورد ${supplierName||'المورد'} — ملف ${fn}`,
+        debit: amount, sourceTable:'payments', fileNo: fn });
     }
     closeModal('paymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
@@ -6552,15 +6562,11 @@ async function submitSale() {
       await logAudit('INSERT','sales',item.fileNo||fn,null,data);
     }
 
-    // Posting Engine: قيد البيع (عميل مدين / إيراد دائن + COGS)
-    if (entryStatus()==='posted') {
-      const vehicles_data = await apiGet('vehicles', { select:'vin,purchase_price', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
-      const costMap = {};
-      (vehicles_data||[]).forEach(v => { if(v.vin) costMap[v.vin] = +v.purchase_price||0; });
-      for (const item of saleItems) {
-        await postSaleEntry({ systemType:state.system, date, saleAmount:item.price, costAmount:costMap[item.vin]||0, fileNo:item.fileNo||fn, customerName:customer, invNo, saleId:null });
-      }
-    }
+    // Ledger: customer becomes debtor
+    const fileNos = [...new Set(saleItems.map(i=>i.fileNo||fn))].join(', ');
+    if (entryStatus()==='posted') await postLedger({ contactName:customer, contactType:'customer', date,
+      description:`فاتورة ${invNo} — ${saleItems.length} سيارة — ملفات: ${fileNos}`,
+      debit: totalPrice, sourceTable:'sales', fileNo: fn });
 
     // Update PO status
     const allV = await apiGet('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
@@ -6723,7 +6729,9 @@ async function submitCollection() {
     , post_status:entryStatus()};
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
-    if (entryStatus()==='posted' && cust) await postCollectionEntry({ systemType:state.system, date:paid||today(), amount, fileNo:fn, customerName:cust, invNo:invNo||'', collectionId:null, payMethod:method });
+    if (entryStatus()==='posted' && cust) await postLedger({ contactName:cust, contactType:'customer', date:paid||today(),
+      description:`[${refNo}] تحصيل فاتورة ${invNo||''}${vin?' — شاصي: '+vin:''} — ملف ${fn}`,
+      credit: amount, sourceTable:'collections', fileNo: fn });
     closeModal('collectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     if (state.currentTab === 5) loadCollectionsTab(fn, state.system);
@@ -6925,7 +6933,9 @@ async function submitPayout() {
     };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fn,null,data);
-    if (entryStatus()==='posted') await postPayoutEntry({ systemType:state.system, date, amount, fileNo:fn, partnerName:partner, payMethod:method, payoutId:null });
+    if (entryStatus()==='posted') await postLedger({ contactName:partner, contactType:'partner', date,
+      description:`[${pay_id}] ${type} — ملف ${fn}`,
+      debit: amount, sourceTable:'partner_payouts', fileNo: fn });
     closeModal('payoutModal');
     toast(`✅ تم تسجيل ${type} للشريك ${partner}`,'ok');
     if (state.currentTab === 6) loadPayoutsTab(fn, state.system);
@@ -7217,11 +7227,9 @@ async function submitQuickSale() {
       invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:entryStatus()};
     await apiPost('sales', data);
     await logAudit('INSERT','sales',fileNo,null,data);
-    if (entryStatus()==='posted') {
-      const vData = await apiGet('vehicles', { select:'purchase_price', system_type:`eq.${state.system}`, vin:`eq.${vin}`, limit:1 });
-      const costAmt = +(vData?.[0]?.purchase_price)||0;
-      await postSaleEntry({ systemType:state.system, date, saleAmount:price, costAmount:costAmt, fileNo, customerName:customer, invNo:invNo||'QS', saleId:null });
-    }
+    if (entryStatus()==='posted') await postLedger({ contactName:customer, contactType:'customer', date,
+      description:`بيع سيارة ${vin} — ملف ${fileNo}`,
+      debit: price, sourceTable:'sales', fileNo });
     closeModal('quickSaleModal');
     toast('✅ تم تسجيل البيع بنجاح','ok');
     loadJournal();
@@ -7265,7 +7273,11 @@ async function submitQuickCollection() {
     , post_status:entryStatus()};
     await apiPost('collections', data);
     await logAudit('INSERT','collections', fileNo, null, data);
-    if (entryStatus()==='posted' && customer) await postCollectionEntry({ systemType:state.system, date:paid, amount, fileNo, customerName:customer, invNo, collectionId:null, payMethod:method });
+    if (entryStatus()==='posted' && customer) await postLedger({
+      contactName: customer, contactType: 'customer', date: paid,
+      description: `[${refNo}] تحصيل فاتورة ${invNo} — ملف ${fileNo}`,
+      credit: amount, sourceTable: 'collections', fileNo
+    });
     closeModal('quickCollectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     loadJournal();
@@ -7377,7 +7389,14 @@ async function submitQuickPayment() {
     await apiPost('payments', data);
     await logAudit('INSERT','payments', fileNo, null, data);
     if (supplierName && supplierName !== '—') {
-      if (entryStatus()==='posted') await postPaymentEntry({ systemType:state.system, date, amount, fileNo, supplierName, payerName:payer, payMethod:method, paymentId:null });
+      if (entryStatus()==='posted') await postLedger({ contactName:supplierName, contactType:'supplier', date,
+        description:`[${refNo}] دفعة للمورد — ملف ${fileNo} — دافع: ${payer}`,
+        credit:amount, sourceTable:'payments', fileNo });
+    }
+    if (payer && payer !== supplierName) {
+      if (entryStatus()==='posted') await postLedger({ contactName:payer, contactType:'partner', date,
+        description:`[${refNo}] دفع للمورد ${supplierName||''} — ملف ${fileNo}`,
+        debit:amount, sourceTable:'payments', fileNo });
     }
     closeModal('quickPaymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
@@ -7414,7 +7433,9 @@ async function submitQuickPayout() {
       pay_date: date, notes:notes||null, post_status:entryStatus() };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
-    if (entryStatus()==='posted') await postPayoutEntry({ systemType:state.system, date, amount, fileNo, partnerName:partner, payMethod:method, payoutId:null });
+    if (entryStatus()==='posted') await postLedger({ contactName:partner, contactType:'partner', date,
+      description:`صرف شريك — ملف ${fileNo}`,
+      debit:amount, sourceTable:'partner_payouts', fileNo });
     closeModal('quickPayoutModal');
     toast('✅ تم تسجيل الصرف بنجاح','ok');
     loadJournal();
@@ -8295,184 +8316,6 @@ function exportBtns(csvFn, printFn) {
   </div>`;
 }
 
-// ════════════════════════════════════════════════════════════════
-// POSTING ENGINE v2 — Double-Entry Accounting
-// كل عملية تولّد قيد متوازن Dr = Cr في journal_entries
-// ════════════════════════════════════════════════════════════════
-
-const DEFAULT_CHART_OF_ACCOUNTS = [
-  { code:'1110', name:'النقد',                    type:'asset'    },
-  { code:'1120', name:'البنك',                    type:'asset'    },
-  { code:'1200', name:'الذمم المدينة — عملاء',   type:'asset'    },
-  { code:'1300', name:'المخزون — سيارات',         type:'asset'    },
-  { code:'2100', name:'الذمم الدائنة — موردون',  type:'liability' },
-  { code:'2400', name:'حسابات شركاء',             type:'liability' },
-  { code:'4100', name:'إيرادات بيع سيارات',       type:'revenue'  },
-  { code:'5100', name:'تكلفة المخزون المباع',     type:'cogs'     },
-  { code:'5200', name:'مصاريف الصفقات — شحن/جمارك', type:'cogs'  },
-  { code:'6100', name:'إيجار',                    type:'expense'  },
-  { code:'6200', name:'رواتب وأجور',              type:'expense'  },
-  { code:'6500', name:'مصاريف عمومية وإدارية',   type:'expense'  },
-  { code:'6600', name:'جمارك وتأمين',             type:'expense'  },
-  { code:'6700', name:'صيانة ومتفرقات',           type:'expense'  },
-];
-
-const EXPENSE_TYPE_ACCOUNT = {
-  'شحن':'5200','جمارك':'6600','تأمين':'6600',
-  'إدارية':'6500','صيانة':'6700','أخرى':'6500',
-  'إيجار':'6100','رواتب':'6200','نقل':'5200','تسويق':'6500',
-};
-
-async function _genJENo(sys) {
-  try {
-    const r = await apiGet('journal_entries',{ select:'id', system_type:`eq.${sys}`, order:'id.desc', limit:1 });
-    const last = r?.[0]?.id || 0;
-    return `JE-${new Date().getFullYear()}-${String(last+1).padStart(5,'0')}`;
-  } catch(e) { return `JE-${Date.now()}`; }
-}
-
-async function postJournalEntry({ systemType, date, lines, description, refTable=null, refId=null, fileNo=null, contactId=null }) {
-  const totalDr = lines.reduce((s,l)=>s+(+l.dr||0),0);
-  const totalCr = lines.reduce((s,l)=>s+(+l.cr||0),0);
-  if (Math.abs(totalDr-totalCr) > 0.01) {
-    console.warn(`⚠️ قيد غير متوازن: Dr=${totalDr} ≠ Cr=${totalCr} — ${description}`);
-    return null;
-  }
-  try {
-    const entryNo = await _genJENo(systemType);
-    for (const line of lines) {
-      await apiPost('journal_entries', {
-        system_type:  systemType,
-        entry_no:     entryNo,
-        entry_date:   date || today(),
-        account_code: line.accountCode,
-        account_name: line.accountName || '',
-        dr_amount:    +line.dr || 0,
-        cr_amount:    +line.cr || 0,
-        description:  line.description || description,
-        ref_table:    refTable  || null,
-        ref_id:       refId     || null,
-        file_no:      fileNo    || null,
-        contact_id:   contactId || null,
-        post_status:  'posted',
-        posted_at:    new Date().toISOString(),
-      });
-    }
-    // احتفظ بـ ledger_entries للتوافق مع الكود القديم
-    if (lines[0] && (lines[0].dr > 0 || lines[0].cr > 0)) {
-      try {
-        const contact = contactId ? null : null;
-        // ledger_entries تُحدَّث منفصلاً عبر postLedger_legacy أدناه
-      } catch(e) {}
-    }
-    return entryNo;
-  } catch(e) { console.warn('postJournalEntry error:', e.message); return null; }
-}
-
-// ── شراء سيارة: مخزون Dr / مورد Cr ──
-async function postPurchaseEntry({ systemType, date, amount, fileNo, supplierName, poId }) {
-  if (!amount || amount <= 0) return;
-  const contact = await findOrCreateContact(supplierName, 'supplier');
-  // ledger_entries القديم
-  try {
-    await apiPost('ledger_entries', { system_type:systemType, contact_id:contact?.id||null, contact_name:supplierName, contact_type:'supplier', entry_date:date||today(), description:`شراء — ملف ${fileNo}`, debit:amount, credit:0, source_table:'purchase_orders', file_no:fileNo });
-  } catch(e) {}
-  // journal_entries الجديد
-  return postJournalEntry({ systemType, date, description:`شراء — ملف ${fileNo} — مورد: ${supplierName}`, refTable:'purchase_orders', refId:poId, fileNo, contactId:contact?.id||null, lines:[
-    { accountCode:'1300', accountName:'المخزون — سيارات',       dr:amount, cr:0      },
-    { accountCode:'2100', accountName:`مورد: ${supplierName}`,  dr:0,      cr:amount },
-  ]});
-}
-
-// ── بيع سيارة: عميل Dr / إيراد Cr + COGS Dr / مخزون Cr ──
-async function postSaleEntry({ systemType, date, saleAmount, costAmount, fileNo, customerName, invNo, saleId }) {
-  if (!saleAmount || saleAmount <= 0) return;
-  const contact = await findOrCreateContact(customerName, 'customer');
-  // ledger_entries القديم
-  try {
-    await apiPost('ledger_entries', { system_type:systemType, contact_id:contact?.id||null, contact_name:customerName, contact_type:'customer', entry_date:date||today(), description:`بيع فاتورة ${invNo} — ملف ${fileNo}`, debit:saleAmount, credit:0, source_table:'sales', file_no:fileNo });
-  } catch(e) {}
-  // journal_entries الجديد
-  const lines = [
-    { accountCode:'1200', accountName:`عميل: ${customerName}`,  dr:saleAmount,  cr:0           },
-    { accountCode:'4100', accountName:'إيرادات بيع سيارات',      dr:0,           cr:saleAmount  },
-  ];
-  if (costAmount && costAmount > 0) {
-    lines.push({ accountCode:'5100', accountName:'تكلفة المخزون المباع', dr:costAmount, cr:0          });
-    lines.push({ accountCode:'1300', accountName:'المخزون — سيارات',     dr:0,          cr:costAmount });
-  }
-  return postJournalEntry({ systemType, date, description:`بيع فاتورة ${invNo} — ملف ${fileNo}`, refTable:'sales', refId:saleId, fileNo, contactId:contact?.id||null, lines });
-}
-
-// ── تحصيل: نقد Dr / عميل Cr ──
-async function postCollectionEntry({ systemType, date, amount, fileNo, customerName, invNo, collectionId, payMethod }) {
-  if (!amount || amount <= 0) return;
-  const contact = await findOrCreateContact(customerName, 'customer');
-  const cashAcc = payMethod==='نقد' ? '1110' : '1120';
-  const cashNm  = payMethod==='نقد' ? 'النقد' : 'البنك';
-  // ledger_entries القديم
-  try {
-    await apiPost('ledger_entries', { system_type:systemType, contact_id:contact?.id||null, contact_name:customerName, contact_type:'customer', entry_date:date||today(), description:`تحصيل فاتورة ${invNo} — ملف ${fileNo}`, debit:0, credit:amount, source_table:'collections', file_no:fileNo });
-  } catch(e) {}
-  return postJournalEntry({ systemType, date, description:`تحصيل فاتورة ${invNo} — ملف ${fileNo}`, refTable:'collections', refId:collectionId, fileNo, contactId:contact?.id||null, lines:[
-    { accountCode:cashAcc, accountName:cashNm,                  dr:amount, cr:0      },
-    { accountCode:'1200',  accountName:`عميل: ${customerName}`, dr:0,      cr:amount },
-  ]});
-}
-
-// ── دفعة للمورد: مورد Dr / نقد Cr ──
-async function postPaymentEntry({ systemType, date, amount, fileNo, supplierName, payerName, payMethod, paymentId }) {
-  if (!amount || amount <= 0) return;
-  const contactS = await findOrCreateContact(supplierName, 'supplier');
-  const cashAcc  = payMethod==='نقد' ? '1110' : '1120';
-  const cashNm   = payMethod==='نقد' ? 'النقد' : 'البنك';
-  // ledger_entries القديم — مورد دائن
-  try {
-    await apiPost('ledger_entries', { system_type:systemType, contact_id:contactS?.id||null, contact_name:supplierName, contact_type:'supplier', entry_date:date||today(), description:`دفعة للمورد — ملف ${fileNo} — دافع: ${payerName}`, debit:0, credit:amount, source_table:'payments', file_no:fileNo });
-  } catch(e) {}
-  // ledger_entries القديم — دافع مدين (لو مختلف)
-  if (payerName && payerName !== supplierName) {
-    const contactP = await findOrCreateContact(payerName, 'partner');
-    try {
-      await apiPost('ledger_entries', { system_type:systemType, contact_id:contactP?.id||null, contact_name:payerName, contact_type:'partner', entry_date:date||today(), description:`دفع للمورد ${supplierName} — ملف ${fileNo}`, debit:amount, credit:0, source_table:'payments', file_no:fileNo });
-    } catch(e) {}
-  }
-  return postJournalEntry({ systemType, date, description:`دفعة للمورد ${supplierName} — ملف ${fileNo}`, refTable:'payments', refId:paymentId, fileNo, contactId:contactS?.id||null, lines:[
-    { accountCode:'2100',    accountName:`مورد: ${supplierName}`, dr:amount, cr:0      },
-    { accountCode:cashAcc,   accountName:cashNm,                  dr:0,      cr:amount },
-  ]});
-}
-
-// ── مصروف: حساب مصروف Dr / نقد Cr ──
-async function postExpenseEntry({ systemType, date, amount, fileNo, description, expType, payMethod, expenseId }) {
-  if (!amount || amount <= 0) return;
-  const expAcc  = EXPENSE_TYPE_ACCOUNT[expType] || '6500';
-  const expNm   = DEFAULT_CHART_OF_ACCOUNTS.find(a=>a.code===expAcc)?.name || 'مصاريف عمومية';
-  const cashAcc = payMethod==='نقد' ? '1110' : '1120';
-  const cashNm  = payMethod==='نقد' ? 'النقد' : 'البنك';
-  return postJournalEntry({ systemType, date, description:`${description} — ملف ${fileNo||'عام'}`, refTable:'expenses', refId:expenseId, fileNo: fileNo||null, lines:[
-    { accountCode:expAcc,  accountName:expNm,  dr:amount, cr:0      },
-    { accountCode:cashAcc, accountName:cashNm, dr:0,      cr:amount },
-  ]});
-}
-
-// ── صرف شريك: شريك Dr / نقد Cr ──
-async function postPayoutEntry({ systemType, date, amount, fileNo, partnerName, payMethod, payoutId }) {
-  if (!amount || amount <= 0) return;
-  const contact = await findOrCreateContact(partnerName, 'partner');
-  const cashAcc = payMethod==='نقد' ? '1110' : '1120';
-  const cashNm  = payMethod==='نقد' ? 'النقد' : 'البنك';
-  // ledger_entries القديم
-  try {
-    await apiPost('ledger_entries', { system_type:systemType, contact_id:contact?.id||null, contact_name:partnerName, contact_type:'partner', entry_date:date||today(), description:`صرف شريك — ملف ${fileNo}`, debit:amount, credit:0, source_table:'partner_payouts', file_no:fileNo });
-  } catch(e) {}
-  return postJournalEntry({ systemType, date, description:`صرف للشريك ${partnerName} — ملف ${fileNo}`, refTable:'partner_payouts', refId:payoutId, fileNo, contactId:contact?.id||null, lines:[
-    { accountCode:'2400',    accountName:`شريك: ${partnerName}`, dr:amount, cr:0      },
-    { accountCode:cashAcc,   accountName:cashNm,                 dr:0,      cr:amount },
-  ]});
-}
-
-// دالة قديمة للتوافق — لا تُستخدم في الكود الجديد
 async function postLedger({ contactName, contactType, date, description, debit=0, credit=0, sourceTable, sourceId, fileNo }) {
   if (!contactName) return;
   try {
@@ -13842,5 +13685,313 @@ function installPWA() {
 <!-- PRINT OVERLAY -->
 <div id="printOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:#fff;overflow-y:auto"><div id="printOverlayToolbar" style="position:sticky;top:0;background:#1a1a1a;display:flex;align-items:center;gap:10px;padding:10px 20px"><span style="color:#fff;font-family:Cairo,sans-serif;font-size:14px;font-weight:700;flex:1" id="printOverlayTitle">معاينة الطباعة</span><button onclick="window.print()" style="background:#e6930a;color:#000;border:none;padding:8px 20px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;font-weight:700;cursor:pointer">🖨️ طباعة</button><button onclick="closePrintOverlay()" style="background:#444;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;cursor:pointer">✕ إغلاق</button></div><div id="printOverlayBody" style="padding:24px;max-width:1000px;margin:0 auto"></div></div>
 <style>@media print{body>*:not(#printOverlay){display:none!important}#printOverlay{display:block!important;position:static!important}#printOverlayToolbar{display:none!important}}</style>
+
+<script>
+// ════════════════════════════════════════════════════════
+// POSTING ENGINE v2 — Double Entry Accounting
+// يعمل بجانب النظام القديم بدون أي تغيير فيه
+// كل دالة submit موجودة بتشتغل زي ما هي
+// الـ journal_entries بتتسجل فيها أسطر Dr/Cr إضافية
+// ════════════════════════════════════════════════════════
+
+const EXPENSE_ACCOUNT_MAP = {
+  'شحن':'5200','جمارك':'6600','تأمين':'6600',
+  'إدارية':'6500','صيانة':'6700','أخرى':'6500',
+  'إيجار':'6100','رواتب':'6200','نقل':'5200','تسويق':'6500',
+};
+
+async function _jeNo(sys) {
+  try {
+    const r = await apiGet('journal_entries',{select:'id',system_type:`eq.${sys}`,order:'id.desc',limit:1});
+    return `JE-${new Date().getFullYear()}-${String((r?.[0]?.id||0)+1).padStart(5,'0')}`;
+  } catch(e) { return `JE-${Date.now()}`; }
+}
+
+async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}) {
+  const dr = lines.reduce((s,l)=>s+(+l.dr||0),0);
+  const cr = lines.reduce((s,l)=>s+(+l.cr||0),0);
+  if (Math.abs(dr-cr)>0.01) { console.warn(`قيد غير متوازن Dr=${dr} Cr=${cr} — ${desc}`); return; }
+  try {
+    const no = await _jeNo(sys);
+    for (const l of lines) {
+      await apiPost('journal_entries',{
+        system_type: sys,
+        entry_no:    no,
+        entry_date:  date || today(),
+        account_code: l.acc,
+        account_name: l.name,
+        dr_amount:   +l.dr||0,
+        cr_amount:   +l.cr||0,
+        description: l.desc || desc,
+        ref_table:   refTable||null,
+        ref_id:      refId||null,
+        file_no:     fileNo||null,
+        post_status: 'posted',
+        posted_at:   new Date().toISOString(),
+      });
+    }
+  } catch(e) { console.warn('postDoubleEntry:', e.message); }
+}
+
+// شراء: مخزون Dr / مورد Cr
+async function je_purchase({sys,date,amount,fileNo,supplier}) {
+  if(!amount||amount<=0) return;
+  await postDoubleEntry({sys,date,fileNo,refTable:'purchase_orders',desc:`شراء — ملف ${fileNo} — ${supplier}`,lines:[
+    {acc:'1300',name:'المخزون — سيارات',      dr:amount, cr:0     },
+    {acc:'2100',name:`مورد: ${supplier}`,      dr:0,      cr:amount},
+  ]});
+}
+
+// بيع: عميل Dr / إيراد Cr + COGS Dr / مخزون Cr
+async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
+  if(!amount||amount<=0) return;
+  const lines = [
+    {acc:'1200',name:`عميل: ${customer}`,     dr:amount, cr:0    , desc:`فاتورة ${invNo}`},
+    {acc:'4100',name:'إيرادات بيع سيارات',     dr:0,      cr:amount, desc:`فاتورة ${invNo}`},
+  ];
+  if (cost>0) {
+    lines.push({acc:'5100',name:'تكلفة المخزون المباع', dr:cost, cr:0   });
+    lines.push({acc:'1300',name:'المخزون — سيارات',      dr:0,    cr:cost});
+  }
+  await postDoubleEntry({sys,date,fileNo,refTable:'sales',desc:`بيع فاتورة ${invNo} — ملف ${fileNo}`,lines});
+}
+
+// تحصيل: نقد Dr / عميل Cr
+async function je_collection({sys,date,amount,fileNo,customer,invNo,method}) {
+  if(!amount||amount<=0) return;
+  const cashAcc = method==='نقد'?'1110':'1120';
+  const cashNm  = method==='نقد'?'النقد':'البنك';
+  await postDoubleEntry({sys,date,fileNo,refTable:'collections',desc:`تحصيل ${invNo} — ملف ${fileNo}`,lines:[
+    {acc:cashAcc, name:cashNm,                  dr:amount, cr:0     },
+    {acc:'1200',  name:`عميل: ${customer}`,     dr:0,      cr:amount},
+  ]});
+}
+
+// دفعة مورد: مورد Dr / نقد Cr
+async function je_payment({sys,date,amount,fileNo,supplier,method}) {
+  if(!amount||amount<=0) return;
+  const cashAcc = method==='نقد'?'1110':'1120';
+  const cashNm  = method==='نقد'?'النقد':'البنك';
+  await postDoubleEntry({sys,date,fileNo,refTable:'payments',desc:`دفعة للمورد ${supplier} — ملف ${fileNo}`,lines:[
+    {acc:'2100',  name:`مورد: ${supplier}`,     dr:amount, cr:0     },
+    {acc:cashAcc, name:cashNm,                  dr:0,      cr:amount},
+  ]});
+}
+
+// مصروف: مصروف Dr / نقد Cr
+async function je_expense({sys,date,amount,fileNo,desc,expType,method}) {
+  if(!amount||amount<=0) return;
+  const eAcc  = EXPENSE_ACCOUNT_MAP[expType]||'6500';
+  const cashAcc = method==='نقد'?'1110':'1120';
+  const cashNm  = method==='نقد'?'النقد':'البنك';
+  await postDoubleEntry({sys,date,fileNo,refTable:'expenses',desc:`${desc} — ملف ${fileNo||'عام'}`,lines:[
+    {acc:eAcc,    name:expType||'مصروف', dr:amount, cr:0     },
+    {acc:cashAcc, name:cashNm,           dr:0,      cr:amount},
+  ]});
+}
+
+// صرف شريك: شريك Dr / نقد Cr
+async function je_payout({sys,date,amount,fileNo,partner,method}) {
+  if(!amount||amount<=0) return;
+  const cashAcc = method==='نقد'?'1110':'1120';
+  const cashNm  = method==='نقد'?'النقد':'البنك';
+  await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
+    {acc:'2400',  name:`شريك: ${partner}`, dr:amount, cr:0     },
+    {acc:cashAcc, name:cashNm,             dr:0,      cr:amount},
+  ]});
+}
+
+// ═══════════════════════════════════════════════════════
+// ربط تلقائي — يُغلّف الدوال الموجودة بدون تعديلها
+// يشتغل بعد ما الصفحة تكمل التحميل
+// ═══════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+
+  // ── submitNewFile ──
+  const _origNewFile = window.submitNewFile;
+  window.submitNewFile = async function() {
+    await _origNewFile.apply(this, arguments);
+    try {
+      const sys        = state.system;
+      const fileNo     = document.getElementById('nf-fileNo')?.value?.trim();
+      const supplier   = document.getElementById('nf-supplier')?.value?.trim();
+      const poDate     = document.getElementById('nf-poDate')?.value;
+      const totalAmt   = parseFloat(document.getElementById('nf-totalAmount')?.value)||0;
+      if (fileNo && supplier && totalAmt > 0 && entryStatus()==='posted')
+        await je_purchase({sys, date:poDate||today(), amount:totalAmt, fileNo, supplier});
+    } catch(e) { console.warn('je_purchase wrap:', e.message); }
+  };
+
+  // ── submitSale ──
+  const _origSale = window.submitSale;
+  window.submitSale = async function() {
+    await _origSale.apply(this, arguments);
+    try {
+      const sys      = state.system;
+      const fn       = document.getElementById('sale-fileNo')?.value?.trim();
+      const customer = document.getElementById('sale-customer')?.value?.trim();
+      const invNo    = document.getElementById('sale-invNo')?.value?.trim();
+      const date     = document.getElementById('sale-date')?.value;
+      const rows     = document.querySelectorAll('#saleVehiclesContainer tr.sale-v-row');
+      if (entryStatus()!=='posted') return;
+      let vehicles = [];
+      try { vehicles = await apiGet('vehicles',{select:'vin,purchase_price',system_type:`eq.${sys}`,file_no:`eq.${fn}`}); } catch(e){}
+      const costMap = {};
+      (vehicles||[]).forEach(v=>{ if(v.vin) costMap[v.vin]=+v.purchase_price||0; });
+      for (const row of rows) {
+        const vin   = row.querySelector('[name="sv-vin"]')?.value||'';
+        const price = parseFloat(row.querySelector('[name="sv-price"]')?.value)||0;
+        if (price>0)
+          await je_sale({sys,date,amount:price,cost:costMap[vin]||0,fileNo:fn,customer,invNo});
+      }
+    } catch(e) { console.warn('je_sale wrap:', e.message); }
+  };
+
+  // ── submitQuickSale ──
+  const _origQSale = window.submitQuickSale;
+  window.submitQuickSale = async function() {
+    await _origQSale.apply(this, arguments);
+    try {
+      if (entryStatus()!=='posted') return;
+      const sys    = state.system;
+      const fileNo = document.getElementById('qs-fileNo')?.value;
+      const vin    = document.getElementById('qs-vin')?.value?.trim();
+      const cust   = document.getElementById('qs-customer')?.value?.trim();
+      const invNo  = document.getElementById('qs-invNo')?.value?.trim();
+      const price  = parseFloat(document.getElementById('qs-price')?.value)||0;
+      const date   = document.getElementById('qs-date')?.value;
+      let cost = 0;
+      try { const v=await apiGet('vehicles',{select:'purchase_price',system_type:`eq.${sys}`,vin:`eq.${vin}`,limit:1}); cost=+(v?.[0]?.purchase_price)||0; } catch(e){}
+      await je_sale({sys,date,amount:price,cost,fileNo,customer:cust,invNo:invNo||'QS'});
+    } catch(e) { console.warn('je_qsale wrap:', e.message); }
+  };
+
+  // ── submitPayment ──
+  const _origPay = window.submitPayment;
+  window.submitPayment = async function() {
+    await _origPay.apply(this, arguments);
+    try {
+      if (entryStatus()!=='posted') return;
+      const sys    = state.system;
+      const fn     = state.currentFileNo;
+      const amount = parseFloat(document.getElementById('pay-amount')?.value)||0;
+      const method = document.getElementById('pay-method')?.value||'تحويل بنكي';
+      const date   = document.getElementById('pay-date')?.value;
+      const poArr  = await apiGet('purchase_orders',{select:'supplier',system_type:`eq.${sys}`,file_no:`eq.${fn}`});
+      const supplier = poArr?.[0]?.supplier||'';
+      await je_payment({sys,date,amount,fileNo:fn,supplier,method});
+    } catch(e) { console.warn('je_payment wrap:', e.message); }
+  };
+
+  // ── submitQuickPayment ──
+  const _origQPay = window.submitQuickPayment;
+  window.submitQuickPayment = async function() {
+    await _origQPay.apply(this, arguments);
+    try {
+      if (entryStatus()!=='posted') return;
+      const sys    = state.system;
+      const fileNo = document.getElementById('qp-fileNo')?.value;
+      const amount = parseFloat(document.getElementById('qp-amount')?.value)||0;
+      const method = document.getElementById('qp-method')?.value||'تحويل بنكي';
+      const date   = document.getElementById('qp-date')?.value;
+      const supplier = document.getElementById('qp-card-supplier')?.textContent||'';
+      await je_payment({sys,date,amount,fileNo,supplier,method});
+    } catch(e) { console.warn('je_qpayment wrap:', e.message); }
+  };
+
+  // ── submitCollection ──
+  const _origCol = window.submitCollection;
+  window.submitCollection = async function() {
+    await _origCol.apply(this, arguments);
+    try {
+      if (entryStatus()!=='posted') return;
+      const sys    = state.system;
+      const fn     = state.currentFileNo;
+      const cust   = document.getElementById('col-customer')?.value?.trim();
+      const invNo  = document.getElementById('col-invNo')?.value;
+      const amount = parseFloat(document.getElementById('col-amount')?.value)||0;
+      const method = document.getElementById('col-method')?.value||'تحويل بنكي';
+      const paid   = document.getElementById('col-paidDate')?.value;
+      await je_collection({sys,date:paid||today(),amount,fileNo:fn,customer:cust,invNo,method});
+    } catch(e) { console.warn('je_col wrap:', e.message); }
+  };
+
+  // ── submitQuickCollection ──
+  const _origQCol = window.submitQuickCollection;
+  window.submitQuickCollection = async function() {
+    await _origQCol.apply(this, arguments);
+    try {
+      if (entryStatus()!=='posted') return;
+      const sys    = state.system;
+      const fileNo = document.getElementById('qc-fileNo')?.value;
+      const cust   = document.getElementById('qc-customer')?.value?.trim();
+      const invNo  = document.getElementById('qc-invNo')?.value;
+      const amount = parseFloat(document.getElementById('qc-amount')?.value)||0;
+      const method = document.getElementById('qc-method')?.value||'تحويل بنكي';
+      const paid   = document.getElementById('qc-date')?.value;
+      await je_collection({sys,date:paid||today(),amount,fileNo,customer:cust,invNo,method});
+    } catch(e) { console.warn('je_qcol wrap:', e.message); }
+  };
+
+  // ── submitExpense ──
+  const _origExp = window.submitExpense;
+  window.submitExpense = async function() {
+    await _origExp.apply(this, arguments);
+    try {
+      if (entryStatus()!=='posted') return;
+      const sys    = state.system;
+      const date   = document.getElementById('exp-date')?.value||today();
+      const method = document.getElementById('exp-method')?.value||'تحويل بنكي';
+      const rows   = document.querySelectorAll('#expenseRowsContainer tr');
+      for (const r of rows) {
+        const fileNo = r.querySelector('[name="er-file"]')?.value||state.currentFileNo||'';
+        const desc   = r.querySelector('[name="er-desc"]')?.value?.trim()||'مصروف';
+        const type   = r.querySelector('[name="er-type"]')?.value||'أخرى';
+        const amount = parseFloat(r.querySelector('[name="er-amount"]')?.value)||0;
+        if (amount>0) await je_expense({sys,date,amount,fileNo,desc,expType:type,method});
+      }
+    } catch(e) { console.warn('je_exp wrap:', e.message); }
+  };
+
+  // ── submitPayout ──
+  const _origPout = window.submitPayout;
+  window.submitPayout = async function() {
+    await _origPout.apply(this, arguments);
+    try {
+      if (entryStatus()!=='posted') return;
+      const sys     = state.system;
+      const fn      = state.currentFileNo;
+      const partner = document.getElementById('pout-partner')?.value;
+      const method  = document.getElementById('pout-method')?.value||'تحويل بنكي';
+      const date    = document.getElementById('pout-date')?.value;
+      const type    = document.getElementById('pout-type')?.value;
+      let amount = parseFloat(document.getElementById('pout-amount')?.value)||0;
+      if (type==='رأس مال + أرباح') {
+        amount = (parseFloat(document.getElementById('pout-capital')?.value)||0)
+               + (parseFloat(document.getElementById('pout-profit')?.value)||0);
+      }
+      await je_payout({sys,date,amount,fileNo:fn,partner,method});
+    } catch(e) { console.warn('je_pout wrap:', e.message); }
+  };
+
+  // ── submitQuickPayout ──
+  const _origQPout = window.submitQuickPayout;
+  window.submitQuickPayout = async function() {
+    await _origQPout.apply(this, arguments);
+    try {
+      if (entryStatus()!=='posted') return;
+      const sys     = state.system;
+      const fileNo  = document.getElementById('qpo-fileNo')?.value;
+      const partner = document.getElementById('qpo-partner')?.value;
+      const amount  = parseFloat(document.getElementById('qpo-amount')?.value)||0;
+      const method  = document.getElementById('qpo-method')?.value||'تحويل بنكي';
+      const date    = document.getElementById('qpo-date')?.value;
+      await je_payout({sys,date,amount,fileNo,partner,method});
+    } catch(e) { console.warn('je_qpout wrap:', e.message); }
+  };
+
+  console.log('✅ Posting Engine v2 — Double Entry جاهز');
+});
+</script>
 </body>
 </html>
