@@ -599,7 +599,7 @@ async function loadDashboard() {
     const totExp        = periodExp.reduce((s,e)=>s+(+e.amount||0),0);
     const periodFileNos = new Set(periodSales.map(s=>s.file_no));
     const periodDeals        = (deals||[]).filter(d => periodFileNos.has(d.file_no));
-    const periodPurchaseDeals= (deals||[]).filter(d => d.po_date && d.po_date >= from && d.po_date <= to);
+    const periodPurchaseDeals= (deals||[]).filter(d => { const dt = d.po_date || d.created_at?.split('T')[0] || ''; return dt >= from && dt <= to; });
     const totPurchase        = periodPurchaseDeals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
     const periodDealExp = (allExpenses||[]).filter(e => periodFileNos.has(e.file_no)).reduce((s,e)=>s+(+e.amount||0),0);
     const profit        = totSales - totPurchase - periodDealExp;
@@ -7381,24 +7381,50 @@ async function runReport() {
           <div style="font-size:10px;color:var(--text2);margin-top:2px">بعد خصم التشغيلية</div>
         </div>`;
 
+      // إثراء rows_data بمعلومات السيارات والحالة من allDealsEnriched
+      const enriched = state.allDealsEnriched || [];
+      const enrichMap = {};
+      enriched.forEach(d => { enrichMap[d.file_no] = d; });
+
       reportState.data = rows_data;
-      const tableRows = rows_data.map(v=>`
+      const tableRows = rows_data.map(v => {
+        const en = enrichMap[v.file] || {};
+        const remaining = v.fullCost - v.sales;
+        const profitColor = v.profit > 0 ? 'var(--green)' : v.profit < 0 ? 'var(--red)' : 'var(--text2)';
+        return `
         <tr onclick="openViewer('${v.file}')" style="cursor:pointer">
-          <td><span class="mono text-amber" style="font-weight:700">${v.file}</span></td>
-          <td style="color:var(--text2);font-size:12px">${v.supplier||'—'}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span class="mono text-amber" style="font-weight:700">${v.file}</span>
+              <button onclick="event.stopPropagation();openNewFileModal('${v.file}')"
+                style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:13px;padding:2px 4px" title="تعديل">✏️</button>
+            </div>
+            <div style="font-size:11px;color:var(--text2)">${fmtDate(en.po_date||'')}</div>
+          </td>
+          <td>
+            <div style="font-weight:600">${v.supplier||'—'}</div>
+            <div style="font-size:11px;color:var(--text2)">${en.notes||''}</div>
+          </td>
+          <td style="text-align:center">
+            <div style="font-family:var(--mono);font-weight:700">${en._vTotal||0}</div>
+            <div style="font-size:10px;color:var(--text2)">${en._vSold||0} مباع · ${en._vLeft||0} متبقي</div>
+          </td>
           <td class="mono text-blue">${fmt(v.purchase)}</td>
           <td class="mono text-red">${fmt(v.expenses)}</td>
-          <td class="mono" style="color:var(--text2)">${fmt(v.fullCost)}</td>
+          <td class="mono" style="font-weight:700">${fmt(v.fullCost)}</td>
           <td class="mono text-green">${fmt(v.sales)}</td>
-          <td class="mono" style="font-weight:700;color:${v.profit>=0?'var(--green)':'var(--red)'}">
+          <td class="mono" style="font-weight:700;color:${profitColor}">
             ${v.profit>=0?'▲':'▼'} ${fmt(Math.abs(v.profit))}
           </td>
-        </tr>`).join('');
+          <td class="mono" style="color:${remaining>0?'var(--red)':remaining<0?'var(--green)':'var(--text2)'};font-size:12px">
+            ${remaining > 0 ? fmt(remaining)+' غير مغطى' : remaining < 0 ? fmt(Math.abs(remaining))+' ربح ✓' : '✓ متعادل'}
+          </td>
+          <td><span class="badge badge-${statusClass(v.status)}">${v.status}</span></td>
+        </tr>`; }).join('');
 
-      // صف الإجماليات
       const totalRow = `
         <tr style="background:var(--card2);font-weight:700;border-top:2px solid var(--border)">
-          <td colspan="2" style="font-weight:700">الإجمالي</td>
+          <td colspan="3" style="font-weight:700">الإجمالي (${rows_data.length} صفقة)</td>
           <td class="mono text-blue">${fmt(tp)}</td>
           <td class="mono text-red">${fmt(te)}</td>
           <td class="mono">${fmt(tp+te)}</td>
@@ -7406,17 +7432,21 @@ async function runReport() {
           <td class="mono" style="font-weight:900;color:${dealProfit>=0?'var(--green)':'var(--red)'}">
             ${dealProfit>=0?'▲':'▼'} ${fmt(Math.abs(dealProfit))}
           </td>
+          <td></td><td></td>
         </tr>`;
 
       el('reportTable').innerHTML = tableRows
         ? `<table class="data-table">
             <thead><tr>
-              <th>الملف</th><th>المورد</th>
+              <th>رقم الملف</th><th>المورد / البيان</th>
+              <th style="text-align:center">السيارات</th>
               <th style="color:var(--blue)">تكلفة الشراء</th>
-              <th style="color:var(--red)">مصاريف الصفقة</th>
+              <th style="color:var(--red)">المصاريف</th>
               <th>التكلفة الكاملة</th>
               <th style="color:var(--green)">المبيعات</th>
               <th>الربح / الخسارة</th>
+              <th>متبقي / ربح</th>
+              <th>الحالة</th>
             </tr></thead>
             <tbody>${tableRows}${totalRow}</tbody>
            </table>`
@@ -9152,7 +9182,7 @@ function renderDrillDown(type) {
   // ── تكلفة الشراء ──
   if (type === 'purchase') {
     el('dd-title').textContent = `📋 تفاصيل تكلفة الشراء — ${periodLabel}`;
-    const deals = d.periodPurchaseDeals || d.periodDeals || [];
+    const deals = (d.periodPurchaseDeals && d.periodPurchaseDeals.length) ? d.periodPurchaseDeals : (d.periodDeals || []);
     const total = deals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
     const bySupplier = {};
     deals.forEach(d2=>{ bySupplier[d2.supplier||'غير محدد']=(bySupplier[d2.supplier||'غير محدد']||0)+(+d2.total_purchase||0); });
