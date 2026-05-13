@@ -1441,6 +1441,9 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
           <div class="nav-item" onclick="showReport('cashflow')">
             <span class="ni-icon">💵</span><span>التدفقات النقدية</span>
           </div>
+          <div class="nav-item" onclick="showReport('inventory')">
+            <span class="ni-icon">🚗</span><span>تقرير المخزون</span>
+          </div>
           <div class="nav-item" onclick="showReport('sales')">
             <span class="ni-icon">💹</span><span>تقرير المبيعات</span>
           </div>
@@ -1985,12 +1988,13 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
       <div id="reportsView" style="display:none">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
           <div style="display:flex;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;gap:2px">
-            <button class="btn btn-sm journal-period-btn active" id="rtype-profit"   onclick="setReportType('profit')">📈 الأرباح</button>
-            <button class="btn btn-sm journal-period-btn" id="rtype-cashflow" onclick="setReportType('cashflow')">💵 التدفقات النقدية</button>
-            <button class="btn btn-sm journal-period-btn" id="rtype-sales"   onclick="setReportType('sales')">💹 المبيعات</button>
-            <button class="btn btn-sm journal-period-btn" id="rtype-expenses" onclick="setReportType('expenses')">💸 المصاريف</button>
-            <button class="btn btn-sm journal-period-btn" id="rtype-partners" onclick="setReportType('partners')">👥 الشركاء</button>
-            <button class="btn btn-sm journal-period-btn" id="rtype-opex"     onclick="setReportType('opex')">💼 التشغيلية</button>
+            <button class="btn btn-sm journal-period-btn active" id="rtype-profit"    onclick="setReportType('profit')">📈 الأرباح</button>
+            <button class="btn btn-sm journal-period-btn" id="rtype-cashflow"  onclick="setReportType('cashflow')">💵 التدفقات</button>
+            <button class="btn btn-sm journal-period-btn" id="rtype-inventory" onclick="setReportType('inventory')">🚗 المخزون</button>
+            <button class="btn btn-sm journal-period-btn" id="rtype-sales"     onclick="setReportType('sales')">💹 المبيعات</button>
+            <button class="btn btn-sm journal-period-btn" id="rtype-expenses"  onclick="setReportType('expenses')">💸 المصاريف</button>
+            <button class="btn btn-sm journal-period-btn" id="rtype-partners"  onclick="setReportType('partners')">👥 الشركاء</button>
+            <button class="btn btn-sm journal-period-btn" id="rtype-opex"      onclick="setReportType('opex')">💼 التشغيلية</button>
           </div>
           <input type="date" id="r-from" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
           <span style="color:var(--text2)">—</span>
@@ -3793,87 +3797,97 @@ function showTransactions(type) {
 }
 
 async function loadTransactions() {
-  const type  = _txType;
-  const cfg   = TX_CONFIG[type];
-  const from  = el('tx-from').value;
-  const to    = el('tx-to').value;
-  const pf    = el('tx-post-filter')?.value || 'posted';
-  const sys   = state.system;
+  const type = _txType;
+  const cfg  = TX_CONFIG[type];
+  const from = el('tx-from').value;
+  const to   = el('tx-to').value;
+  const pf   = el('tx-post-filter')?.value || 'all';
+  const sys  = state.system;
 
   el('tx-table').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   el('tx-kpis').innerHTML  = '';
 
+  if (!from || !to) {
+    el('tx-table').innerHTML = emptyHTML('📅','يرجى تحديد الفترة الزمنية');
+    return;
+  }
+
   const toEOD = to + 'T23:59:59';
 
+  // helper: build Supabase URL with correct filters
+  function buildUrl(table, dateCol) {
+    let url = `${SB_URL}/rest/v1/${table}?select=*&system_type=eq.${encodeURIComponent(sys)}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`;
+    // post_status: old records have null = treat as posted
+    if (pf === 'draft')  url += '&post_status=eq.draft';
+    if (pf === 'posted') url += '&or=(post_status.eq.posted,post_status.is.null)';
+    return url;
+  }
+
   try {
-    let params = {
-      select: '*',
-      system_type: `eq.${sys}`,
-      order: `${cfg.dateField}.desc`
-    };
-    if (from) params[cfg.dateField] = `gte.${from}`;
-
-    // post_status filter
-    if (pf === 'posted') params.post_status = 'eq.posted';
-    else if (pf === 'draft') params.post_status = 'eq.draft';
-
     let rows = [];
+
     if (type === 'opex') {
-      // operating_expenses uses different fetch
-      const url = `${SB_URL}/rest/v1/operating_expenses?system_type=eq.${encodeURIComponent(sys)}&exp_date=gte.${encodeURIComponent(from)}&exp_date=lte.${encodeURIComponent(toEOD)}&order=exp_date.desc`;
-      const r = await fetch(url, { headers: headers() });
+      // operating_expenses has no post_status
+      const r = await fetch(buildUrl('operating_expenses', 'exp_date').replace('&or=(post_status.eq.posted,post_status.is.null)','').replace('&post_status=eq.draft',''), { headers: headers() });
       rows = r.ok ? await r.json() : [];
     } else if (type === 'deals') {
-      rows = await apiGet('purchase_orders', params);
+      // purchase_orders
+      const r = await fetch(buildUrl('purchase_orders', 'po_date'), { headers: headers() });
+      rows = r.ok ? await r.json() : [];
     } else {
-      // Add to date filter
-      const url2 = `${SB_URL}/rest/v1/${cfg.table}?system_type=eq.${encodeURIComponent(sys)}&${cfg.dateField}=gte.${encodeURIComponent(from)}&${cfg.dateField}=lte.${encodeURIComponent(toEOD)}&order=${cfg.dateField}.desc${pf==='posted'?'&post_status=eq.posted':pf==='draft'?'&post_status=eq.draft':''}`;
-      const r2 = await fetch(url2, { headers: headers() });
-      rows = r2.ok ? await r2.json() : [];
+      const r = await fetch(buildUrl(cfg.table, cfg.dateField), { headers: headers() });
+      rows = r.ok ? await r.json() : [];
     }
 
     rows = rows || [];
 
     // Get audit_log for created_by
-    const tableIds = rows.map(r=>r.id).filter(Boolean);
     let auditMap = {};
-    if (tableIds.length) {
-      try {
-        const audits = await apiGet('audit_log', {
-          select: 'ref_id,user_email',
-          action: 'eq.INSERT',
-          table_name: `eq.${cfg.table}`,
-          limit: '200'
-        });
-        (audits||[]).forEach(a => { if(a.ref_id) auditMap[String(a.ref_id)] = a.user_email; });
-      } catch(e) {}
-    }
+    try {
+      const audits = await apiGet('audit_log', {
+        select: 'ref_id,user_email',
+        action: 'eq.INSERT',
+        table_name: `eq.${cfg.table}`,
+        limit: '500'
+      });
+      (audits||[]).forEach(a => { if(a.ref_id) auditMap[String(a.ref_id)] = (a.user_email||'').split('@')[0]; });
+    } catch(e) {}
 
     // KPIs
-    const total = rows.reduce((s,r)=>s+(+r[cfg.amountField]||0), 0);
+    const total       = rows.reduce((s,r)=>s+(+r[cfg.amountField]||0), 0);
     const draftCount  = rows.filter(r=>r.post_status==='draft').length;
-    const postedCount = rows.filter(r=>r.post_status==='posted'||!r.post_status).length;
-    el('tx-subtitle').textContent = `${rows.length} سجل · ${from} — ${to}`;
+    const postedCount = rows.length - draftCount;
 
+    el('tx-subtitle').textContent = `${rows.length} سجل · ${from} — ${to}`;
     el('tx-kpis').innerHTML = `
       <div class="j-kpi" style="border-right:3px solid ${cfg.color}">
         <div class="j-kpi-label">${cfg.icon} إجمالي ${cfg.title}</div>
         <div class="j-kpi-val" style="color:${cfg.color};font-size:18px;font-weight:900">${fmt(total)}</div>
       </div>
-      <div class="j-kpi"><div class="j-kpi-label">عدد السجلات</div><div class="j-kpi-val">${rows.length}</div></div>
-      ${pf==='all'?`<div class="j-kpi"><div class="j-kpi-label">✅ مرحَّل</div><div class="j-kpi-val text-green">${postedCount}</div></div>
-      <div class="j-kpi"><div class="j-kpi-label">⏳ معلق</div><div class="j-kpi-val" style="color:var(--accent)">${draftCount}</div></div>`:''}`;
+      <div class="j-kpi">
+        <div class="j-kpi-label">عدد السجلات</div>
+        <div class="j-kpi-val">${rows.length}</div>
+      </div>
+      ${pf==='all' && draftCount > 0 ? `
+      <div class="j-kpi">
+        <div class="j-kpi-label">✅ مرحَّل</div>
+        <div class="j-kpi-val text-green">${postedCount}</div>
+      </div>
+      <div class="j-kpi">
+        <div class="j-kpi-label">⏳ معلق</div>
+        <div class="j-kpi-val" style="color:var(--accent)">${draftCount}</div>
+      </div>` : ''}`;
 
-    // Store for export
     window._txRows = rows;
     window._txAuditMap = auditMap;
     window._txCfg = cfg;
+    window._txType2 = type;
 
     renderTxTable(rows, cfg, auditMap, type);
 
   } catch(e) {
     el('tx-table').innerHTML = `<div class="empty-state"><div class="e-icon">⚠️</div><p>خطأ: ${e.message}</p></div>`;
-    console.error(e);
+    console.error('loadTransactions error:', e);
   }
 }
 
@@ -10733,7 +10747,7 @@ function showReport(type) {
   sessionStorage.setItem('tm_last_view','report:'+type);
   hideAllViews();
   el('reportsView').style.display = 'block';
-  const _rt={profit:'الأرباح والخسائر',cashflow:'التدفقات النقدية',sales:'المبيعات',expenses:'المصاريف',partners:'الشركاء',opex:'التشغيلية'};
+  const _rt={profit:'الأرباح والخسائر',cashflow:'التدفقات النقدية',inventory:'تقرير المخزون',sales:'المبيعات',expenses:'المصاريف',partners:'الشركاء',opex:'التشغيلية'};
   el('topBarTitle').textContent = _rt[type]||'التقارير';
   navActive('');
   const now = new Date();
@@ -10941,6 +10955,10 @@ async function runReport() {
         ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>الشريك</th><th>النوع</th><th>المبلغ</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
         : emptyHTML('👥','لا توجد بيانات');
     }
+    if (type === 'inventory') {
+      await runInventoryReport(sys);
+      return;
+    }
     if (type === 'cashflow') { await runCashFlowReport(from, to, sys); return; }
     if (type === 'opex') {
       await loadOpexReport(from, to);
@@ -11055,6 +11073,118 @@ async function runCashFlowReport(from, to, sys) {
       </div>
       ${mks.length>1?`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden"><div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px">📅 التحليل الشهري</div><table class="data-table"><thead><tr><th>الشهر</th><th style="color:var(--green)">↑ داخل</th><th style="color:var(--red)">↓ خارج</th><th>الصافي</th></tr></thead><tbody>${monthRows}</tbody><tfoot style="background:var(--card2)"><tr><td style="padding:10px 16px;font-weight:700">الإجمالي</td><td class="mono text-green" style="padding:10px 16px;font-weight:700">${fmt(totalIn)}</td><td class="mono text-red" style="padding:10px 16px;font-weight:700">${fmt(totalOut)}</td><td class="mono" style="padding:10px 16px;font-weight:900;color:${net>=0?'var(--green)':'var(--red)'}">${net>=0?'+':''}${fmt(net)}</td></tr></tfoot></table></div>`:''}`;
   } catch(e) { el('reportTable').innerHTML=`<div class="empty-state"><div class="e-icon">⚠️</div><p>خطأ: ${e.message}</p></div>`; console.error(e); }
+}
+
+// ════════════════════════════════════════
+// INVENTORY REPORT — تقرير المخزون
+// ════════════════════════════════════════
+async function runInventoryReport(sys) {
+  el('reportKpis').innerHTML = '';
+  el('reportTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل المخزون...</div>';
+  try {
+    const [vehicles, sales, deals] = await Promise.all([
+      apiGet('vehicles',        { select:'*', system_type:`eq.${sys}`, order:'created_at.desc' }),
+      apiGet('sales',           { select:'vin,file_no,sale_price,sale_date,customer', system_type:`eq.${sys}` }),
+      apiGet('purchase_orders', { select:'file_no,supplier,po_date,total_purchase,status', system_type:`eq.${sys}` }),
+    ]);
+
+    const soldVins    = new Set((sales||[]).map(s=>s.vin).filter(Boolean));
+    const dealMap     = {};
+    (deals||[]).forEach(d => { dealMap[d.file_no] = d; });
+    const saleMap     = {};
+    (sales||[]).forEach(s => { if(s.vin) saleMap[s.vin] = s; });
+
+    const inStock  = (vehicles||[]).filter(v => !soldVins.has(v.vin));
+    const sold     = (vehicles||[]).filter(v =>  soldVins.has(v.vin));
+    const total    = (vehicles||[]).length;
+
+    const stockValue  = inStock.reduce((s,v)=>s+(+v.purchase_price||0), 0);
+    const soldRevenue = sold.reduce((v2,v)=>{ const s=saleMap[v.vin]; return v2+(+s?.sale_price||0); }, 0);
+    const soldCost    = sold.reduce((s,v)=>s+(+v.purchase_price||0), 0);
+    const soldProfit  = soldRevenue - soldCost;
+
+    // KPIs
+    el('reportKpis').innerHTML = `
+      <div class="j-kpi" style="border-right:3px solid var(--accent)">
+        <div class="j-kpi-label">📦 إجمالي السيارات</div>
+        <div class="j-kpi-val" style="color:var(--accent);font-size:22px;font-weight:900">${total}</div>
+      </div>
+      <div class="j-kpi" style="border-right:3px solid var(--blue)">
+        <div class="j-kpi-label">🏭 في المخزن</div>
+        <div class="j-kpi-val text-blue" style="font-size:22px;font-weight:900">${inStock.length}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">قيمة: ${fmt(stockValue)}</div>
+      </div>
+      <div class="j-kpi" style="border-right:3px solid var(--green)">
+        <div class="j-kpi-label">✅ مباعة</div>
+        <div class="j-kpi-val text-green" style="font-size:22px;font-weight:900">${sold.length}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">إيراد: ${fmt(soldRevenue)}</div>
+      </div>
+      <div class="j-kpi" style="border-right:3px solid ${soldProfit>=0?'var(--green)':'var(--red)'}">
+        <div class="j-kpi-label">💰 ربح المبيعات</div>
+        <div class="j-kpi-val" style="color:${soldProfit>=0?'var(--green)':'var(--red)'};font-size:20px;font-weight:900">${fmt(soldProfit)}</div>
+      </div>`;
+
+    // Table — in stock first
+    const allRows = [
+      ...inStock.map(v => ({ ...v, _status:'stock' })),
+      ...sold.map(v   => ({ ...v, _status:'sold'  })),
+    ];
+
+    const rows = allRows.map(v => {
+      const deal = dealMap[v.file_no] || {};
+      const sale = saleMap[v.vin]     || {};
+      const isSold = v._status === 'sold';
+      const profit = isSold ? ((+sale.sale_price||0) - (+v.purchase_price||0)) : null;
+      const days = Math.floor((Date.now() - new Date(v.created_at||Date.now())) / 864e5);
+      return `<tr>
+        <td class="mono" style="direction:ltr;font-size:11px">${v.vin||'—'}</td>
+        <td>${v.model||v.vehicle_type||'—'} ${v.year||''}</td>
+        <td>${v.color||'—'}</td>
+        <td class="mono text-accent" onclick="openViewer('${v.file_no}')" style="cursor:pointer;font-weight:700">${v.file_no||'—'}</td>
+        <td>${deal.supplier||'—'}</td>
+        <td class="mono text-blue">${fmt(v.purchase_price)}</td>
+        <td>
+          ${isSold
+            ? `<span style="background:var(--green-dim);color:var(--green);padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">✅ مباعة</span>`
+            : `<span style="background:var(--blue-dim);color:var(--blue);padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">🏭 مخزن (${days}د)</span>`}
+        </td>
+        ${isSold ? `
+          <td class="mono text-green">${fmt(sale.sale_price)}</td>
+          <td class="mono" style="color:${profit>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(profit)}</td>
+          <td style="font-size:11px;color:var(--text2)">${sale.customer||'—'}</td>
+        ` : `<td>—</td><td>—</td><td>—</td>`}
+      </tr>`;
+    }).join('');
+
+    reportState.data = allRows.map(v => ({
+      VIN: v.vin||'',
+      الموديل: (v.model||v.vehicle_type||'')+(v.year?' '+v.year:''),
+      اللون: v.color||'',
+      الملف: v.file_no||'',
+      المورد: dealMap[v.file_no]?.supplier||'',
+      'تكلفة الشراء': +v.purchase_price||0,
+      الحالة: v._status==='sold'?'مباعة':'في المخزن',
+      'سعر البيع': v._status==='sold'?(+saleMap[v.vin]?.sale_price||0):'',
+      الربح: v._status==='sold'?((+saleMap[v.vin]?.sale_price||0)-(+v.purchase_price||0)):'',
+      العميل: v._status==='sold'?saleMap[v.vin]?.customer||'':'',
+    }));
+
+    el('reportTable').innerHTML = `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <table class="data-table">
+          <thead><tr>
+            <th>VIN</th><th>الموديل</th><th>اللون</th><th>الملف</th>
+            <th>المورد</th><th>التكلفة</th><th>الحالة</th>
+            <th>سعر البيع</th><th>الربح</th><th>العميل</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+
+  } catch(e) {
+    el('reportTable').innerHTML = `<div class="empty-state"><div class="e-icon">⚠️</div><p>خطأ: ${e.message}</p></div>`;
+    console.error(e);
+  }
 }
 
 function exportReportCSV() {
