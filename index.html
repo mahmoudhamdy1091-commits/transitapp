@@ -1865,7 +1865,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
         </div>
 
         <!-- KPI Strip -->
-        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:0" id="journalKpis"></div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:0" id="journalKpis"></div>
 
         <!-- Timeline -->
         <div id="journalTimeline"></div>
@@ -4228,7 +4228,7 @@ function renderDashPerfChart(sales, expenses, from, to, days) {
     let cur = new Date(fromD.getFullYear(), fromD.getMonth(), 1);
     while (cur <= toD) {
       const mEnd = new Date(cur.getFullYear(), cur.getMonth()+1, 0);
-      buckets.push({ label: cur.toLocaleDateString('ar-KW',{month:'short'}), from: cur.toISOString().split('T')[0], to: mEnd.toISOString().split('T')[0], sales:0, exp:0 });
+      buckets.push({ label: cur.toLocaleDateString('en-GB',{month:'short'}), from: cur.toISOString().split('T')[0], to: mEnd.toISOString().split('T')[0], sales:0, exp:0 });
       cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1);
     }
   }
@@ -5012,7 +5012,7 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
       </div>
       <div class="info-row">
         <span class="info-label">التاريخ / Date</span>
-        <span class="info-value">${new Date(date).toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'})}</span>
+        <span class="info-value">${new Date(date).toLocaleDateString('en-GB',{year:'numeric',month:'long',day:'numeric'})}</span>
       </div>
       <div class="info-row">
         <span class="info-label">عدد السيارات / Vehicles</span>
@@ -5141,6 +5141,7 @@ async function loadPayoutsTab(fn, sys) {
           ${splitInfo}
         </td>
         <td class="mono" style="color:var(--purple);font-weight:700">${fmt(p.amount)}</td>
+        <td style="font-size:11px;color:var(--text2)">${supplierName}</td>
         <td>${p.pay_method||'—'}</td>
         <td class="mono text-muted">${p.document||'—'}</td>
         <td class="mono text-muted">${fmtDate(p.pay_date)}</td>
@@ -5167,7 +5168,7 @@ async function loadPayoutsTab(fn, sys) {
       )}
       <table class="data-table">
         <thead><tr>
-          <th>رقم الصرف</th><th>الشريك</th><th>نوع الصرف</th><th>المبلغ</th>
+          <th>رقم الصرف</th><th>الشريك</th><th>نوع الصرف</th><th>المبلغ</th><th>دفع للمورد</th>
           <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -5336,7 +5337,7 @@ async function printPayoutVoucher(payoutId) {
   </div>
 
   <div class="footer">
-    تم إنشاؤه بتاريخ ${new Date().toLocaleDateString('ar-KW')} · Transit Cars System
+    تم إنشاؤه بتاريخ ${new Date().toLocaleDateString('en-GB')} · Transit Cars System
   </div>
 
 </div>
@@ -5902,6 +5903,7 @@ async function submitNewFile() {
       total_purchase: finalTotal,
       vehicle_count:  vehicles.length,
       status:         'OPEN',
+      post_status:    entryStatus(),
       notes:          notes || null
     };
     await apiPost('purchase_orders', poData);
@@ -7682,7 +7684,7 @@ function fmtDate(d) {
   if (!d) return '—';
   const date = new Date(d);
   if (isNaN(date)) return d;
-  return date.toLocaleDateString('ar-EG', { year:'numeric', month:'short', day:'numeric' });
+  return date.toLocaleDateString('en-GB', { year:'numeric', month:'short', day:'numeric' });
 }
 
 function today() {
@@ -8010,27 +8012,28 @@ async function loadJournal() {
 
 function renderJournalKpis(entries) {
   const groups = {
+    purchase:   entries.filter(e=>e.type==='purchase'),
     sale:       entries.filter(e=>e.type==='sale'),
     expenses:   entries.filter(e=>e.type==='expense'||e.type==='opex'),
     collection: entries.filter(e=>e.type==='collection'),
     payment:    entries.filter(e=>e.type==='payment'),
     payout:     entries.filter(e=>e.type==='payout'),
   };
-
   const totals = {
+    purchase:   groups.purchase.reduce((s,e)=>s+e.amount,0),
     sale:       groups.sale.reduce((s,e)=>s+e.amount,0),
     expenses:   groups.expenses.reduce((s,e)=>s+e.amount,0),
     collection: groups.collection.reduce((s,e)=>s+e.amount,0),
     payment:    groups.payment.reduce((s,e)=>s+e.amount,0),
     payout:     groups.payout.reduce((s,e)=>s+e.amount,0),
   };
-
   const config = [
-    { key:'sale',       label:'مبيعات',       icon:'🧾', color:'var(--green)',  filterVal:'sale'       },
-    { key:'expenses',   label:'مصاريف',       icon:'💸', color:'var(--red)',    filterVal:'expense'    },
-    { key:'collection', label:'تحصيلات',      icon:'💰', color:'var(--blue)',   filterVal:'collection' },
-    { key:'payment',    label:'دفعات مورد',   icon:'💳', color:'var(--cyan)',   filterVal:'payment'    },
-    { key:'payout',     label:'صرف شركاء',    icon:'👥', color:'var(--purple)', filterVal:'payout'     },
+    { key:'purchase', label:'مشتريات',    icon:'📋', color:'var(--accent)', filterVal:'purchase'   },
+    { key:'sale',     label:'مبيعات',      icon:'🧾', color:'var(--green)',  filterVal:'sale'       },
+    { key:'expenses', label:'مصاريف',      icon:'💸', color:'var(--red)',    filterVal:'expense'    },
+    { key:'collection', label:'تحصيلات',  icon:'💰', color:'var(--blue)',   filterVal:'collection' },
+    { key:'payment',  label:'دفعات مورد', icon:'💳', color:'var(--cyan)',   filterVal:'payment'    },
+    { key:'payout',   label:'صرف شركاء',  icon:'👥', color:'var(--purple)', filterVal:'payout'     },
   ];
 
   el('journalKpis').innerHTML = config.map(c => `
@@ -8307,7 +8310,7 @@ function printSection(title, subtitle, tableHtml, summaryHtml='') {
   </div>
   ${summaryHtml}
   ${tableHtml}
-  <div class="footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('ar-KW')} · Transit Cars System</div>
+  <div class="footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('en-GB')} · Transit Cars System</div>
 </div></body></html>`;
   openPrintOverlay(html, title);
 }
@@ -8657,7 +8660,7 @@ function printLedgerStatement() {
     </tr>`;
   });
 
-  const printDate = new Date().toLocaleDateString('ar-KW');
+  const printDate = new Date().toLocaleDateString('en-GB');
   const html = `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -9131,7 +9134,7 @@ function docHeader(title, subtitle, fileNo) {
     <div class="logo-area">
       <div class="company">Transit International</div>
       <div class="sub">نظام إدارة صفقات السيارات</div>
-      <div class="sub" style="margin-top:4px;color:#999">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-EG')}</div>
+      <div class="sub" style="margin-top:4px;color:#999">تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</div>
     </div>
     <div>
       <div class="doc-title">${title}</div>
@@ -9224,7 +9227,7 @@ async function printPurchaseOrder(fileNo) {
           <div class="info-row"><span class="info-label">عدد الشركاء</span><span class="info-val">${(partners||[]).length} شريك</span></div>
           <div class="info-row"><span class="info-label">عدد الدفعات</span><span class="info-val">${(payments||[]).length} دفعة</span></div>
           <div class="info-row"><span class="info-label">عدد المصاريف</span><span class="info-val">${(expenses||[]).length} بند</span></div>
-          <div class="info-row"><span class="info-label">تاريخ الطباعة</span><span class="info-val">${new Date().toLocaleDateString('ar-KW')}</span></div>
+          <div class="info-row"><span class="info-label">تاريخ الطباعة</span><span class="info-val">${new Date().toLocaleDateString('en-GB')}</span></div>
         </div>
       </div>
 
@@ -9455,7 +9458,7 @@ function printTrialBalance() {
         <td class="${sumB>=0?'green':'red'}"><strong>${fmt(Math.abs(sumB))}</strong></td>
       </tr></tfoot>
     </table>
-    <div class="footer">Transit International · ميزان المراجعة · ${new Date().toLocaleDateString('ar-EG')}</div>`;
+    <div class="footer">Transit International · ميزان المراجعة · ${new Date().toLocaleDateString('en-GB')}</div>`;
   printDocument(html, 'ميزان المراجعة');
 }
 
@@ -9816,7 +9819,7 @@ function showJournalReport() {
       <thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>الملف</th><th>المبلغ</th></tr></thead>
       <tbody>${detailRows}</tbody>
     </table>
-    <div class="footer">Transit International · التقرير اليومي · ${new Date().toLocaleDateString('ar-EG')}</div>`;
+    <div class="footer">Transit International · التقرير اليومي · ${new Date().toLocaleDateString('en-GB')}</div>`;
 
   printDocument(html, 'التقرير اليومي');
 }
@@ -9978,7 +9981,7 @@ function printVehiclesReport() {
       <th>السعر</th><th>انتهاء الرخصة</th><th>الحالة</th><th>العميل</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div class="footer">Transit International · تقرير السيارات · ${new Date().toLocaleDateString('ar-EG')}</div>`;
+    <div class="footer">Transit International · تقرير السيارات · ${new Date().toLocaleDateString('en-GB')}</div>`;
   printDocument(html, 'تقرير السيارات');
 }
 
@@ -10530,7 +10533,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
           <div>
             <div style="font-size:22px;font-weight:900;margin-bottom:4px">${partnerName}</div>
             <div style="font-size:13px;opacity:.7">كشف حساب شامل — نظام ${sys}</div>
-            <div style="font-size:12px;opacity:.5;margin-top:2px">${fileNoFilter ? 'صفقة: '+fileNoFilter : dealDetails.length+' صفقة'} · ${new Date().toLocaleDateString('ar-KW')}</div>
+            <div style="font-size:12px;opacity:.5;margin-top:2px">${fileNoFilter ? 'صفقة: '+fileNoFilter : dealDetails.length+' صفقة'} · ${new Date().toLocaleDateString('en-GB')}</div>
           </div>
           <div style="display:flex;gap:8px">
             <button id="partnerPdfBtn" onclick="exportPartnerStatementPDF()" style="background:#e6930a;color:#000;border:none;border-radius:8px;padding:8px 16px;font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer">📥 تصدير PDF</button>
@@ -10795,9 +10798,10 @@ async function runReport() {
         salesByFile[r.file_no] = (salesByFile[r.file_no]||0) + (+r.sale_price||0);
       });
 
-      // بناء fileMap — فقط الملفات اللي فيها مبيعات في الفترة
+      // بناء fileMap — كل الصفقات (بمبيعات أو بدون)
+      const allFileNos = new Set([...Object.keys(salesByFile), ...Object.keys(dealMap)]);
       const fileMap = {};
-      Object.keys(salesByFile).forEach(fn => {
+      allFileNos.forEach(fn => {
         const d = dealMap[fn] || {};
         const fe = (expenses||[]).filter(e=>e.file_no===fn).reduce((s,e)=>s+(+e.amount||0),0);
         fileMap[fn] = {
@@ -10805,7 +10809,7 @@ async function runReport() {
           supplier: d.supplier || '—',
           purchase: +d.total_purchase || 0,
           expenses: fe,
-          sales:    salesByFile[fn],
+          sales:    salesByFile[fn] || 0,
           status:   d.status || '—',
         };
       });
@@ -11570,7 +11574,7 @@ function renderActivityLog() {
   };
 
   const rows = list.map(r => {
-    const dt       = r.created_at ? new Date(r.created_at).toLocaleString('ar-KW') : '—';
+    const dt       = r.created_at ? new Date(r.created_at).toLocaleString('en-US') : '—';
     const email    = r.user_email || 'غير معروف';
     const initials = email[0]?.toUpperCase() || '?';
     const hasDetail= r.new_val || r.old_val || r.notes;
@@ -11624,7 +11628,7 @@ function showActivityDetail(id) {
       </div>
       <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
         <div style="font-size:10px;color:var(--text2);margin-bottom:3px">الوقت</div>
-        <div style="font-weight:600;font-size:11px">${r.created_at ? new Date(r.created_at).toLocaleString('ar-KW') : '—'}</div>
+        <div style="font-weight:600;font-size:11px">${r.created_at ? new Date(r.created_at).toLocaleString('en-US') : '—'}</div>
       </div>
       <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
         <div style="font-size:10px;color:var(--text2);margin-bottom:3px">العملية</div>
@@ -12015,7 +12019,7 @@ async function printDealStatement(fileNo) {
   @media print{@page{size:A4 landscape}}</style></head><body>
   <div style="display:flex;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #000">
     <div><h2>كشف الصفقة — ${fn}</h2><div class="sub">المورد: ${deal.supplier||'—'} · تاريخ: ${deal.po_date||'—'}</div></div>
-    <div style="text-align:left;font-size:11px;color:#666">Transit Co.<br>${new Date().toLocaleDateString('ar-EG')}</div>
+    <div style="text-align:left;font-size:11px;color:#666">Transit Co.<br>${new Date().toLocaleDateString('en-GB')}</div>
   </div>
   <div class="kpis">
     <div class="kpi"><div>تكلفة الشراء</div><div style="color:#2563eb">${totalPurchase.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
