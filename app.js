@@ -769,7 +769,7 @@ async function loadDashboard() {
     } catch(e) {}
 
     // ── تحصيلات متأخرة ──
-    const overdueItems = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date < todayStr)
+    const overdueItems = (collections||[]).filter(c => !c.paid_date && (c.due_date ? c.due_date < todayStr : true))
       .sort((a,b) => a.due_date > b.due_date ? 1 : -1);
     const overdueTotal = overdueItems.reduce((s,c) => s + (+c.amount||0), 0);
     if (el('dash-overdue-amt')) el('dash-overdue-amt').textContent = fmt(overdueTotal);
@@ -2964,6 +2964,7 @@ async function submitExpense() {
       if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method});
     }
     closeModal('expenseModal');
+    invalidateCache();
     toast(`✅ تم تسجيل ${expenses.length} مصروف`,'ok');
     if (state.currentFileNo) {
       if (state.currentTab === 3) loadExpensesTab(state.currentFileNo, state.system);
@@ -3247,6 +3248,7 @@ async function submitSale() {
       { status: allSold ? 'CLOSED' : 'IN PROGRESS' });
 
     closeModal('saleModal');
+    invalidateCache();
     toast(`✅ تم تسجيل فاتورة ${invNo} — ${saleItems.length} سيارة`,'ok');
     state.currentSales = allS || [];
     if (state.currentTab === 4) loadSalesTab(fn, state.system);
@@ -3647,6 +3649,7 @@ async function submitAddVehicle() {
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` }, { vehicle_count: vCount });
     await logAudit('INSERT','vehicles',fn,null,data);
     closeModal('addVehicleModal');
+    invalidateCache();
     toast('✅ تم إضافة السيارة','ok');
     loadVehiclesTab(fn, state.system);
   } catch(e) { showFieldErr('avError','خطأ: '+e.message); }
@@ -4092,6 +4095,7 @@ async function submitQuickPayout() {
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
     if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo,partner,method});
     closeModal('quickPayoutModal');
+    invalidateCache();
     toast('✅ تم تسجيل الصرف بنجاح','ok');
     loadJournal();
   } catch(e) { showFieldErr('qsPoError','خطأ: '+e.message); }
@@ -9211,6 +9215,7 @@ async function submitOpex() {
     await apiPost('operating_expenses', payload);
     await logAudit('INSERT','operating_expenses', null, null, payload);
     closeModal('opexModal');
+    invalidateCache();
     toast('✅ تم تسجيل المصروف التشغيلي','ok');
     invalidateCache();
     await loadOpex();
@@ -9446,7 +9451,7 @@ function renderDrillDown(type) {
     const colls = d.periodCollections || [];
     const paid   = colls.filter(c=>c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
     const unpaid = colls.filter(c=>!c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
-    const overdue= colls.filter(c=>!c.paid_date && c.due_date && c.due_date < d.todayStr).length;
+    const overdue= colls.filter(c=>!c.paid_date && (c.due_date ? c.due_date < d.todayStr : true)).length;
     ddKpis.style.gridTemplateColumns = 'repeat(4,1fr)';
     ddKpis.innerHTML = `
       <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--blue)">${fmt(paid+unpaid)}</div><div class="dd-kpi-lbl">إجمالي التحصيلات</div></div>
