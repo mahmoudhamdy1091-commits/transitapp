@@ -1589,23 +1589,48 @@
         <textarea id="sale-notes" placeholder="شروط الدفع، ملاحظات..." rows="2"></textarea>
       </div>
 
-      <!-- حقل الدفع -->
-      <div style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-top:10px">
-        <div style="font-size:12px;font-weight:700;margin-bottom:10px">💳 بيانات الدفع</div>
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+      <!-- بيانات الدفع -->
+      <div style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-top:10px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:700">
             <input type="checkbox" id="sale-paid-now" onchange="toggleSalePayment(this.checked)"
-              style="width:16px;height:16px;cursor:pointer">
-            العميل دفع الآن
+              style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">
+            💳 العميل دفع الآن
           </label>
-          <div id="sale-payment-fields" style="display:none;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <select id="sale-pay-method" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
-              <option>تحويل بنكي</option>
-              <option>نقد</option>
-              <option>شيك</option>
-            </select>
-            <input type="text" id="sale-pay-doc" placeholder="رقم المستند / الشيك"
-              style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:160px">
+        </div>
+        <div id="sale-payment-fields" style="display:none">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div class="field" style="margin:0">
+              <label>المبلغ المدفوع</label>
+              <input type="number" id="sale-pay-amount" placeholder="0.000" step="0.001"
+                style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;width:100%">
+              <div style="font-size:10px;color:var(--text2);margin-top:3px">اتركه فارغاً للمبلغ الكامل</div>
+            </div>
+            <div class="field" style="margin:0">
+              <label>تاريخ الدفع</label>
+              <input type="date" id="sale-pay-date"
+                style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;width:100%">
+            </div>
+            <div class="field" style="margin:0">
+              <label>طريقة الدفع</label>
+              <select id="sale-pay-method"
+                style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;width:100%">
+                <option>تحويل بنكي</option>
+                <option>نقد</option>
+                <option>شيك</option>
+                <option>بطاقة ائتمان</option>
+              </select>
+            </div>
+            <div class="field" style="margin:0">
+              <label>رقم المستند / الشيك</label>
+              <input type="text" id="sale-pay-doc" placeholder="رقم المرجع"
+                style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;width:100%">
+            </div>
+          </div>
+          <div class="field" style="margin:0">
+            <label>ملاحظات الدفع</label>
+            <input type="text" id="sale-pay-notes" placeholder="أي ملاحظات إضافية"
+              style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;width:100%">
           </div>
         </div>
       </div>

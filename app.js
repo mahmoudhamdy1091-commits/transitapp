@@ -3187,7 +3187,17 @@ function updateSaleTotal() {
 
 function toggleSalePayment(checked) {
   const fields = el('sale-payment-fields');
-  if (fields) fields.style.display = checked ? 'flex' : 'none';
+  if (fields) fields.style.display = checked ? 'block' : 'none';
+  if (checked) {
+    // اضبط تاريخ الدفع على اليوم تلقائي
+    const payDate = el('sale-pay-date');
+    if (payDate && !payDate.value) payDate.value = today();
+    // اضبط المبلغ على الإجمالي تلقائي
+    const totalAmt = Array.from(document.querySelectorAll('[name="sv-price"]'))
+      .reduce((s, i) => s + (parseFloat(i.value)||0), 0);
+    const payAmt = el('sale-pay-amount');
+    if (payAmt && !payAmt.value && totalAmt > 0) payAmt.value = totalAmt.toFixed(3);
+  }
 }
 
 async function submitSale() {
@@ -3260,27 +3270,49 @@ async function submitSale() {
 
     closeModal('saleModal');
     invalidateCache();
-    // أضف تحصيل تلقائي لكل سيارة عشان يظهر في المتأخرة
-    const isPaid = el('sale-paid-now')?.checked || false;
+    // أضف تحصيل لكل سيارة
+    const isPaid    = el('sale-paid-now')?.checked || false;
+    const payMethod = el('sale-pay-method')?.value || 'تحويل بنكي';
+    const payDoc    = el('sale-pay-doc')?.value?.trim() || null;
+    const payDate   = el('sale-pay-date')?.value || date;
+    const payNotes  = el('sale-pay-notes')?.value?.trim() || null;
+    const payAmtInput = parseFloat(el('sale-pay-amount')?.value) || 0;
+
     for (const item of saleItems) {
       try {
+        // المبلغ المدفوع — لو جزئي نوزّعه بالنسبة
+        const itemPaidAmt = isPaid
+          ? (payAmtInput > 0 ? Math.min(payAmtInput, item.price) : item.price)
+          : 0;
+
         await apiPost('collections', {
           system_type: state.system,
-          file_no: item.fileNo || fn,
-          inv_no: invNo,
+          file_no:     item.fileNo || fn,
+          inv_no:      invNo,
           customer,
-          vin: item.vin || '',
-          amount: item.price,
-          pay_method: el('sale-pay-method')?.value || 'تحويل بنكي',
-          due_date: date,
-          paid_date: isPaid ? date : null,
+          vin:         item.vin || '',
+          amount:      item.price,
+          pay_method:  payMethod,
+          document:    payDoc,
+          due_date:    date,
+          paid_date:   isPaid ? payDate : null,
+          notes:       payNotes,
           post_status: entryStatus(),
-          ref_no: `COL-${invNo}-${item.vin||Math.random().toString(36).slice(2,6)}`,
+          ref_no:      `COL-${invNo}-${item.vin||Math.random().toString(36).slice(2,6)}`,
         });
+
         if (isPaid && entryStatus()==='posted') {
-          await je_collection({ sys:state.system, date, amount:item.price, fileNo:item.fileNo||fn, customer, invNo, method: el('sale-pay-method')?.value||'تحويل بنكي' });
+          await je_collection({
+            sys:      state.system,
+            date:     payDate,
+            amount:   itemPaidAmt,
+            fileNo:   item.fileNo || fn,
+            customer,
+            invNo,
+            method:   payMethod,
+          });
         }
-      } catch(e) {}
+      } catch(e) { console.warn('collection create error:', e.message); }
     }
     invalidateCache();
     toast(`✅ تم تسجيل فاتورة ${invNo} — ${saleItems.length} سيارة`,'ok');
