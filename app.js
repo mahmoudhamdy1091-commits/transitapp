@@ -585,6 +585,9 @@ function initApp() {
 // ════════════════════════════════════════
 // SYSTEM SWITCH
 // ════════════════════════════════════════
+// Approval state
+const approvalState = { all: [], filtered: [], currentType: 'all', currentItem: null, auditUsers: {} };
+
 // تحميل شجرة الحسابات وتخزينها في cache
 async function loadChartOfAccounts() {
   try {
@@ -703,7 +706,7 @@ async function loadDashboard() {
     const margin        = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
     const soldVinsAll   = new Set((allSales||[]).map(s=>s.vin));
     const stockVehicles = (vehicles||[]).filter(v => !soldVinsAll.has(v.vin));
-    const overdueList   = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date < todayStr);
+    const overdueList   = (collections||[]).filter(c => !c.paid_date && (c.due_date ? c.due_date < todayStr : true));
     const upcomingList  = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date >= todayStr && c.due_date <= in7);
     const overdueAmt    = overdueList.reduce((s,c)=>s+(+c.amount||0),0);
     const draftCount    = (drafts||[]).length;
@@ -9667,7 +9670,7 @@ async function regenInvNo() {
 // ════════════════════════════════════════
 // APPROVAL QUEUE
 // ════════════════════════════════════════
-const approvalState = { all: [], filtered: [], currentType: 'all', currentItem: null };
+// approvalState moved to top
 
 const APPROVAL_CONFIG = {
   purchase: { icon:'📋', label:'سند شراء', color:'var(--accent)', table:'purchase_orders', amountField:'total_purchase', dateField:'po_date', descFields:['file_no','supplier'] },
