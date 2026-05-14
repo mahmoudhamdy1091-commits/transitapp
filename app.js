@@ -165,7 +165,9 @@ function headers(extra = {}) {
 }
 
 async function apiGet(table, params = {}) {
-  const qs = Object.entries(params).map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  // select و order لا يحتاجان encode — الفاصلة والنقطة جزء من syntax
+  const NO_ENCODE = new Set(['select','order']);
+  const qs = Object.entries(params).map(([k,v]) => NO_ENCODE.has(k) ? `${k}=${v}` : `${k}=${encodeURIComponent(v)}`).join('&');
   const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
   let res = await fetch(url, { headers: headers({'Prefer':'return=representation'}) });
   if (res.status === 401) {
