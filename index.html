@@ -1138,21 +1138,37 @@
         </div>
 
         <!-- Filters -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
-          <input type="date" id="tx-from"
-            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
-          <span style="color:var(--text2)">—</span>
-          <input type="date" id="tx-to"
-            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
-          <select id="tx-post-filter" onchange="loadTransactions()"
-            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
-            <option value="posted">✅ مرحَّل فقط</option>
-            <option value="all">📊 الكل</option>
-            <option value="draft">⏳ معلق فقط</option>
-          </select>
-          <input type="text" id="tx-search" placeholder="🔍 بحث..." oninput="filterTxTable()"
-            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:160px">
-          <button class="btn btn-primary btn-sm" onclick="loadTransactions()">🔍 عرض</button>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
+          <!-- أزرار الفترة السريعة -->
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+            <span style="font-size:11px;color:var(--text2);font-weight:500">الفترة:</span>
+            <div style="display:flex;background:var(--card2);border-radius:var(--radius-sm);padding:3px;gap:2px">
+              <button class="btn btn-sm journal-period-btn active" id="txperiod-today"   onclick="setTxPeriod('today')">اليوم</button>
+              <button class="btn btn-sm journal-period-btn"        id="txperiod-week"    onclick="setTxPeriod('week')">هذا الأسبوع</button>
+              <button class="btn btn-sm journal-period-btn"        id="txperiod-month"   onclick="setTxPeriod('month')">هذا الشهر</button>
+              <button class="btn btn-sm journal-period-btn"        id="txperiod-3months" onclick="setTxPeriod('3months')">آخر 3 أشهر</button>
+              <button class="btn btn-sm journal-period-btn"        id="txperiod-custom"  onclick="setTxPeriod('custom')">تاريخ محدد</button>
+            </div>
+          </div>
+          <!-- الصف الثاني: تاريخ محدد + فلاتر -->
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <div id="txCustomDateWrap" style="display:none;align-items:center;gap:6px">
+              <input type="date" id="tx-from"
+                style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+              <span style="color:var(--text2)">—</span>
+              <input type="date" id="tx-to"
+                style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            </div>
+            <select id="tx-post-filter" onchange="loadTransactions()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+              <option value="posted">✅ مرحَّل فقط</option>
+              <option value="all">📊 الكل</option>
+              <option value="draft">⏳ معلق فقط</option>
+            </select>
+            <input type="text" id="tx-search" placeholder="🔍 بحث..." oninput="filterTxTable()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:160px">
+            <button class="btn btn-primary btn-sm" onclick="loadTransactions()">🔍 عرض</button>
+          </div>
         </div>
 
         <!-- KPIs -->

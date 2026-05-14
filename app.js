@@ -266,13 +266,54 @@ function showTransactions(type) {
   el('topBarTitle').textContent = cfg.icon + ' ' + cfg.title;
   navActive('');
 
-  // Set default date range (current month)
+  // Set default date range (current month) and activate month button
   const now = new Date();
   const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0');
-  if (!el('tx-from').value) el('tx-from').value = `${y}-${m}-01`;
-  if (!el('tx-to').value)   el('tx-to').value   = today();
+  el('tx-from').value = `${y}-${m}-01`;
+  el('tx-to').value   = today();
+  document.querySelectorAll('[id^="txperiod-"]').forEach(b => b.classList.remove('active'));
+  el('txperiod-month')?.classList.add('active');
+  if (el('txCustomDateWrap')) el('txCustomDateWrap').style.display = 'none';
 
   el('tx-title').textContent = cfg.icon + ' ' + cfg.title;
+  loadTransactions();
+}
+
+
+// ════════════════════════════════════════
+// TRANSACTIONS DATE FILTER
+// ════════════════════════════════════════
+function setTxPeriod(period) {
+  document.querySelectorAll('[id^="txperiod-"]').forEach(b => b.classList.remove('active'));
+  el('txperiod-' + period)?.classList.add('active');
+  const customWrap = el('txCustomDateWrap');
+  const pad = n => String(n).padStart(2,'0');
+  const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const now = new Date();
+
+  if (period === 'custom') {
+    customWrap.style.display = 'flex';
+    return;
+  }
+  customWrap.style.display = 'none';
+
+  let from, to;
+  if (period === 'today') {
+    from = to = toDate(now);
+  } else if (period === 'week') {
+    const sun = new Date(now); sun.setDate(now.getDate() - now.getDay());
+    const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
+    from = toDate(sun); to = toDate(sat);
+  } else if (period === 'month') {
+    from = `${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;
+    to   = toDate(new Date(now.getFullYear(), now.getMonth()+1, 0));
+  } else if (period === '3months') {
+    const f = new Date(now); f.setMonth(f.getMonth() - 3);
+    from = toDate(f); to = toDate(now);
+  }
+
+  if (el('tx-from')) el('tx-from').value = from;
+  if (el('tx-to'))   el('tx-to').value   = to;
   loadTransactions();
 }
 
@@ -611,7 +652,7 @@ async function loadDashboard() {
       return {
         ...d,
         _vTotal: vList.length, _vSold: soldCount,
-        _vLeft:  vList.length - sList.length,
+        _vLeft:  Math.max(0, vList.length - soldCount),
         _totalCost: totalCost, _totalExp: totalExp,
         _fullCost: fullCost, _totalSale: totalSale,
         _profit: totalSale - fullCost,
@@ -627,7 +668,6 @@ async function loadDashboard() {
     const periodDeals        = (deals||[]).filter(d => periodFileNos.has(d.file_no));
     const periodPurchaseDeals= (deals||[]).filter(d => { const dt = d.po_date || d.created_at?.split('T')[0] || ''; return dt >= from && dt <= to; });
     const totPurchase        = periodPurchaseDeals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
-    const periodDealExp = (allExpenses||[]).filter(e => periodFileNos.has(e.file_no)).reduce((s,e)=>s+(+e.amount||0),0);
     const profit        = totSales - totPurchase - totExp;
     const margin        = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
     const soldVinsAll   = new Set((allSales||[]).map(s=>s.vin));
@@ -1665,7 +1705,11 @@ async function loadCollectionsTab(fn, sys) {
 
 async function loadPayoutsTab(fn, sys) {
   try {
-    const data = await apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc' });
+    const [data, poArr] = await Promise.all([
+      apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc' }),
+      apiGet('purchase_orders', { select:'supplier', system_type:`eq.${sys}`, file_no:`eq.${fn}`, limit:1 }),
+    ]);
+    const supplierName = poArr?.[0]?.supplier || '—';
     if (!data?.length) { el('payoutsTable').innerHTML = emptyHTML('👥','لا توجد صرف للشركاء بعد'); return; }
     const total     = data.reduce((s,p)=>s+(+p.amount||0),0);
     const capTotal  = data.reduce((s,p)=>s+(+p.capital_amount||0),0);
