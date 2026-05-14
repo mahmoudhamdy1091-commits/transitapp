@@ -726,6 +726,8 @@ async function loadDashboard() {
         const d = c.due_date||c.paid_date||c.created_at?.split('T')[0]||'';
         return d >= from && d <= to;
       }),
+      allCollections: collections || [],
+      allSales: allSales || [],
       stockVehicles, todayStr, from, to,
     };
 
@@ -761,9 +763,14 @@ async function loadDashboard() {
       (allPayments||[]).forEach(p => { paidMap[p.file_no] = (paidMap[p.file_no]||0) + (+p.amount||0); });
       const duelist = (deals||[]).map(d => ({
         file_no: d.file_no, supplier: d.supplier||'—',
-        due: (+d.total_purchase||0) - (paidMap[d.file_no]||0)
+        total_purchase: +d.total_purchase||0,
+        paid: paidMap[d.file_no]||0,
+        due: (+d.total_purchase||0) - (paidMap[d.file_no]||0),
+        po_date: d.po_date||'',
+        status: d.status||'—',
       })).filter(d => d.due > 0.01).sort((a,b) => b.due - a.due);
       const totalDue = duelist.reduce((s,d) => s + d.due, 0);
+      _ddState.data.supplierDuelist = duelist; // للـ drill-down
       if (el('dash-supplier-due')) el('dash-supplier-due').textContent = fmt(totalDue);
       if (el('dash-supplier-due-list')) {
         el('dash-supplier-due-list').innerHTML = duelist.length
@@ -9688,8 +9695,118 @@ function renderDrillDown(type) {
         </tr>`;
       }).join('')}
       </tbody></table>` : emptyHTML('🚗','المخزن فارغ');
+
   }
-}
+  // ── تحصيلات مستحقة من العملاء (تفصيلي) ──
+  else if (type === 'overdue_collections') {
+    (el('dd-title-main')||el('dd-title')).textContent = 'تحصيلات مستحقة من العملاء';
+    const allCols  = d.allCollections || [];
+    const allSalesD = d.allSales || [];
+    const salesMap = {};
+    allSalesD.forEach(s => { if (s.inv_no) salesMap[s.inv_no] = +s.sale_price||0; });
+    const colMap = {};
+    allCols.forEach(c => {
+      if (!c.inv_no) return;
+      if (!colMap[c.inv_no]) colMap[c.inv_no] = {collected:0, due_date:c.due_date||''};
+      if (c.paid_date) colMap[c.inv_no].collected += +c.amount||0;
+      if (c.due_date && (!colMap[c.inv_no].due_date || c.due_date < colMap[c.inv_no].due_date))
+        colMap[c.inv_no].due_date = c.due_date;
+    });
+    const rows = allSalesD.map(s => {
+      if (!s.inv_no) return null;
+      const total = +s.sale_price||0;
+      const cm = colMap[s.inv_no]||{collected:0,due_date:''};
+      const remaining = total - cm.collected;
+      if (remaining < 0.01) return null;
+      const due_date = cm.due_date||s.sale_date||'';
+      const days = due_date ? daysSince(due_date) : null;
+      return {...s, _total:total, _collected:cm.collected, _remaining:remaining, _due:due_date, _days:days, _overdue: due_date && due_date <= d.todayStr};
+    }).filter(Boolean).sort((a,b)=> a._overdue&&!b._overdue?-1:!a._overdue&&b._overdue?1:(a._due||'')>(b._due||'')?1:-1);
+    const totRem = rows.reduce((s,r)=>s+r._remaining,0);
+    const totCol = rows.reduce((s,r)=>s+r._collected,0);
+    const overdueCount = rows.filter(r=>r._overdue).length;
+    const oldest = rows.filter(r=>r._overdue).sort((a,b)=>(a._due||'')>(b._due||'')?1:-1)[0];
+    ddKpis.style.gridTemplateColumns = 'repeat(4,1fr)';
+    ddKpis.innerHTML = `
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--accent)">${fmt(totRem)}</div><div class="dd-kpi-lbl">اجمالي الباقي المستحق</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--green)">${fmt(totCol)}</div><div class="dd-kpi-lbl">اجمالي المحصل</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--red)">${overdueCount}</div><div class="dd-kpi-lbl">فواتير متاخرة</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--red)">${oldest?daysSince(oldest._due)+' يوم':'---'}</div><div class="dd-kpi-lbl">اقدم فاتورة متاخرة</div></div>`;
+    const byCust = {};
+    rows.forEach(r=>{byCust[r.customer||'غير محدد']=(byCust[r.customer||'غير محدد']||0)+r._remaining;});
+    renderDDChart(Object.entries(byCust).sort((a,b)=>b[1]-a[1]).slice(0,8),'var(--accent)');
+    ddTable.innerHTML = rows.length ? `
+      <table class="data-table"><thead><tr>
+        <th>الملف</th><th>رقم الفاتورة</th><th>العميل</th><th>الشاصي</th>
+        <th style="text-align:left">اجمالي الفاتورة</th>
+        <th style="text-align:left">المحصل</th>
+        <th style="text-align:left;color:var(--accent)">الباقي</th>
+        <th>الاستحقاق</th><th>الايام</th>
+      </tr></thead><tbody>
+      ${rows.map(r=>{
+        const dc=r._overdue?'var(--red)':r._due?'var(--accent)':'var(--text2)';
+        const db=r._overdue?'var(--red-dim)':r._due?'var(--accent-dim)':'var(--card2)';
+        const dl=r._overdue?`متاخر ${r._days} يوم`:r._days!==null?`${r._days} يوم`:'---';
+        return `<tr onclick="openViewer('${r.file_no||''}')" style="cursor:pointer">
+          <td class="mono text-amber" style="font-weight:700">${r.file_no||'---'}</td>
+          <td class="mono">${r.inv_no||'---'}</td>
+          <td style="font-weight:600">${r.customer||'---'}</td>
+          <td class="mono" style="font-size:10px">${r.vin||'---'}</td>
+          <td class="mono text-blue" style="text-align:left">${fmt(r._total)}</td>
+          <td class="mono text-green" style="text-align:left">${fmt(r._collected)}</td>
+          <td class="mono" style="text-align:left;font-weight:900;color:var(--accent)">${fmt(r._remaining)}</td>
+          <td class="mono" style="font-size:11px">${r._due||'---'}</td>
+          <td><span style="background:${db};color:${dc};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${dl}</span></td>
+        </tr>`;
+      }).join('')}
+      </tbody></table>` : emptyHTML('💰','لا توجد تحصيلات مستحقة');
+  }
+
+  // ── مستحق للموردين (تفصيلي) ──
+  else if (type === 'supplier_due') {
+    (el('dd-title-main')||el('dd-title')).textContent = 'مستحقات الموردين - تفاصيل كل الصفقات';
+    const duelist = d.supplierDuelist || [];
+    const totalDue  = duelist.reduce((s,r)=>s+r.due,0);
+    const totalPaid = duelist.reduce((s,r)=>s+r.paid,0);
+    const totalPO   = duelist.reduce((s,r)=>s+r.total_purchase,0);
+    ddKpis.style.gridTemplateColumns = 'repeat(3,1fr)';
+    ddKpis.innerHTML = `
+      <div class="dd-kpi" style="background:var(--red-dim)"><div class="dd-kpi-val" style="color:var(--red)">${fmt(totalDue)}</div><div class="dd-kpi-lbl">اجمالي المستحق للموردين</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--green)">${fmt(totalPaid)}</div><div class="dd-kpi-lbl">اجمالي المدفوع</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--blue)">${fmt(totalPO)}</div><div class="dd-kpi-lbl">اجمالي قيمة الصفقات</div></div>`;
+    renderDDChart(duelist.slice(0,10).map(r=>[r.supplier+'·'+r.file_no,r.due]),'var(--red)');
+    ddTable.innerHTML = duelist.length ? `
+      <table class="data-table"><thead><tr>
+        <th>الملف</th><th>المورد</th><th>تاريخ PO</th>
+        <th style="text-align:left">قيمة الصفقة</th>
+        <th style="text-align:left">المدفوع</th>
+        <th style="text-align:left;color:var(--red)">المتبقي المستحق</th>
+        <th>%</th><th>الحالة</th>
+      </tr></thead><tbody>
+      ${duelist.map(r=>{
+        const pct=r.total_purchase>0?((r.paid/r.total_purchase)*100).toFixed(0):0;
+        const bc=+pct>=80?'var(--green)':+pct>=50?'var(--accent)':'var(--red)';
+        return `<tr onclick="openViewer('${r.file_no}')" style="cursor:pointer">
+          <td class="mono text-amber" style="font-weight:700">${r.file_no}</td>
+          <td style="font-weight:600">${r.supplier}</td>
+          <td class="mono" style="font-size:11px">${r.po_date||'---'}</td>
+          <td class="mono text-blue" style="text-align:left">${fmt(r.total_purchase)}</td>
+          <td class="mono text-green" style="text-align:left">${fmt(r.paid)}</td>
+          <td class="mono" style="text-align:left;font-weight:900;color:var(--red)">${fmt(r.due)}</td>
+          <td><div style="display:flex;align-items:center;gap:4px">
+            <div style="width:40px;height:5px;background:var(--card2);border-radius:3px;overflow:hidden">
+              <div style="width:${pct}%;height:100%;background:${bc};border-radius:3px"></div>
+            </div>
+            <span style="font-size:10px;color:${bc}">${pct}%</span>
+          </div></td>
+          <td><span class="badge badge-${statusClass(r.status)}">${r.status}</span></td>
+        </tr>`;
+      }).join('')}
+      </tbody></table>` : emptyHTML('🔴','لا توجد مستحقات للموردين');
+  }
+
+
+  }
 
 // ── DD mini chart ──
 function renderDDChart(entries, color) {
