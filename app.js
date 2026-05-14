@@ -59,11 +59,71 @@ const state = {
   currentTab: 0,
   dealsFilter: 'all',
   allDeals: [],
+  allDealsEnriched: [],
+  allVehicles: [],
+  allSales: [],
+  allExpenses: [],
+  allCollections: [],
   currentDeal: null,
   currentVehicles: [],
   currentSales: [],
-  chartOfAccounts: {},  // cache: code -> { name, type, parent_code }
+  chartOfAccounts: {},
+  _cacheSystem: null,   // النظام اللي اتحمل منه الـ cache
+  _cacheTime: 0,        // وقت آخر تحميل
 };
+
+// هل الـ cache محتاج refresh؟
+function cacheStale() {
+  return state._cacheSystem !== state.system || (Date.now() - state._cacheTime) > 60000;
+}
+
+// جيب البيانات من الـ cache أو حمّلها
+async function ensureCache() {
+  if (!cacheStale()) return;
+  const sys = state.system;
+  const [deals, vehicles, sales, expenses, collections] = await Promise.all([
+    apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, order:'created_at.desc' }),
+    apiGet('vehicles',        { select:'*', system_type:`eq.${sys}` }),
+    apiGet('sales',           { select:'*', system_type:`eq.${sys}` }),
+    apiGet('expenses',        { select:'*', system_type:`eq.${sys}` }),
+    apiGet('collections',     { select:'*', system_type:`eq.${sys}` }),
+  ]);
+  state.allDeals       = deals       || [];
+  state.allVehicles    = vehicles    || [];
+  state.allSales       = sales       || [];
+  state.allExpenses    = expenses    || [];
+  state.allCollections = collections || [];
+  state._cacheSystem   = sys;
+  state._cacheTime     = Date.now();
+
+  // بناء الـ enriched deals
+  const vehicleMap = {}, salesMap = {}, expMap = {};
+  state.allVehicles.forEach(v => { vehicleMap[v.file_no]=vehicleMap[v.file_no]||[]; vehicleMap[v.file_no].push(v); });
+  state.allSales.forEach(s   => { salesMap[s.file_no]=salesMap[s.file_no]||[];      salesMap[s.file_no].push(s); });
+  state.allExpenses.forEach(e=> { expMap[e.file_no]=expMap[e.file_no]||[];          expMap[e.file_no].push(e); });
+
+  state.allDealsEnriched = state.allDeals.map(d => {
+    const fn = d.file_no;
+    const vList = vehicleMap[fn]||[], sList = salesMap[fn]||[], eList = expMap[fn]||[];
+    const soldCount = sList.filter(s=>s.post_status==='posted').length;
+    const totalCost = +d.total_purchase || vList.reduce((s,v)=>s+(+v.purchase_price||0),0);
+    const totalExp  = eList.filter(e=>e.post_status==='posted').reduce((s,e)=>s+(+e.amount||0),0);
+    const totalSale = sList.filter(s=>s.post_status==='posted').reduce((s,s2)=>s+(+s2.sale_price||0),0);
+    const soldVins  = new Set(sList.filter(s=>s.post_status==='posted').map(s=>s.vin));
+    const fullCost  = totalCost + totalExp;
+    return { ...d,
+      _vTotal:vList.length, _vSold:soldCount, _vLeft:Math.max(0,vList.length-soldCount),
+      _totalCost:totalCost, _totalExp:totalExp, _fullCost:fullCost,
+      _totalSale:totalSale, _profit:totalSale-fullCost, _remaining:fullCost-totalSale,
+      _stockVehicles: vList.filter(v => !soldVins.has(v.vin)),
+    };
+  });
+}
+
+// إبطال الـ cache عند أي تغيير
+function invalidateCache() {
+  state._cacheTime = 0;
+}
 
 // ════════════════════════════════════════
 // TOKEN REFRESH
@@ -245,7 +305,6 @@ function logout() {
 // TRANSACTIONS VIEW
 // ════════════════════════════════════════
 const TX_CONFIG = {
-  deals:       { title:'الصفقات',         icon:'📁', color:'var(--accent)',  table:'purchase_orders', amountField:'total_purchase', dateField:'po_date',   labelField:'supplier' },
   sales:       { title:'المبيعات',         icon:'🧾', color:'var(--green)',  table:'sales',           amountField:'sale_price',     dateField:'sale_date', labelField:'customer' },
   expenses:    { title:'المصاريف',         icon:'💸', color:'var(--red)',    table:'expenses',        amountField:'amount',         dateField:'exp_date',  labelField:'description' },
   collections: { title:'التحصيلات',        icon:'💰', color:'var(--blue)',   table:'collections',     amountField:'amount',         dateField:'paid_date', labelField:'customer' },
@@ -257,7 +316,13 @@ const TX_CONFIG = {
 let _txType = 'deals';
 
 function showTransactions(type) {
-  _txType = type || 'deals';
+  // الصفقات موجودة في الداشبورد — لا نكررها
+  if (!type || type === 'deals') {
+    showDashboard();
+    return;
+  }
+
+  _txType = type;
   const cfg = TX_CONFIG[_txType];
   sessionStorage.setItem('tm_last_view', 'tx:'+_txType);
 
@@ -350,10 +415,6 @@ async function loadTransactions() {
     if (type === 'opex') {
       // operating_expenses has no post_status
       const r = await fetch(buildUrl('operating_expenses', 'exp_date').replace('&or=(post_status.eq.posted,post_status.is.null)','').replace('&post_status=eq.draft',''), { headers: headers() });
-      rows = r.ok ? await r.json() : [];
-    } else if (type === 'deals') {
-      // purchase_orders
-      const r = await fetch(buildUrl('purchase_orders', 'po_date'), { headers: headers() });
       rows = r.ok ? await r.json() : [];
     } else {
       const r = await fetch(buildUrl(cfg.table, cfg.dateField), { headers: headers() });
@@ -615,51 +676,21 @@ async function loadDashboard() {
   const in7   = new Date(Date.now() + 7*864e5).toISOString().split('T')[0];
 
   try {
-    const [deals, vehicles, allSales, allExpenses, collections, drafts] = await Promise.all([
-      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, order:'created_at.desc' }),
-      apiGet('vehicles',        { select:'*', system_type:`eq.${sys}` }),
-      apiGet('sales',           { select:'*', system_type:`eq.${sys}` }),
-      apiGet('expenses',        { select:'*', system_type:`eq.${sys}` }),
-      apiGet('collections',     { select:'*', system_type:`eq.${sys}` }),
-      apiGet('journal_entries', { select:'id', system_type:`eq.${sys}`, post_status:'eq.draft' }),
-    ]);
-
-    state.allDeals = deals || [];
+    await ensureCache();
+    const deals       = state.allDeals;
+    const vehicles    = state.allVehicles;
+    const allSales    = state.allSales;
+    const allExpenses = state.allExpenses;
+    const collections = state.allCollections;
+    const drafts      = await apiGet('journal_entries', { select:'id', system_type:`eq.${sys}`, post_status:'eq.draft' });
 
     // ── فلتر بيانات الفترة ──
     const inPeriod = (dateStr) => dateStr && dateStr >= from && dateStr <= to;
     const periodSales = (allSales||[]).filter(s => inPeriod(s.sale_date||s.created_at?.split('T')[0]));
     const periodExp   = (allExpenses||[]).filter(e => inPeriod(e.exp_date||e.expense_date||e.created_at?.split('T')[0]));
 
-    // ── Maps ──
-    const vehicleMap = {}, salesMap = {}, expMap = {};
-    (vehicles||[]).forEach(v  => { vehicleMap[v.file_no] = vehicleMap[v.file_no]||[]; vehicleMap[v.file_no].push(v); });
-    (allSales||[]).forEach(s  => { salesMap[s.file_no]   = salesMap[s.file_no]||[];   salesMap[s.file_no].push(s); });
-    (allExpenses||[]).forEach(e=> { expMap[e.file_no]    = expMap[e.file_no]||[];     expMap[e.file_no].push(e); });
-
-    // ── Enrich deals ──
-    state.allDealsEnriched = (deals||[]).map(d => {
-      const fn     = d.file_no;
-      const vList  = vehicleMap[fn] || [];
-      const sList  = salesMap[fn]   || [];
-      const eList  = expMap[fn]     || [];
-      const soldVins  = new Set(sList.filter(s=>s.post_status==='posted').map(s=>s.vin));
-      const totalCost = +d.total_purchase || vList.reduce((s,v)=>s+(+v.purchase_price||0),0);
-      const totalExp  = eList.filter(e=>e.post_status==='posted').reduce((s,e)=>s+(+e.amount||0),0);
-      const totalSale = sList.filter(s=>s.post_status==='posted').reduce((s,s2)=>s+(+s2.sale_price||0),0);
-      const soldCount = sList.filter(s=>s.post_status==='posted').length;
-      const fullCost  = totalCost + totalExp;
-      return {
-        ...d,
-        _vTotal: vList.length, _vSold: soldCount,
-        _vLeft:  Math.max(0, vList.length - soldCount),
-        _totalCost: totalCost, _totalExp: totalExp,
-        _fullCost: fullCost, _totalSale: totalSale,
-        _profit: totalSale - fullCost,
-        _remaining: fullCost - totalSale,
-        _stockVehicles: vList.filter(v => !soldVins.has(v.vin)),
-      };
-    });
+    // ── Enrich deals — من الـ cache ──
+    // ensureCache() بنت allDealsEnriched بالفعل
 
     // ── حسابات الفترة ──
     const totSales      = periodSales.reduce((s,r)=>s+(+r.sale_price||0),0);
@@ -955,17 +986,28 @@ function renderDashExpBreakdown(expenses) {
 
 
 
-function renderDealsTable(deals) {
-  el('dealsCountLabel').textContent = `${deals.length} ملف`;
+// دالة موحدة لعرض جدول الصفقات
+// targetId: العنصر اللي هيتكتب فيه
+// opts.showSales: يضيف عمود المبيعات (للتقارير)
+// opts.totalRow: يضيف صف الإجمالي
+function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
+  const target = el(targetId);
+  if (!target) return;
+
+  const showSales = opts.showSales || false;
+  const countLabel = el('dealsCountLabel');
+  if (countLabel) countLabel.textContent = `${deals.length} ملف`;
+
   if (!deals.length) {
-    el('dealsTableBody').innerHTML = `<div class="empty-state"><div class="e-icon">📂</div><p>لا توجد صفقات بعد</p><small>أضف ملف جديد للبدء</small></div>`;
+    target.innerHTML = `<div class="empty-state"><div class="e-icon">📂</div><p>لا توجد صفقات بعد</p><small>أضف ملف جديد للبدء</small></div>`;
     return;
   }
+
   const rows = deals.map(d => {
-    const profitColor = d._profit > 0 ? 'var(--green)' : d._profit < 0 ? 'var(--red)' : 'var(--text2)';
-    const remaining   = (d._fullCost||0) - (d._totalSale||0);
+    const profitColor   = d._profit > 0 ? 'var(--green)' : d._profit < 0 ? 'var(--red)' : 'var(--text2)';
+    const remaining     = (d._fullCost||0) - (d._totalSale||0);
     const fileNoDisplay = d.file_no || '⚠️ بدون رقم';
-    const canOpen = !!d.file_no;
+    const canOpen       = !!d.file_no;
     return `<tr onclick="${canOpen?`openViewer('${d.file_no}')`:'void(0)'}" style="cursor:${canOpen?'pointer':'default'}">
       <td>
         <div style="display:flex;align-items:center;gap:6px">
@@ -978,34 +1020,61 @@ function renderDealsTable(deals) {
         <div style="font-size:11px;color:var(--text2);margin-top:2px">${fmtDate(d.po_date)}</div>
       </td>
       <td>
-        <div style="font-weight:600">${d.supplier||'—'}</div>
+        <div style="font-weight:600">${d.supplier||d.file||'—'}</div>
         <div style="font-size:11px;color:var(--text2)">${d.notes||''}</div>
       </td>
       <td style="text-align:center">
         <div style="font-family:var(--mono);font-weight:700">${d._vTotal||0}</div>
         <div style="font-size:10px;color:var(--text2)">${d._vSold||0} مباع · ${d._vLeft||0} متبقي</div>
       </td>
-      <td class="mono text-blue">${fmt(d._totalCost||d.total_purchase)}</td>
-      <td class="mono text-red">${fmt(d._totalExp||0)}</td>
-      <td class="mono" style="font-weight:700;color:var(--text)">${fmt(d._fullCost||0)}</td>
-      <td class="mono" style="font-weight:700;color:${profitColor}">${fmt(d._profit||0)}</td>
-      <td class="mono" style="color:${remaining>0?'var(--red)':remaining<0?'var(--green)':'var(--text2)'};font-size:12px">
-        ${remaining > 0 ? fmt(remaining)+'  غير مغطى' : remaining < 0 ? fmt(Math.abs(remaining))+' ربح ✓' : '✓ متعادل'}
+      <td class="mono text-blue">${fmt(d._totalCost||d.total_purchase||d.purchase||0)}</td>
+      <td class="mono text-red">${fmt(d._totalExp||d.expenses||0)}</td>
+      <td class="mono" style="font-weight:700">${fmt(d._fullCost||d.fullCost||0)}</td>
+      ${showSales ? `<td class="mono text-green">${fmt(d._totalSale||d.sales||0)}</td>` : ''}
+      <td class="mono" style="font-weight:700;color:${profitColor}">
+        ${(d._profit||d.profit||0)>=0?'▲':'▼'} ${fmt(Math.abs(d._profit||d.profit||0))}
       </td>
-      <td><span class="badge badge-${statusClass(d.status)}">${d.status}</span></td>
+      <td class="mono" style="color:${remaining>0?'var(--red)':remaining<0?'var(--green)':'var(--text2)'};font-size:12px">
+        ${remaining > 0 ? fmt(remaining)+' غير مغطى' : remaining < 0 ? fmt(Math.abs(remaining))+' ربح ✓' : '✓ متعادل'}
+      </td>
+      <td><span class="badge badge-${statusClass(d.status)}">${d.status||'—'}</span></td>
     </tr>`;
   }).join('');
 
-  el('dealsTableBody').innerHTML = `
+  // صف الإجمالي (للتقارير)
+  let totalRow = '';
+  if (opts.totalRow) {
+    const tp = deals.reduce((s,d)=>s+(d._totalCost||d.purchase||0),0);
+    const te = deals.reduce((s,d)=>s+(d._totalExp||d.expenses||0),0);
+    const ts = deals.reduce((s,d)=>s+(d._totalSale||d.sales||0),0);
+    const tP = deals.reduce((s,d)=>s+(d._profit||d.profit||0),0);
+    totalRow = `<tr style="background:var(--card2);font-weight:700;border-top:2px solid var(--border)">
+      <td colspan="3">الإجمالي (${deals.length} صفقة)</td>
+      <td class="mono text-blue">${fmt(tp)}</td>
+      <td class="mono text-red">${fmt(te)}</td>
+      <td class="mono">${fmt(tp+te)}</td>
+      ${showSales ? `<td class="mono text-green">${fmt(ts)}</td>` : ''}
+      <td class="mono" style="color:${tP>=0?'var(--green)':'var(--red)'}">
+        ${tP>=0?'▲':'▼'} ${fmt(Math.abs(tP))}
+      </td>
+      <td></td><td></td>
+    </tr>`;
+  }
+
+  target.innerHTML = `
     <table class="data-table">
       <thead><tr>
         <th>رقم الملف</th><th>المورد / البيان</th>
         <th style="text-align:center">السيارات</th>
-        <th>تكلفة الشراء</th><th>المصاريف</th>
-        <th>التكلفة الكاملة</th><th>الربح/الخسارة</th>
-        <th>متبقي / ربح</th><th>الحالة</th>
+        <th style="color:var(--blue)">تكلفة الشراء</th>
+        <th style="color:var(--red)">المصاريف</th>
+        <th>التكلفة الكاملة</th>
+        ${showSales ? '<th style="color:var(--green)">المبيعات</th>' : ''}
+        <th>الربح/الخسارة</th>
+        <th>متبقي / ربح</th>
+        <th>الحالة</th>
       </tr></thead>
-      <tbody>${rows}</tbody>
+      <tbody>${rows}${totalRow}</tbody>
     </table>`;
 }
 
@@ -1454,22 +1523,39 @@ async function loadSalesTab(fn, sys) {
 
 async function reprintInvoice(invNo, fn) {
   try {
-    const data = await apiGet('sales', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, inv_no:`eq.${invNo}` });
+    // جيب بيانات الفاتورة — من الـ cache أو fresh fetch
+    await ensureCache();
+    let data = state.allSales.filter(s => s.file_no === fn && s.inv_no === invNo);
+    if (!data.length) {
+      // fallback: fresh fetch لو مش في الـ cache
+      data = await apiGet('sales', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, inv_no:`eq.${invNo}` });
+    }
     if (!data?.length) { toast('لم يتم إيجاد بيانات الفاتورة','err'); return; }
     const s = data[0];
-    const items = data.map(d => ({
-      vin: d.vin||'', model:'', plate:'', color:'',
-      price: +d.sale_price||0, vnote: d.notes||'', purchasePrice:0
-    }));
-    // Try to enrich with vehicle data
-    try {
-      const vehicles = await apiGet('vehicles', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
-      items.forEach(item => {
-        const v = (vehicles||[]).find(v=>v.vin===item.vin);
-        if (v) { item.model=v.model||v.vehicle_type||''; item.plate=v.plate||''; item.color=v.color||''; item.engine=v.engine_size||''; item.year=v.year||''; }
-      });
-    } catch(e) {}
-    printSaleInvoice({ invNo, customer:s.customer, date:s.sale_date, fn, notes:s.notes||'', items, total: items.reduce((t,i)=>t+i.price,0) });
+
+    // جيب بيانات السيارات من الـ cache
+    const vehicles = state.allVehicles.filter(v => v.file_no === fn);
+
+    const items = data.map(d => {
+      const v = vehicles.find(v => v.vin === d.vin);
+      return {
+        vin:           d.vin||'',
+        model:         v?.model||v?.vehicle_type||'',
+        plate:         v?.plate||'',
+        color:         v?.color||'',
+        engine:        v?.engine_size||'',
+        year:          v?.year||'',
+        price:         +d.sale_price||0,
+        vnote:         d.notes||'',
+        purchasePrice: +v?.purchase_price||0,
+      };
+    });
+
+    printSaleInvoice({
+      invNo, customer: s.customer, date: s.sale_date,
+      fn, notes: s.notes||'',
+      items, total: items.reduce((t,i)=>t+i.price,0)
+    });
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
@@ -2544,6 +2630,7 @@ async function submitNewFile() {
     await logAudit('INSERT','purchase_orders', fileNo, null, poData);
     closeModal('newFileModal');
     toast(`✅ تم إنشاء الملف ${fileNo} — ${vehicles.length} سيارة`, 'ok');
+    invalidateCache();
     await loadDashboard();
     showDashboard();
 
@@ -3312,6 +3399,7 @@ async function submitCollection() {
     if (entryStatus()==='posted' && cust) await je_collection({sys:state.system,date:paid||today(),amount,fileNo:fn,customer:cust,invNo:invNo||'',method});
     closeModal('collectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
+    invalidateCache();
     if (state.currentTab === 5) loadCollectionsTab(fn, state.system);
     if (state.currentTab === 0) loadSummaryTab(fn, state.system);
   } catch(e) { showFieldErr('colError','خطأ: '+e.message); }
@@ -3514,6 +3602,7 @@ async function submitPayout() {
     if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo:fn,partner,method});
     closeModal('payoutModal');
     toast(`✅ تم تسجيل ${type} للشريك ${partner}`,'ok');
+    invalidateCache();
     if (state.currentTab === 6) loadPayoutsTab(fn, state.system);
     if (state.currentTab === 0) loadSummaryTab(fn, state.system);
   } catch(e) { showFieldErr('poutError','خطأ: '+e.message); }
@@ -3806,6 +3895,7 @@ async function submitQuickSale() {
     if (entryStatus()==='posted') await je_sale({sys:state.system,date,amount:price,cost:0,fileNo,customer,invNo:invNo||'QS'});
     closeModal('quickSaleModal');
     toast('✅ تم تسجيل البيع بنجاح','ok');
+    invalidateCache();
     loadJournal();
   } catch(e) { showFieldErr('qsSaleError','خطأ: '+e.message); }
 }
@@ -3850,6 +3940,7 @@ async function submitQuickCollection() {
     if (entryStatus()==='posted' && customer) await je_collection({sys:state.system,date:paid||today(),amount,fileNo,customer,invNo,method});
     closeModal('quickCollectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
+    invalidateCache();
     loadJournal();
     if (state.currentTab === 5 && state.currentFileNo === fileNo) loadCollectionsTab(fileNo, state.system);
   } catch(e) { showFieldErr('qsColError','خطأ: '+e.message); }
@@ -3880,6 +3971,7 @@ async function submitQuickExpense() {
     if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount,fileNo,desc,expType:type,method});
     closeModal('quickExpenseModal');
     toast('✅ تم تسجيل المصروف بنجاح','ok');
+    invalidateCache();
     loadJournal();
   } catch(e) { showFieldErr('qsExpError','خطأ: '+e.message); }
 }
@@ -7329,7 +7421,8 @@ async function showAllSales() {
 async function loadAllSales() {
   el('allSalesTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
-    const data = await apiGet('sales', { select:'*', system_type:`eq.${state.system}`, order:'sale_date.desc' });
+    await ensureCache();
+    const data = [...state.allSales].sort((a,b)=>(b.sale_date||'').localeCompare(a.sale_date||''));
     if (!data?.length) { el('allSalesTable').innerHTML = emptyHTML('🤝','لا توجد مبيعات'); return; }
     const total = data.reduce((s,r)=>s+(+r.sale_price||0),0);
     const rows = data.map(s=>`<tr onclick="openViewer('${s.file_no}')" style="cursor:pointer">
@@ -7364,7 +7457,8 @@ async function showAllCollections() {
 async function loadAllCollections() {
   el('allCollectionsTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
-    const data = await apiGet('collections', { select:'*', system_type:`eq.${state.system}`, order:'paid_date.desc' });
+    await ensureCache();
+    const data = [...state.allCollections].sort((a,b)=>(b.paid_date||'').localeCompare(a.paid_date||''));
     if (!data?.length) { el('allCollectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
     const total = data.reduce((s,r)=>s+(+r.amount||0),0);
     const rows = data.map(r=>`<tr onclick="openViewer('${r.file_no}')" style="cursor:pointer">
@@ -7431,12 +7525,14 @@ async function runReport() {
 
   try {
     if (type === 'profit') {
-      const [sales, expenses, deals, opexItems] = await Promise.all([
+      await ensureCache();
+      const [salesPeriod, opexItems] = await Promise.all([
         apiGetDateRange('sales', 'sale_date', from, to),
-        apiGet('expenses', { select:'*', system_type:`eq.${sys}` }),
-        apiGet('purchase_orders', { select:'file_no,total_purchase,supplier,status', system_type:`eq.${sys}` }),
         fetchOpexForJournal(from, to, sys),
       ]);
+      const sales    = salesPeriod;
+      const expenses = state.allExpenses;
+      const deals    = state.allDeals;
 
       // Map التكاليف
       const dealMap = {};
@@ -7505,109 +7601,77 @@ async function runReport() {
           <div style="font-size:10px;color:var(--text2);margin-top:2px">بعد خصم التشغيلية</div>
         </div>`;
 
-      // إثراء rows_data بمعلومات السيارات والحالة من allDealsEnriched
+      // إثراء rows_data من allDealsEnriched
       const enriched = state.allDealsEnriched || [];
       const enrichMap = {};
       enriched.forEach(d => { enrichMap[d.file_no] = d; });
 
       reportState.data = rows_data;
-      const tableRows = rows_data.map(v => {
+
+      // دمج بيانات الـ enriched مع rows_data
+      const enrichedRows = rows_data.map(v => {
         const en = enrichMap[v.file] || {};
-        const remaining = v.fullCost - v.sales;
-        const profitColor = v.profit > 0 ? 'var(--green)' : v.profit < 0 ? 'var(--red)' : 'var(--text2)';
-        return `
-        <tr onclick="openViewer('${v.file}')" style="cursor:pointer">
-          <td>
-            <div style="display:flex;align-items:center;gap:6px">
-              <span class="mono text-amber" style="font-weight:700">${v.file}</span>
-              <button onclick="event.stopPropagation();openNewFileModal('${v.file}')"
-                style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:13px;padding:2px 4px" title="تعديل">✏️</button>
-            </div>
-            <div style="font-size:11px;color:var(--text2)">${fmtDate(en.po_date||'')}</div>
-          </td>
-          <td>
-            <div style="font-weight:600">${v.supplier||'—'}</div>
-            <div style="font-size:11px;color:var(--text2)">${en.notes||''}</div>
-          </td>
-          <td style="text-align:center">
-            <div style="font-family:var(--mono);font-weight:700">${en._vTotal||0}</div>
-            <div style="font-size:10px;color:var(--text2)">${en._vSold||0} مباع · ${en._vLeft||0} متبقي</div>
-          </td>
-          <td class="mono text-blue">${fmt(v.purchase)}</td>
-          <td class="mono text-red">${fmt(v.expenses)}</td>
-          <td class="mono" style="font-weight:700">${fmt(v.fullCost)}</td>
-          <td class="mono text-green">${fmt(v.sales)}</td>
-          <td class="mono" style="font-weight:700;color:${profitColor}">
-            ${v.profit>=0?'▲':'▼'} ${fmt(Math.abs(v.profit))}
-          </td>
-          <td class="mono" style="color:${remaining>0?'var(--red)':remaining<0?'var(--green)':'var(--text2)'};font-size:12px">
-            ${remaining > 0 ? fmt(remaining)+' غير مغطى' : remaining < 0 ? fmt(Math.abs(remaining))+' ربح ✓' : '✓ متعادل'}
-          </td>
-          <td><span class="badge badge-${statusClass(v.status)}">${v.status}</span></td>
-        </tr>`; }).join('');
+        return { ...v,
+          file_no: v.file, supplier: v.supplier, notes: en.notes||'',
+          po_date: en.po_date||'', status: v.status,
+          _vTotal: en._vTotal||0, _vSold: en._vSold||0, _vLeft: en._vLeft||0,
+          _totalCost: v.purchase, _totalExp: v.expenses,
+          _fullCost: v.fullCost, _totalSale: v.sales, _profit: v.profit,
+        };
+      });
 
-      const totalRow = `
-        <tr style="background:var(--card2);font-weight:700;border-top:2px solid var(--border)">
-          <td colspan="3" style="font-weight:700">الإجمالي (${rows_data.length} صفقة)</td>
-          <td class="mono text-blue">${fmt(tp)}</td>
-          <td class="mono text-red">${fmt(te)}</td>
-          <td class="mono">${fmt(tp+te)}</td>
-          <td class="mono text-green">${fmt(ts)}</td>
-          <td class="mono" style="font-weight:900;color:${dealProfit>=0?'var(--green)':'var(--red)'}">
-            ${dealProfit>=0?'▲':'▼'} ${fmt(Math.abs(dealProfit))}
-          </td>
-          <td></td><td></td>
-        </tr>`;
-
-      el('reportTable').innerHTML = tableRows
-        ? `<table class="data-table">
-            <thead><tr>
-              <th>رقم الملف</th><th>المورد / البيان</th>
-              <th style="text-align:center">السيارات</th>
-              <th style="color:var(--blue)">تكلفة الشراء</th>
-              <th style="color:var(--red)">المصاريف</th>
-              <th>التكلفة الكاملة</th>
-              <th style="color:var(--green)">المبيعات</th>
-              <th>الربح / الخسارة</th>
-              <th>متبقي / ربح</th>
-              <th>الحالة</th>
-            </tr></thead>
-            <tbody>${tableRows}${totalRow}</tbody>
-           </table>`
+      el('reportTable').innerHTML = enrichedRows.length
+        ? '<div id="reportDealsTable"></div>'
         : emptyHTML('📈','لا توجد بيانات في هذه الفترة');
 
+      if (enrichedRows.length) {
+        renderDealsTable(enrichedRows, 'reportDealsTable', { showSales: true, totalRow: true });
+      }
+
     } else if (type === 'sales') {
-      const data = await apiGetDateRange('sales','sale_date',from,to,{order:'sale_date.desc'});
-      const total = (data||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
-      reportState.data = data||[];
+      await ensureCache();
+      const data = state.allSales.filter(s => {
+        const d = s.sale_date || s.created_at?.split('T')[0] || '';
+        return d >= from && d <= to;
+      }).sort((a,b)=>(b.sale_date||'').localeCompare(a.sale_date||''));
+      const total = data.reduce((s,r)=>s+(+r.sale_price||0),0);
+      reportState.data = data;
       el('reportKpis').innerHTML = `
-        <div class="j-kpi"><div class="j-kpi-label">عدد المبيعات</div><div class="j-kpi-val">${(data||[]).length}</div></div>
+        <div class="j-kpi"><div class="j-kpi-label">عدد المبيعات</div><div class="j-kpi-val">${data.length}</div></div>
         <div class="j-kpi"><div class="j-kpi-label">إجمالي</div><div class="j-kpi-val text-green">${fmt(total)}</div></div>`;
-      const rows = (data||[]).map(s=>`<tr onclick="openViewer('${s.file_no}')" style="cursor:pointer">
+      const rows = data.map(s=>`<tr onclick="openViewer('${s.file_no}')" style="cursor:pointer">
         <td class="mono text-muted">${fmtDate(s.sale_date)}</td><td class="mono text-amber">${s.file_no}</td>
         <td class="mono" style="direction:ltr">${s.vin||'—'}</td><td>${s.customer||'—'}</td>
         <td class="mono text-green">${fmt(s.sale_price)}</td></tr>`).join('');
       el('reportTable').innerHTML = rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>VIN</th><th>العميل</th><th>السعر</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('💹','لا توجد مبيعات');
 
     } else if (type === 'expenses') {
-      const data = await apiGetDateRange('expenses','exp_date',from,to,{order:'exp_date.desc'});
-      const total = (data||[]).reduce((s,r)=>s+(+r.amount||0),0);
-      reportState.data = data||[];
+      await ensureCache();
+      const data = state.allExpenses.filter(e => {
+        const d = e.exp_date || e.expense_date || e.created_at?.split('T')[0] || '';
+        return d >= from && d <= to;
+      }).sort((a,b)=>(b.exp_date||'').localeCompare(a.exp_date||''));
+      const total = data.reduce((s,r)=>s+(+r.amount||0),0);
+      reportState.data = data;
       el('reportKpis').innerHTML = `
-        <div class="j-kpi"><div class="j-kpi-label">عدد المصاريف</div><div class="j-kpi-val">${(data||[]).length}</div></div>
+        <div class="j-kpi"><div class="j-kpi-label">عدد المصاريف</div><div class="j-kpi-val">${data.length}</div></div>
         <div class="j-kpi"><div class="j-kpi-label">إجمالي</div><div class="j-kpi-val text-red">${fmt(total)}</div></div>`;
-      const rows = (data||[]).map(e=>`<tr>
+      const rows = data.map(e=>`<tr>
         <td class="mono text-muted">${fmtDate(e.exp_date||e.expense_date)}</td><td class="mono text-amber">${e.file_no||'—'}</td>
         <td>${e.description||'—'}</td><td>${e.exp_type||e.category||'—'}</td>
         <td class="mono text-red">${fmt(e.amount)}</td></tr>`).join('');
       el('reportTable').innerHTML = rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>البيان</th><th>النوع</th><th>المبلغ</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('💸','لا توجد مصاريف');
 
     } else if (type === 'partners') {
-      const [payouts, payments, allPartnerDeals] = await Promise.all([
+      await ensureCache();
+      const [payouts, allPartnerDeals] = await Promise.all([
         apiGetDateRange('partner_payouts','pay_date',from,to,{order:'pay_date.desc'}),
-        apiGetDateRange('payments','pay_date',from,to),
         apiGet('partners_master',{ select:'partner', system_type:`eq.${sys}` }),
       ]);
+      // payments من الـ cache مع فلتر تاريخ
+      const payments = state.allPayments
+        ? state.allPayments.filter(p => { const d = p.pay_date||''; return d >= from && d <= to; })
+        : await apiGetDateRange('payments','pay_date',from,to);
 
       // قائمة الشركاء الفريدة
       const uniquePartners = [...new Set((allPartnerDeals||[]).map(p=>p.partner))].filter(Boolean);
@@ -7769,11 +7833,10 @@ async function runInventoryReport(sys) {
   el('reportKpis').innerHTML = '';
   el('reportTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل المخزون...</div>';
   try {
-    const [vehicles, sales, deals] = await Promise.all([
-      apiGet('vehicles',        { select:'*', system_type:`eq.${sys}`, order:'created_at.desc' }),
-      apiGet('sales',           { select:'vin,file_no,sale_price,sale_date,customer', system_type:`eq.${sys}` }),
-      apiGet('purchase_orders', { select:'file_no,supplier,po_date,total_purchase,status', system_type:`eq.${sys}` }),
-    ]);
+    await ensureCache();
+    const vehicles = state.allVehicles;
+    const sales    = state.allSales;
+    const deals    = state.allDeals;
 
     const soldVins    = new Set((sales||[]).map(s=>s.vin).filter(Boolean));
     const dealMap     = {};
@@ -9146,6 +9209,7 @@ async function submitOpex() {
     await logAudit('INSERT','operating_expenses', null, null, payload);
     closeModal('opexModal');
     toast('✅ تم تسجيل المصروف التشغيلي','ok');
+    invalidateCache();
     await loadOpex();
   } catch(e) { showFieldErr('opexError','خطأ: '+e.message); }
 }
