@@ -62,6 +62,7 @@ const state = {
   currentDeal: null,
   currentVehicles: [],
   currentSales: [],
+  chartOfAccounts: {},  // cache: code -> { name, type, parent_code }
 };
 
 // ════════════════════════════════════════
@@ -464,6 +465,7 @@ function initApp() {
   document.getElementById('userName').textContent = name;
   document.getElementById('userEmailDisplay').textContent = email;
 
+  loadChartOfAccounts();
   loadDashboard().then(() => {
     // Restore last view after refresh
     const lastView = sessionStorage.getItem('tm_last_view');
@@ -481,12 +483,35 @@ function initApp() {
 // ════════════════════════════════════════
 // SYSTEM SWITCH
 // ════════════════════════════════════════
+// تحميل شجرة الحسابات وتخزينها في cache
+async function loadChartOfAccounts() {
+  try {
+    const rows = await apiGet('chart_of_accounts', {
+      select: 'code,name,type,parent_code',
+      system_type: `eq.${state.system}`,
+      is_active: 'eq.true',
+    });
+    state.chartOfAccounts = {};
+    (rows||[]).forEach(r => { state.chartOfAccounts[r.code] = r; });
+  } catch(e) { console.warn('loadChartOfAccounts:', e.message); }
+}
+
+// جيب اسم الحساب من الـ cache
+function getAccountName(code) {
+  return state.chartOfAccounts[code]?.name || code;
+}
+
+function getAccountTypeCOA(code) {
+  return state.chartOfAccounts[code]?.type || getAccountType(code);
+}
+
 function switchSystem(sys) {
   state.system = sys;
   state.currentFileNo = null;
   document.getElementById('sysBox').classList.toggle('active', sys === 'BOX');
   document.getElementById('sysTm').classList.toggle('active', sys === 'TM');
   updateSystemUI();
+  loadChartOfAccounts();
   showDashboard();
   loadDashboard();
 }
@@ -581,10 +606,11 @@ async function loadDashboard() {
       const totalCost = +d.total_purchase || vList.reduce((s,v)=>s+(+v.purchase_price||0),0);
       const totalExp  = eList.filter(e=>e.post_status==='posted').reduce((s,e)=>s+(+e.amount||0),0);
       const totalSale = sList.filter(s=>s.post_status==='posted').reduce((s,s2)=>s+(+s2.sale_price||0),0);
+      const soldCount = sList.filter(s=>s.post_status==='posted').length;
       const fullCost  = totalCost + totalExp;
       return {
         ...d,
-        _vTotal: vList.length, _vSold: sList.length,
+        _vTotal: vList.length, _vSold: soldCount,
         _vLeft:  vList.length - sList.length,
         _totalCost: totalCost, _totalExp: totalExp,
         _fullCost: fullCost, _totalSale: totalSale,
@@ -602,7 +628,7 @@ async function loadDashboard() {
     const periodPurchaseDeals= (deals||[]).filter(d => { const dt = d.po_date || d.created_at?.split('T')[0] || ''; return dt >= from && dt <= to; });
     const totPurchase        = periodPurchaseDeals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
     const periodDealExp = (allExpenses||[]).filter(e => periodFileNos.has(e.file_no)).reduce((s,e)=>s+(+e.amount||0),0);
-    const profit        = totSales - totPurchase - periodDealExp;
+    const profit        = totSales - totPurchase - totExp;
     const margin        = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
     const soldVinsAll   = new Set((allSales||[]).map(s=>s.vin));
     const stockVehicles = (vehicles||[]).filter(v => !soldVinsAll.has(v.vin));
@@ -623,7 +649,7 @@ async function loadDashboard() {
 
     // ── KPIs ──
     const totCollections = (_ddState.data.periodCollections||[]).reduce((s,c)=>s+(+c.amount||0),0);
-    const totFullCost    = totPurchase + periodDealExp;
+    const totFullCost    = totPurchase + totExp;
 
     const setKpi = (id, val, color) => { const e = el(id); if(!e) return; animateCount(e, String(val), color); };
     setKpi('kpi-purchase',    fmt(totPurchase),    'var(--blue)');
@@ -638,7 +664,7 @@ async function loadDashboard() {
     if(el('kpi-sales-sub'))       el('kpi-sales-sub').textContent       = `${periodSales.length} فاتورة`;
     if(el('kpi-collections-sub')) el('kpi-collections-sub').textContent = `${(_ddState.data.periodCollections||[]).length} قيد`;
     if(el('kpi-month-exp-sub'))   el('kpi-month-exp-sub').textContent   = `${periodExp.length} بند`;
-    if(el('kpi-fullcost-sub'))    el('kpi-fullcost-sub').textContent    = `شراء ${fmt(totPurchase)} + مصاريف ${fmt(periodDealExp)}`;
+    if(el('kpi-fullcost-sub'))    el('kpi-fullcost-sub').textContent    = `شراء ${fmt(totPurchase)} + مصاريف ${fmt(totExp)}`;
     if(el('kpi-profit-sub'))      el('kpi-profit-sub').textContent      = `هامش ${margin}%`;
     if(el('kpi-stock-sub'))       el('kpi-stock-sub').textContent       = stockVehicles.filter(v=>daysSince(v.created_at)>60).length>0 ? `${stockVehicles.filter(v=>daysSince(v.created_at)>60).length} أكثر من 60 يوم` : 'لم تُباع بعد';
 
@@ -647,11 +673,6 @@ async function loadDashboard() {
     if(el('badge-progress')) el('badge-progress').textContent = (deals||[]).filter(d=>d.status==='IN PROGRESS').length || '';
 
     // ── مستحق للموردين ──
-    const supplierDue = (deals||[]).map(d => {
-      const paid = (allExpenses||[]).filter(e=>false).reduce((s,e)=>s+0,0); // placeholder
-      const totalPaid = 0; // سيُحسب من payments
-      return { file_no: d.file_no, supplier: d.supplier||'—', total: +d.total_purchase||0 };
-    });
     try {
       const allPayments = await apiGet('payments', { select:'file_no,amount', system_type:`eq.${sys}` });
       const paidMap = {};
@@ -692,7 +713,7 @@ async function loadDashboard() {
     renderDashAlerts(overdueList, upcomingList, stockVehicles, draftCount, deals||[]);
 
     // ── Performance chart ──
-    renderDashPerfChart(periodSales, periodExp, from, to, dashState.days);
+    renderDashPerfChart(periodSales, periodExp, from, to, dashState.days, periodPurchaseDeals);
 
     // ── Expenses breakdown ──
     renderDashExpBreakdown(periodExp);
@@ -2436,11 +2457,8 @@ async function submitNewFile() {
 
     // 2. Ledger entry for supplier — امسح القديم وأضف جديد
     if (finalTotal > 0) {
-      try { await apiDelete('ledger_entries', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, source_table:`eq.purchase_orders` }); } catch(e) {}
       const vinList = vehicles.filter(v=>v.vin).map(v=>v.vin).join(' / ');
-      if (entryStatus()==='posted') await postLedger({ contactName:supplier, contactType:'supplier', date:poDate||today(),
-        description:`شراء ${vehicles.length} سيارة${vinList?' — شواصي: '+vinList:''} — ملف ${fileNo}${poNo?' — PO: '+poNo:''}`,
-        debit: finalTotal, sourceTable:'purchase_orders', fileNo });
+      if (entryStatus()==='posted') await je_purchase({sys:state.system,date:poDate||today(),amount:finalTotal,fileNo,supplier});
     }
 
     // 3. Insert vehicles
@@ -2474,18 +2492,12 @@ async function submitNewFile() {
           notes: `حصة ${p.share}% — دفع مقدماً`
         });
         // Ledger: partner paid (credit partner account)
-        if (entryStatus()==='posted') await postLedger({ contactName:p.name, contactType:'partner', date:poDate||today(),
-          description:`دفعة شريك — ملف ${fileNo}`,
-          credit: p.paid, sourceTable:'payments', fileNo });
+        if (entryStatus()==='posted') await je_payment({sys:state.system,date:poDate||today(),amount:p.paid,fileNo,supplierName:supplier,payerName:p.name,method:p.method||'تحويل بنكي'});
       }
     }
 
     // 5. Audit
     await logAudit('INSERT','purchase_orders', fileNo, null, poData);
-    // Save to journal
-    await saveDraft('purchase', fileNo,
-      `سند شراء — ${supplier}${poNo?' — PO: '+poNo:''}`,
-      finalTotal, 'purchase_orders', null);
     closeModal('newFileModal');
     toast(`✅ تم إنشاء الملف ${fileNo} — ${vehicles.length} سيارة`, 'ok');
     await loadDashboard();
@@ -2815,6 +2827,7 @@ async function submitExpense() {
       , post_status:entryStatus()};
       await apiPost('expenses', data);
       await logAudit('INSERT','expenses', expFileNo, null, data);
+      if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method});
     }
     closeModal('expenseModal');
     toast(`✅ تم تسجيل ${expenses.length} مصروف`,'ok');
@@ -2861,16 +2874,7 @@ async function submitPayment() {
     await logAudit('INSERT','payments',fn,null,data);
     const poArr = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
-    if (supplierName) {
-      if (entryStatus()==='posted') await postLedger({ contactName:supplierName, contactType:'supplier', date,
-        description:`[${refNo}] دفعة للمورد — ملف ${fn} — دافع: ${payer}`,
-        credit: amount, sourceTable:'payments', fileNo: fn });
-    }
-    if (payer && payer !== supplierName) {
-      if (entryStatus()==='posted') await postLedger({ contactName:payer, contactType:'partner', date,
-        description:`[${refNo}] دفع للمورد ${supplierName||'المورد'} — ملف ${fn}`,
-        debit: amount, sourceTable:'payments', fileNo: fn });
-    }
+    if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo:fn,supplierName,payerName:payer,method});
     closeModal('paymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
     if (state.currentTab === 2) loadPaymentsTab(fn, state.system);
@@ -3093,11 +3097,12 @@ async function submitSale() {
       await logAudit('INSERT','sales',item.fileNo||fn,null,data);
     }
 
-    // Ledger: customer becomes debtor
-    const fileNos = [...new Set(saleItems.map(i=>i.fileNo||fn))].join(', ');
-    if (entryStatus()==='posted') await postLedger({ contactName:customer, contactType:'customer', date,
-      description:`فاتورة ${invNo} — ${saleItems.length} سيارة — ملفات: ${fileNos}`,
-      debit: totalPrice, sourceTable:'sales', fileNo: fn });
+    // Journal Entry: بيع
+    if (entryStatus()==='posted') {
+      for (const item of saleItems) {
+        await je_sale({sys:state.system,date,amount:item.price,cost:0,fileNo:item.fileNo||fn,customer,invNo});
+      }
+    }
 
     // Update PO status
     const allV = await apiGet('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
@@ -3260,9 +3265,7 @@ async function submitCollection() {
     , post_status:entryStatus()};
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
-    if (entryStatus()==='posted' && cust) await postLedger({ contactName:cust, contactType:'customer', date:paid||today(),
-      description:`[${refNo}] تحصيل فاتورة ${invNo||''}${vin?' — شاصي: '+vin:''} — ملف ${fn}`,
-      credit: amount, sourceTable:'collections', fileNo: fn });
+    if (entryStatus()==='posted' && cust) await je_collection({sys:state.system,date:paid||today(),amount,fileNo:fn,customer:cust,invNo:invNo||'',method});
     closeModal('collectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     if (state.currentTab === 5) loadCollectionsTab(fn, state.system);
@@ -3464,9 +3467,7 @@ async function submitPayout() {
     };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fn,null,data);
-    if (entryStatus()==='posted') await postLedger({ contactName:partner, contactType:'partner', date,
-      description:`[${pay_id}] ${type} — ملف ${fn}`,
-      debit: amount, sourceTable:'partner_payouts', fileNo: fn });
+    if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo:fn,partner,method});
     closeModal('payoutModal');
     toast(`✅ تم تسجيل ${type} للشريك ${partner}`,'ok');
     if (state.currentTab === 6) loadPayoutsTab(fn, state.system);
@@ -3758,9 +3759,7 @@ async function submitQuickSale() {
       invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:entryStatus()};
     await apiPost('sales', data);
     await logAudit('INSERT','sales',fileNo,null,data);
-    if (entryStatus()==='posted') await postLedger({ contactName:customer, contactType:'customer', date,
-      description:`بيع سيارة ${vin} — ملف ${fileNo}`,
-      debit: price, sourceTable:'sales', fileNo });
+    if (entryStatus()==='posted') await je_sale({sys:state.system,date,amount:price,cost:0,fileNo,customer,invNo:invNo||'QS'});
     closeModal('quickSaleModal');
     toast('✅ تم تسجيل البيع بنجاح','ok');
     loadJournal();
@@ -3804,11 +3803,7 @@ async function submitQuickCollection() {
     , post_status:entryStatus()};
     await apiPost('collections', data);
     await logAudit('INSERT','collections', fileNo, null, data);
-    if (entryStatus()==='posted' && customer) await postLedger({
-      contactName: customer, contactType: 'customer', date: paid,
-      description: `[${refNo}] تحصيل فاتورة ${invNo} — ملف ${fileNo}`,
-      credit: amount, sourceTable: 'collections', fileNo
-    });
+    if (entryStatus()==='posted' && customer) await je_collection({sys:state.system,date:paid||today(),amount,fileNo,customer,invNo,method});
     closeModal('quickCollectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     loadJournal();
@@ -3838,6 +3833,7 @@ async function submitQuickExpense() {
       post_status:entryStatus() };
     await apiPost('expenses', data);
     await logAudit('INSERT','expenses',fileNo,null,data);
+    if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount,fileNo,desc,expType:type,method});
     closeModal('quickExpenseModal');
     toast('✅ تم تسجيل المصروف بنجاح','ok');
     loadJournal();
@@ -3919,16 +3915,7 @@ async function submitQuickPayment() {
       post_status:entryStatus() };
     await apiPost('payments', data);
     await logAudit('INSERT','payments', fileNo, null, data);
-    if (supplierName && supplierName !== '—') {
-      if (entryStatus()==='posted') await postLedger({ contactName:supplierName, contactType:'supplier', date,
-        description:`[${refNo}] دفعة للمورد — ملف ${fileNo} — دافع: ${payer}`,
-        credit:amount, sourceTable:'payments', fileNo });
-    }
-    if (payer && payer !== supplierName) {
-      if (entryStatus()==='posted') await postLedger({ contactName:payer, contactType:'partner', date,
-        description:`[${refNo}] دفع للمورد ${supplierName||''} — ملف ${fileNo}`,
-        debit:amount, sourceTable:'payments', fileNo });
-    }
+    if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo,supplierName,payerName:payer,method});
     closeModal('quickPaymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
     loadJournal();
@@ -3964,9 +3951,7 @@ async function submitQuickPayout() {
       pay_date: date, notes:notes||null, post_status:entryStatus() };
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
-    if (entryStatus()==='posted') await postLedger({ contactName:partner, contactType:'partner', date,
-      description:`صرف شريك — ملف ${fileNo}`,
-      debit:amount, sourceTable:'partner_payouts', fileNo });
+    if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo,partner,method});
     closeModal('quickPayoutModal');
     toast('✅ تم تسجيل الصرف بنجاح','ok');
     loadJournal();
@@ -4755,18 +4740,6 @@ function renderJournalEntries() {
 // ════════════════════════════════════════
 const typeLabels = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
 
-async function findOrCreateContact(name, type) {
-  if (!name) return null;
-  const sys = state.system;
-  try {
-    const existing = await apiGet('contacts', {
-      select:'id,name', system_type:`eq.${sys}`, name:`eq.${name}`, type:`eq.${type}`
-    });
-    if (existing && existing.length) return existing[0];
-    const created = await apiPost('contacts', { system_type: sys, name, type });
-    return Array.isArray(created) ? created[0] : created;
-  } catch(e) { console.warn('findOrCreateContact error:', e.message); return null; }
-}
 
 // ════════════════════════════════════════
 // REFERENCE NUMBERS & EXPORT HELPERS
@@ -4848,25 +4821,6 @@ function exportBtns(csvFn, printFn) {
   </div>`;
 }
 
-async function postLedger({ contactName, contactType, date, description, debit=0, credit=0, sourceTable, sourceId, fileNo }) {
-  if (!contactName) return;
-  try {
-    const contact = await findOrCreateContact(contactName, contactType);
-    await apiPost('ledger_entries', {
-      system_type:  state.system,
-      contact_id:   contact?.id || null,
-      contact_name: contactName,
-      contact_type: contactType,
-      entry_date:   date || today(),
-      description,
-      debit:        debit  || 0,
-      credit:       credit || 0,
-      source_table: sourceTable || null,
-      source_id:    sourceId   || null,
-      file_no:      fileNo     || null
-    });
-  } catch(e) { console.warn('ledger post error:', e.message); }
-}
 
 // ════════════════════════════════════════
 // CONTACTS VIEW
@@ -4889,15 +4843,15 @@ async function loadContacts() {
   el('contactsGrid').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
     const contacts = await apiGet('contacts', { select:'*', system_type:`eq.${state.system}`, order:'name.asc' });
-    const ledger   = await apiGet('ledger_entries', { select:'contact_id,debit,credit', system_type:`eq.${state.system}` });
+    const jeEntries = await apiGet('journal_entries', { select:'contact_id,dr_amount,cr_amount', system_type:`eq.${state.system}`, post_status:'eq.posted' });
 
-    // Aggregate balances per contact
+    // Aggregate balances per contact from journal_entries
     const balMap = {};
-    (ledger||[]).forEach(e => {
+    (jeEntries||[]).forEach(e => {
       if (!e.contact_id) return;
       if (!balMap[e.contact_id]) balMap[e.contact_id] = { debit:0, credit:0 };
-      balMap[e.contact_id].debit  += +e.debit  || 0;
-      balMap[e.contact_id].credit += +e.credit || 0;
+      balMap[e.contact_id].debit  += +e.dr_amount || 0;
+      balMap[e.contact_id].credit += +e.cr_amount || 0;
     });
 
     contactsState.all = (contacts||[]).map(c => ({
@@ -4931,7 +4885,15 @@ function renderContactsList() {
     return;
   }
 
-  const typeColors = { customer:'var(--blue)', supplier:'var(--accent)', partner:'var(--purple)', custodian:'var(--cyan)' };
+  const typeColors = {
+    asset:'var(--blue)', liability:'var(--red)', equity:'var(--purple)',
+    revenue:'var(--green)', cogs:'var(--accent)', expense:'var(--red)',
+    customer:'var(--blue)', supplier:'var(--accent)', partner:'var(--purple)',
+  };
+  const typeLabelsAcc = {
+    asset:'أصول', liability:'التزامات', equity:'حقوق ملكية',
+    revenue:'إيرادات', cogs:'تكلفة مبيعات', expense:'مصروفات', other:'أخرى',
+  };
   const typeDims   = { customer:'var(--blue-dim)', supplier:'var(--accent-dim)', partner:'var(--purple-dim)', custodian:'var(--cyan-dim)' };
   const typeIcons  = { customer:'🤝', supplier:'🏭', partner:'👥', custodian:'🗝' };
 
@@ -5013,13 +4975,24 @@ async function showLedger(contactId, contactName, contactType) {
     const contact = contactsState.all.find(c => c.id === contactId);
     window._ledgerOpening = contact?.opening_balance ? +contact.opening_balance : 0;
 
-    // جيب كل الـ entries
-    const entries = await apiGet('ledger_entries', {
+    // جيب كل الـ entries من journal_entries
+    const jeRaw = await apiGet('journal_entries', {
       select: '*',
       system_type: `eq.${state.system}`,
       contact_id: `eq.${contactId}`,
+      post_status: 'eq.posted',
       order: 'entry_date.asc,id.asc'
     });
+    // تحويل للشكل القديم عشان باقي الكود يشتغل
+    const entries = (jeRaw||[]).map(e => ({
+      ...e,
+      entry_date:   e.entry_date,
+      description:  e.description,
+      debit:        +e.dr_amount || 0,
+      credit:       +e.cr_amount || 0,
+      source_table: e.ref_table,
+      file_no:      e.file_no,
+    }));
     window._ledgerAllEntries = entries || [];
 
     // جيب السيارات عشان نضيف VINs في بيان الشراء
@@ -5297,27 +5270,50 @@ async function showTrialBalance() {
 async function loadTrialBalance() {
   el('trialTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري الحساب...</div>';
   try {
-    const contacts = await apiGet('contacts', { select:'*', system_type:`eq.${state.system}`, order:'name.asc' });
-    const ledger   = await apiGet('ledger_entries', { select:'contact_id,debit,credit', system_type:`eq.${state.system}` });
-
-    const balMap = {};
-    (ledger||[]).forEach(e => {
-      if (!e.contact_id) return;
-      if (!balMap[e.contact_id]) balMap[e.contact_id] = { debit:0, credit:0 };
-      balMap[e.contact_id].debit  += +e.debit  || 0;
-      balMap[e.contact_id].credit += +e.credit || 0;
+    // جيب القيود من journal_entries مجمّعة بالحساب
+    const jeEntries = await apiGet('journal_entries', {
+      select: 'account_code,account_name,dr_amount,cr_amount',
+      system_type: `eq.${state.system}`,
+      post_status: 'eq.posted',
     });
 
-    trialState.data = (contacts||[]).map(c => {
-      const d = (balMap[c.id]?.debit  || 0) + (+c.opening_balance > 0 ? +c.opening_balance : 0);
-      const cr = (balMap[c.id]?.credit || 0) + (+c.opening_balance < 0 ? Math.abs(+c.opening_balance) : 0);
-      return { ...c, totalDebit: d, totalCredit: cr, balance: d - cr };
+    // جمّع Dr/Cr لكل حساب
+    const accMap = {};
+    (jeEntries||[]).forEach(e => {
+      const code = e.account_code || 'unknown';
+      const name = e.account_name || code;
+      if (!accMap[code]) accMap[code] = { code, name, dr:0, cr:0 };
+      accMap[code].dr += +e.dr_amount || 0;
+      accMap[code].cr += +e.cr_amount || 0;
     });
+
+    // حوّل لمصفوفة وأضف الرصيد
+    trialState.data = Object.values(accMap).map(a => ({
+      id:          a.code,
+      name:        getAccountName(a.code) || a.name,
+      type:        getAccountTypeCOA(a.code),
+      totalDebit:  a.dr,
+      totalCredit: a.cr,
+      balance:     a.dr - a.cr,
+    })).sort((a,b) => a.id.localeCompare(b.id));
 
     filterTrial(trialState.typeFilter);
   } catch(e) {
     el('trialTable').innerHTML = errHTML('خطأ: ' + e.message);
   }
+}
+
+// تحديد نوع الحساب من الكود
+function getAccountType(code) {
+  if (!code) return 'other';
+  const c = String(code);
+  if (c.startsWith('1')) return 'asset';
+  if (c.startsWith('2')) return 'liability';
+  if (c.startsWith('3')) return 'equity';
+  if (c.startsWith('4')) return 'revenue';
+  if (c.startsWith('5')) return 'cogs';
+  if (c.startsWith('6')) return 'expense';
+  return 'other';
 }
 
 function filterTrial(type) {
@@ -5329,7 +5325,9 @@ function filterTrial(type) {
 
 function renderTrialBalance() {
   let list = trialState.data;
-  if (trialState.typeFilter !== 'all') list = list.filter(c => c.type === trialState.typeFilter);
+  if (trialState.typeFilter && trialState.typeFilter !== 'all') {
+    list = list.filter(c => c.type === trialState.typeFilter);
+  }
 
   const sumDebit  = list.reduce((s,c) => s + c.totalDebit, 0);
   const sumCredit = list.reduce((s,c) => s + c.totalCredit, 0);
@@ -5342,7 +5340,15 @@ function renderTrialBalance() {
 
   if (!list.length) { el('trialTable').innerHTML = emptyHTML('⚖️','لا توجد بيانات'); return; }
 
-  const typeColors = { customer:'var(--blue)', supplier:'var(--accent)', partner:'var(--purple)', custodian:'var(--cyan)' };
+  const typeColors = {
+    asset:'var(--blue)', liability:'var(--red)', equity:'var(--purple)',
+    revenue:'var(--green)', cogs:'var(--accent)', expense:'var(--red)',
+    customer:'var(--blue)', supplier:'var(--accent)', partner:'var(--purple)',
+  };
+  const typeLabelsAcc = {
+    asset:'أصول', liability:'التزامات', equity:'حقوق ملكية',
+    revenue:'إيرادات', cogs:'تكلفة مبيعات', expense:'مصروفات', other:'أخرى',
+  };
   const rows = list.map(c => `
     <tr onclick="showLedger(${c.id},'${c.name.replace(/'/g,"\'")}','${c.type}')" style="cursor:pointer">
       <td>
@@ -5371,6 +5377,72 @@ function renderTrialBalance() {
       <td class="mono" style="padding:10px 16px;font-weight:700;color:${sumBal>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(sumBal))}</td>
     </tr></tfoot>
   </table>`;
+}
+
+async function showAccountMovements(accountCode, accountName) {
+  // Open a quick modal showing all journal entries for this account
+  const entries = await apiGet('journal_entries', {
+    select: '*',
+    system_type: `eq.${state.system}`,
+    account_code: `eq.${accountCode}`,
+    post_status: 'eq.posted',
+    order: 'entry_date.asc,id.asc',
+  });
+
+  let running = 0;
+  const rows = (entries||[]).map(e => {
+    running += (+e.dr_amount||0) - (+e.cr_amount||0);
+    return `<tr>
+      <td class="mono">${e.entry_date||'—'}</td>
+      <td class="mono" style="font-size:11px;color:var(--text2)">${e.entry_no||'—'}</td>
+      <td>${e.description||'—'}</td>
+      <td>${e.file_no||'—'}</td>
+      <td class="mono text-green">${+e.dr_amount>0 ? fmt(e.dr_amount) : '—'}</td>
+      <td class="mono text-red">${+e.cr_amount>0 ? fmt(e.cr_amount) : '—'}</td>
+      <td class="mono" style="font-weight:700;color:${running>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(running))}</td>
+    </tr>`;
+  }).join('');
+
+  const totalDr = (entries||[]).reduce((s,e)=>s+(+e.dr_amount||0),0);
+  const totalCr = (entries||[]).reduce((s,e)=>s+(+e.cr_amount||0),0);
+
+  const html = `
+    <div style="font-size:13px;font-weight:700;margin-bottom:12px">
+      حركات حساب: ${accountCode} — ${accountName}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+      <div class="j-kpi"><div class="j-kpi-label">إجمالي المدين</div><div class="j-kpi-val text-green">${fmt(totalDr)}</div></div>
+      <div class="j-kpi"><div class="j-kpi-label">إجمالي الدائن</div><div class="j-kpi-val text-red">${fmt(totalCr)}</div></div>
+      <div class="j-kpi"><div class="j-kpi-label">الرصيد</div><div class="j-kpi-val" style="color:${(totalDr-totalCr)>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(totalDr-totalCr))}</div></div>
+    </div>
+    ${entries?.length ? `<div style="overflow-x:auto"><table class="data-table">
+      <thead><tr>
+        <th>التاريخ</th><th>رقم القيد</th><th>البيان</th><th>الملف</th>
+        <th style="color:var(--green)">مدين</th>
+        <th style="color:var(--red)">دائن</th>
+        <th>الرصيد</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>` : emptyHTML('📒','لا توجد حركات لهذا الحساب')}`;
+
+  // Show in a simple overlay
+  let overlay = el('accountMovementsOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'accountMovementsOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div style="background:var(--card);border-radius:var(--radius);padding:20px;max-width:800px;width:100%;max-height:80vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span style="font-weight:700">دفتر الأستاذ — ${accountCode}</span>
+        <button onclick="el('accountMovementsOverlay').remove()" style="background:none;border:1px solid var(--border);padding:4px 10px;border-radius:6px;cursor:pointer;font-family:'Cairo',sans-serif">✕ إغلاق</button>
+      </div>
+      ${html}
+    </div>`;
+  overlay.style.display = 'flex';
 }
 
 function exportTrialCSV() {
@@ -5494,7 +5566,15 @@ function contactAutocomplete(input, type) {
 
 function showAcList(input, items, type) {
   removeAcList(input);
-  const typeColors = { customer:'var(--blue)', supplier:'var(--accent)', partner:'var(--purple)', custodian:'var(--cyan)' };
+  const typeColors = {
+    asset:'var(--blue)', liability:'var(--red)', equity:'var(--purple)',
+    revenue:'var(--green)', cogs:'var(--accent)', expense:'var(--red)',
+    customer:'var(--blue)', supplier:'var(--accent)', partner:'var(--purple)',
+  };
+  const typeLabelsAcc = {
+    asset:'أصول', liability:'التزامات', equity:'حقوق ملكية',
+    revenue:'إيرادات', cogs:'تكلفة مبيعات', expense:'مصروفات', other:'أخرى',
+  };
   const typeDims   = { customer:'var(--blue-dim)', supplier:'var(--accent-dim)', partner:'var(--purple-dim)', custodian:'var(--cyan-dim)' };
 
   // Wrap input if not already wrapped
@@ -9997,9 +10077,7 @@ function installPWA() {
 
 // ════════════════════════════════════════════════════════
 // POSTING ENGINE v2 — Double Entry Accounting
-// يعمل بجانب النظام القديم بدون أي تغيير فيه
-// كل دالة submit موجودة بتشتغل زي ما هي
-// الـ journal_entries بتتسجل فيها أسطر Dr/Cr إضافية
+// كل العمليات بتسجل قيودًا مزدوجة Dr/Cr في journal_entries
 // ════════════════════════════════════════════════════════
 
 const EXPENSE_ACCOUNT_MAP = {
@@ -10045,8 +10123,8 @@ async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}
 async function je_purchase({sys,date,amount,fileNo,supplier}) {
   if(!amount||amount<=0) return;
   await postDoubleEntry({sys,date,fileNo,refTable:'purchase_orders',desc:`شراء — ملف ${fileNo} — ${supplier}`,lines:[
-    {acc:'1300',name:'المخزون — سيارات',      dr:amount, cr:0     },
-    {acc:'2100',name:`مورد: ${supplier}`,      dr:0,      cr:amount},
+    {acc:'1300',name:getAccountName('1300'),   dr:amount, cr:0     },
+    {acc:'2100',name:`مورد: ${supplier}`,       dr:0,      cr:amount},
   ]});
 }
 
@@ -10055,7 +10133,7 @@ async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
   if(!amount||amount<=0) return;
   const lines = [
     {acc:'1200',name:`عميل: ${customer}`,     dr:amount, cr:0    , desc:`فاتورة ${invNo}`},
-    {acc:'4100',name:'إيرادات بيع سيارات',     dr:0,      cr:amount, desc:`فاتورة ${invNo}`},
+    {acc:'4100',name:getAccountName('4100'),   dr:0,      cr:amount, desc:`فاتورة ${invNo}`},
   ];
   if (cost>0) {
     lines.push({acc:'5100',name:'تكلفة المخزون المباع', dr:cost, cr:0   });
@@ -10076,12 +10154,13 @@ async function je_collection({sys,date,amount,fileNo,customer,invNo,method}) {
 }
 
 // دفعة مورد: مورد Dr / نقد Cr
-async function je_payment({sys,date,amount,fileNo,supplier,method}) {
+async function je_payment({sys,date,amount,fileNo,supplier,supplierName,method}) {
   if(!amount||amount<=0) return;
+  const sup = supplier || supplierName || 'مورد';
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
-  await postDoubleEntry({sys,date,fileNo,refTable:'payments',desc:`دفعة للمورد ${supplier} — ملف ${fileNo}`,lines:[
-    {acc:'2100',  name:`مورد: ${supplier}`,     dr:amount, cr:0     },
+  await postDoubleEntry({sys,date,fileNo,refTable:'payments',desc:`دفعة للمورد ${sup} — ملف ${fileNo}`,lines:[
+    {acc:'2100',  name:`مورد: ${sup}`,          dr:amount, cr:0     },
     {acc:cashAcc, name:cashNm,                  dr:0,      cr:amount},
   ]});
 }
@@ -10113,206 +10192,4 @@ async function je_payout({sys,date,amount,fileNo,partner,method}) {
 // ربط تلقائي — يُغلّف الدوال الموجودة بدون تعديلها
 // يشتغل بعد ما الصفحة تكمل التحميل
 // ═══════════════════════════════════════════════════════
-window.addEventListener('load', () => {
 
-  // ── submitNewFile ──
-  const _origNewFile = window.submitNewFile;
-  window.submitNewFile = async function() {
-    await _origNewFile.apply(this, arguments);
-    try {
-      const sys        = state.system;
-      const fileNo     = document.getElementById('nf-fileNo')?.value?.trim();
-      const supplier   = document.getElementById('nf-supplier')?.value?.trim();
-      const poDate     = document.getElementById('nf-poDate')?.value;
-      const totalAmt   = parseFloat(document.getElementById('nf-totalAmount')?.value)||0;
-      if (fileNo && supplier && totalAmt > 0 && entryStatus()==='posted')
-        await je_purchase({sys, date:poDate||today(), amount:totalAmt, fileNo, supplier});
-    } catch(e) { console.warn('je_purchase wrap:', e.message); }
-  };
-
-  // ── submitSale ──
-  const _origSale = window.submitSale;
-  window.submitSale = async function() {
-    await _origSale.apply(this, arguments);
-    try {
-      const sys      = state.system;
-      const fn       = document.getElementById('sale-fileNo')?.value?.trim();
-      const customer = document.getElementById('sale-customer')?.value?.trim();
-      const invNo    = document.getElementById('sale-invNo')?.value?.trim();
-      const date     = document.getElementById('sale-date')?.value;
-      const rows     = document.querySelectorAll('#saleVehiclesContainer tr.sale-v-row');
-      if (entryStatus()!=='posted') return;
-      let vehicles = [];
-      try { vehicles = await apiGet('vehicles',{select:'vin,purchase_price',system_type:`eq.${sys}`,file_no:`eq.${fn}`}); } catch(e){}
-      const costMap = {};
-      (vehicles||[]).forEach(v=>{ if(v.vin) costMap[v.vin]=+v.purchase_price||0; });
-      for (const row of rows) {
-        const vin   = row.querySelector('[name="sv-vin"]')?.value||'';
-        const price = parseFloat(row.querySelector('[name="sv-price"]')?.value)||0;
-        if (price>0)
-          await je_sale({sys,date,amount:price,cost:costMap[vin]||0,fileNo:fn,customer,invNo});
-      }
-    } catch(e) { console.warn('je_sale wrap:', e.message); }
-  };
-
-  // ── submitQuickSale ──
-  const _origQSale = window.submitQuickSale;
-  window.submitQuickSale = async function() {
-    await _origQSale.apply(this, arguments);
-    try {
-      if (entryStatus()!=='posted') return;
-      const sys    = state.system;
-      const fileNo = document.getElementById('qs-fileNo')?.value;
-      const vin    = document.getElementById('qs-vin')?.value?.trim();
-      const cust   = document.getElementById('qs-customer')?.value?.trim();
-      const invNo  = document.getElementById('qs-invNo')?.value?.trim();
-      const price  = parseFloat(document.getElementById('qs-price')?.value)||0;
-      const date   = document.getElementById('qs-date')?.value;
-      let cost = 0;
-      try { const v=await apiGet('vehicles',{select:'purchase_price',system_type:`eq.${sys}`,vin:`eq.${vin}`,limit:1}); cost=+(v?.[0]?.purchase_price)||0; } catch(e){}
-      await je_sale({sys,date,amount:price,cost,fileNo,customer:cust,invNo:invNo||'QS'});
-    } catch(e) { console.warn('je_qsale wrap:', e.message); }
-  };
-
-  // ── submitPayment ──
-  const _origPay = window.submitPayment;
-  window.submitPayment = async function() {
-    await _origPay.apply(this, arguments);
-    try {
-      if (entryStatus()!=='posted') return;
-      const sys    = state.system;
-      const fn     = state.currentFileNo;
-      const amount = parseFloat(document.getElementById('pay-amount')?.value)||0;
-      const method = document.getElementById('pay-method')?.value||'تحويل بنكي';
-      const date   = document.getElementById('pay-date')?.value;
-      const poArr  = await apiGet('purchase_orders',{select:'supplier',system_type:`eq.${sys}`,file_no:`eq.${fn}`});
-      const supplier = poArr?.[0]?.supplier||'';
-      await je_payment({sys,date,amount,fileNo:fn,supplier,method});
-    } catch(e) { console.warn('je_payment wrap:', e.message); }
-  };
-
-  // ── submitQuickPayment ──
-  const _origQPay = window.submitQuickPayment;
-  window.submitQuickPayment = async function() {
-    await _origQPay.apply(this, arguments);
-    try {
-      if (entryStatus()!=='posted') return;
-      const sys    = state.system;
-      const fileNo = document.getElementById('qp-fileNo')?.value;
-      const amount = parseFloat(document.getElementById('qp-amount')?.value)||0;
-      const method = document.getElementById('qp-method')?.value||'تحويل بنكي';
-      const date   = document.getElementById('qp-date')?.value;
-      const supplier = document.getElementById('qp-card-supplier')?.textContent||'';
-      await je_payment({sys,date,amount,fileNo,supplier,method});
-    } catch(e) { console.warn('je_qpayment wrap:', e.message); }
-  };
-
-  // ── submitCollection ──
-  const _origCol = window.submitCollection;
-  window.submitCollection = async function() {
-    await _origCol.apply(this, arguments);
-    try {
-      if (entryStatus()!=='posted') return;
-      const sys    = state.system;
-      const fn     = state.currentFileNo;
-      const cust   = document.getElementById('col-customer')?.value?.trim();
-      const invNo  = document.getElementById('col-invNo')?.value;
-      const amount = parseFloat(document.getElementById('col-amount')?.value)||0;
-      const method = document.getElementById('col-method')?.value||'تحويل بنكي';
-      const paid   = document.getElementById('col-paidDate')?.value;
-      await je_collection({sys,date:paid||today(),amount,fileNo:fn,customer:cust,invNo,method});
-    } catch(e) { console.warn('je_col wrap:', e.message); }
-  };
-
-  // ── submitQuickCollection ──
-  const _origQCol = window.submitQuickCollection;
-  window.submitQuickCollection = async function() {
-    await _origQCol.apply(this, arguments);
-    try {
-      if (entryStatus()!=='posted') return;
-      const sys    = state.system;
-      const fileNo = document.getElementById('qc-fileNo')?.value;
-      const cust   = document.getElementById('qc-customer')?.value?.trim();
-      const invNo  = document.getElementById('qc-invNo')?.value;
-      const amount = parseFloat(document.getElementById('qc-amount')?.value)||0;
-      const method = document.getElementById('qc-method')?.value||'تحويل بنكي';
-      const paid   = document.getElementById('qc-date')?.value;
-      await je_collection({sys,date:paid||today(),amount,fileNo,customer:cust,invNo,method});
-    } catch(e) { console.warn('je_qcol wrap:', e.message); }
-  };
-
-  // ── submitExpense ──
-  const _origExp = window.submitExpense;
-  window.submitExpense = async function() {
-    await _origExp.apply(this, arguments);
-    try {
-      if (entryStatus()!=='posted') return;
-      const sys    = state.system;
-      const date   = document.getElementById('exp-date')?.value||today();
-      const method = document.getElementById('exp-method')?.value||'تحويل بنكي';
-      const rows   = document.querySelectorAll('#expenseRowsContainer tr');
-      for (const r of rows) {
-        const fileNo = r.querySelector('[name="er-file"]')?.value||state.currentFileNo||'';
-        const desc   = r.querySelector('[name="er-desc"]')?.value?.trim()||'مصروف';
-        const type   = r.querySelector('[name="er-type"]')?.value||'أخرى';
-        const amount = parseFloat(r.querySelector('[name="er-amount"]')?.value)||0;
-        if (amount>0) await je_expense({sys,date,amount,fileNo,desc,expType:type,method});
-      }
-    } catch(e) { console.warn('je_exp wrap:', e.message); }
-  };
-
-  // ── submitQuickExpense ──
-  const _origQExp = window.submitQuickExpense;
-  window.submitQuickExpense = async function() {
-    await _origQExp.apply(this, arguments);
-    try {
-      if (entryStatus()!=='posted') return;
-      const sys    = state.system;
-      const fileNo = document.getElementById('qe-fileNo')?.value||state.currentFileNo||'';
-      const desc   = document.getElementById('qe-desc')?.value?.trim()||'مصروف';
-      const type   = document.getElementById('qe-type')?.value||'أخرى';
-      const amount = parseFloat(document.getElementById('qe-amount')?.value)||0;
-      const method = document.getElementById('qe-method')?.value||'تحويل بنكي';
-      const date   = document.getElementById('qe-date')?.value||today();
-      await je_expense({sys,date,amount,fileNo,desc,expType:type,method});
-    } catch(e) { console.warn('je_qexp wrap:', e.message); }
-  };
-
-  // ── submitPayout ──
-  const _origPout = window.submitPayout;
-  window.submitPayout = async function() {
-    await _origPout.apply(this, arguments);
-    try {
-      if (entryStatus()!=='posted') return;
-      const sys     = state.system;
-      const fn      = state.currentFileNo;
-      const partner = document.getElementById('pout-partner')?.value;
-      const method  = document.getElementById('pout-method')?.value||'تحويل بنكي';
-      const date    = document.getElementById('pout-date')?.value;
-      const type    = document.getElementById('pout-type')?.value;
-      let amount = parseFloat(document.getElementById('pout-amount')?.value)||0;
-      if (type==='رأس مال + أرباح') {
-        amount = (parseFloat(document.getElementById('pout-capital')?.value)||0)
-               + (parseFloat(document.getElementById('pout-profit')?.value)||0);
-      }
-      await je_payout({sys,date,amount,fileNo:fn,partner,method});
-    } catch(e) { console.warn('je_pout wrap:', e.message); }
-  };
-
-  // ── submitQuickPayout ──
-  const _origQPout = window.submitQuickPayout;
-  window.submitQuickPayout = async function() {
-    await _origQPout.apply(this, arguments);
-    try {
-      if (entryStatus()!=='posted') return;
-      const sys     = state.system;
-      const fileNo  = document.getElementById('qpo-fileNo')?.value;
-      const partner = document.getElementById('qpo-partner')?.value;
-      const amount  = parseFloat(document.getElementById('qpo-amount')?.value)||0;
-      const method  = document.getElementById('qpo-method')?.value||'تحويل بنكي';
-      const date    = document.getElementById('qpo-date')?.value;
-      await je_payout({sys,date,amount,fileNo,partner,method});
-    } catch(e) { console.warn('je_qpout wrap:', e.message); }
-  };
-
-});
