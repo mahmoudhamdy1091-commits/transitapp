@@ -712,8 +712,8 @@ async function loadDashboard() {
     const margin        = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
     const soldVinsAll   = new Set((allSales||[]).map(s=>s.vin));
     const stockVehicles = (vehicles||[]).filter(v => !soldVinsAll.has(v.vin));
-    const overdueList   = (collections||[]).filter(c => !c.paid_date && (c.due_date ? c.due_date < todayStr : true));
-    const upcomingList  = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date >= todayStr && c.due_date <= in7);
+    const overdueList   = (collections||[]).filter(c => !c.paid_date && (c.due_date ? c.due_date <= todayStr : true));
+    const upcomingList  = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date > todayStr && c.due_date <= in7);
     const overdueAmt    = overdueList.reduce((s,c)=>s+(+c.amount||0),0);
     const draftCount    = (drafts||[]).length;
 
@@ -775,7 +775,7 @@ async function loadDashboard() {
     } catch(e) {}
 
     // ── تحصيلات متأخرة ──
-    const overdueItems = (collections||[]).filter(c => !c.paid_date && (c.due_date ? c.due_date < todayStr : true))
+    const overdueItems = (collections||[]).filter(c => !c.paid_date && (c.due_date ? c.due_date <= todayStr : true))
       .sort((a,b) => a.due_date > b.due_date ? 1 : -1);
     const overdueTotal = overdueItems.reduce((s,c) => s + (+c.amount||0), 0);
     if (el('dash-overdue-amt')) el('dash-overdue-amt').textContent = fmt(overdueTotal);
@@ -9519,7 +9519,7 @@ function renderDrillDown(type) {
     const colls = d.periodCollections || [];
     const paid   = colls.filter(c=>c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
     const unpaid = colls.filter(c=>!c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
-    const overdue= colls.filter(c=>!c.paid_date && (c.due_date ? c.due_date < d.todayStr : true)).length;
+    const overdue= colls.filter(c=>!c.paid_date && (c.due_date ? c.due_date <= d.todayStr : true)).length;
     ddKpis.style.gridTemplateColumns = 'repeat(4,1fr)';
     ddKpis.innerHTML = `
       <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--blue)">${fmt(paid+unpaid)}</div><div class="dd-kpi-lbl">إجمالي التحصيلات</div></div>
