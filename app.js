@@ -713,7 +713,7 @@ async function loadDashboard() {
     renderDashAlerts(overdueList, upcomingList, stockVehicles, draftCount, deals||[]);
 
     // ── Performance chart ──
-    renderDashPerfChart(periodSales, periodExp, from, to, dashState.days, periodPurchaseDeals);
+    // Chart removed — drill-down replaces it
 
     // ── Expenses breakdown ──
     renderDashExpBreakdown(periodExp);
@@ -9233,35 +9233,50 @@ async function loadOpexReport(from, to) {
 // ════════════════════════════════════════
 let _ddState = { type: null, data: {} };
 
+function closeDrillDownMain() {
+  if(el('dash-details-area')) el('dash-details-area').style.display = 'none';
+  _ddState.type = null;
+  document.querySelectorAll('.kpi-card').forEach(c => c.classList.remove('kpi-active'));
+}
+
 function closeDrillDown() {
-  el('dash-drilldown').style.display = 'none';
+  if(el('dash-drilldown')) el('dash-drilldown').style.display = 'none';
+  if(el('dash-details-area')) el('dash-details-area').style.display = 'none';
   document.querySelectorAll('.kpi-clickable').forEach(c => c.classList.remove('dd-active'));
   _ddState.type = null;
 }
 
+
+  document.querySelectorAll('.kpi-card').forEach(c => c.classList.remove('kpi-active'));
+  const activeCard = el('kpi-card-' + type);
+  if(activeCard && _ddState.type !== type) activeCard.classList.add('kpi-active');
 function toggleDrillDown(type) {
-  if (_ddState.type === type) { closeDrillDown(); return; }
+  if (_ddState.type === type) { closeDrillDownMain(); return; }
   _ddState.type = type;
   document.querySelectorAll('.kpi-clickable').forEach(c => c.classList.remove('dd-active'));
   el('kpi-card-' + type)?.classList.add('dd-active');
   renderDrillDown(type);
-  el('dash-drilldown').style.display = 'block';
-  el('dash-drilldown').scrollIntoView({ behavior:'smooth', block:'nearest' });
+  // أظهر في المنطقة الجديدة
+  if(el('dash-details-area')) {
+    el('dash-details-area').style.display = 'block';
+    el('dash-details-area').scrollIntoView({ behavior:'smooth', block:'nearest' });
+  }
+  if(el('dash-drilldown')) el('dash-drilldown').style.display = 'none';
 }
 
 function renderDrillDown(type) {
   const d = _ddState.data;
-  const panel = el('dash-drilldown');
-  const ddKpis = el('dd-kpis');
-  const ddTable = el('dd-table');
-  const ddChartWrap = el('dd-chart-wrap');
+  const panel = el('dash-details-area') || el('dash-drilldown');
+  const ddKpis = el('dd-kpis-main')||el('dd-kpis');
+  const ddTable = el('dd-table-main')||el('dd-table');
+  const ddChartWrap = el('dd-chart-wrap-main')||el('dd-chart-wrap');
   if (!panel) return;
 
   const periodLabel = el('dash-period-label')?.textContent || '';
 
   // ── تكلفة الشراء ──
   if (type === 'purchase') {
-    el('dd-title').textContent = `📋 تفاصيل تكلفة الشراء — ${periodLabel}`;
+    (el('dd-title-main')||el('dd-title')).textContent = `📋 تفاصيل تكلفة الشراء — ${periodLabel}`;
     const deals = (d.periodPurchaseDeals && d.periodPurchaseDeals.length) ? d.periodPurchaseDeals : (d.periodDeals || []);
     const total = deals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
     const bySupplier = {};
@@ -9289,7 +9304,7 @@ function renderDrillDown(type) {
 
   // ── مبيعات ──
   else if (type === 'sales') {
-    el('dd-title').textContent = `💹 تفاصيل المبيعات — ${periodLabel}`;
+    (el('dd-title-main')||el('dd-title')).textContent = `💹 تفاصيل المبيعات — ${periodLabel}`;
     const sales = d.periodSales || [];
     const total = sales.reduce((s,r)=>s+(+r.sale_price||0),0);
     const byFile = {};
@@ -9316,7 +9331,7 @@ function renderDrillDown(type) {
 
   // ── تحصيلات ──
   else if (type === 'collections') {
-    el('dd-title').textContent = `💰 تفاصيل التحصيلات — ${periodLabel}`;
+    (el('dd-title-main')||el('dd-title')).textContent = `💰 تفاصيل التحصيلات — ${periodLabel}`;
     const colls = d.periodCollections || [];
     const paid   = colls.filter(c=>c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
     const unpaid = colls.filter(c=>!c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
@@ -9353,7 +9368,7 @@ function renderDrillDown(type) {
 
   // ── مصاريف ──
   else if (type === 'expenses') {
-    el('dd-title').textContent = `💸 تفاصيل المصاريف — ${periodLabel}`;
+    (el('dd-title-main')||el('dd-title')).textContent = `💸 تفاصيل المصاريف — ${periodLabel}`;
     const exps = d.periodExp || [];
     const total = exps.reduce((s,e)=>s+(+e.amount||0),0);
     const byType = {};
@@ -9380,7 +9395,7 @@ function renderDrillDown(type) {
 
   // ── التكلفة الكاملة ──
   else if (type === 'fullcost') {
-    el('dd-title').textContent = `🏷️ التكلفة الكاملة — ${periodLabel}`;
+    (el('dd-title-main')||el('dd-title')).textContent = `🏷️ التكلفة الكاملة — ${periodLabel}`;
     const deals  = d.periodDeals  || [];
     const totPur = deals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
     const totExp = (d.periodExp||[]).filter(e=>e.file_no).reduce((s,e)=>s+(+e.amount||0),0);
@@ -9416,7 +9431,7 @@ function renderDrillDown(type) {
 
   // ── صافي الربح ──
   else if (type === 'profit') {
-    el('dd-title').textContent = `📈 نتائج العمليات — ${periodLabel}`;
+    (el('dd-title-main')||el('dd-title')).textContent = `📈 نتائج العمليات — ${periodLabel}`;
     const sales   = d.periodSales  || [];
     const deals   = d.periodDeals  || [];
     const exps    = d.periodExp    || [];
@@ -9458,7 +9473,7 @@ function renderDrillDown(type) {
 
   // ── المخزن ──
   else if (type === 'stock') {
-    el('dd-title').textContent = `🚗 تفاصيل المخزن`;
+    (el('dd-title-main')||el('dd-title')).textContent = `🚗 تفاصيل المخزن`;
     const stock = d.stockVehicles || [];
     const old60 = stock.filter(v=>daysSince(v.created_at)>60).length;
     const old30 = stock.filter(v=>daysSince(v.created_at)>30&&daysSince(v.created_at)<=60).length;
@@ -9492,9 +9507,9 @@ function renderDrillDown(type) {
 
 // ── DD mini chart ──
 function renderDDChart(entries, color) {
-  const chartWrap  = el('dd-chart-wrap');
-  const chart      = el('dd-chart');
-  const labelsWrap = el('dd-chart-labels');
+  const chartWrap  = el('dd-chart-wrap-main')||el('dd-chart-wrap');
+  const chart      = el('dd-chart-main')||el('dd-chart');
+  const labelsWrap = el('dd-chart-labels-main')||el('dd-chart-labels');
   if (!chartWrap||!chart||!entries.length) { if(chartWrap) chartWrap.style.display='none'; return; }
   chartWrap.style.display = 'block';
   const CHART_H = 100;

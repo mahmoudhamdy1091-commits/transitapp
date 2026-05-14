@@ -1014,11 +1014,22 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   .top-bar-title{ font-size:15px; }
   .top-bar-actions .btn span{ display:none; }
   .top-bar-actions .btn{ padding:7px 10px; }
-  .content-area{ padding:12px; padding-bottom:72px; }
-  .kpi-grid{ grid-template-columns:repeat(2,1fr); gap:8px; margin-bottom:12px; }
-  .kpi-card{ padding:12px 14px; }
-  .kpi-val{ font-size:17px; }
+  .content-area{ padding:10px; padding-bottom:72px; }
+
+  /* KPI Grid — صفين على الموبايل */
+  .kpi-grid,#kpiGrid{ grid-template-columns:repeat(2,1fr) !important; gap:8px; margin-bottom:8px; }
+
+  /* صف المستحقات */
+  #kpiGrid + div[style*="grid"]{ grid-template-columns:1fr !important; gap:8px; }
+
+  .kpi-card{ padding:10px 12px; min-height:unset; }
+  .kpi-val{ font-size:16px; }
   .kpi-label{ font-size:11px; }
+  .kpi-sub{ font-size:10px; }
+  .kpi-drill-hint{ display:none; }
+
+  /* شارت الداشبورد */
+  #dash-perf-chart{ height:100px !important; }
   .data-table-wrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .data-table td,.data-table th{ padding:8px 10px; font-size:12px; white-space:nowrap; }
   .modal-overlay{ align-items:flex-end; padding:0; }
@@ -1214,6 +1225,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 .kpi-drill-hint{font-size:9px;color:var(--text2);margin-top:4px;opacity:0;transition:opacity .15s}
 .kpi-clickable:hover .kpi-drill-hint{opacity:1}
 .kpi-clickable.dd-active{border:2px solid var(--accent) !important;background:var(--accent-dim) !important}
+.kpi-active{border-color:var(--accent) !important;box-shadow:0 0 0 2px var(--accent-dim),0 4px 12px rgba(0,0,0,.08);transform:translateY(-2px)}
 .kpi-clickable.dd-active .kpi-drill-hint{opacity:1;color:var(--accent)}
 /* DD mini KPIs */
 .dd-kpi{background:var(--card2);border-radius:var(--radius-sm);padding:10px 14px;text-align:center;border:0.5px solid var(--border)}
