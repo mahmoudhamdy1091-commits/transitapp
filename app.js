@@ -592,12 +592,18 @@ const approvalState = { all: [], filtered: [], currentType: 'all', currentItem: 
 async function loadChartOfAccounts() {
   try {
     const rows = await apiGet('chart_of_accounts', {
-      select: 'code,name,type,parent_code',
+      select: 'account_code,account_name,account_type,parent_code',
       system_type: `eq.${state.system}`,
       is_active: 'eq.true',
     });
     state.chartOfAccounts = {};
-    (rows||[]).forEach(r => { state.chartOfAccounts[r.code] = r; });
+    (rows||[]).forEach(r => {
+      state.chartOfAccounts[r.account_code] = {
+        name: r.account_name,
+        type: r.account_type,
+        parent_code: r.parent_code,
+      };
+    });
   } catch(e) { console.warn('loadChartOfAccounts:', e.message); }
 }
 
@@ -9363,10 +9369,10 @@ function closeDrillDown() {
 }
 
 
+function toggleDrillDown(type) {
   document.querySelectorAll('.kpi-card').forEach(c => c.classList.remove('kpi-active'));
   const activeCard = el('kpi-card-' + type);
   if(activeCard && _ddState.type !== type) activeCard.classList.add('kpi-active');
-function toggleDrillDown(type) {
   if (_ddState.type === type) { closeDrillDownMain(); return; }
   _ddState.type = type;
   document.querySelectorAll('.kpi-clickable').forEach(c => c.classList.remove('dd-active'));
