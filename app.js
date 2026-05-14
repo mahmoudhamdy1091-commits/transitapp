@@ -3347,7 +3347,7 @@ async function openCollectionModal() {
   el('col-submit-btn').style.display  = 'none';
   el('col-amount').value   = '';
   el('col-dueDate').value  = '';
-  el('col-paidDate').value = today();
+  el('col-paidDate').value = '';   // فاضي بالـdefault — يتملى لما المبلغ يتحصّل فعلاً
   el('col-doc').value      = '';
   el('col-notes').value    = '';
   el('colError').style.display = 'none';
@@ -9864,11 +9864,15 @@ function renderApprovalList() {
         </div>
       </div>
       <div class="approval-row-amount" style="color:${cfg.color}">${fmt(r._amount)}</div>
-      <div class="approval-row-actions" onclick="event.stopPropagation()">
+      <div class="approval-row-actions" onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">
         <button class="btn btn-sm" onclick="approveItem('${r._type}','${r.id}')"
           style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);padding:4px 8px" title="موافقة">✓</button>
+        <button class="btn btn-sm" onclick="editApprovalRow('${r._type}','${r.id}')"
+          style="background:var(--card2);border:1px solid var(--blue);color:var(--blue);padding:4px 8px" title="تعديل">✏️</button>
+        <button class="btn btn-sm" onclick="cancelApprovalRow('${r._type}','${r.id}')"
+          style="background:var(--card2);border:1px solid var(--border);color:var(--text2);padding:4px 8px" title="إلغاء">⊘</button>
         <button class="btn btn-sm" onclick="rejectItem('${r._type}','${r.id}')"
-          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);padding:4px 8px" title="حذف">🗑</button>
+          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);padding:4px 8px" title="مسح نهائي">🗑</button>
       </div>
     </div>`;
   }).join('');
@@ -10033,6 +10037,30 @@ async function rejectItem(type, id) {
       }
       invalidateCache();
       toast('🗑 تم المسح النهائي','ok');
+      await loadApprovalQueue();
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
+
+
+// تعديل مباشر من صف القائمة
+async function editApprovalRow(type, id) {
+  approvalState.currentItem = {
+    type, id,
+    item: approvalState.all.find(r => r._type === type && String(r.id) === String(id))
+  };
+  await editFromDetail();
+}
+
+// إلغاء مباشر من صف القائمة
+async function cancelApprovalRow(type, id) {
+  const cfg = APPROVAL_CONFIG[type];
+  if (!cfg) return;
+  showConfirm('إلغاء العملية', 'سيتم وضع العملية كـ "ملغية" مع إمكانية الإرجاع لاحقاً.', async () => {
+    try {
+      await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'cancelled' });
+      invalidateCache();
+      toast('⊘ تم إلغاء العملية','ok');
       await loadApprovalQueue();
     } catch(e) { toast('خطأ: '+e.message,'err'); }
   });
