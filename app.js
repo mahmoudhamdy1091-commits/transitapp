@@ -3268,15 +3268,17 @@ async function submitSale() {
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` },
       { status: allSold ? 'CLOSED' : 'IN PROGRESS' });
 
-    closeModal('saleModal');
-    invalidateCache();
-    // أضف تحصيل لكل سيارة
+    // اقرأ بيانات الدفع قبل ما تتقفل الـ modal
     const isPaid    = el('sale-paid-now')?.checked || false;
     const payMethod = el('sale-pay-method')?.value || 'تحويل بنكي';
     const payDoc    = el('sale-pay-doc')?.value?.trim() || null;
     const payDate   = el('sale-pay-date')?.value || date;
     const payNotes  = el('sale-pay-notes')?.value?.trim() || null;
     const payAmtInput = parseFloat(el('sale-pay-amount')?.value) || 0;
+
+    closeModal('saleModal');
+    invalidateCache();
+    // أضف تحصيل لكل سيارة
 
     for (const item of saleItems) {
       try {
