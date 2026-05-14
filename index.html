@@ -847,10 +847,10 @@
             <div id="ad-body"></div>
           </div>
           <div class="modal-footer" style="justify-content:space-between">
-            <button class="btn btn-danger btn-sm" onclick="rejectFromDetail()">🗑 حذف</button>
+            <button class="btn btn-danger btn-sm" onclick="rejectFromDetail()">🗑 مسح</button>
             <div style="display:flex;gap:8px">
-              <button class="btn btn-secondary" onclick="closeModal('approvalDetailModal')">إغلاق</button>
-              <button class="btn btn-blue" id="ad-edit-btn" onclick="editFromDetail()">✏️ تعديل</button>
+              <button class="btn btn-secondary" onclick="cancelFromDetail()">⊘ إلغاء</button>
+              <button class="btn btn-blue" id="ad-edit-btn" onclick="editFromDetail()">✏️ فتح وتعديل</button>
               <button class="btn btn-success" onclick="approveFromDetail()">✓ موافقة</button>
             </div>
           </div>
@@ -1587,6 +1587,27 @@
       <div class="field" style="margin-top:10px">
         <label>ملاحظات الفاتورة / Invoice Notes</label>
         <textarea id="sale-notes" placeholder="شروط الدفع، ملاحظات..." rows="2"></textarea>
+      </div>
+
+      <!-- حقل الدفع -->
+      <div style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-top:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px">💳 بيانات الدفع</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="sale-paid-now" onchange="toggleSalePayment(this.checked)"
+              style="width:16px;height:16px;cursor:pointer">
+            العميل دفع الآن
+          </label>
+          <div id="sale-payment-fields" style="display:none;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="sale-pay-method" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+              <option>تحويل بنكي</option>
+              <option>نقد</option>
+              <option>شيك</option>
+            </select>
+            <input type="text" id="sale-pay-doc" placeholder="رقم المستند / الشيك"
+              style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:160px">
+          </div>
+        </div>
       </div>
 
       <div id="saleError" class="alert alert-err" style="display:none"></div>

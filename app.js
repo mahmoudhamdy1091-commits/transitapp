@@ -3185,6 +3185,11 @@ function updateSaleTotal() {
   if (el('saleTotalWrap')) el('saleTotalWrap').style.display = rows.length ? 'flex' : 'none';
 }
 
+function toggleSalePayment(checked) {
+  const fields = el('sale-payment-fields');
+  if (fields) fields.style.display = checked ? 'flex' : 'none';
+}
+
 async function submitSale() {
   const fn       = el('sale-fileNo').value.trim();
   const invNo    = el('sale-invNo').value.trim();
@@ -3254,6 +3259,29 @@ async function submitSale() {
       { status: allSold ? 'CLOSED' : 'IN PROGRESS' });
 
     closeModal('saleModal');
+    invalidateCache();
+    // أضف تحصيل تلقائي لكل سيارة عشان يظهر في المتأخرة
+    const isPaid = el('sale-paid-now')?.checked || false;
+    for (const item of saleItems) {
+      try {
+        await apiPost('collections', {
+          system_type: state.system,
+          file_no: item.fileNo || fn,
+          inv_no: invNo,
+          customer,
+          vin: item.vin || '',
+          amount: item.price,
+          pay_method: el('sale-pay-method')?.value || 'تحويل بنكي',
+          due_date: date,
+          paid_date: isPaid ? date : null,
+          post_status: entryStatus(),
+          ref_no: `COL-${invNo}-${item.vin||Math.random().toString(36).slice(2,6)}`,
+        });
+        if (isPaid && entryStatus()==='posted') {
+          await je_collection({ sys:state.system, date, amount:item.price, fileNo:item.fileNo||fn, customer, invNo, method: el('sale-pay-method')?.value||'تحويل بنكي' });
+        }
+      } catch(e) {}
+    }
     invalidateCache();
     toast(`✅ تم تسجيل فاتورة ${invNo} — ${saleItems.length} سيارة`,'ok');
     state.currentSales = allS || [];
@@ -9770,8 +9798,8 @@ function filterApproval(type) {
   el('af-' + type)?.classList.add('active');
 
   approvalState.filtered = type === 'all'
-    ? approvalState.all
-    : approvalState.all.filter(r => r._type === type);
+    ? approvalState.all.filter(r => r.post_status !== 'cancelled')
+    : approvalState.all.filter(r => r._type === type && r.post_status !== 'cancelled');
 
   renderApprovalList();
 }
@@ -9871,6 +9899,21 @@ async function approveFromDetail() {
   await approveItem(type, id);
 }
 
+async function cancelFromDetail() {
+  if (!approvalState.currentItem) return;
+  const { type, id, item } = approvalState.currentItem;
+  closeModal('approvalDetailModal');
+  showConfirm('إلغاء العملية', 'سيتم وضع العملية كـ "ملغية" مع إمكانية الإرجاع لاحقاً.', async () => {
+    try {
+      const cfg = APPROVAL_CONFIG[type];
+      await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'cancelled' });
+      invalidateCache();
+      toast('⊘ تم إلغاء العملية','ok');
+      await loadApprovalQueue();
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
+
 async function rejectFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id } = approvalState.currentItem;
@@ -9882,19 +9925,82 @@ async function editFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id, item } = approvalState.currentItem;
   closeModal('approvalDetailModal');
-  const editMap = {
-    purchase:   async () => item?.file_no ? openNewFileModal(item.file_no) : toast('لا يمكن فتح الصفقة','err'),
-    payment:    async () => openEditPaymentModal(id),
-    expense:    async () => openEditExpenseModal(id),
-    collection: async () => openEditCollectionModal(id),
-    payout:     async () => openEditPayoutModal(id),
-    sale:       async () => { if(typeof openEditSaleModal==='function') openEditSaleModal(id); else toast('تعديل البيع غير متاح هنا','err'); },
-  };
-  const fn = editMap[type];
-  if (fn) await fn();
-  else toast('لا يوجد تعديل متاح لهذا النوع','err');
+  // فتح الأمر مع إمكانية التعديل
+  if (type === 'purchase' && item?.file_no) {
+    openNewFileModal(item.file_no);
+  } else if (type === 'sale' && item?.file_no) {
+    openViewer(item.file_no);
+    setTimeout(() => switchTab(4), 500); // تبويب المبيعات
+  } else if (type === 'payment') {
+    openEditPaymentModal(id);
+  } else if (type === 'expense') {
+    openEditExpenseModal(id);
+  } else if (type === 'collection') {
+    openEditCollectionModal(id);
+  } else if (type === 'payout') {
+    openEditPayoutModal(id);
+  } else if (item?.file_no) {
+    openViewer(item.file_no);
+  } else {
+    toast('لا يمكن فتح هذا الأمر','err');
+  }
 }
 
+
+async function approveItem(type, id) {
+  try {
+    const cfg = APPROVAL_CONFIG[type];
+    if (!cfg) { toast('نوع غير معروف','err'); return; }
+    await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'posted' });
+    // لو شراء — نولّد قيد محاسبي
+    if (type === 'purchase') {
+      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+      if (item && item.file_no) {
+        await je_purchase({ sys:state.system, date:item.po_date||today(), amount:+item.total_purchase||0, fileNo:item.file_no, supplier:item.supplier||'' });
+      }
+    }
+    if (type === 'sale') {
+      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+      if (item) await je_sale({ sys:state.system, date:item.sale_date||today(), amount:+item.sale_price||0, cost:0, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'' });
+    }
+    if (type === 'collection') {
+      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+      if (item) await je_collection({ sys:state.system, date:item.paid_date||today(), amount:+item.amount||0, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
+    }
+    if (type === 'payment') {
+      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+      if (item) await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
+    }
+    if (type === 'expense') {
+      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+      if (item) await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'تحويل بنكي' });
+    }
+    if (type === 'payout') {
+      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+      if (item) await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, partner:item.partner||'', method:item.pay_method||'تحويل بنكي' });
+    }
+    invalidateCache();
+    toast('✅ تمت الموافقة','ok');
+    await loadApprovalQueue();
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
+async function rejectItem(type, id) {
+  const cfg = APPROVAL_CONFIG[type];
+  if (!cfg) return;
+  showConfirm('مسح نهائي', '⚠️ هل تريد مسح هذه العملية نهائياً؟ لا يمكن التراجع.', async () => {
+    try {
+      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+      await apiDelete(cfg.table, { id:`eq.${id}` });
+      if (type === 'sale' && item?.inv_no) {
+        try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, paid_date:'is.null' }); } catch(e) {}
+      }
+      invalidateCache();
+      toast('🗑 تم المسح النهائي','ok');
+      await loadApprovalQueue();
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
 
 async function approveAll() {
   const items = approvalState.filtered;
