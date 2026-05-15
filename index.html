@@ -725,9 +725,17 @@
             <button class="btn btn-sm journal-period-btn" id="rtype-partners"  onclick="setReportType('partners')">👥 الشركاء</button>
             <button class="btn btn-sm journal-period-btn" id="rtype-opex"      onclick="setReportType('opex')">💼 التشغيلية</button>
           </div>
-          <input type="date" id="r-from" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
-          <span style="color:var(--text2)">—</span>
-          <input type="date" id="r-to" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
+          <div style="display:flex;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;gap:2px">
+            <button class="btn btn-sm journal-period-btn active" id="rperiod-today"  onclick="setReportPeriod('today')">اليوم</button>
+            <button class="btn btn-sm journal-period-btn"        id="rperiod-week"   onclick="setReportPeriod('week')">هذا الأسبوع</button>
+            <button class="btn btn-sm journal-period-btn"        id="rperiod-month"  onclick="setReportPeriod('month')">هذا الشهر</button>
+            <button class="btn btn-sm journal-period-btn"        id="rperiod-custom" onclick="setReportPeriod('custom')">تاريخ محدد</button>
+          </div>
+          <div id="rCustomDateWrap" style="display:none;align-items:center;gap:6px">
+            <input type="date" id="r-from" onchange="runReport()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
+            <span style="color:var(--text2)">—</span>
+            <input type="date" id="r-to"   onchange="runReport()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
+          </div>
           <!-- فلتر posted/draft -->
           <select id="r-post-filter" onchange="runReport()"
             style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px">

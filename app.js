@@ -7584,11 +7584,41 @@ function showReport(type) {
   const _rt={profit:'الأرباح والخسائر',cashflow:'التدفقات النقدية',inventory:'تقرير المخزون',sales:'المبيعات',expenses:'المصاريف',partners:'الشركاء',opex:'التشغيلية'};
   el('topBarTitle').textContent = _rt[type]||'التقارير';
   navActive('');
-  const now = new Date();
-  const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0');
-  if (!el('r-from').value) el('r-from').value = `${y}-${m}-01`;
-  if (!el('r-to').value)   el('r-to').value   = today();
+  setReportPeriod(reportState.period || 'today', false); // بدون run — setReportType هتشغل
   setReportType(type);
+}
+
+const reportPeriodState = { period: 'today' };
+
+function setReportPeriod(period, autoRun = true) {
+  reportPeriodState.period = period;
+  document.querySelectorAll('[id^="rperiod-"]').forEach(b => b.classList.remove('active'));
+  el('rperiod-' + period)?.classList.add('active');
+  const wrap = el('rCustomDateWrap');
+  if (period === 'custom') {
+    if (wrap) wrap.style.display = 'flex';
+    return; // المستخدم يختار التاريخ يدوياً
+  }
+  if (wrap) wrap.style.display = 'none';
+  const pad = n => String(n).padStart(2,'0');
+  const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const now = new Date();
+  let from, to;
+  if (period === 'today') {
+    from = to = toDate(now);
+  } else if (period === 'week') {
+    const sun = new Date(now); sun.setDate(now.getDate() - now.getDay());
+    const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
+    from = toDate(sun); to = toDate(sat);
+  } else if (period === 'month') {
+    from = `${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;
+    const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
+    to = toDate(last);
+  }
+  // ضع القيم في الـ inputs (مخفية أو ظاهرة)
+  if (el('r-from')) el('r-from').value = from;
+  if (el('r-to'))   el('r-to').value   = to;
+  if (autoRun) runReport();
 }
 
 function setReportType(type) {
