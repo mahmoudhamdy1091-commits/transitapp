@@ -7859,7 +7859,7 @@ async function runCashFlowReport(from, to, sys) {
       <div class="j-kpi" style="border-right:3px solid var(--green);background:var(--green-dim)">
         <div class="j-kpi-label">💚 إجمالي الداخل</div>
         <div class="j-kpi-val text-green" style="font-size:20px;font-weight:900">${fmt(totalIn)}</div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">تحصيلات العملاء (${all(collections).length} عملية)</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">تحصيلات العملاء (${filterFn(collections).length} عملية)</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--red);background:var(--red-dim)">
         <div class="j-kpi-label">❤️ إجمالي الخارج</div>
