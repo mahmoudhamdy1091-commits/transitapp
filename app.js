@@ -4826,14 +4826,21 @@ function filterJournalByType(filterVal, key) {
   });
 
   const configs = {
-    sale:       { color:'var(--green)',  title:'🧾 تفاصيل المبيعات' },
-    expenses:   { color:'var(--red)',    title:'💸 تفاصيل المصاريف' },
-    collection: { color:'var(--blue)',   title:'💰 تفاصيل التحصيلات' },
-    payment:    { color:'var(--cyan)',   title:'💳 تفاصيل دفعات المورد' },
-    payout:     { color:'var(--purple)', title:'👥 تفاصيل صرف الشركاء' },
+    purchase:   { color:'var(--accent)',  title:'📋 تفاصيل المشتريات' },
+    sale:       { color:'var(--green)',   title:'🧾 تفاصيل المبيعات' },
+    expenses:   { color:'var(--red)',     title:'💸 تفاصيل المصاريف' },
+    collection: { color:'var(--blue)',    title:'💰 تفاصيل التحصيلات' },
+    payment:    { color:'var(--cyan)',    title:'💳 تفاصيل دفعات المورد' },
+    payout:     { color:'var(--purple)',  title:'👥 تفاصيل صرف الشركاء' },
   };
-  const cfg   = configs[key];
+  const cfg   = configs[key] || { color:'var(--text)', title:'تفاصيل' };
   const total = entries.reduce((s,e)=>s+e.amount,0);
+
+  // أعمدة مخصصة حسب النوع
+  const isPurchase = key === 'purchase';
+  const colHeaders = isPurchase
+    ? '<th>التاريخ</th><th>الملف</th><th>المورد</th><th>عدد السيارات</th><th>إجمالي الشراء</th>'
+    : '<th>التاريخ</th><th>البيان</th><th>الملف</th><th>طريقة الدفع</th><th>المبلغ</th>';
 
   panel.style.display = 'block';
   panel.style.borderColor = cfg.color;
@@ -4847,17 +4854,25 @@ function filterJournalByType(filterVal, key) {
       </div>
     </div>
     ${entries.length ? `
-    <div style="max-height:240px;overflow-y:auto">
+    <div style="max-height:280px;overflow-y:auto">
       <table class="data-table" style="font-size:12px">
-        <thead><tr>
-          <th>التاريخ</th><th>البيان</th><th>الملف</th><th>طريقة الدفع</th><th>المبلغ</th>
-        </tr></thead>
+        <thead><tr>${colHeaders}</tr></thead>
         <tbody>
           ${entries.map(e => {
             const r = e.raw || {};
-            const method = r.pay_method||r.method||'—';
             const fileNo = e.fileNo||r.file_no||'—';
-            return `<tr onclick="${fileNo!=='—'?`openViewer('${fileNo}')`:''}" style="cursor:${fileNo!=='—'?'pointer':'default'}">
+            const clickAttr = fileNo!=='—' ? `onclick="openViewer('${fileNo}')" style="cursor:pointer"` : '';
+            if (isPurchase) {
+              return `<tr ${clickAttr}>
+                <td class="mono">${fmtDate(e.date)}</td>
+                <td class="mono text-amber" style="font-weight:700">${fileNo}</td>
+                <td>${r.supplier||e.title?.replace('سند شراء — ','')||'—'}</td>
+                <td style="text-align:center">${r.vehicle_count||'—'}</td>
+                <td class="mono" style="font-weight:900;color:var(--accent)">${fmt(e.amount)}</td>
+              </tr>`;
+            }
+            const method = r.pay_method||r.method||'—';
+            return `<tr ${clickAttr}>
               <td class="mono">${fmtDate(e.date)}</td>
               <td>${e.title||'—'}</td>
               <td class="mono text-amber">${fileNo}</td>
