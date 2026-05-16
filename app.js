@@ -81,12 +81,13 @@ function cacheStale() {
 async function ensureCache() {
   if (!cacheStale()) return;
   const sys = state.system;
+  // apiGetAll يجلب system_type المطابق + null (بيانات قديمة بدون system_type)
   const [deals, vehicles, sales, expenses, collections] = await Promise.all([
-    apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, order:'created_at.desc' }),
-    apiGet('vehicles',        { select:'*', system_type:`eq.${sys}` }),
-    apiGet('sales',           { select:'*', system_type:`eq.${sys}` }),
-    apiGet('expenses',        { select:'*', system_type:`eq.${sys}` }),
-    apiGet('collections',     { select:'*', system_type:`eq.${sys}` }),
+    apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, order:'created_at.desc' }),
+    apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}` }),
+    apiGetAll('sales',           { select:'*', system_type:`eq.${sys}` }),
+    apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}` }),
+    apiGetAll('collections',     { select:'*', system_type:`eq.${sys}` }),
   ]);
   state.allDeals       = deals       || [];
   state.allVehicles    = vehicles    || [];
@@ -190,6 +191,31 @@ async function apiGet(table, params = {}) {
   }
   if (!res.ok) { const e = await res.json(); throw new Error(e.message || res.statusText); }
   return res.json();
+}
+
+// ════════════════════════════════════════
+// apiGetAll — يجلب system_type المطابق + null (بيانات قديمة)
+// استخدمها بدل apiGet في كل استعلام يحتاج شمول البيانات القديمة
+// ════════════════════════════════════════
+async function apiGetAll(table, params = {}) {
+  // استخرج system_type من الـ params وابني طلبين
+  const { system_type, ...rest } = params;
+  if (!system_type || !system_type.startsWith('eq.')) {
+    // لا يوجد system_type فلتر — استخدم apiGet العادي
+    return apiGet(table, params);
+  }
+  const [matched, nullRows] = await Promise.all([
+    apiGet(table, params),
+    apiGet(table, { ...rest, system_type: 'is.null' }),
+  ]);
+  // دمج بدون تكرار (بالـ id)
+  const seen = new Set();
+  const out = [];
+  [...(matched||[]), ...(nullRows||[])].forEach(r => {
+    const key = r.id ?? JSON.stringify(r);
+    if (!seen.has(key)) { seen.add(key); out.push(r); }
+  });
+  return out;
 }
 
 async function apiPost(table, data) {
@@ -422,25 +448,35 @@ async function loadTransactions() {
 
   const toEOD = to + 'T23:59:59';
 
-  // helper: build Supabase URL with correct filters
-  function buildUrl(table, dateCol) {
-    let url = `${SB_URL}/rest/v1/${table}?select=*&system_type=eq.${encodeURIComponent(sys)}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`;
-    // post_status: old records have null = treat as posted
-    if (pf === 'draft')  url += '&post_status=eq.draft';
-    if (pf === 'posted') url += '&or=(post_status.eq.posted,post_status.is.null)';
-    return url;
+  // helper: build Supabase URL with correct filters — يشمل null system_type (بيانات قديمة)
+  async function fetchRows(table, dateCol) {
+    // جلب المطابق + null معاً
+    const base = `${SB_URL}/rest/v1/${table}?select=*&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`;
+    const psFilter = pf === 'draft' ? '&post_status=eq.draft'
+                   : pf === 'posted' ? '&or=(post_status.eq.posted,post_status.is.null)'
+                   : '';
+    const [r1, r2] = await Promise.all([
+      fetch(base + `&system_type=eq.${encodeURIComponent(sys)}` + psFilter, { headers: headers() }),
+      fetch(base + '&system_type=is.null' + psFilter, { headers: headers() }),
+    ]);
+    const [d1, d2] = await Promise.all([r1.ok ? r1.json() : [], r2.ok ? r2.json() : []]);
+    const seen = new Set(); const out = [];
+    [...(d1||[]), ...(d2||[])].forEach(r => {
+      const key = r.id ?? JSON.stringify(r);
+      if (!seen.has(key)) { seen.add(key); out.push(r); }
+    });
+    // إعادة ترتيب بالتاريخ
+    out.sort((a,b) => (b[dateCol]||'').localeCompare(a[dateCol]||''));
+    return out;
   }
 
   try {
     let rows = [];
 
     if (type === 'opex') {
-      // operating_expenses has no post_status
-      const r = await fetch(buildUrl('operating_expenses', 'exp_date').replace('&or=(post_status.eq.posted,post_status.is.null)','').replace('&post_status=eq.draft',''), { headers: headers() });
-      rows = r.ok ? await r.json() : [];
+      rows = await fetchRows('operating_expenses', 'exp_date');
     } else {
-      const r = await fetch(buildUrl(cfg.table, cfg.dateField), { headers: headers() });
-      rows = r.ok ? await r.json() : [];
+      rows = await fetchRows(cfg.table, cfg.dateField);
     }
 
     rows = rows || [];
@@ -746,8 +782,8 @@ async function loadDashboard() {
     const margin        = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
     const soldVinsAll   = new Set((allSales||[]).filter(isPosted).map(s=>s.vin));
     const stockVehicles = (vehicles||[]).filter(v => !soldVinsAll.has(v.vin));
-    const overdueList   = (collections||[]).filter(c => !c.paid_date && (c.due_date ? c.due_date <= todayStr : true));
-    const upcomingList  = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date > todayStr && c.due_date <= in7);
+    const overdueList   = (collections||[]).filter(c => isPosted(c) && !c.paid_date && c.due_date && c.due_date <= todayStr);
+    const upcomingList  = (collections||[]).filter(c => isPosted(c) && !c.paid_date && c.due_date && c.due_date > todayStr && c.due_date <= in7);
     const overdueAmt    = overdueList.reduce((s,c)=>s+(+c.amount||0),0);
     const draftCount    = (drafts||[]).length;
 
@@ -790,9 +826,9 @@ async function loadDashboard() {
 
     // ── مستحق للموردين ──
     try {
-      const allPayments = await apiGet('payments', { select:'file_no,amount', system_type:`eq.${sys}` });
+      const allPayments = await apiGetAll('payments', { select:'file_no,amount,post_status', system_type:`eq.${sys}` });
       const paidMap = {};
-      (allPayments||[]).forEach(p => { paidMap[p.file_no] = (paidMap[p.file_no]||0) + (+p.amount||0); });
+      (allPayments||[]).filter(isPosted).forEach(p => { paidMap[p.file_no] = (paidMap[p.file_no]||0) + (+p.amount||0); });
       const duelist = (deals||[]).map(d => ({
         file_no: d.file_no, supplier: d.supplier||'—',
         total_purchase: +d.total_purchase||0,
@@ -815,9 +851,14 @@ async function loadDashboard() {
       }
     } catch(e) {}
 
-    // ── تحصيلات متأخرة ──
-    const overdueItems = (collections||[]).filter(c => !c.paid_date && (c.due_date ? c.due_date <= todayStr : true))
-      .sort((a,b) => a.due_date > b.due_date ? 1 : -1);
+    // ── تحصيلات متأخرة — فقط التي لم تُدفع بعد ──
+    const overdueItems = (collections||[]).filter(c =>
+      isPosted(c) && !c.paid_date && c.due_date && c.due_date <= todayStr
+    ).sort((a,b) => a.due_date > b.due_date ? 1 : -1);
+
+    // حساب المجموع الكلي للتحصيلات المستحقة (كل مبالغ غير محصّلة)
+    const allCollected = (collections||[]).filter(c => isPosted(c) && c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
+    const allDueTotal  = (collections||[]).filter(c => isPosted(c)).reduce((s,c)=>s+(+c.amount||0),0);
     const overdueTotal = overdueItems.reduce((s,c) => s + (+c.amount||0), 0);
     if (el('dash-overdue-amt')) el('dash-overdue-amt').textContent = fmt(overdueTotal);
     if (el('dash-overdue-list')) {
@@ -1248,14 +1289,14 @@ async function loadViewerTab(idx) {
 async function loadSummaryTab(fn, sys) {
   try {
     const [vehicles, payments, expenses, sales, collections, partners, payouts, poArr] = await Promise.all([
-      apiGet('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('purchase_orders', { select:'total_purchase,supplier', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('purchase_orders', { select:'total_purchase,supplier', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
     state.currentVehicles = vehicles || [];
@@ -1435,7 +1476,7 @@ function summRow(label, cls, val, bold=false) {
 
 async function loadVehiclesTab(fn, sys) {
   try {
-    const data = await apiGet('vehicles', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
+    const data = await apiGetAll('vehicles', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
     state.currentVehicles = data || [];
     const soldVins = new Set((state.currentSales||[]).map(s=>s.vin));
 
@@ -1472,7 +1513,7 @@ async function loadVehiclesTab(fn, sys) {
 
 async function loadPaymentsTab(fn, sys) {
   try {
-    const data = await apiGet('payments', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc' });
+    const data = await apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc' });
     if (!data?.length) { el('paymentsTable').innerHTML = emptyHTML('💳','لا توجد دفعات'); return; }
     const total = data.reduce((s,p)=>s+(+p.amount||0),0);
     const csvRows = data.map(p=>[p.ref_no||'—', p.payer||'—', +p.amount||0, p.pay_method||'—', p.document||'—', p.pay_date||'—', p.notes||'']);
@@ -1510,7 +1551,7 @@ async function loadPaymentsTab(fn, sys) {
 
 async function loadExpensesTab(fn, sys) {
   try {
-    const data = await apiGet('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.desc' });
+    const data = await apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.desc' });
     if (!data?.length) { el('expensesTable').innerHTML = emptyHTML('💸','لا توجد مصاريف'); return; }
     const total = data.reduce((s,e)=>s+(+e.amount||0),0);
     const csvRows = data.map(e=>[e.ref_no||'—', e.description||'—', e.exp_type||'—', +e.amount||0, e.pay_method||'—', e.document||'—', e.exp_date||'—']);
@@ -1548,7 +1589,7 @@ async function loadExpensesTab(fn, sys) {
 
 async function loadSalesTab(fn, sys) {
   try {
-    const data = await apiGet('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' });
+    const data = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' });
     state.currentSales = data || [];
     if (!data?.length) { el('salesTable').innerHTML = emptyHTML('🤝','لا توجد مبيعات'); return; }
     const total = data.reduce((s,v)=>s+(+v.sale_price||0),0);
@@ -1608,7 +1649,7 @@ async function reprintInvoice(invNo, fn) {
     let data = state.allSales.filter(s => s.file_no === fn && s.inv_no === invNo);
     if (!data.length) {
       // fallback: fresh fetch لو مش في الـ cache
-      data = await apiGet('sales', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, inv_no:`eq.${invNo}` });
+      data = await apiGetAll('sales', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, inv_no:`eq.${invNo}` });
     }
     if (!data?.length) { toast('لم يتم إيجاد بيانات الفاتورة','err'); return; }
     const s = data[0];
@@ -1649,8 +1690,8 @@ async function deleteSaleInvoice(invNo, fileNo) {
         try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` }); } catch(e) {}
         // تحديث حالة الصفقة
         try {
-          const allV = await apiGet('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
-          const allS = await apiGet('sales',    { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
+          const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
+          const allS = await apiGetAll('sales', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
           const soldSet = new Set((allS||[]).map(s=>s.vin));
           const hasAnySales = (allS||[]).length > 0;
           const allSold = hasAnySales && (allV||[]).every(v=>soldSet.has(v.vin));
@@ -1897,7 +1938,7 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
 
 async function loadCollectionsTab(fn, sys) {
   try {
-    const data = await apiGet('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.desc' });
+    const data = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.desc' });
     if (!data?.length) { el('collectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
     const total = data.reduce((s,c)=>s+(+c.amount||0),0);
     const csvRows = data.map(c=>[c.ref_no||'—', c.inv_no||'—', c.customer||'—', c.vin||'—', +c.amount||0, c.pay_method||'—', c.due_date||'—', c.paid_date||'—']);
@@ -1937,8 +1978,8 @@ async function loadCollectionsTab(fn, sys) {
 async function loadPayoutsTab(fn, sys) {
   try {
     const [data, poArr] = await Promise.all([
-      apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc' }),
-      apiGet('purchase_orders', { select:'supplier', system_type:`eq.${sys}`, file_no:`eq.${fn}`, limit:1 }),
+      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc' }),
+      apiGetAll('purchase_orders', { select:'supplier', system_type:`eq.${sys}`, file_no:`eq.${fn}`, limit:1 }),
     ]);
     const supplierName = poArr?.[0]?.supplier || '—';
     if (!data?.length) { el('payoutsTable').innerHTML = emptyHTML('👥','لا توجد صرف للشركاء بعد'); return; }
@@ -2006,13 +2047,13 @@ async function loadPayoutsTab(fn, sys) {
 async function printPayoutVoucher(payoutId) {
   try {
     const [pArr, dealArr] = await Promise.all([
-      apiGet('partner_payouts', { select:'*', id:`eq.${payoutId}` }),
+      apiGetAll('partner_payouts', { select:'*', id:`eq.${payoutId}` }),
       null
     ]);
     const p = pArr?.[0];
     if (!p) { toast('لم يُعثر على بيانات الصرف','err'); return; }
 
-    const poArr = await apiGet('purchase_orders', { select:'supplier,po_date,total_purchase', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
+    const poArr = await apiGetAll('purchase_orders', { select:'supplier,po_date,total_purchase', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
     const deal  = poArr?.[0];
     // Get full deal balance for this partner
     let dealSummary = null;
@@ -2173,11 +2214,11 @@ async function printPayoutVoucher(payoutId) {
 async function openEditPayoutModal(payoutId) {
   // Load payout data and reopen payout modal in edit mode
   try {
-    const data = await apiGet('partner_payouts', { select:'*', id:`eq.${payoutId}` });
+    const data = await apiGetAll('partner_payouts', { select:'*', id:`eq.${payoutId}` });
     const p = data?.[0];
     if (!p) return;
     // Set modal values
-    const partners = await apiGet('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
+    const partners = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
     el('poutModalTitle').textContent = `تعديل صرف — ${p.partner}`;
     el('pout-partner').innerHTML = (partners||[]).map(pm=>`<option value="${pm.partner}" ${pm.partner===p.partner?'selected':''}>${pm.partner}</option>`).join('');
     el('pout-type').value    = p.payout_type || 'استرداد رأس مال';
@@ -2284,7 +2325,7 @@ async function openNewFileModal(editFileNo = null) {
   // Generate file no only for NEW mode
   if (!_nfEditMode) {
     try {
-      const data = await apiGet('purchase_orders', { select:'file_no', system_type:`eq.${state.system}`, order:'created_at.desc', limit:100 });
+      const data = await apiGetAll('purchase_orders', { select:'file_no', system_type:`eq.${state.system}`, order:'created_at.desc', limit:100 });
       let nextNum = 1;
       if (data && data.length) {
         const nums = data.map(d => parseInt((d.file_no||'').split('-')[1]) || 0);
@@ -2333,10 +2374,10 @@ async function openNewFileModal(editFileNo = null) {
 
     try {
       const [deals, vList, pList, payList] = await Promise.all([
-        apiGet('purchase_orders', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
-        apiGet('vehicles',        { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
-        apiGet('partners_master', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
-        apiGet('payments',        { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
+        apiGetAll('purchase_orders', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
+        apiGetAll('vehicles', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
+        apiGetAll('partners_master', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
+        apiGetAll('payments', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
       ]);
 
       const d = deals?.[0] || {};
@@ -2941,9 +2982,9 @@ async function openPaymentModal() {
   try {
     // جيب بيانات الصفقة والدفعات السابقة بالتوازي
     const [po, prevPayments, partners] = await Promise.all([
-      apiGet('purchase_orders', { select:'file_no,supplier,total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('payments',        { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('purchase_orders', { select:'file_no,supplier,total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('payments',        { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
     const poData    = po?.[0] || {};
@@ -3156,7 +3197,7 @@ async function submitPayment() {
     , post_status:entryStatus()};
     await apiPost('payments', data);
     await logAudit('INSERT','payments',fn,null,data);
-    const poArr = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
+    const poArr = await apiGetAll('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
     if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo:fn,supplierName,payerName:payer,method});
     markSaving('paymentModal'); closeModal('paymentModal');
@@ -3178,7 +3219,7 @@ async function openSaleModal(fileNoOverride = null) {
   const sel = el('sale-fileNo');
   sel.innerHTML = '<option value="">— اختر الملف —</option>';
   try {
-    const deals = await apiGet('purchase_orders', {
+    const deals = await apiGetAll('purchase_orders', {
       select:'file_no,supplier', system_type:`eq.${sys}`, order:'created_at.desc'
     });
     (deals||[]).forEach(d => {
@@ -3202,7 +3243,7 @@ async function openSaleModal(fileNoOverride = null) {
   const fileNo = sel.value;
   try {
     if (fileNo) {
-      const prev = await apiGet('sales', { select:'inv_no', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'created_at.desc', limit:100 });
+      const prev = await apiGetAll('sales', { select:'inv_no', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'created_at.desc', limit:100 });
       const max  = Math.max(0, ...(prev||[]).map(s=>{ const m=(s.inv_no||'').match(/(\d+)$/); return m?+m[1]:0; }));
       el('sale-invNo').value = `INV-${fileNo}-${String(max+1).padStart(3,'0')}`;
     } else {
@@ -3223,7 +3264,7 @@ async function openSaleModal(fileNoOverride = null) {
 async function onSaleFileChange(fn) {
   try {
     if (fn) {
-      const prev = await apiGet('sales', { select:'inv_no', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, order:'created_at.desc', limit:100 });
+      const prev = await apiGetAll('sales', { select:'inv_no', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, order:'created_at.desc', limit:100 });
       const max  = Math.max(0, ...(prev||[]).map(s=>{ const m=(s.inv_no||'').match(/(\d+)$/); return m?+m[1]:0; }));
       el('sale-invNo').value = `INV-${fn}-${String(max+1).padStart(3,'0')}`;
     }
@@ -3232,8 +3273,8 @@ async function onSaleFileChange(fn) {
 }
 
 async function loadAvailableVehicles(fn, sys) {
-  const vehicles = await apiGet('vehicles', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
-  const sales    = await apiGet('sales',    { select:'vin', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
+  const vehicles = await apiGetAll('vehicles', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
+  const sales    = await apiGetAll('sales', { select:'vin', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
   const soldVins = new Set((sales||[]).map(s=>s.vin));
   return (vehicles||[]).filter(v=>!soldVins.has(v.vin));
 }
@@ -3468,7 +3509,7 @@ async function submitSale() {
 
   // ── منع التكرار: تحقق من رقم الفاتورة ──
   try {
-    const existing = await apiGet('sales', { select:'id', system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` });
+    const existing = await apiGetAll('sales', { select:'id', system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` });
     if (existing?.length && !el('saleSubmitBtn')._editMode) {
       showFieldErr('saleError', `⚠️ رقم الفاتورة "${invNo}" مسجّل مسبقاً — غيّر الرقم أو استخدم 🔄 لتوليد رقم جديد`);
       return;
@@ -3500,8 +3541,8 @@ async function submitSale() {
     }
 
     // ── تحديث حالة الصفقة ──
-    const allV = await apiGet('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
-    const allS = await apiGet('sales',    { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
+    const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
+    const allS = await apiGetAll('sales', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const soldSet = new Set((allS||[]).map(s=>s.vin));
     const allSold = (allV||[]).every(v=>soldSet.has(v.vin));
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` },
@@ -3581,8 +3622,8 @@ async function openCollectionModal() {
 
   try {
     const [sales, collections] = await Promise.all([
-      apiGet('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
-      apiGet('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
+      apiGetAll('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
     const collectedMap = {};
@@ -3721,7 +3762,7 @@ async function openPayoutModal() {
 
   // Get partners from partners_master for this file
   // Fallback to all partners from contacts if none found
-  let partners = await apiGet('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
+  let partners = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
   if (!partners?.length) {
     const allPartners = await getContactsByType('partner');
     partners = (allPartners||[]).map(p => ({ partner: p.name }));
@@ -3837,13 +3878,13 @@ function calcPayoutTotal() {
 // Get partner balance for a deal
 async function getPartnerDealBalance(fileNo, partner, sys) {
   const [pmRow, payments, payouts, vehicles, sales, expenses, poRow] = await Promise.all([
-    apiGet('partners_master', { select:'share_percent', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}` }),
-    apiGet('payments',        { select:'amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, payer:`eq.${partner}` }),
-    apiGet('partner_payouts', { select:'amount,payout_type,capital_amount,profit_amount,advance_amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}` }),
-    apiGet('vehicles',        { select:'purchase_price', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-    apiGet('sales',           { select:'sale_price,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-    apiGet('expenses',        { select:'amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-    apiGet('purchase_orders', { select:'total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+    apiGetAll('partners_master', { select:'share_percent', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}` }),
+    apiGetAll('payments',        { select:'amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, payer:`eq.${partner}` }),
+    apiGetAll('partner_payouts', { select:'amount,payout_type,capital_amount,profit_amount,advance_amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}` }),
+    apiGetAll('vehicles',        { select:'purchase_price', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+    apiGetAll('sales',           { select:'sale_price,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+    apiGetAll('expenses',        { select:'amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+    apiGetAll('purchase_orders', { select:'total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
   ]);
   const share       = (pmRow?.[0]?.share_percent || 0) / 100;
   const capitalPaid = (payments||[]).filter(isPosted).reduce((s,p)=>s+(+p.amount||0),0);
@@ -3894,7 +3935,7 @@ async function submitPayout() {
     // Generate pay_id
     let pay_id = `PAY-${fn}-001`;
     try {
-      const existing = await apiGet('partner_payouts', { select:'pay_id', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, order:'created_at.desc', limit:100 });
+      const existing = await apiGetAll('partner_payouts', { select:'pay_id', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, order:'created_at.desc', limit:100 });
       const lastNums = (existing||[]).map(p=>{ const m=(p.pay_id||'').match(/(\d+)$/); return m?parseInt(m[1]):0; });
       const nextNum  = (lastNums.length ? Math.max(...lastNums) : 0) + 1;
       pay_id = `PAY-${fn}-${String(nextNum).padStart(3,'0')}`;
@@ -3949,7 +3990,7 @@ async function submitAddVehicle() {
     };
     await apiPost('vehicles', data);
     // Update vehicle count on PO
-    const vCount = (await apiGet('vehicles', { select:'id', system_type:`eq.${state.system}`, file_no:`eq.${fn}` })).length;
+    const vCount = (await apiGetAll('vehicles', { select:'id', system_type:`eq.${state.system}`, file_no:`eq.${fn}` })).length;
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` }, { vehicle_count: vCount });
     await logAudit('INSERT','vehicles',fn,null,data);
     markSaving('addVehicleModal'); closeModal('addVehicleModal');
@@ -3969,7 +4010,7 @@ async function populateFileDropdown(selectId) {
   const currentVal = sel.value;
   sel.innerHTML = '<option value="">-- اختر الملف --</option>';
   try {
-    const deals = await apiGet('purchase_orders', {
+    const deals = await apiGetAll('purchase_orders', {
       select:'file_no,supplier',
       system_type:`eq.${state.system}`,
       order:'created_at.desc'
@@ -4063,8 +4104,8 @@ async function loadQuickVins(fileNo) {
   if (!fileNo) return;
   _vinLoadTimer = setTimeout(async () => {
     try {
-      const vehicles = await apiGet('vehicles', { select:'vin,model,vehicle_type', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
-      const sales    = await apiGet('sales',    { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
+      const vehicles = await apiGetAll('vehicles', { select:'vin,model,vehicle_type', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
+      const sales    = await apiGetAll('sales', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
       const soldVins = new Set((sales||[]).map(s=>s.vin));
       const unsold   = (vehicles||[]).filter(v => !soldVins.has(v.vin));
       el('qs-vin').innerHTML = unsold.length
@@ -4095,8 +4136,8 @@ async function loadQuickInvoices(fileNo) {
     const fn  = fileNo.trim();
 
     const [sales, collections] = await Promise.all([
-      apiGet('sales',       { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
-      apiGet('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('sales',       { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
+      apiGetAll('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
     const collectedMap = {};
@@ -4176,7 +4217,7 @@ async function loadQuickPartners(fileNo) {
   if (!fileNo) return;
   _partnerLoadTimer = setTimeout(async () => {
     try {
-      const partners = await apiGet('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
+      const partners = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
       el('qpo-partner').innerHTML = (partners&&partners.length)
         ? partners.map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('')
         : '<option value="">— لا يوجد شركاء في هذا الملف —</option>';
@@ -4296,9 +4337,9 @@ async function loadPaymentPOCard(fileNo) {
   try {
     const sys = state.system;
     const [po, prevPayments, partners] = await Promise.all([
-      apiGet('purchase_orders', { select:'file_no,supplier,total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('payments',        { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('purchase_orders', { select:'file_no,supplier,total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('payments',        { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
     ]);
 
     const poData    = po?.[0] || {};
@@ -4387,7 +4428,7 @@ async function submitQuickPayout() {
     // Generate pay_id
     let pay_id = `PAY-${fileNo}-001`;
     try {
-      const existing = await apiGet('partner_payouts', { select:'pay_id', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, order:'created_at.desc', limit:100 });
+      const existing = await apiGetAll('partner_payouts', { select:'pay_id', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, order:'created_at.desc', limit:100 });
       const lastNums = (existing||[]).map(p=>{ const m=(p.pay_id||'').match(/(\d+)$/); return m?parseInt(m[1]):0; });
       const nextNum  = (lastNums.length ? Math.max(...lastNums) : 0) + 1;
       pay_id = `PAY-${fileNo}-${String(nextNum).padStart(3,'0')}`;
@@ -4424,7 +4465,7 @@ async function searchVinDropdown(q) {
   clearTimeout(_vinSearchTimer);
   _vinSearchTimer = setTimeout(async () => {
     try {
-      const vehicles = await apiGet('vehicles', {
+      const vehicles = await apiGetAll('vehicles', {
         select: 'vin,model,vehicle_type,year,file_no,color',
         system_type: `eq.${state.system}`,
         vin: `ilike.*${q}*`,
@@ -4475,13 +4516,13 @@ async function searchVin(q) {
   }
   try {
     const [vehicles, sales] = await Promise.all([
-      apiGet('vehicles', {
+      apiGetAll('vehicles', {
         select: '*',
         system_type: `eq.${state.system}`,
         vin: `ilike.*${q}*`,
         limit: 5
       }),
-      apiGet('sales', {
+      apiGetAll('sales', {
         select: 'vin,sale_price,sale_date,customer,inv_no',
         system_type: `eq.${state.system}`,
         vin: `ilike.*${q}*`
@@ -4889,13 +4930,24 @@ async function loadJournal() {
     const sys = state.system;
 
     async function apiGetRange(table, dateCol, from, to, extra={}) {
-      // Use end of day for 'to' to include all records on that day
       const toEOD = to + 'T23:59:59';
-      let url = `${SB_URL}/rest/v1/${table}?system_type=eq.${encodeURIComponent(sys)}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`;
-      for (const [k,v] of Object.entries(extra)) url += `&${k}=${encodeURIComponent(v)}`;
-      const res = await fetch(url, { headers: headers() });
-      if (!res.ok) { console.warn(`apiGetRange ${table} failed:`, res.status); return []; }
-      return res.json();
+      const makeUrl = (sysParam) => {
+        let url = `${SB_URL}/rest/v1/${table}?${sysParam}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`;
+        for (const [k,v] of Object.entries(extra)) url += `&${k}=${encodeURIComponent(v)}`;
+        return url;
+      };
+      const [r1, r2] = await Promise.all([
+        fetch(makeUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: headers() }),
+        fetch(makeUrl('system_type=is.null'), { headers: headers() }),
+      ]);
+      const [d1, d2] = await Promise.all([r1.ok ? r1.json() : [], r2.ok ? r2.json() : []]);
+      const seen = new Set(); const out = [];
+      [...(d1||[]), ...(d2||[])].forEach(r => {
+        const key = r.id ?? JSON.stringify(r);
+        if (!seen.has(key)) { seen.add(key); out.push(r); }
+      });
+      out.sort((a,b) => (b[dateCol]||'').localeCompare(a[dateCol]||''));
+      return out;
     }
 
     const [purchases, sales, expenses, payments, payouts, opexItems] = await Promise.all([
@@ -4907,15 +4959,17 @@ async function loadJournal() {
       fetchOpexForJournal(from, to, sys),
     ]);
 
-    // Collections — نجيب بالـ due_date والـ paid_date معاً
     const toEOD2 = to + 'T23:59:59';
-    const [colByDue, colByPaid] = await Promise.all([
-      fetch(`${SB_URL}/rest/v1/collections?system_type=eq.${encodeURIComponent(sys)}&due_date=gte.${encodeURIComponent(from)}&due_date=lte.${encodeURIComponent(toEOD2)}&order=due_date.desc`, { headers: headers() }).then(r=>r.ok?r.json():[]),
-      fetch(`${SB_URL}/rest/v1/collections?system_type=eq.${encodeURIComponent(sys)}&paid_date=gte.${encodeURIComponent(from)}&paid_date=lte.${encodeURIComponent(toEOD2)}&order=paid_date.desc`, { headers: headers() }).then(r=>r.ok?r.json():[]),
+    const makeColUrl = (sysParam, dateCol) =>
+      `${SB_URL}/rest/v1/collections?${sysParam}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD2)}&order=${dateCol}.desc`;
+    const [colByDue, colByPaid, colByDueNull, colByPaidNull] = await Promise.all([
+      fetch(makeColUrl(`system_type=eq.${encodeURIComponent(sys)}`, 'due_date'),  { headers: headers() }).then(r=>r.ok?r.json():[]),
+      fetch(makeColUrl(`system_type=eq.${encodeURIComponent(sys)}`, 'paid_date'), { headers: headers() }).then(r=>r.ok?r.json():[]),
+      fetch(makeColUrl('system_type=is.null', 'due_date'),  { headers: headers() }).then(r=>r.ok?r.json():[]),
+      fetch(makeColUrl('system_type=is.null', 'paid_date'), { headers: headers() }).then(r=>r.ok?r.json():[]),
     ]);
-    // دمج بدون تكرار
     const colMap = {};
-    [...(colByDue||[]), ...(colByPaid||[])].forEach(c => { colMap[c.id] = c; });
+    [...(colByDue||[]), ...(colByPaid||[]), ...(colByDueNull||[]), ...(colByPaidNull||[])].forEach(c => { colMap[c.id] = c; });
     const collections = Object.values(colMap);
 
     // Normalize entries
@@ -5513,8 +5567,8 @@ async function showLedger(contactId, contactName, contactType) {
     if (contactType === 'customer') {
       // ── عميل: مبيعات (مدين) + تحصيلات (دائن) ──
       const [sales, collections] = await Promise.all([
-        apiGet('sales',       { select:'*', system_type:`eq.${sys}`, customer:`eq.${name}`, order:'sale_date.asc' }),
-        apiGet('collections', { select:'*', system_type:`eq.${sys}`, customer:`eq.${name}`, order:'paid_date.asc,due_date.asc' }),
+        apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, customer:`eq.${name}`, order:'sale_date.asc' }),
+        apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, customer:`eq.${name}`, order:'paid_date.asc,due_date.asc' }),
       ]);
       // مبيعات → مدين على العميل
       (sales||[]).filter(isPosted).forEach(r => {
@@ -5544,8 +5598,8 @@ async function showLedger(contactId, contactName, contactType) {
     } else if (contactType === 'supplier') {
       // ── مورد: شراء (دائن) + دفعات (مدين) ──
       const [pos, payments] = await Promise.all([
-        apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, supplier:`eq.${name}`, order:'po_date.asc' }),
-        apiGet('payments',        { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`,    order:'pay_date.asc' }),
+        apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, supplier:`eq.${name}`, order:'po_date.asc' }),
+        apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`,    order:'pay_date.asc' }),
       ]);
       // شراء → دائن على المورد
       (pos||[]).forEach(r => {
@@ -5575,8 +5629,8 @@ async function showLedger(contactId, contactName, contactType) {
     } else if (contactType === 'partner') {
       // ── شريك: دفعات رأس مال (مدين) + مسحوبات (دائن) ──
       const [payments, payouts] = await Promise.all([
-        apiGet('payments',        { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`,    order:'pay_date.asc' }),
-        apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, partner:`eq.${name}`, order:'pay_date.asc' }),
+        apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`,    order:'pay_date.asc' }),
+        apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, partner:`eq.${name}`, order:'pay_date.asc' }),
       ]);
       (payments||[]).filter(isPosted).forEach(r => {
         entries.push({
@@ -5604,8 +5658,8 @@ async function showLedger(contactId, contactName, contactType) {
     } else {
       // ── عهدة وأخرى: expenses + payments ──
       const [expenses, payments] = await Promise.all([
-        apiGet('expenses', { select:'*', system_type:`eq.${sys}`, order:'exp_date.asc' }),
-        apiGet('payments', { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`, order:'pay_date.asc' }),
+        apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, order:'exp_date.asc' }),
+        apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`, order:'pay_date.asc' }),
       ]);
       (expenses||[]).filter(isPosted).forEach(r => {
         entries.push({
@@ -5896,12 +5950,12 @@ async function loadTrialBalance() {
 
     // جلب كل البيانات بالتوازي
     const [pos, sales, expenses, payments, collections, payouts, contacts] = await Promise.all([
-      apiGet('purchase_orders', { select:'supplier,total_purchase,file_no', system_type:`eq.${sys}` }),
-      apiGet('sales',           { select:'customer,sale_price,post_status', system_type:`eq.${sys}` }),
-      apiGet('expenses',        { select:'amount,post_status',              system_type:`eq.${sys}` }),
-      apiGet('payments',        { select:'payer,amount,post_status',        system_type:`eq.${sys}` }),
-      apiGet('collections',     { select:'customer,amount,post_status',     system_type:`eq.${sys}` }),
-      apiGet('partner_payouts', { select:'partner,amount,post_status',      system_type:`eq.${sys}` }),
+      apiGetAll('purchase_orders', { select:'supplier,total_purchase,file_no', system_type:`eq.${sys}` }),
+      apiGetAll('sales',           { select:'customer,sale_price,post_status', system_type:`eq.${sys}` }),
+      apiGetAll('expenses',        { select:'amount,post_status',              system_type:`eq.${sys}` }),
+      apiGetAll('payments',        { select:'payer,amount,post_status',        system_type:`eq.${sys}` }),
+      apiGetAll('collections',     { select:'customer,amount,post_status',     system_type:`eq.${sys}` }),
+      apiGetAll('partner_payouts', { select:'partner,amount,post_status',      system_type:`eq.${sys}` }),
       // جهات الاتصال (نظام + null)
       Promise.all([
         apiGet('contacts', { select:'id,name,type,opening_balance', system_type:`eq.${sys}` }),
@@ -6437,11 +6491,11 @@ async function printPurchaseOrder(fileNo) {
   try {
     const sys = state.system;
     const [poArr, vehicles, partners, payments, expenses] = await Promise.all([
-      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'pay_date.asc' }),
-      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'exp_date.asc' }),
+      apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'pay_date.asc' }),
+      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'exp_date.asc' }),
     ]);
     const po         = poArr?.[0] || {};
     const totalPaid  = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
@@ -6583,9 +6637,9 @@ async function exportPurchaseOrderExcel(fileNo) {
   try {
     const sys = state.system;
     const [poArr, vehicles, payments] = await Promise.all([
-      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
     ]);
     const po = poArr?.[0] || {};
     exportToExcel([
@@ -6620,11 +6674,11 @@ async function exportDealExcel(fileNo) {
   try {
     const sys = state.system;
     const [sales, expenses, payments, collections, payouts] = await Promise.all([
-      apiGet('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
     ]);
     exportToExcel([
       { name:'مبيعات', headers:['التاريخ','الفاتورة','VIN','العميل','السعر','ملاحظات'],
@@ -7131,9 +7185,9 @@ async function loadVehiclesReport() {
   try {
     const sys = state.system;
     const [vehicles, sales, deals] = await Promise.all([
-      apiGet('vehicles', { select:'*', system_type:`eq.${sys}`, order:'file_no.asc,created_at.asc' }),
-      apiGet('sales',    { select:'vin,sale_price,customer,sale_date,inv_no', system_type:`eq.${sys}` }),
-      apiGet('purchase_orders', { select:'file_no,supplier', system_type:`eq.${sys}` }),
+      apiGetAll('vehicles', { select:'*', system_type:`eq.${sys}`, order:'file_no.asc,created_at.asc' }),
+      apiGetAll('sales',    { select:'vin,sale_price,customer,sale_date,inv_no', system_type:`eq.${sys}` }),
+      apiGetAll('purchase_orders', { select:'file_no,supplier', system_type:`eq.${sys}` }),
     ]);
 
     const soldMap = {};
@@ -7287,12 +7341,12 @@ function exportVehiclesExcel() {
 async function loadViewerKpis(fn, sys) {
   try {
     const [po, vehicles, sales, expenses, collections, payments] = await Promise.all([
-      apiGet('purchase_orders', { select:'total_purchase,status',      system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('vehicles',        { select:'purchase_price,vin',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('sales',           { select:'sale_price,vin,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('expenses',        { select:'amount,post_status',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('collections',     { select:'amount,post_status',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('payments',        { select:'amount,post_status',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('purchase_orders', { select:'total_purchase,status',      system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('vehicles',        { select:'purchase_price,vin',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('sales',           { select:'sale_price,vin,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('expenses',        { select:'amount,post_status',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('collections',     { select:'amount,post_status',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('payments',        { select:'amount,post_status',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
     const totalCost    = +(po?.[0]?.total_purchase) || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
@@ -7355,7 +7409,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
     const sys = state.system;
 
     // ── 1. جلب كل الصفقات التي الشريك فيها ──
-    const allPartnerDeals = await apiGet('partners_master', {
+    const allPartnerDeals = await apiGetAll('partners_master', {
       select:'*', system_type:`eq.${sys}`, partner:`eq.${partnerName}`
     });
     if (!allPartnerDeals?.length) { overlay.remove(); toast('لا توجد صفقات لهذا الشريك','err'); return; }
@@ -7370,13 +7424,13 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       const share = (pm.share_percent||0) / 100;
 
       const [po, vehicles, expenses, sales, allPartners, payments, payouts] = await Promise.all([
-        apiGet('purchase_orders', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGet('vehicles',        { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGet('expenses',        { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGet('sales',           { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGet('partners_master', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGet('payments',        { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}`, payer:`eq.${partnerName}` }),
-        apiGet('partner_payouts', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}`, partner:`eq.${partnerName}` }),
+        apiGetAll('purchase_orders', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('vehicles', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('expenses', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('sales', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('partners_master', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('payments', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}`, payer:`eq.${partnerName}` }),
+        apiGetAll('partner_payouts', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}`, partner:`eq.${partnerName}` }),
       ]);
 
       const poData       = po?.[0] || {};
@@ -7406,7 +7460,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       const netDue = capitalPaid + myProfit - totalWithdrawn;
 
       // ما دفعه كل شركاء الصفقة (مش بس الشريك المطلوب)
-      const allPartnersPayments = await apiGet('payments', {
+      const allPartnersPayments = await apiGetAll('payments', {
         select:'payer,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}`
       });
 
@@ -8029,12 +8083,26 @@ async function loadAllCollections() {
 const reportState = { type:'profit', data:[] };
 
 async function apiGetDateRange(table, dateCol, from, to, extra={}) {
-  let url = `${SB_URL}/rest/v1/${table}?system_type=eq.${encodeURIComponent(state.system)}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(to)}`;
-  for (const [k,v] of Object.entries(extra)) url += `&${k}=${encodeURIComponent(v)}`;
-  let res = await fetch(url, { headers: headers() });
-  if (res.status === 401) { const ok = await refreshAccessToken(); if(!ok) throw new Error('انتهت الجلسة'); res = await fetch(url,{headers:headers()}); }
-  if (!res.ok) { const e = await res.json(); throw new Error(e.message||res.statusText); }
-  return res.json();
+  const sys = state.system;
+  const baseParams = `${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(to)}`;
+  const extraStr = Object.entries(extra).map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join('&');
+  const makeUrl = (sysParam) => {
+    let url = `${SB_URL}/rest/v1/${table}?${sysParam}&${baseParams}`;
+    if (extraStr) url += '&' + extraStr;
+    return url;
+  };
+  const [r1, r2] = await Promise.all([
+    fetch(makeUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: headers() }),
+    fetch(makeUrl('system_type=is.null'), { headers: headers() }),
+  ]);
+  if (r1.status === 401) { await refreshAccessToken(); return apiGetDateRange(table, dateCol, from, to, extra); }
+  const [d1, d2] = await Promise.all([r1.ok ? r1.json() : [], r2.ok ? r2.json() : []]);
+  const seen = new Set(); const out = [];
+  [...(d1||[]), ...(d2||[])].forEach(r => {
+    const key = r.id ?? JSON.stringify(r);
+    if (!seen.has(key)) { seen.add(key); out.push(r); }
+  });
+  return out;
 }
 
 function showReport(type) {
@@ -8246,7 +8314,7 @@ async function runReport() {
       await ensureCache();
       const [payouts, allPartnerDeals] = await Promise.all([
         apiGetDateRange('partner_payouts','pay_date',from,to,{order:'pay_date.desc'}),
-        apiGet('partners_master',{ select:'partner', system_type:`eq.${sys}` }),
+        apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}` }),
       ]);
       // payments من الـ cache مع فلتر تاريخ
       const payments = state.allPayments
@@ -8739,10 +8807,10 @@ function applyRoleRestrictions() {
 async function checkVinDuplicate(vin, excludeFileNo='') {
   if (!vin || vin.length < 3) return null;
   try {
-    const results = await apiGet('vehicles', { select:'file_no,model,vin', system_type:`eq.${state.system}`, vin:`eq.${vin}` });
+    const results = await apiGetAll('vehicles', { select:'file_no,model,vin', system_type:`eq.${state.system}`, vin:`eq.${vin}` });
     const found = (results||[]).filter(v => v.file_no !== excludeFileNo);
     if (!found.length) return null;
-    const deals = await apiGet('purchase_orders', { select:'file_no', system_type:`eq.${state.system}`, file_no:`eq.${found[0].file_no}` });
+    const deals = await apiGetAll('purchase_orders', { select:'file_no', system_type:`eq.${state.system}`, file_no:`eq.${found[0].file_no}` });
     if (!deals || !deals.length) {
       // VIN exists but deal is deleted — clean up orphan silently
       try { await apiDelete('vehicles', { system_type:`eq.${state.system}`, vin:`eq.${vin}`, file_no:`eq.${found[0].file_no}` }); } catch(e) {}
@@ -9213,14 +9281,14 @@ async function loadDealStatement(fn, sys) {
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
     const [po, vehicles, payments, expenses, sales, collections, partners, payouts] = await Promise.all([
-      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
-      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.asc' }),
-      apiGet('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.asc' }),
-      apiGet('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.asc' }),
-      apiGet('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
+      apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
+      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.asc' }),
+      apiGetAll('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.asc' }),
+      apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.asc' }),
+      apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
     ]);
 
     const deal = po?.[0] || {};
@@ -9591,12 +9659,12 @@ async function populateContactSelect(selectId, type, allowEmpty=true) {
 // ════════════════════════════════════════
 async function openEditPaymentModal(paymentId) {
   try {
-    const data = await apiGet('payments', { select:'*', id:`eq.${paymentId}` });
+    const data = await apiGetAll('payments', { select:'*', id:`eq.${paymentId}` });
     const p = data?.[0];
     if (!p) { toast('لم يُعثر على البيانات','err'); return; }
 
     // Load partners for this file
-    let partners = await apiGet('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
+    let partners = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
     if (!partners?.length) {
       const all = await getContactsByType('partner');
       partners = (all||[]).map(x=>({partner:x.name}));
@@ -9639,7 +9707,7 @@ async function submitEditPayment() {
 // ════════════════════════════════════════
 async function openEditExpenseModal(expenseId) {
   try {
-    const data = await apiGet('expenses', { select:'*', id:`eq.${expenseId}` });
+    const data = await apiGetAll('expenses', { select:'*', id:`eq.${expenseId}` });
     const e = data?.[0];
     if (!e) { toast('لم يُعثر على البيانات','err'); return; }
     el('ee-id').value     = e.id;
@@ -9679,7 +9747,7 @@ async function submitEditExpense() {
 // ════════════════════════════════════════
 async function openEditCollectionModal(collectionId) {
   try {
-    const data = await apiGet('collections', { select:'*', id:`eq.${collectionId}` });
+    const data = await apiGetAll('collections', { select:'*', id:`eq.${collectionId}` });
     const c = data?.[0];
     if (!c) { toast('لم يُعثر على البيانات','err'); return; }
     el('ec-id').value       = c.id;
@@ -10450,7 +10518,7 @@ function renderDDChart(entries, color) {
 async function regenFileNo() {
   try {
     const sys  = state.system;
-    const all  = await apiGet('purchase_orders', { select:'file_no', system_type:`eq.${sys}`, order:'created_at.desc' });
+    const all  = await apiGetAll('purchase_orders', { select:'file_no', system_type:`eq.${sys}`, order:'created_at.desc' });
     const nums = (all||[]).map(d => { const m=(d.file_no||'').match(/(\d+)$/); return m?parseInt(m[1]):0; });
     const next = (nums.length ? Math.max(...nums) : 0) + 1;
     el('nf-fileNo').value = `${sys}-${String(next).padStart(3,'0')}`;
@@ -10465,7 +10533,7 @@ async function regenInvNo() {
     const fn  = state.currentFileNo || el('nf-fileNo')?.value?.trim();
     const sys = state.system;
     if (!fn) { toast('حدد رقم الملف أولاً','err'); return; }
-    const existing = await apiGet('sales', { select:'inv_no', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'created_at.desc' });
+    const existing = await apiGetAll('sales', { select:'inv_no', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'created_at.desc' });
     const nums = (existing||[]).map(s => { const m=(s.inv_no||'').match(/(\d+)$/); return m?parseInt(m[1]):0; });
     const next = (nums.length ? Math.max(...nums) : 0) + 1;
     el('sale-invNo').value = `INV-${fn}-${String(next).padStart(3,'0')}`;
@@ -10507,12 +10575,12 @@ async function loadApprovalQueue() {
 
     // جيب كل البنود المعلقة من كل الجداول بالتوازي
     const [purchases, sales, expenses, collections, payments, payouts] = await Promise.all([
-      apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
-      apiGet('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
-      apiGet('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
-      apiGet('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
-      apiGet('payments',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
-      apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+      apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+      apiGetAll('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+      apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
     ]);
 
     // دمج كل البنود مع نوعها
@@ -10700,7 +10768,7 @@ async function openEditSaleApproval(saleId, fileNo, invNo) {
   if (!fileNo || !invNo) { toast('بيانات الفاتورة ناقصة', 'err'); return; }
   try {
     // جيب كل سطور الفاتورة (ممكن أكثر من سيارة)
-    const allSaleItems = await apiGet('sales', {
+    const allSaleItems = await apiGetAll('sales', {
       select: '*',
       system_type: `eq.${state.system}`,
       file_no: `eq.${fileNo}`,
@@ -10917,11 +10985,11 @@ async function updateApprovalBadge() {
   try {
     const sys = state.system;
     const [s,e,c,p,po] = await Promise.all([
-      apiGet('sales',           { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
-      apiGet('expenses',        { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
-      apiGet('collections',     { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
-      apiGet('payments',        { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
-      apiGet('partner_payouts', { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
+      apiGetAll('sales',           { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
+      apiGetAll('expenses',        { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
+      apiGetAll('collections',     { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
+      apiGetAll('payments',        { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
+      apiGetAll('partner_payouts', { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
     ]);
     const total = (s?.length||0)+(e?.length||0)+(c?.length||0)+(p?.length||0)+(po?.length||0);
     const badge = el('approval-badge');
@@ -10950,8 +11018,8 @@ async function loadPartnerAccountLedger() {
   try {
     // جيب كل الصفقات اللي فيها الشريك
     const [allDeals, allPayouts, accountEntries] = await Promise.all([
-      apiGet('partners_master',   { select:'file_no,share_percent', system_type:`eq.${sys}`, partner:`eq.${partner}` }),
-      apiGet('partner_payouts',   { select:'*', system_type:`eq.${sys}`, partner:`eq.${partner}`, order:'pay_date.desc' }),
+      apiGetAll('partners_master',   { select:'file_no,share_percent', system_type:`eq.${sys}`, partner:`eq.${partner}` }),
+      apiGetAll('partner_payouts',   { select:'*', system_type:`eq.${sys}`, partner:`eq.${partner}`, order:'pay_date.desc' }),
       apiGet('partner_accounts',  { select:'*', system_type:`eq.${sys}`, partner:`eq.${partner}`, order:'entry_date.desc' }),
     ]);
 
@@ -10961,9 +11029,9 @@ async function loadPartnerAccountLedger() {
     for (const pm of (allDeals||[])) {
       try {
         const [po, sales, expenses] = await Promise.all([
-          apiGet('purchase_orders', { select:'total_purchase', system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
-          apiGet('sales',           { select:'sale_price',     system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
-          apiGet('expenses',        { select:'amount',         system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
+          apiGetAll('purchase_orders', { select:'total_purchase', system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
+          apiGetAll('sales', { select:'sale_price',     system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
+          apiGetAll('expenses', { select:'amount',         system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
         ]);
         const share      = (+pm.share_percent||0)/100;
         const totalPurch = +po?.[0]?.total_purchase||0;
@@ -11168,8 +11236,8 @@ async function loadPartnerAccountBalance() {
   if (!partner) return;
   try {
     const [allDeals, allPayouts, accountEntries] = await Promise.all([
-      apiGet('partners_master',  { select:'file_no,share_percent', system_type:`eq.${state.system}`, partner:`eq.${partner}` }),
-      apiGet('partner_payouts',  { select:'amount', system_type:`eq.${state.system}`, partner:`eq.${partner}` }),
+      apiGetAll('partners_master',  { select:'file_no,share_percent', system_type:`eq.${state.system}`, partner:`eq.${partner}` }),
+      apiGetAll('partner_payouts',  { select:'amount', system_type:`eq.${state.system}`, partner:`eq.${partner}` }),
       apiGet('partner_accounts', { select:'amount,entry_type', system_type:`eq.${state.system}`, partner:`eq.${partner}` }),
     ]);
 
@@ -11177,9 +11245,9 @@ async function loadPartnerAccountBalance() {
     for (const pm of (allDeals||[])) {
       try {
         const [po, sales, exp] = await Promise.all([
-          apiGet('purchase_orders',{select:'total_purchase',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
-          apiGet('sales',{select:'sale_price',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
-          apiGet('expenses',{select:'amount',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
+          apiGetAll('purchase_orders', {select:'total_purchase',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
+          apiGetAll('sales', {select:'sale_price',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
+          apiGetAll('expenses', {select:'amount',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
         ]);
         const share = (+pm.share_percent||0)/100;
         const profit = ((sales||[]).reduce((s,r)=>s+(+r.sale_price||0),0) - (+po?.[0]?.total_purchase||0) - (exp||[]).reduce((s,e)=>s+(+e.amount||0),0)) * share;
