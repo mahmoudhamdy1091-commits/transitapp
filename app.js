@@ -2994,20 +2994,56 @@ async function openPaymentModal() {
   el('pay-doc').value    = '';
   el('pay-notes').value  = '';
 
+  // لو مفيش ملف محدد — أضف selector للملفات
+  let fileSelector = '';
+  if (!fn) {
+    await ensureCache();
+    const dealOptions = (state.allDeals||[])
+      .map(d => `<option value="${d.file_no}">${d.file_no} — ${d.supplier||'—'}</option>`)
+      .join('');
+    fileSelector = `
+      <div class="field" style="margin-bottom:12px">
+        <label>رقم الملف / الصفقة *</label>
+        <select id="pay-file-selector" onchange="onPayFileSelectorChange()" style="width:100%">
+          <option value="">— اختر الملف —</option>
+          ${dealOptions}
+        </select>
+      </div>`;
+  }
+
+  // بطاقة أمر الشراء
+  if (el('pay-file-selector-wrap')) el('pay-file-selector-wrap').innerHTML = fileSelector;
+
+  if (fn) await _loadPaymentModalData(fn, sys);
+  else {
+    if(el('pay-card-supplier'))  el('pay-card-supplier').textContent  = '—';
+    if(el('pay-card-file'))      el('pay-card-file').textContent      = '—';
+    if(el('pay-card-total'))     el('pay-card-total').textContent     = '—';
+    if(el('pay-card-paid'))      el('pay-card-paid').textContent      = '—';
+    if(el('pay-card-remaining')) el('pay-card-remaining').textContent = '—';
+  }
+
+  openModal('paymentModal');
+}
+
+async function onPayFileSelectorChange() {
+  const fn = el('pay-file-selector')?.value;
+  if (fn) await _loadPaymentModalData(fn, state.system);
+}
+
+async function _loadPaymentModalData(fn, sys) {
   try {
-    // جيب بيانات الصفقة والدفعات السابقة بالتوازي
     const [po, prevPayments, partners] = await Promise.all([
       apiGetAll('purchase_orders', { select:'file_no,supplier,total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGetAll('payments',        { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('payments',        { select:'amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
     const poData    = po?.[0] || {};
     const totalPO   = +poData.total_purchase || 0;
-    const totalPaid = (prevPayments||[]).reduce((s,p)=>s+(+p.amount||0), 0);
+    const totalPaid = (prevPayments||[]).filter(isPosted).reduce((s,p)=>s+(+p.amount||0), 0);
     const remaining = Math.max(totalPO - totalPaid, 0);
 
-    // بطاقة أمر الشراء
     if(el('pay-card-supplier'))  el('pay-card-supplier').textContent  = poData.supplier || '—';
     if(el('pay-card-file'))      el('pay-card-file').textContent      = fn || '—';
     if(el('pay-card-total'))     el('pay-card-total').textContent     = fmt(totalPO);
@@ -3016,30 +3052,22 @@ async function openPaymentModal() {
       el('pay-card-remaining').textContent = fmt(remaining);
       el('pay-card-remaining').style.color = remaining > 0 ? 'var(--accent)' : 'var(--green)';
     }
-
-    // اقتراح المبلغ = الباقي
     el('pay-amount').value = remaining > 0 ? remaining.toFixed(3) : '';
 
-    // الدافع — الشركاء أو المورد
     let payerOptions = '';
     if (partners?.length) {
       payerOptions = partners.map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('');
     } else {
-      // fallback — جيب من contacts
       const allPartners = await getContactsByType('partner');
       payerOptions = (allPartners||[]).map(p=>`<option value="${p.name}">${p.name}</option>`).join('');
     }
-    // أضف المورد كخيار كمان
     if (poData.supplier) {
       payerOptions = `<option value="${poData.supplier}">${poData.supplier} (المورد)</option>` + payerOptions;
     }
     el('pay-payer').innerHTML = '<option value="">— اختر الدافع —</option>' + payerOptions;
-
-  } catch(e) {
-    console.error('openPaymentModal:', e.message);
-  }
-
-  openModal('paymentModal');
+    // حفظ fn في الـ modal
+    el('pay-payer').dataset.fileNo = fn;
+  } catch(e) { console.error('_loadPaymentModalData:', e.message); }
 }
 
 // ════════════════════════════════════════
@@ -3176,7 +3204,7 @@ async function submitExpense() {
 
 // Payment
 async function submitPayment() {
-  const fn     = state.currentFileNo;
+  const fn     = state.currentFileNo || el('pay-file-selector')?.value || el('pay-payer')?.dataset?.fileNo || null;
   const payer  = (el('pay-payer').value || '').trim();
   const amount = parseFloat(el('pay-amount').value);
   const method = el('pay-method').value;
@@ -3184,6 +3212,7 @@ async function submitPayment() {
   const date   = el('pay-date').value;
   const notes  = el('pay-notes').value.trim();
 
+  if (!fn)     { showFieldErr('payError','يرجى اختيار الملف/الصفقة'); return; }
   if (!payer || !amount || !date) { showFieldErr('payError','يرجى ملء الحقول المطلوبة'); return; }
 
   // تحذير لو الدفعة أكبر من المتبقي
@@ -3629,28 +3658,37 @@ async function openCollectionModal() {
   el('col-submit-btn').style.display  = 'none';
   el('col-amount').value   = '';
   el('col-dueDate').value  = '';
-  el('col-paidDate').value = '';   // فاضي بالـdefault — يتملى لما المبلغ يتحصّل فعلاً
+  el('col-paidDate').value = '';
   el('col-doc').value      = '';
   el('col-notes').value    = '';
   el('colError').style.display = 'none';
   openModal('collectionModal');
 
   try {
+    // لو مفيش ملف محدد — جيب كل الفواتير من كل الملفات
+    const salesParams = fn
+      ? { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }
+      : { select:'*', system_type:`eq.${sys}`, order:'sale_date.desc' };
+    const colParams = fn
+      ? { select:'inv_no,amount,file_no', system_type:`eq.${sys}`, file_no:`eq.${fn}` }
+      : { select:'inv_no,amount,file_no', system_type:`eq.${sys}` };
+
     const [sales, collections] = await Promise.all([
-      apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
-      apiGetAll('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('sales',       salesParams),
+      apiGetAll('collections', colParams),
     ]);
 
     const collectedMap = {};
     (collections||[]).forEach(c => {
-      if (c.inv_no) collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
+      const key = `${c.file_no}__${c.inv_no}`;
+      if (c.inv_no) collectedMap[key] = (collectedMap[key]||0) + (+c.amount||0);
     });
 
-    // ── تجميع بالفاتورة (inv_no) بدل كل سيارة على حدة ──
+    // تجميع بالفاتورة (inv_no + file_no)
     const invMap = {};
     (sales||[]).filter(s => s.inv_no).forEach(s => {
-      const k = s.inv_no;
-      if (!invMap[k]) invMap[k] = { inv_no:k, customer:s.customer, file_no:s.file_no, sale_date:s.sale_date, total:0, vins:[] };
+      const k = `${s.file_no}__${s.inv_no}`;
+      if (!invMap[k]) invMap[k] = { inv_no:s.inv_no, customer:s.customer, file_no:s.file_no, sale_date:s.sale_date, total:0, vins:[] };
       invMap[k].total += +s.sale_price || 0;
       if (s.vin) invMap[k].vins.push(s.vin);
     });
@@ -3659,8 +3697,8 @@ async function openCollectionModal() {
       ...inv,
       sale_price: inv.total,
       vin:        inv.vins.join(' / '),
-      collected:  collectedMap[inv.inv_no] || 0,
-      remaining:  inv.total - (collectedMap[inv.inv_no] || 0),
+      collected:  collectedMap[`${inv.file_no}__${inv.inv_no}`] || 0,
+      remaining:  inv.total - (collectedMap[`${inv.file_no}__${inv.inv_no}`] || 0),
     })).filter(inv => inv.remaining > 0.001)
        .sort((a,b) => (a.sale_date||'') > (b.sale_date||'') ? -1 : 1);
 
@@ -3672,12 +3710,13 @@ async function openCollectionModal() {
     el('col-invNo').innerHTML = '<option value="">— اختر فاتورة —</option>' +
       pendingSales.map(s => `
         <option value="${s.inv_no}"
+          data-file="${s.file_no||''}"
           data-customer="${s.customer||''}"
           data-vin="${s.vin||''}"
           data-total="${s.total||0}"
           data-collected="${s.collected}"
           data-remaining="${s.remaining}">
-          ${s.inv_no} — ${s.customer||'—'} — ${s.vins.length} سيارة  (باقي: ${fmt(s.remaining)})
+          ${s.inv_no} — ${s.customer||'—'} — ملف: ${s.file_no||'—'} — ${s.vins.length} سيارة (باقي: ${fmt(s.remaining)})
         </option>`).join('');
 
     el('col-invNo')._salesData = pendingSales;
@@ -3726,7 +3765,6 @@ function onCollectionInvChange() {
 }
 
 async function submitCollection() {
-  const fn     = state.currentFileNo;
   const invNo  = el('col-invNo').value;
   const cust   = el('col-customer').value.trim();
   const vin    = el('col-vin').value.trim();
@@ -3737,11 +3775,15 @@ async function submitCollection() {
   const paid   = el('col-paidDate').value;
   const notes  = el('col-notes').value.trim();
 
+  // file_no: من الـ state لو داخل ملف، ولا من الـ option المختار
+  const sel2   = el('col-invNo');
+  const opt2   = sel2?.options[sel2?.selectedIndex];
+  const fn     = state.currentFileNo || opt2?.dataset?.file || null;
+
   if (!invNo || !amount) { showFieldErr('colError','يرجى ملء الحقول المطلوبة'); return; }
+  if (!fn) { showFieldErr('colError','يرجى اختيار فاتورة'); return; }
 
   // تحقق من عدم تجاوز الباقي
-  const sel2 = el('col-invNo');
-  const opt2 = sel2?.options[sel2?.selectedIndex];
   const remAllowed = parseFloat(opt2?.dataset?.remaining || 999999);
   if (amount > remAllowed + 0.001) {
     showFieldErr('colError', `⚠️ المبلغ أكبر من الباقي المستحق (${fmt(remAllowed)})`);
@@ -3749,15 +3791,15 @@ async function submitCollection() {
   }
 
   try {
-    const refNo = (await genSeqRef('COL', state.system, fn, 'collections')) || `COL-${fn}-${Date.now()}`;
+    const refNo  = (await genSeqRef('COL', state.system, fn, 'collections')) || `COL-${fn}-${Date.now()}`;
     const pay_id = refNo;
     const data = {
       system_type: state.system, file_no: fn,
       pay_id, inv_no: invNo, customer: cust, vin: vin||null, amount,
       pay_method: method, document: doc||null,
       due_date: due||null, paid_date: paid||null, notes: notes||null,
-      ref_no: refNo
-    , post_status:entryStatus()};
+      ref_no: refNo, post_status: entryStatus(),
+    };
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
     if (cust) await ensureContact(cust, 'customer');
@@ -3775,15 +3817,34 @@ async function openPayoutModal() {
   const fn  = state.currentFileNo;
   const sys = state.system;
 
-  // Get partners from partners_master for this file
-  // Fallback to all partners from contacts if none found
-  let partners = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
+  // لو مفيش ملف — أضف selector
+  if (el('pout-file-selector-wrap')) {
+    if (!fn) {
+      await ensureCache();
+      const dealOptions = (state.allDeals||[])
+        .map(d => `<option value="${d.file_no}">${d.file_no} — ${d.supplier||'—'}</option>`)
+        .join('');
+      el('pout-file-selector-wrap').innerHTML = `
+        <div class="field" style="margin-bottom:12px">
+          <label>رقم الملف / الصفقة *</label>
+          <select id="pout-file-selector" onchange="onPoutFileSelectorChange()" style="width:100%">
+            <option value="">— اختر الملف —</option>${dealOptions}
+          </select>
+        </div>`;
+    } else {
+      el('pout-file-selector-wrap').innerHTML = '';
+    }
+  }
+
+  let partners = fn
+    ? await apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` })
+    : [];
   if (!partners?.length) {
     const allPartners = await getContactsByType('partner');
     partners = (allPartners||[]).map(p => ({ partner: p.name }));
   }
 
-  el('poutModalTitle').textContent = `صرف للشريك — ملف ${fn||''}`;
+  el('poutModalTitle').textContent = fn ? `صرف للشريك — ملف ${fn}` : 'صرف للشريك';
   el('pout-partner').innerHTML = '<option value="">-- اختر الشريك --</option>' +
     (partners||[]).map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('');
   el('pout-amount').value  = '';
@@ -3792,11 +3853,23 @@ async function openPayoutModal() {
   el('pout-date').value    = today();
   el('pout-doc').value     = '';
   el('pout-notes').value   = '';
-  el('poutError').style.display       = 'none';
+  el('poutError').style.display        = 'none';
   el('pout-balance-card').style.display = 'none';
   el('pout-type').value = 'استرداد رأس مال';
   onPayoutTypeChange();
   openModal('payoutModal');
+}
+
+async function onPoutFileSelectorChange() {
+  const fn  = el('pout-file-selector')?.value;
+  const sys = state.system;
+  if (!fn) return;
+  el('poutModalTitle').textContent = `صرف للشريك — ملف ${fn}`;
+  const partners = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
+  if (partners?.length) {
+    el('pout-partner').innerHTML = '<option value="">-- اختر الشريك --</option>' +
+      partners.map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('');
+  }
 }
 
 async function onPayoutPartnerChange() {
@@ -3918,7 +3991,7 @@ async function getPartnerDealBalance(fileNo, partner, sys) {
 }
 
 async function submitPayout() {
-  const fn      = state.currentFileNo;
+  const fn      = state.currentFileNo || el('pout-file-selector')?.value || null;
   const partner = el('pout-partner').value;
   const type    = el('pout-type').value;
   const date    = el('pout-date').value;
@@ -3926,6 +3999,7 @@ async function submitPayout() {
   const doc     = el('pout-doc').value.trim();
   const notes   = el('pout-notes').value.trim();
 
+  if (!fn)      { showFieldErr('poutError','يرجى اختيار الملف/الصفقة'); return; }
   if (!partner) { showFieldErr('poutError','يرجى اختيار الشريك'); return; }
   if (!date)    { showFieldErr('poutError','يرجى إدخال التاريخ'); return; }
 
@@ -4145,30 +4219,41 @@ async function loadQuickInvoices(fileNo) {
     return;
   }
 
-  // بدون timeout — نجيب البيانات فوراً
   try {
     const sys = state.system;
     const fn  = fileNo.trim();
 
     const [sales, collections] = await Promise.all([
       apiGetAll('sales',       { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
-      apiGetAll('collections', { select:'inv_no,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('collections', { select:'inv_no,amount,file_no', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
+    // مجموع ما تم تحصيله لكل inv_no
     const collectedMap = {};
     (collections||[]).forEach(c => {
       if (c.inv_no) collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
     });
 
-    const normalizedSales = (sales||[]).map(s => ({
-      ...s, inv_no: s.inv_no || '',
-    })).filter(s => s.inv_no);
+    // تجميع السيارات بنفس inv_no في فاتورة واحدة
+    const invMap = {};
+    (sales||[]).filter(s => s.inv_no).forEach(s => {
+      const k = s.inv_no;
+      if (!invMap[k]) invMap[k] = {
+        inv_no: k, customer: s.customer, file_no: s.file_no,
+        sale_date: s.sale_date, total: 0, vins: []
+      };
+      invMap[k].total += +s.sale_price || 0;
+      if (s.vin) invMap[k].vins.push(s.vin);
+    });
 
-    const pending = normalizedSales.map(s => ({
-      ...s,
-      collected: collectedMap[s.inv_no] || 0,
-      remaining: (+s.sale_price||0) - (collectedMap[s.inv_no]||0),
-    })).filter(s => s.remaining > 0.001);
+    const pending = Object.values(invMap).map(inv => ({
+      ...inv,
+      sale_price: inv.total,
+      vin:        inv.vins.join(' / '),
+      collected:  collectedMap[inv.inv_no] || 0,
+      remaining:  inv.total - (collectedMap[inv.inv_no] || 0),
+    })).filter(inv => inv.remaining > 0.001)
+       .sort((a,b) => (a.sale_date||'') > (b.sale_date||'') ? -1 : 1);
 
     invSel._salesData = pending;
 
@@ -4177,15 +4262,15 @@ async function loadQuickInvoices(fileNo) {
       return;
     }
 
-    invSel.innerHTML = '<option value="">— اختر بالشاصي أو الفاتورة —</option>' +
-      pending.map(s => `
-        <option value="${s.inv_no}"
-          data-customer="${s.customer||''}"
-          data-vin="${s.vin||''}"
-          data-total="${s.sale_price||0}"
-          data-collected="${s.collected}"
-          data-remaining="${s.remaining}">
-          ${s.vin||'—'}  |  ${s.inv_no} — ${s.customer||''}  (باقي: ${fmt(s.remaining)})
+    invSel.innerHTML = '<option value="">— اختر الفاتورة —</option>' +
+      pending.map(inv => `
+        <option value="${inv.inv_no}"
+          data-customer="${inv.customer||''}"
+          data-vin="${inv.vin||''}"
+          data-total="${inv.total||0}"
+          data-collected="${inv.collected}"
+          data-remaining="${inv.remaining}">
+          ${inv.inv_no} — ${inv.customer||'—'} — ${inv.vins.length} سيارة (باقي: ${fmt(inv.remaining)})
         </option>`).join('');
 
   } catch(e) {
@@ -4989,11 +5074,15 @@ async function loadJournal() {
 
     // Normalize entries
     const entries = [
-      ...(purchases||[]).map(r=>({type:'purchase',date:r.po_date||from,amount:+r.total_purchase||0,sign:-1,title:`سند شراء — ${r.supplier||''}`,status:r.post_status||'posted',meta:[r.file_no?`<span style="background:var(--accent-dim);color:var(--accent);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.file_no}</span>`:'',r.supplier?`مورد: ${r.supplier}`:''].filter(Boolean),fileNo:r.file_no,raw:r})),
+      ...(purchases||[]).map(r=>({type:'purchase',date:r.po_date||from,amount:+r.total_purchase||0,sign:-1,
+        title:`سند شراء — ${r.supplier||''}`,status:r.post_status||'posted',
+        entryNo: r._entryNo||'',
+        meta:[r.file_no?`<span style="background:var(--accent-dim);color:var(--accent);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.file_no}</span>`:'',r.supplier?`مورد: ${r.supplier}`:''].filter(Boolean),fileNo:r.file_no,raw:r})),
       ...(sales||[]).map(r=>({
         type:'sale', date: r.sale_date||r.created_at?.split('T')[0]||from,
         amount: +r.sale_price||0, sign:+1,
         title:`بيع سيارة — ${r.vin||''}`,
+        entryNo: `MIG-SALE-${r.id}`,
         meta:[
           r.customer?`عميل: ${r.customer}`:'',
           `ملف: ${r.file_no||'—'}`,
@@ -5007,16 +5096,15 @@ async function loadJournal() {
         type:'collection',
         date: r.due_date||r.paid_date||r.created_at?.split('T')[0]||from,
         amount: +r.amount||0, sign:+1,
+        entryNo: `MIG-COL-${r.id}`,
         title:`تحصيل — ${r.customer||r.inv_no||''}`,
         meta:[
           r.ref_no?`<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
           r.customer?`من: ${r.customer}`:'',
           `ملف: ${r.file_no||'—'}`,
           r.inv_no?`فاتورة: ${r.inv_no}`:'',
-          r.vin?`شاصي: ${r.vin}`:'',
           r.pay_method?`طريقة: ${r.pay_method}`:'',
           r.paid_date?`تاريخ الدفع: ${r.paid_date}`:r.due_date?`استحقاق: ${r.due_date}`:'',
-          r.document?`مستند: ${r.document}`:'',
         ],
         fileNo: r.file_no, raw: r,
       })),
@@ -5024,13 +5112,13 @@ async function loadJournal() {
         type:'expense',
         date: r.exp_date||r.expense_date||r.created_at?.split('T')[0]||from,
         amount: +r.amount||0, sign:-1,
-        title:`مصروف — ${r.exp_type||r.category||r.description||''}`,
+        entryNo: `MIG-EXP-${r.id}`,
+        title:`مصروف — ${r.exp_type||r.description||''}`,
         meta:[
           r.ref_no?`<span style="background:var(--red-dim);color:var(--red);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
           r.description?`بيان: ${r.description}`:'',
           `ملف: ${r.file_no||'—'}`,
           r.pay_method?`طريقة: ${r.pay_method}`:'',
-          (r.exp_date||r.expense_date)?`تاريخ: ${r.exp_date||r.expense_date}`:'',
         ],
         fileNo: r.file_no, raw: r,
       })),
@@ -5038,14 +5126,13 @@ async function loadJournal() {
         type:'payment',
         date: r.pay_date||r.created_at?.split('T')[0]||from,
         amount: +r.amount||0, sign:-1,
+        entryNo: `MIG-PAY-${r.id}`,
         title:`دفعة للمورد — ${r.payer||''}`,
         meta:[
           r.ref_no?`<span style="background:var(--cyan-dim);color:var(--cyan);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
           `ملف: ${r.file_no||'—'}`,
           r.pay_method?`طريقة: ${r.pay_method}`:'',
           r.pay_date?`تاريخ: ${r.pay_date}`:'',
-          r.document?`مستند: ${r.document}`:'',
-          r.notes?`ملاحظة: ${r.notes}`:'',
         ],
         fileNo: r.file_no, raw: r,
       })),
@@ -5053,14 +5140,13 @@ async function loadJournal() {
         type:'payout',
         date: r.pay_date||r.created_at?.split('T')[0]||from,
         amount: +r.amount||0, sign:-1,
+        entryNo: `MIG-POUT-${r.id}`,
         title:`صرف لشريك — ${r.partner||''}`,
         meta:[
           r.pay_id?`<span style="background:var(--purple-dim);color:var(--purple);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.pay_id}</span>`:'',
           `ملف: ${r.file_no||'—'}`,
           r.payout_type?`نوع: ${r.payout_type}`:'',
           r.pay_method?`طريقة: ${r.pay_method}`:'',
-          r.pay_date?`تاريخ: ${r.pay_date}`:'',
-          r.notes?`ملاحظة: ${r.notes}`:'',
         ],
         fileNo: r.file_no, raw: r,
       })),
@@ -5307,6 +5393,8 @@ function renderJournalEntries() {
             <div class="j-entry-amount" style="color:${cfg.amountColor}">
               ${amountSign}${fmt(e.amount)}
             </div>
+            <button onclick="event.stopPropagation();printJournalVoucher('${e.entryNo||''}','${e.type}','${e.fileNo||''}',${e.amount},'${e.date||''}','${(e.title||'').replace(/'/g,'\\\'')}')"
+              style="background:var(--card2);border:1px solid var(--border);cursor:pointer;color:var(--text2);font-size:12px;padding:3px 8px;border-radius:6px" title="طباعة سند القيد">🖨️</button>
             <button onclick="event.stopPropagation();editJournalEntry('${e.type}',null,'${e.fileNo||''}')"
               style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:13px;padding:2px 4px" title="تعديل">✏️</button>
           </div>
@@ -5324,6 +5412,158 @@ function renderJournalEntries() {
 // LEDGER ENGINE — auto-creates entries
 // ════════════════════════════════════════
 const typeLabels = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
+
+async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, title) {
+  try {
+    // جلب كل أسطر هذا القيد
+    const lines = entryNo
+      ? await apiGet('journal_entries', {
+          select: 'account_code,account_name,dr_amount,cr_amount,description',
+          system_type: `eq.${state.system}`,
+          entry_no: `eq.${entryNo}`,
+          order: 'id.asc',
+        })
+      : [];
+
+    const typeLabelsVoucher = {
+      purchase:'سند شراء', sale:'سند بيع', collection:'سند تحصيل',
+      expense:'سند مصروف', payment:'سند دفع', payout:'سند صرف شريك', journal:'قيد يومية'
+    };
+    const voucherTitle = typeLabelsVoucher[entryType] || 'سند قيد';
+    const printDate    = new Date().toLocaleDateString('ar-EG', { year:'numeric', month:'long', day:'numeric' });
+    const voucherDate  = date ? new Date(date).toLocaleDateString('ar-EG', { year:'numeric', month:'long', day:'numeric' }) : '—';
+
+    const totalDr = (lines||[]).reduce((s,l)=>s+(+l.dr_amount||0),0);
+    const totalCr = (lines||[]).reduce((s,l)=>s+(+l.cr_amount||0),0);
+
+    const linesHtml = (lines||[]).map((l,i) => `
+      <tr>
+        <td style="text-align:center;color:#666;font-size:11px">${i+1}</td>
+        <td style="font-family:monospace;font-weight:700;color:#1a1a1a">${l.account_code||'—'}</td>
+        <td>${l.account_name||'—'}</td>
+        <td style="font-size:11px;color:#666">${l.description||'—'}</td>
+        <td style="text-align:left;font-weight:700;color:#16a34a">${+l.dr_amount>0 ? (+l.dr_amount).toLocaleString('en-US',{minimumFractionDigits:3}) : '—'}</td>
+        <td style="text-align:left;font-weight:700;color:#dc2626">${+l.cr_amount>0 ? (+l.cr_amount).toLocaleString('en-US',{minimumFractionDigits:3}) : '—'}</td>
+      </tr>`).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>${voucherTitle} — ${entryNo}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a1a; font-size:13px; background:#fff; }
+  .page { max-width:780px; margin:0 auto; padding:32px 36px; }
+  .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; padding-bottom:16px; border-bottom:2px solid #1a1a1a; }
+  .company { font-size:20px; font-weight:800; }
+  .company-sub { font-size:12px; color:#666; margin-top:4px; }
+  .voucher-title { text-align:left; }
+  .voucher-title h1 { font-size:22px; font-weight:800; color:#1a1a1a; }
+  .voucher-no { font-size:14px; font-weight:700; color:#c47a00; margin-top:4px; font-family:monospace; }
+  .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px; }
+  .info-box { background:#f8f9fa; border-radius:8px; padding:12px 14px; }
+  .info-row { display:flex; justify-content:space-between; padding:3px 0; font-size:12px; border-bottom:1px solid #eee; }
+  .info-row:last-child { border:none; }
+  .info-label { color:#888; }
+  .info-val { font-weight:700; }
+  table { width:100%; border-collapse:collapse; margin-bottom:16px; }
+  thead tr { background:#1a1a1a; color:#fff; }
+  thead th { padding:9px 10px; font-size:11px; font-weight:700; text-align:right; }
+  tbody tr { border-bottom:1px solid #eee; }
+  tbody tr:nth-child(even) { background:#fafafa; }
+  tbody td { padding:9px 10px; vertical-align:middle; }
+  tfoot tr { background:#f0f0f0; font-weight:700; }
+  tfoot td { padding:9px 10px; border-top:2px solid #1a1a1a; }
+  .total-box { display:flex; justify-content:flex-end; margin-bottom:20px; }
+  .total-inner { background:#1a1a1a; color:#fff; border-radius:10px; padding:14px 20px; min-width:220px; }
+  .total-label { font-size:11px; color:#aaa; margin-bottom:3px; }
+  .total-amount { font-size:20px; font-weight:900; }
+  .balanced { font-size:11px; color:#4ade80; margin-top:4px; }
+  .sig-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:30px; margin-top:30px; }
+  .sig-box { text-align:center; padding-top:36px; border-top:1px solid #ccc; font-size:11px; color:#888; }
+  .footer { text-align:center; margin-top:20px; padding-top:12px; border-top:1px solid #eee; font-size:10px; color:#aaa; }
+  .no-print { text-align:center; margin-bottom:20px; display:flex; gap:10px; justify-content:center; }
+  @media print { .no-print { display:none!important; } body { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="no-print">
+    <button onclick="window.print()" style="background:#1a1a1a;color:#fff;border:none;padding:9px 24px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">🖨️ طباعة</button>
+    <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd;padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer">✕ إغلاق</button>
+  </div>
+
+  <div class="header">
+    <div>
+      <div class="company">Transit Co. · ترانزيت</div>
+      <div class="company-sub">Kuwait · الكويت</div>
+    </div>
+    <div class="voucher-title">
+      <h1>${voucherTitle}</h1>
+      <div class="voucher-no"># ${entryNo||'—'}</div>
+    </div>
+  </div>
+
+  <div class="info-grid">
+    <div class="info-box">
+      <div class="info-row"><span class="info-label">رقم السند</span><span class="info-val" style="color:#c47a00;font-family:monospace">${entryNo||'—'}</span></div>
+      <div class="info-row"><span class="info-label">نوع العملية</span><span class="info-val">${voucherTitle}</span></div>
+      <div class="info-row"><span class="info-label">تاريخ العملية</span><span class="info-val">${voucherDate}</span></div>
+    </div>
+    <div class="info-box">
+      <div class="info-row"><span class="info-label">رقم الملف</span><span class="info-val" style="font-family:monospace">${fileNo||'—'}</span></div>
+      <div class="info-row"><span class="info-label">البيان</span><span class="info-val">${title||'—'}</span></div>
+      <div class="info-row"><span class="info-label">تاريخ الطباعة</span><span class="info-val">${printDate}</span></div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:36px">#</th>
+        <th style="width:80px">كود الحساب</th>
+        <th>اسم الحساب</th>
+        <th>البيان</th>
+        <th style="text-align:left">مدين (Dr)</th>
+        <th style="text-align:left">دائن (Cr)</th>
+      </tr>
+    </thead>
+    <tbody>${linesHtml||`<tr><td colspan="6" style="text-align:center;color:#888;padding:20px">لا توجد تفاصيل — المبلغ الإجمالي: ${amount?.toLocaleString?.('en-US',{minimumFractionDigits:3})||'—'}</td></tr>`}</tbody>
+    <tfoot>
+      <tr>
+        <td colspan="4" style="text-align:right;font-weight:700">الإجمالي</td>
+        <td style="text-align:left;color:#16a34a">${totalDr.toLocaleString('en-US',{minimumFractionDigits:3})}</td>
+        <td style="text-align:left;color:#dc2626">${totalCr.toLocaleString('en-US',{minimumFractionDigits:3})}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="total-box">
+    <div class="total-inner">
+      <div class="total-label">إجمالي القيد / Total</div>
+      <div class="total-amount">${(totalDr||amount||0).toLocaleString('en-US',{minimumFractionDigits:3})}</div>
+      <div class="total-currency" style="font-size:11px;color:#aaa">KWD / د.ك</div>
+      ${Math.abs(totalDr-totalCr)<0.01 ? '<div class="balanced">✓ القيد متوازن</div>' : '<div style="color:#f87171;font-size:11px">⚠ القيد غير متوازن</div>'}
+    </div>
+  </div>
+
+  <div class="sig-row">
+    <div class="sig-box">المحاسب / Accountant</div>
+    <div class="sig-box">المراجع / Reviewer</div>
+    <div class="sig-box">المدير / Manager</div>
+  </div>
+
+  <div class="footer">Transit Cars System · ${printDate} · رقم السند: ${entryNo||'—'}</div>
+</div>
+</body>
+</html>`;
+
+    openPrintOverlay(html);
+  } catch(e) {
+    toast('خطأ في طباعة القيد: ' + e.message, 'err');
+  }
+}
 
 
 // ════════════════════════════════════════
