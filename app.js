@@ -5539,7 +5539,7 @@ function renderContactsList() {
 }
 
 // ════════════════════════════════════════
-// CONTACT LEDGER (individual statement)
+// CONTACT LEDGER — يقرأ من journal_entries فقط (مصدر واحد)
 // ════════════════════════════════════════
 async function showLedger(contactId, contactName, contactType) {
   hideAllViews();
@@ -5555,141 +5555,59 @@ async function showLedger(contactId, contactName, contactType) {
   window._ledgerContactType = contactType;
 
   try {
-    const sys  = state.system;
-    const name = contactName;
-
-    // جلب البيانات الرئيسية حسب نوع جهة الاتصال
+    const sys     = state.system;
     const contact = contactsState.all.find(c => c.id === contactId);
     window._ledgerOpening = contact?.opening_balance ? +contact.opening_balance : 0;
 
-    let entries = [];
+    // ── حساب اسم الحساب المرتبط بجهة الاتصال ──
+    // في journal_entries اسم الحساب بصيغة "عميل: X" أو "مورد: X" أو "شريك: X"
+    const prefixMap = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
+    const prefix    = prefixMap[contactType] || contactType;
+    const accName   = `${prefix}: ${contactName}`;
 
-    if (contactType === 'customer') {
-      // ── عميل: مبيعات (مدين) + تحصيلات (دائن) ──
-      const [sales, collections] = await Promise.all([
-        apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, customer:`eq.${name}`, order:'sale_date.asc' }),
-        apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, customer:`eq.${name}`, order:'paid_date.asc,due_date.asc' }),
-      ]);
-      // مبيعات → مدين على العميل
-      (sales||[]).filter(isPosted).forEach(r => {
-        entries.push({
-          date:   r.sale_date || r.created_at?.split('T')[0] || '',
-          type:   'بيع',
-          desc:   `فاتورة ${r.inv_no||''} — ${r.vin||''}`,
-          ref:    r.inv_no || '',
-          debit:  +r.sale_price || 0,
-          credit: 0,
-          file_no: r.file_no,
-        });
-      });
-      // تحصيلات → دائن
-      (collections||[]).filter(isPosted).forEach(r => {
-        entries.push({
-          date:   r.paid_date || r.due_date || r.created_at?.split('T')[0] || '',
-          type:   'تحصيل',
-          desc:   `تحصيل ${r.inv_no||''} — ${r.pay_method||''}`,
-          ref:    r.ref_no || r.inv_no || '',
-          debit:  0,
-          credit: +r.amount || 0,
-          file_no: r.file_no,
-        });
-      });
+    // ── جلب كل القيود المرتبطة بجهة الاتصال من journal_entries ──
+    // نجلب بـ account_name أو contact_id
+    const [byName, byContactId] = await Promise.all([
+      apiGetAll('journal_entries', {
+        select: 'id,entry_date,entry_type,account_code,account_name,dr_amount,cr_amount,description,file_no,entry_no,ref_table,post_status',
+        system_type: `eq.${sys}`,
+        account_name: `eq.${accName}`,
+        order: 'entry_date.asc,id.asc',
+      }),
+      contactId ? apiGetAll('journal_entries', {
+        select: 'id,entry_date,entry_type,account_code,account_name,dr_amount,cr_amount,description,file_no,entry_no,ref_table,post_status',
+        system_type: `eq.${sys}`,
+        contact_id:  `eq.${contactId}`,
+        order: 'entry_date.asc,id.asc',
+      }) : Promise.resolve([]),
+    ]);
 
-    } else if (contactType === 'supplier') {
-      // ── مورد: شراء (دائن) + دفعات (مدين) ──
-      const [pos, payments] = await Promise.all([
-        apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, supplier:`eq.${name}`, order:'po_date.asc' }),
-        apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`,    order:'pay_date.asc' }),
-      ]);
-      // شراء → دائن على المورد
-      (pos||[]).forEach(r => {
-        entries.push({
-          date:   r.po_date || r.created_at?.split('T')[0] || '',
-          type:   'شراء',
-          desc:   `أمر شراء ${r.po_no||r.file_no||''} — ${r.vehicle_count||0} سيارة`,
-          ref:    r.file_no || '',
-          debit:  0,
-          credit: +r.total_purchase || 0,
-          file_no: r.file_no,
-        });
-      });
-      // دفعات → مدين (تخفيض الدين)
-      (payments||[]).filter(isPosted).forEach(r => {
-        entries.push({
-          date:   r.pay_date || r.created_at?.split('T')[0] || '',
-          type:   'دفعة',
-          desc:   `دفعة ${r.ref_no||''} — ${r.pay_method||''}`,
-          ref:    r.ref_no || '',
-          debit:  +r.amount || 0,
-          credit: 0,
-          file_no: r.file_no,
-        });
-      });
+    // دمج بدون تكرار بالـ id
+    const seen = new Set();
+    const raw  = [];
+    [...(byName||[]), ...(byContactId||[])].forEach(r => {
+      if (!seen.has(r.id)) { seen.add(r.id); raw.push(r); }
+    });
 
-    } else if (contactType === 'partner') {
-      // ── شريك: دفعات رأس مال (مدين) + مسحوبات (دائن) ──
-      const [payments, payouts] = await Promise.all([
-        apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`,    order:'pay_date.asc' }),
-        apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, partner:`eq.${name}`, order:'pay_date.asc' }),
-      ]);
-      (payments||[]).filter(isPosted).forEach(r => {
-        entries.push({
-          date:   r.pay_date || r.created_at?.split('T')[0] || '',
-          type:   'دفعة رأس مال',
-          desc:   `دفع ${r.ref_no||''} — ${r.pay_method||''} — ملف ${r.file_no||''}`,
-          ref:    r.ref_no || '',
-          debit:  +r.amount || 0,
-          credit: 0,
-          file_no: r.file_no,
-        });
-      });
-      (payouts||[]).filter(isPosted).forEach(r => {
-        entries.push({
-          date:   r.pay_date || r.created_at?.split('T')[0] || '',
-          type:   r.payout_type || 'مسحوبات',
-          desc:   `${r.payout_type||'صرف'} ${r.pay_id||''} — ${r.pay_method||''}`,
-          ref:    r.pay_id || '',
-          debit:  0,
-          credit: +r.amount || 0,
-          file_no: r.file_no,
-        });
-      });
+    // فلتر posted فقط
+    const jeRows = raw.filter(isPosted);
+    jeRows.sort((a,b) => (a.entry_date||'').localeCompare(b.entry_date||'') || a.id - b.id);
 
-    } else {
-      // ── عهدة وأخرى: expenses + payments ──
-      const [expenses, payments] = await Promise.all([
-        apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, order:'exp_date.asc' }),
-        apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`, order:'pay_date.asc' }),
-      ]);
-      (expenses||[]).filter(isPosted).forEach(r => {
-        entries.push({
-          date:   r.exp_date || r.created_at?.split('T')[0] || '',
-          type:   'مصروف',
-          desc:   `${r.description||''} — ${r.exp_type||''}`,
-          ref:    r.ref_no || '',
-          debit:  +r.amount || 0,
-          credit: 0,
-          file_no: r.file_no,
-        });
-      });
-      (payments||[]).filter(isPosted).forEach(r => {
-        entries.push({
-          date:   r.pay_date || r.created_at?.split('T')[0] || '',
-          type:   'دفعة',
-          desc:   `دفعة ${r.ref_no||''} — ${r.pay_method||''}`,
-          ref:    r.ref_no || '',
-          debit:  +r.amount || 0,
-          credit: 0,
-          file_no: r.file_no,
-        });
-      });
-    }
+    // تحويل لصيغة موحدة
+    const typeLabel = { sale:'بيع', collection:'تحصيل', payment:'دفعة', expense:'مصروف', payout:'صرف شريك', journal:'قيد' };
+    const entries = jeRows.map(r => ({
+      date:    r.entry_date || '',
+      type:    typeLabel[r.entry_type] || r.entry_type || 'قيد',
+      desc:    r.description || '—',
+      ref:     r.entry_no   || '',
+      debit:   +r.dr_amount || 0,
+      credit:  +r.cr_amount || 0,
+      file_no: r.file_no    || '',
+    }));
 
-    // ترتيب بالتاريخ
-    entries.sort((a,b) => (a.date||'').localeCompare(b.date||''));
     window._ledgerAllEntries = entries;
 
-    // بني فلتر الملفات
+    // بناء فلتر الملفات
     const fileNos = [...new Set(entries.map(e=>e.file_no).filter(Boolean))].sort();
     const sel = el('ledger-file-filter');
     if (sel) {
@@ -5697,13 +5615,12 @@ async function showLedger(contactId, contactName, contactType) {
         fileNos.map(f=>`<option value="${f}">${f}</option>`).join('');
     }
 
-    window._ledgerVehicleMap = {};
     el('ledgerView').dataset.contactName = contactName;
     renderLedgerTable();
 
   } catch(e) {
     el('ledgerTable').innerHTML = errHTML('خطأ: ' + e.message);
-    console.error('showLedger error:', e);
+    console.error('showLedger:', e);
   }
 }
 
@@ -5948,15 +5865,12 @@ async function loadTrialBalance() {
   try {
     const sys = state.system;
 
-    // جلب كل البيانات بالتوازي
-    const [pos, sales, expenses, payments, collections, payouts, contacts] = await Promise.all([
-      apiGetAll('purchase_orders', { select:'supplier,total_purchase,file_no', system_type:`eq.${sys}` }),
-      apiGetAll('sales',           { select:'customer,sale_price,post_status', system_type:`eq.${sys}` }),
-      apiGetAll('expenses',        { select:'amount,post_status',              system_type:`eq.${sys}` }),
-      apiGetAll('payments',        { select:'payer,amount,post_status',        system_type:`eq.${sys}` }),
-      apiGetAll('collections',     { select:'customer,amount,post_status',     system_type:`eq.${sys}` }),
-      apiGetAll('partner_payouts', { select:'partner,amount,post_status',      system_type:`eq.${sys}` }),
-      // جهات الاتصال (نظام + null)
+    // ── مصدر واحد: journal_entries فقط ──
+    const [jeRows, contacts] = await Promise.all([
+      apiGetAll('journal_entries', {
+        select: 'account_code,account_name,dr_amount,cr_amount,post_status,entry_type',
+        system_type: `eq.${sys}`,
+      }),
       Promise.all([
         apiGet('contacts', { select:'id,name,type,opening_balance', system_type:`eq.${sys}` }),
         apiGet('contacts', { select:'id,name,type,opening_balance', system_type:'is.null' }),
@@ -5967,56 +5881,66 @@ async function loadTrialBalance() {
       }),
     ]);
 
-    // بني map اسم → رصيد { debit, credit }
+    // فلتر posted فقط
+    const posted = (jeRows||[]).filter(isPosted);
+
+    // تجميع Dr/Cr لكل account_name
     const accMap = {};
-    const add = (name, type, debit, credit) => {
-      if (!name) return;
-      if (!accMap[name]) accMap[name] = { name, type, debit:0, credit:0, id: null };
-      accMap[name].debit  += debit;
-      accMap[name].credit += credit;
+    posted.forEach(r => {
+      const key  = r.account_name || r.account_code || 'غير محدد';
+      const code = r.account_code || '';
+      if (!accMap[key]) accMap[key] = { name:key, code, dr:0, cr:0 };
+      accMap[key].dr += +r.dr_amount || 0;
+      accMap[key].cr += +r.cr_amount || 0;
+    });
+
+    // تحديد نوع الحساب من اسمه أو كوده
+    const prefixType = (name, code) => {
+      if (name?.startsWith('عميل:'))  return 'customer';
+      if (name?.startsWith('مورد:'))  return 'supplier';
+      if (name?.startsWith('شريك:'))  return 'partner';
+      if (name?.startsWith('عهدة:'))  return 'custodian';
+      if (!code) return 'other';
+      if (code.startsWith('1')) return 'asset';
+      if (code.startsWith('2')) return 'liability';
+      if (code.startsWith('3')) return 'equity';
+      if (code.startsWith('4')) return 'revenue';
+      if (code.startsWith('5')) return 'cogs';
+      if (code.startsWith('6')) return 'expense';
+      return 'other';
     };
 
-    // ربط جهات الاتصال
+    // بناء map اسم جهة الاتصال → id
     const contactMap = {};
     (contacts||[]).forEach(c => { contactMap[c.name] = c; });
 
-    // ── موردون: شراء دائن، دفعات مدين ──
-    (pos||[]).forEach(r => add(r.supplier,'supplier', 0, +r.total_purchase||0));
-    (payments||[]).filter(isPosted).forEach(r => add(r.payer,'supplier', +r.amount||0, 0));
-
-    // ── عملاء: مبيعات مدين، تحصيلات دائن ──
-    (sales||[]).filter(isPosted).forEach(r => add(r.customer,'customer', +r.sale_price||0, 0));
-    (collections||[]).filter(isPosted).forEach(r => add(r.customer,'customer', 0, +r.amount||0));
-
-    // ── شركاء: مسحوبات دائن، (دفعات موردين مسجّلة كشريك) ──
-    (payouts||[]).filter(isPosted).forEach(r => add(r.partner,'partner', 0, +r.amount||0));
-
-    // رصيد افتتاحي من جهات الاتصال
+    // إضافة الأرصدة الافتتاحية من جهات الاتصال
     (contacts||[]).forEach(c => {
-      if (+c.opening_balance) {
-        const ob = +c.opening_balance;
-        if (!accMap[c.name]) accMap[c.name] = { name:c.name, type:c.type, debit:0, credit:0, id:c.id };
-        if (ob > 0) accMap[c.name].debit  += ob;
-        else        accMap[c.name].credit += Math.abs(ob);
-        accMap[c.name].id = c.id;
-      }
+      if (!+c.opening_balance) return;
+      const key = `${prefixType(null,null)==='customer'?'عميل':prefixType(c.type)?.[0]?.toUpperCase()||''}${c.name}`;
+      const prefMap = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
+      const accKey  = `${prefMap[c.type]||c.type}: ${c.name}`;
+      if (!accMap[accKey]) accMap[accKey] = { name:accKey, code:'', dr:0, cr:0 };
+      const ob = +c.opening_balance;
+      if (ob > 0) accMap[accKey].dr += ob;
+      else        accMap[accKey].cr += Math.abs(ob);
     });
 
-    // ربط الـ id لفتح الكشف عند الضغط
-    Object.values(accMap).forEach(a => {
-      const c = contactMap[a.name];
-      if (c) { a.id = c.id; a.type = c.type || a.type; }
-    });
-
-    trialState.data = Object.values(accMap).map(a => ({
-      id:          a.id,
-      name:        a.name,
-      type:        a.type || 'other',
-      totalDebit:  a.debit,
-      totalCredit: a.credit,
-      balance:     a.debit - a.credit,
-    })).filter(a => a.totalDebit > 0 || a.totalCredit > 0)
-       .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
+    trialState.data = Object.values(accMap)
+      .filter(a => a.dr > 0 || a.cr > 0)
+      .map(a => {
+        const contactName = a.name.replace(/^(عميل|مورد|شريك|عهدة): /, '');
+        const contact = contactMap[contactName];
+        return {
+          id:          contact?.id || null,
+          name:        a.name,
+          type:        contact?.type || prefixType(a.name, a.code),
+          totalDebit:  a.dr,
+          totalCredit: a.cr,
+          balance:     a.dr - a.cr,
+        };
+      })
+      .sort((a,b) => (a.code||a.name).localeCompare(b.code||b.name, 'ar'));
 
     filterTrial(trialState.typeFilter);
   } catch(e) {
@@ -8375,10 +8299,14 @@ async function runCashFlowReport(from, to, sys) {
     const toEOD = to + 'T23:59:59';
     // جيب كل البيانات بدون فلتر post_status — التقرير يعرض الكل
     async function cfGet(table, dateCol) {
-      const url = `${SB_URL}/rest/v1/${table}?system_type=eq.${encodeURIComponent(sys)}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`;
-      const r = await fetch(url, { headers: headers() });
-      if (!r.ok) return [];
-      return r.json();
+      const [r1, r2] = await Promise.all([
+        fetch(`${SB_URL}/rest/v1/${table}?system_type=eq.${encodeURIComponent(sys)}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`, { headers: headers() }),
+        fetch(`${SB_URL}/rest/v1/${table}?system_type=is.null&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`, { headers: headers() }),
+      ]);
+      const [d1, d2] = await Promise.all([r1.ok?r1.json():[], r2.ok?r2.json():[]]);
+      const seen = new Set(); const out = [];
+      [...(d1||[]),...(d2||[])].forEach(r => { const k=r.id??JSON.stringify(r); if(!seen.has(k)){seen.add(k);out.push(r);} });
+      return out;
     }
     const [collections, payments, expenses, payouts, opexItems] = await Promise.all([
       cfGet('collections',     'paid_date'),
@@ -9818,14 +9746,22 @@ async function loadOpex() {
     if (fromFilter) params['exp_date'] = `gte.${fromFilter}`;
     if (toFilter)   params['exp_date_end'] = `lte.${toFilter}`;
 
-    // Build URL manually for date range
-    let url = `${SB_URL}/rest/v1/operating_expenses?system_type=eq.${encodeURIComponent(state.system)}&order=exp_date.desc&select=*`;
-    if (typeFilter) url += `&exp_type=eq.${encodeURIComponent(typeFilter)}`;
-    if (fromFilter) url += `&exp_date=gte.${encodeURIComponent(fromFilter)}`;
-    if (toFilter)   url += `&exp_date=lte.${encodeURIComponent(toFilter)}`;
-
-    const res  = await fetch(url, { headers: headers() });
-    const data = res.ok ? await res.json() : [];
+    // Build URL manually for date range — يشمل null system_type (بيانات قديمة)
+    const buildOpexUrl = (sysParam) => {
+      let u = `${SB_URL}/rest/v1/operating_expenses?${sysParam}&order=exp_date.desc&select=*`;
+      if (typeFilter) u += `&exp_type=eq.${encodeURIComponent(typeFilter)}`;
+      if (fromFilter) u += `&exp_date=gte.${encodeURIComponent(fromFilter)}`;
+      if (toFilter)   u += `&exp_date=lte.${encodeURIComponent(toFilter)}`;
+      return u;
+    };
+    const [r1opex, r2opex] = await Promise.all([
+      fetch(buildOpexUrl(`system_type=eq.${encodeURIComponent(state.system)}`), { headers: headers() }),
+      fetch(buildOpexUrl('system_type=is.null'), { headers: headers() }),
+    ]);
+    const [d1opex, d2opex] = await Promise.all([r1opex.ok?r1opex.json():[], r2opex.ok?r2opex.json():[]]);
+    const seenOpex = new Set();
+    const data = [];
+    [...(d1opex||[]),...(d2opex||[])].forEach(r => { const k=r.id??JSON.stringify(r); if(!seenOpex.has(k)){seenOpex.add(k);data.push(r);} });
 
     // KPIs
     renderOpexKpis(data);
@@ -10046,9 +9982,14 @@ function exportOpexExcel() {
 // Called from loadJournal — adds operating_expenses to journal entries
 async function fetchOpexForJournal(from, to, sys) {
   try {
-    let url = `${SB_URL}/rest/v1/operating_expenses?system_type=eq.${encodeURIComponent(sys)}&exp_date=gte.${encodeURIComponent(from)}&exp_date=lte.${encodeURIComponent(to)}&order=exp_date.desc&select=*`;
-    const res = await fetch(url, { headers: headers() });
-    return res.ok ? await res.json() : [];
+    const [r1, r2] = await Promise.all([
+      fetch(`${SB_URL}/rest/v1/operating_expenses?system_type=eq.${encodeURIComponent(sys)}&exp_date=gte.${encodeURIComponent(from)}&exp_date=lte.${encodeURIComponent(to)}&order=exp_date.desc&select=*`, { headers: headers() }),
+      fetch(`${SB_URL}/rest/v1/operating_expenses?system_type=is.null&exp_date=gte.${encodeURIComponent(from)}&exp_date=lte.${encodeURIComponent(to)}&order=exp_date.desc&select=*`, { headers: headers() }),
+    ]);
+    const [d1, d2] = await Promise.all([r1.ok?r1.json():[], r2.ok?r2.json():[]]);
+    const seen = new Set(); const out = [];
+    [...(d1||[]),...(d2||[])].forEach(r => { const k=r.id??JSON.stringify(r); if(!seen.has(k)){seen.add(k);out.push(r);} });
+    return out;
   } catch(e) { return []; }
 }
 
@@ -10060,11 +10001,19 @@ async function loadOpexReport(from, to) {
   wrap.innerHTML = `<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>`;
 
   try {
-    let url = `${SB_URL}/rest/v1/operating_expenses?system_type=eq.${encodeURIComponent(state.system)}&select=*&order=exp_date.desc`;
-    if (from) url += `&exp_date=gte.${encodeURIComponent(from)}`;
-    if (to)   url += `&exp_date=lte.${encodeURIComponent(to)}`;
-    const res  = await fetch(url, { headers: headers() });
-    const data = res.ok ? await res.json() : [];
+    const makeOpexUrl = (sysParam) => {
+      let u = `${SB_URL}/rest/v1/operating_expenses?${sysParam}&select=*&order=exp_date.desc`;
+      if (from) u += `&exp_date=gte.${encodeURIComponent(from)}`;
+      if (to)   u += `&exp_date=lte.${encodeURIComponent(to)}`;
+      return u;
+    };
+    const [ro1, ro2] = await Promise.all([
+      fetch(makeOpexUrl(`system_type=eq.${encodeURIComponent(state.system)}`), { headers: headers() }),
+      fetch(makeOpexUrl('system_type=is.null'), { headers: headers() }),
+    ]);
+    const [do1, do2] = await Promise.all([ro1.ok?ro1.json():[], ro2.ok?ro2.json():[]]);
+    const seenO = new Set(); const data = [];
+    [...(do1||[]),...(do2||[])].forEach(r => { const k=r.id??JSON.stringify(r); if(!seenO.has(k)){seenO.add(k);data.push(r);} });
 
     const total = data.reduce((s,r) => s + (+r.amount||0), 0);
     const byType = {};
@@ -11406,7 +11355,95 @@ async function deleteDealNote(noteId) {
 
 // ════════════════════════════════════════════════════════
 
-// PWA Install prompt
+// ════════════════════════════════════════════════════════
+// DB STRUCTURE CHECK + MIGRATION TOOL
+// ════════════════════════════════════════════════════════
+
+async function checkDbStructure() {
+  const out = el('dbCheckResult');
+  if (!out) return;
+  out.innerHTML = '<div style="color:var(--text2);font-size:12px">⏳ جاري الفحص...</div>';
+
+  const tables = [
+    'journal_entries','purchase_orders','sales','expenses',
+    'payments','collections','partner_payouts','vehicles',
+    'contacts','audit_log','operating_expenses'
+  ];
+
+  const results = await Promise.all(tables.map(async t => {
+    try {
+      const r = await apiGet(t, { select:'*', limit:'1' });
+      // r is array — table exists
+      const cols = r?.length > 0 ? Object.keys(r[0]) : [];
+      return { table: t, exists: true, cols, sample: r?.[0] };
+    } catch(e) {
+      return { table: t, exists: false, error: e.message };
+    }
+  }));
+
+  // Check journal_entries columns specifically
+  const je = results.find(r => r.table === 'journal_entries');
+  const requiredCols = ['id','system_type','entry_no','entry_date','account_code',
+    'account_name','dr_amount','cr_amount','description','ref_table',
+    'ref_id','file_no','post_status','posted_at'];
+
+  const jeMissing = je?.exists
+    ? requiredCols.filter(c => !je.cols.includes(c))
+    : requiredCols;
+
+  // Count existing data
+  const counts = await Promise.all(['sales','payments','expenses','collections','partner_payouts'].map(async t => {
+    try {
+      const [r1,r2] = await Promise.all([
+        apiGet(t, { select:'id', system_type:`eq.${state.system}` }),
+        apiGet(t, { select:'id', system_type:'is.null' }),
+      ]);
+      return { table: t, count: ((r1||[]).length + (r2||[]).length) };
+    } catch(e) { return { table: t, count: '?' }; }
+  }));
+
+  const jeCount = je?.exists ? (() => {
+    return apiGet('journal_entries', { select:'id', system_type:`eq.${state.system}` })
+      .then(r => r?.length || 0).catch(()=>0);
+  })() : Promise.resolve(0);
+  const jeTotal = await jeCount;
+
+  const statusIcon = (ok) => ok
+    ? '<span style="color:var(--green);font-weight:700">✓</span>'
+    : '<span style="color:var(--red);font-weight:700">✗</span>';
+
+  out.innerHTML = `
+    <div style="font-size:13px;font-weight:700;margin-bottom:12px;color:var(--text)">نتيجة فحص قاعدة البيانات</div>
+
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">جدول journal_entries</div>
+      <div style="background:var(--card2);border-radius:6px;padding:10px 12px;font-size:12px">
+        ${statusIcon(je?.exists)} موجود: ${je?.exists ? 'نعم' : 'لا — يجب إنشاؤه'}
+        ${je?.exists ? `<br>${statusIcon(jeMissing.length===0)} الأعمدة المطلوبة: ${jeMissing.length===0 ? 'كلها موجودة ✓' : 'ناقص: ' + jeMissing.join(', ')}` : ''}
+        ${je?.exists ? `<br>📊 عدد القيود الحالية للنظام الحالي: <strong>${jeTotal}</strong>` : ''}
+      </div>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">البيانات التي تحتاج قيوداً</div>
+      <div style="background:var(--card2);border-radius:6px;padding:10px 12px;font-size:12px">
+        ${counts.map(c => `${statusIcon(c.count > 0)} ${c.table}: <strong>${c.count}</strong> سجل`).join('<br>')}
+        <br><br>
+        <span style="color:${jeTotal < counts.reduce((s,c)=>s+(+c.count||0),0) ? 'var(--red)' : 'var(--green)'};font-weight:700">
+          ${jeTotal < counts.reduce((s,c)=>s+(+c.count||0),0)
+            ? '⚠️ البيانات أكثر من القيود — تحتاج migration'
+            : '✓ الأعداد متوازنة'}
+        </span>
+      </div>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">كل الجداول</div>
+      <div style="background:var(--card2);border-radius:6px;padding:10px 12px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:4px">
+        ${results.map(r => `${statusIcon(r.exists)} ${r.table}${r.exists ? ` (${r.cols?.length||0} عمود)` : ': غير موجود'}`).join('')}
+      </div>
+    </div>`;
+}
 let _pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
