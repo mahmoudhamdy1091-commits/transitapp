@@ -179,17 +179,21 @@ function headers(extra = {}) {
 }
 
 async function apiGet(table, params = {}) {
-  // select و order لا يحتاجان encode — الفاصلة والنقطة جزء من syntax
   const NO_ENCODE = new Set(['select','order']);
   const qs = Object.entries(params).map(([k,v]) => NO_ENCODE.has(k) ? `${k}=${v}` : `${k}=${encodeURIComponent(v)}`).join('&');
   const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
-  let res = await fetch(url, { headers: headers({'Prefer':'return=representation'}) });
+  // Range: 0-9999 يجلب حتى 10000 صف — يتجاوز حد الـ 1000 الافتراضي
+  const h = headers({ 'Range': '0-9999', 'Range-Unit': 'items' });
+  let res = await fetch(url, { headers: h });
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (!ok) throw new Error('انتهت الجلسة، يرجى تسجيل الدخول مجدداً');
-    res = await fetch(url, { headers: headers({'Prefer':'return=representation'}) });
+    res = await fetch(url, { headers: h });
   }
-  if (!res.ok) { const e = await res.json(); throw new Error(e.message || res.statusText); }
+  if (!res.ok && res.status !== 206) {
+    const e = await res.json().catch(()=>({}));
+    throw new Error(e.message || res.statusText);
+  }
   return res.json();
 }
 
@@ -772,14 +776,18 @@ async function loadDashboard() {
     // ensureCache() بنت allDealsEnriched بالفعل
 
     // ── حسابات الفترة ──
-    const totSales      = periodSales.reduce((s,r)=>s+(+r.sale_price||0),0);
-    const totExp        = periodExp.reduce((s,e)=>s+(+e.amount||0),0);
-    const periodFileNos = new Set(periodSales.map(s=>s.file_no));
-    const periodDeals        = (deals||[]).filter(d => periodFileNos.has(d.file_no));
-    const periodPurchaseDeals= (deals||[]).filter(d => { const dt = d.po_date || d.created_at?.split('T')[0] || ''; return dt >= from && dt <= to; });
-    const totPurchase        = periodPurchaseDeals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
-    const profit        = totSales - totPurchase - totExp;
-    const margin        = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
+    const totSales    = periodSales.reduce((s,r)=>s+(+r.sale_price||0),0);
+    const totExp      = periodExp.reduce((s,e)=>s+(+e.amount||0),0);
+    const allDealsEnriched = state.allDealsEnriched || [];
+
+    // المشتريات: مفلترة بـ po_date في الفترة المختارة
+    const periodPurchaseDeals = allDealsEnriched.filter(d => {
+      const dt = d.po_date || d.created_at?.split('T')[0] || '';
+      return dt >= from && dt <= to;
+    });
+    const totPurchase = periodPurchaseDeals.reduce((s,d)=>s+(+d._totalCost||+d.total_purchase||0),0);
+    const profit      = totSales - totPurchase - totExp;
+    const margin      = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
     const soldVinsAll   = new Set((allSales||[]).filter(isPosted).map(s=>s.vin));
     const stockVehicles = (vehicles||[]).filter(v => !soldVinsAll.has(v.vin));
     const overdueList   = (collections||[]).filter(c => isPosted(c) && !c.paid_date && c.due_date && c.due_date <= todayStr);
@@ -789,7 +797,9 @@ async function loadDashboard() {
 
     // ── حفظ البيانات للـ drill-down ──
     _ddState.data = {
-      periodSales, periodExp, periodDeals, periodPurchaseDeals,
+      periodSales, periodExp,
+      periodDeals: allDealsEnriched,
+      periodPurchaseDeals,
       periodCollections: (collections||[]).filter(c => {
         const d = c.due_date||c.paid_date||c.created_at?.split('T')[0]||'';
         return d >= from && d <= to;
@@ -2708,6 +2718,11 @@ async function submitNewFile() {
   if (!fileNo)      { showFieldErr('nfError','يرجى إدخال رقم الملف'); return; }
   if (!supplier)    { showFieldErr('nfError','يرجى اختيار المورد'); return; }
   if (!poDate)      { showFieldErr('nfError','يرجى إدخال التاريخ'); return; }
+  // التحقق من صحة التاريخ — السنة بين 2000 و 2100
+  const poYear = parseInt(poDate.split('-')[0]);
+  if (isNaN(poYear) || poYear < 2000 || poYear > 2100) {
+    showFieldErr('nfError', `التاريخ غير صحيح: "${poDate}" — تأكد من السنة (مثال: 2026-03-10)`); return;
+  }
   if (!totalAmount) { showFieldErr('nfError','يرجى إدخال قيمة الصفقة'); return; }
 
   // Collect vehicles from table rows
