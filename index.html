@@ -196,7 +196,7 @@
           <div class="nav-item" onclick="showContactsByType('custodian')">
             <span class="ni-icon">🗝</span><span>العهد وأخرى</span>
           </div>
-          <div class="nav-item" id="nav-ledger" onclick="showLedger&&showLedger()">
+          <div class="nav-item" id="nav-ledger" onclick="showContacts()">
             <span class="ni-icon">📖</span><span>دفتر الأستاذ</span>
           </div>
           <div class="nav-item" id="nav-trial" onclick="showTrialBalance()">
@@ -442,6 +442,7 @@
           <div class="tab" onclick="switchTab(5)">💰 التحصيلات</div>
           <div class="tab" onclick="switchTab(6)">👥 صرف الشركاء</div>
           <div class="tab" onclick="switchTab(7)">📄 كشف الصفقة</div>
+          <div class="tab" onclick="switchTab(8)">📝 الملاحظات</div>
         </div>
 
         <!-- Tab 0: Summary -->
@@ -530,6 +531,18 @@
             </div>
           </div>
           <div id="dealStatementWrap"></div>
+        </div>
+
+        <!-- Tab 8: Notes -->
+        <div class="tab-content" id="tab-8">
+          <div class="section-header">
+            <div class="section-title">📝 ملاحظات الصفقة</div>
+            <div class="section-actions">
+              <button class="btn btn-secondary btn-sm" onclick="loadDealNotes()">🔄 تحديث</button>
+              <button class="btn btn-primary btn-sm" onclick="openDealNoteModal()">➕ إضافة ملاحظة</button>
+            </div>
+          </div>
+          <div id="dealNotesContainer" style="padding:4px 0"></div>
         </div>
 
       </div><!-- /viewerView -->
@@ -1619,6 +1632,34 @@
         <textarea id="sale-notes" placeholder="شروط الدفع، ملاحظات..." rows="2"></textarea>
       </div>
 
+      <!-- مصاريف إضافية على العميل -->
+      <div style="margin-top:12px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:14px 16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:14px">💰</span>
+            <span style="font-weight:700;font-size:13px;color:var(--accent)">مصاريف إضافية على العميل</span>
+            <span style="font-size:11px;color:var(--text2);font-weight:400">(تُضاف للفاتورة وتُحمَّل على العميل)</span>
+          </div>
+          <button type="button" onclick="addExtraChargeRow()"
+            style="background:var(--accent);color:#000;border:none;border-radius:var(--radius-sm);padding:5px 12px;font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer">
+            ➕ إضافة بند
+          </button>
+        </div>
+        <div id="extraChargesContainer">
+          <!-- rows added dynamically -->
+        </div>
+        <div id="extraChargesTotalWrap" style="display:none;margin-top:8px;padding:8px 12px;background:rgba(0,0,0,.15);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:var(--text2);font-weight:600">إجمالي المصاريف الإضافية:</span>
+          <span class="mono" id="extraChargesTotalDisplay" style="font-weight:900;color:var(--accent);font-size:14px">0.000</span>
+        </div>
+      </div>
+
+      <!-- إجمالي الفاتورة الكلي (سيارات + مصاريف) -->
+      <div id="saleGrandTotalWrap" style="display:none;margin-top:8px;padding:10px 14px;background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700;color:var(--green)">🧾 إجمالي الفاتورة الكلي:</span>
+        <span class="mono text-green" id="saleGrandTotalDisplay" style="font-size:17px;font-weight:900">0.000</span>
+      </div>
+
       <!-- بيانات الدفع -->
       <div style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-top:10px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -2618,6 +2659,44 @@
 <!-- PRINT OVERLAY -->
 <div id="printOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:#fff;overflow-y:auto"><div id="printOverlayToolbar" style="position:sticky;top:0;background:#1a1a1a;display:flex;align-items:center;gap:10px;padding:10px 20px"><span style="color:#fff;font-family:Cairo,sans-serif;font-size:14px;font-weight:700;flex:1" id="printOverlayTitle">معاينة الطباعة</span><button onclick="window.print()" style="background:#e6930a;color:#000;border:none;padding:8px 20px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;font-weight:700;cursor:pointer">🖨️ طباعة</button><button onclick="closePrintOverlay()" style="background:#444;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;cursor:pointer">✕ إغلاق</button></div><div id="printOverlayBody" style="padding:24px;max-width:1000px;margin:0 auto"></div></div>
 <style>@media print{body>*:not(#printOverlay){display:none!important}#printOverlay{display:block!important;position:static!important}#printOverlayToolbar{display:none!important}}</style>
+
+<!-- DEAL NOTE MODAL -->
+<div class="modal-overlay" id="dealNoteModal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--blue-dim)">📝</div>
+      <h3>إضافة ملاحظة على الصفقة</h3>
+      <button class="modal-close" onclick="closeModal('dealNoteModal')">✕</button>
+    </div>
+    <div class="modal-body"><div class="form-col">
+      <div class="field">
+        <label>نص الملاحظة *</label>
+        <textarea id="dn-text" rows="4" placeholder="اكتب ملاحظتك هنا..." style="resize:vertical"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>النوع</label>
+          <select id="dn-type">
+            <option value="عام">📌 عام</option>
+            <option value="متابعة">🔔 متابعة</option>
+            <option value="مشكلة">⚠️ مشكلة</option>
+            <option value="مهم">🔴 مهم</option>
+            <option value="تم">✅ تم</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>التاريخ</label>
+          <input type="date" id="dn-date">
+        </div>
+      </div>
+      <div id="dnError" class="alert alert-err" style="display:none"></div>
+    </div></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('dealNoteModal')">إلغاء</button>
+      <button class="btn btn-primary" id="dnSubmitBtn" onclick="submitDealNote()">💾 حفظ الملاحظة</button>
+    </div>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>

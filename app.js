@@ -105,12 +105,14 @@ async function ensureCache() {
   state.allDealsEnriched = state.allDeals.map(d => {
     const fn = d.file_no;
     const vList = vehicleMap[fn]||[], sList = salesMap[fn]||[], eList = expMap[fn]||[];
-    const soldCount = sList.filter(s=>s.post_status==='posted').length;
-    const totalCost = +d.total_purchase || vList.reduce((s,v)=>s+(+v.purchase_price||0),0);
-    const totalExp  = eList.filter(e=>e.post_status==='posted').reduce((s,e)=>s+(+e.amount||0),0);
-    const totalSale = sList.filter(s=>s.post_status==='posted').reduce((s,s2)=>s+(+s2.sale_price||0),0);
-    const soldVins  = new Set(sList.filter(s=>s.post_status==='posted').map(s=>s.vin));
-    const fullCost  = totalCost + totalExp;
+    const postedSales = sList.filter(isPosted);
+    const postedExp   = eList.filter(isPosted);
+    const soldCount   = postedSales.length;
+    const totalCost   = +d.total_purchase || vList.reduce((s,v)=>s+(+v.purchase_price||0),0);
+    const totalExp    = postedExp.reduce((s,e)=>s+(+e.amount||0),0);
+    const totalSale   = postedSales.reduce((s,s2)=>s+(+s2.sale_price||0),0);
+    const soldVins    = new Set(postedSales.map(s=>s.vin));
+    const fullCost    = totalCost + totalExp;
     return { ...d,
       _vTotal:vList.length, _vSold:soldCount, _vLeft:Math.max(0,vList.length-soldCount),
       _totalCost:totalCost, _totalExp:totalExp, _fullCost:fullCost,
@@ -123,6 +125,17 @@ async function ensureCache() {
 // إبطال الـ cache عند أي تغيير
 function invalidateCache() {
   state._cacheTime = 0;
+}
+
+// ════════════════════════════════════════
+// CORE RULE: null post_status = posted (old data)
+// استخدم هذه الدالة في كل مكان بدل مقارنة post_status مباشرة
+// ════════════════════════════════════════
+function isPosted(row) {
+  return !row.post_status || row.post_status === 'posted';
+}
+function isDraft(row) {
+  return row.post_status === 'draft';
 }
 
 // ════════════════════════════════════════
@@ -446,7 +459,7 @@ async function loadTransactions() {
 
     // KPIs
     const total       = rows.reduce((s,r)=>s+(+r[cfg.amountField]||0), 0);
-    const draftCount  = rows.filter(r=>r.post_status==='draft').length;
+    const draftCount  = rows.filter(isDraft).length;
     const postedCount = rows.length - draftCount;
 
     el('tx-subtitle').textContent = `${rows.length} سجل · ${from} — ${to}`;
@@ -714,10 +727,10 @@ async function loadDashboard() {
     const collections = state.allCollections;
     const drafts      = await apiGet('journal_entries', { select:'id', system_type:`eq.${sys}`, post_status:'eq.draft' });
 
-    // ── فلتر بيانات الفترة ──
+    // ── فلتر بيانات الفترة (posted + null فقط = البيانات المرحَّلة والقديمة) ──
     const inPeriod = (dateStr) => dateStr && dateStr >= from && dateStr <= to;
-    const periodSales = (allSales||[]).filter(s => inPeriod(s.sale_date||s.created_at?.split('T')[0]));
-    const periodExp   = (allExpenses||[]).filter(e => inPeriod(e.exp_date||e.expense_date||e.created_at?.split('T')[0]));
+    const periodSales = (allSales||[]).filter(s => isPosted(s) && inPeriod(s.sale_date||s.created_at?.split('T')[0]));
+    const periodExp   = (allExpenses||[]).filter(e => isPosted(e) && inPeriod(e.exp_date||e.expense_date||e.created_at?.split('T')[0]));
 
     // ── Enrich deals — من الـ cache ──
     // ensureCache() بنت allDealsEnriched بالفعل
@@ -731,7 +744,7 @@ async function loadDashboard() {
     const totPurchase        = periodPurchaseDeals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
     const profit        = totSales - totPurchase - totExp;
     const margin        = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
-    const soldVinsAll   = new Set((allSales||[]).map(s=>s.vin));
+    const soldVinsAll   = new Set((allSales||[]).filter(isPosted).map(s=>s.vin));
     const stockVehicles = (vehicles||[]).filter(v => !soldVinsAll.has(v.vin));
     const overdueList   = (collections||[]).filter(c => !c.paid_date && (c.due_date ? c.due_date <= todayStr : true));
     const upcomingList  = (collections||[]).filter(c => !c.paid_date && c.due_date && c.due_date > todayStr && c.due_date <= in7);
@@ -1031,7 +1044,6 @@ function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
   const target = el(targetId);
   if (!target) return;
 
-  const showSales = opts.showSales || false;
   const countLabel = el('dealsCountLabel');
   if (countLabel) countLabel.textContent = `${deals.length} ملف`;
 
@@ -1040,75 +1052,104 @@ function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
     return;
   }
 
+  // ══ الأعمدة الثابتة: مشتريات → مصاريف → تكلفة كاملة → مبيعات → صافي الربح/الخسارة ══
   const rows = deals.map(d => {
-    const profitColor   = d._profit > 0 ? 'var(--green)' : d._profit < 0 ? 'var(--red)' : 'var(--text2)';
-    const remaining     = (d._fullCost||0) - (d._totalSale||0);
+    const purchase    = d._totalCost || d.total_purchase || d.purchase || 0;
+    const expenses    = d._totalExp  || d.expenses || 0;
+    const fullCost    = d._fullCost  || d.fullCost || (purchase + expenses);
+    const sales       = d._totalSale || d.sales || 0;
+    const profit      = d._profit    || d.profit || (sales - fullCost);
+    const profitColor = profit > 0 ? 'var(--green)' : profit < 0 ? 'var(--red)' : 'var(--text2)';
+    const profitBg    = profit > 0 ? 'var(--green-dim)' : profit < 0 ? 'var(--red-dim)' : 'transparent';
+    const profitArrow = profit >= 0 ? '▲' : '▼';
+
     const fileNoDisplay = d.file_no || '⚠️ بدون رقم';
     const canOpen       = !!d.file_no;
+
     return `<tr onclick="${canOpen?`openViewer('${d.file_no}')`:'void(0)'}" style="cursor:${canOpen?'pointer':'default'}">
+      <!-- رقم الملف + تاريخ -->
       <td>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span class="mono text-amber" style="font-weight:700">${fileNoDisplay}</span>
+        <div style="display:flex;align-items:center;gap:5px">
+          <span class="mono text-amber" style="font-weight:700;font-size:13px">${fileNoDisplay}</span>
           ${canOpen ? `<button onclick="event.stopPropagation();openNewFileModal('${d.file_no}')"
-            style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:13px;padding:2px 4px;border-radius:4px" title="تعديل">✏️</button>` : ''}
+            style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:12px;padding:1px 3px;border-radius:3px" title="تعديل">✏️</button>` : ''}
           ${can('delete') ? `<button onclick="event.stopPropagation();deleteOrphanDeal('${d.id||d.file_no}')"
-            style="background:none;border:none;cursor:pointer;color:var(--red);font-size:13px;padding:2px 4px;border-radius:4px" title="حذف">🗑</button>` : ''}
+            style="background:none;border:none;cursor:pointer;color:var(--red);font-size:12px;padding:1px 3px;border-radius:3px" title="حذف">🗑</button>` : ''}
         </div>
         <div style="font-size:11px;color:var(--text2);margin-top:2px">${fmtDate(d.po_date)}</div>
       </td>
+      <!-- المورد + ملاحظات -->
       <td>
         <div style="font-weight:600">${d.supplier||d.file||'—'}</div>
         <div style="font-size:11px;color:var(--text2)">${d.notes||''}</div>
       </td>
+      <!-- السيارات -->
       <td style="text-align:center">
-        <div style="font-family:var(--mono);font-weight:700">${d._vTotal||0}</div>
+        <div style="font-family:var(--mono);font-weight:700;font-size:13px">${d._vTotal||0}</div>
         <div style="font-size:10px;color:var(--text2)">${d._vSold||0} مباع · ${d._vLeft||0} متبقي</div>
       </td>
-      <td class="mono text-blue">${fmt(d._totalCost||d.total_purchase||d.purchase||0)}</td>
-      <td class="mono text-red">${fmt(d._totalExp||d.expenses||0)}</td>
-      <td class="mono" style="font-weight:700">${fmt(d._fullCost||d.fullCost||0)}</td>
-      ${showSales ? `<td class="mono text-green">${fmt(d._totalSale||d.sales||0)}</td>` : ''}
-      <td class="mono" style="font-weight:700;color:${profitColor}">
-        ${(d._profit||d.profit||0)>=0?'▲':'▼'} ${fmt(Math.abs(d._profit||d.profit||0))}
+      <!-- المشتريات -->
+      <td>
+        <div class="mono text-blue" style="font-weight:700">${fmt(purchase)}</div>
       </td>
-      <td class="mono" style="color:${remaining>0?'var(--red)':remaining<0?'var(--green)':'var(--text2)'};font-size:12px">
-        ${remaining > 0 ? fmt(remaining)+' غير مغطى' : remaining < 0 ? fmt(Math.abs(remaining))+' ربح ✓' : '✓ متعادل'}
+      <!-- المصاريف -->
+      <td>
+        <div class="mono text-red" style="font-weight:700">${fmt(expenses)}</div>
       </td>
+      <!-- التكلفة الكاملة -->
+      <td>
+        <div class="mono" style="font-weight:700;color:var(--accent)">${fmt(fullCost)}</div>
+        <div style="font-size:10px;color:var(--text2)">شراء ${fmt(purchase)} + مصاريف ${fmt(expenses)}</div>
+      </td>
+      <!-- المبيعات -->
+      <td>
+        <div class="mono text-green" style="font-weight:700">${fmt(sales)}</div>
+      </td>
+      <!-- صافي الربح / الخسارة -->
+      <td>
+        <div style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:8px;background:${profitBg}">
+          <span style="font-size:12px">${profitArrow}</span>
+          <span class="mono" style="font-weight:900;color:${profitColor};font-size:13px">${fmt(Math.abs(profit))}</span>
+        </div>
+        ${profit!==0 && sales>0 ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;text-align:center">هامش ${sales>0?((profit/sales)*100).toFixed(1):0}%</div>` : ''}
+      </td>
+      <!-- الحالة -->
       <td><span class="badge badge-${statusClass(d.status)}">${d.status||'—'}</span></td>
     </tr>`;
   }).join('');
 
-  // صف الإجمالي (للتقارير)
-  let totalRow = '';
-  if (opts.totalRow) {
-    const tp = deals.reduce((s,d)=>s+(d._totalCost||d.purchase||0),0);
-    const te = deals.reduce((s,d)=>s+(d._totalExp||d.expenses||0),0);
-    const ts = deals.reduce((s,d)=>s+(d._totalSale||d.sales||0),0);
-    const tP = deals.reduce((s,d)=>s+(d._profit||d.profit||0),0);
-    totalRow = `<tr style="background:var(--card2);font-weight:700;border-top:2px solid var(--border)">
-      <td colspan="3">الإجمالي (${deals.length} صفقة)</td>
-      <td class="mono text-blue">${fmt(tp)}</td>
-      <td class="mono text-red">${fmt(te)}</td>
-      <td class="mono">${fmt(tp+te)}</td>
-      ${showSales ? `<td class="mono text-green">${fmt(ts)}</td>` : ''}
-      <td class="mono" style="color:${tP>=0?'var(--green)':'var(--red)'}">
-        ${tP>=0?'▲':'▼'} ${fmt(Math.abs(tP))}
-      </td>
-      <td></td><td></td>
-    </tr>`;
-  }
+  // ══ صف الإجمالي ══
+  const tp = deals.reduce((s,d)=>s+(d._totalCost||d.total_purchase||d.purchase||0),0);
+  const te = deals.reduce((s,d)=>s+(d._totalExp||d.expenses||0),0);
+  const ts = deals.reduce((s,d)=>s+(d._totalSale||d.sales||0),0);
+  const tP = deals.reduce((s,d)=>s+(d._profit||d.profit||(( d._totalSale||0)-(d._fullCost||0))),0);
+  const totalRow = `<tr style="background:var(--card2);font-weight:700;border-top:2px solid var(--border)">
+    <td colspan="2" style="padding:10px 14px;font-size:12px">الإجمالي — ${deals.length} صفقة</td>
+    <td></td>
+    <td class="mono text-blue" style="font-weight:900">${fmt(tp)}</td>
+    <td class="mono text-red"  style="font-weight:900">${fmt(te)}</td>
+    <td class="mono" style="font-weight:900;color:var(--accent)">${fmt(tp+te)}</td>
+    <td class="mono text-green" style="font-weight:900">${fmt(ts)}</td>
+    <td>
+      <div style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:8px;background:${tP>=0?'var(--green-dim)':'var(--red-dim)'}">
+        <span>${tP>=0?'▲':'▼'}</span>
+        <span class="mono" style="font-weight:900;color:${tP>=0?'var(--green)':'var(--red)'};">${fmt(Math.abs(tP))}</span>
+      </div>
+    </td>
+    <td></td>
+  </tr>`;
 
   target.innerHTML = `
     <table class="data-table">
       <thead><tr>
-        <th>رقم الملف</th><th>المورد / البيان</th>
+        <th>رقم الملف</th>
+        <th>المورد / البيان</th>
         <th style="text-align:center">السيارات</th>
-        <th style="color:var(--blue)">تكلفة الشراء</th>
+        <th style="color:var(--blue)">المشتريات</th>
         <th style="color:var(--red)">المصاريف</th>
-        <th>التكلفة الكاملة</th>
-        ${showSales ? '<th style="color:var(--green)">المبيعات</th>' : ''}
-        <th>الربح/الخسارة</th>
-        <th>متبقي / ربح</th>
+        <th style="color:var(--accent)">التكلفة الكاملة</th>
+        <th style="color:var(--green)">المبيعات</th>
+        <th>صافي الربح / الخسارة</th>
         <th>الحالة</th>
       </tr></thead>
       <tbody>${rows}${totalRow}</tbody>
@@ -1201,6 +1242,7 @@ async function loadViewerTab(idx) {
   if (idx === 5) await loadCollectionsTab(fn, sys);
   if (idx === 6) await loadPayoutsTab(fn, sys);
   if (idx === 7) await loadDealStatement(fn, sys);
+  if (idx === 8) await loadDealNotes();
 }
 
 async function loadSummaryTab(fn, sys) {
@@ -1221,17 +1263,17 @@ async function loadSummaryTab(fn, sys) {
 
     const totalPurchase  = +(poArr?.[0]?.total_purchase) || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
 
-    // فصل posted من draft
-    const postedPay  = (payments||[]).filter(p=>p.post_status==='posted');
-    const postedExp  = (expenses||[]).filter(e=>e.post_status==='posted');
-    const postedSal  = (sales||[]).filter(s=>s.post_status==='posted');
-    const postedCol  = (collections||[]).filter(c=>c.post_status==='posted');
-    const postedPout = (payouts||[]).filter(p=>p.post_status==='posted');
-    const draftCount = (payments||[]).filter(p=>p.post_status==='draft').length +
-                       (expenses||[]).filter(e=>e.post_status==='draft').length +
-                       (sales||[]).filter(s=>s.post_status==='draft').length +
-                       (collections||[]).filter(c=>c.post_status==='draft').length +
-                       (payouts||[]).filter(p=>p.post_status==='draft').length;
+    // فصل posted من draft — null يُعامَل كـ posted (بيانات قديمة)
+    const postedPay  = (payments||[]).filter(isPosted);
+    const postedExp  = (expenses||[]).filter(isPosted);
+    const postedSal  = (sales||[]).filter(isPosted);
+    const postedCol  = (collections||[]).filter(isPosted);
+    const postedPout = (payouts||[]).filter(isPosted);
+    const draftCount = (payments||[]).filter(isDraft).length +
+                       (expenses||[]).filter(isDraft).length +
+                       (sales||[]).filter(isDraft).length +
+                       (collections||[]).filter(isDraft).length +
+                       (payouts||[]).filter(isDraft).length;
 
     const totalPaid      = postedPay.reduce((s,p)=>s+(+p.amount||0),0);
     const totalExp       = postedExp.reduce((s,e)=>s+(+e.amount||0),0);
@@ -1243,7 +1285,7 @@ async function loadSummaryTab(fn, sys) {
     const remaining      = totalPurchase - totalPaid;
     const uncollected    = totalSales - totalCollected;
     const soldVins       = new Set(postedSal.map(s=>s.vin));
-    const draftSoldVins  = new Set((sales||[]).filter(s=>s.post_status==='draft').map(s=>s.vin));
+    const draftSoldVins  = new Set((sales||[]).filter(isDraft).map(s=>s.vin));
     const totalV         = (vehicles||[]).length;
     const soldV          = soldVins.size;
     const unsoldV        = totalV - soldV - draftSoldVins.size;
@@ -1627,10 +1669,11 @@ async function deleteSaleInvoice(invNo, fileNo) {
   );
 }
 
-function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
+function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extraCharges = [], grandTotal = null }) {
   const companyName = 'Transit Co.';
   const companyNameAr = 'ترانزيت';
   const companyAddress = 'Kuwait · الكويت';
+  const finalTotal = grandTotal != null ? grandTotal : total;
 
   const itemsHtml = items.map((item, i) => `
     <tr>
@@ -1643,6 +1686,24 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
       <td style="direction:ltr;text-align:center;font-family:monospace">${item.plate||'—'}</td>
       <td style="text-align:center">${item.engine?item.engine+' L':'—'}</td>
       <td style="text-align:left;font-weight:600">${item.price.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+    </tr>`).join('');
+
+  // صف المجموع الفرعي للسيارات (فقط إذا في مصاريف إضافية)
+  const subtotalRow = extraCharges.length > 0 ? `
+    <tr style="background:#f0f0f0;font-weight:600">
+      <td colspan="5" style="text-align:right;padding:8px 12px;color:#555">مجموع السيارات / Vehicles Subtotal</td>
+      <td style="text-align:left;padding:8px 12px">${total.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+    </tr>` : '';
+
+  // بنود المصاريف الإضافية
+  const extraRowsHtml = extraCharges.map((c, i) => `
+    <tr style="background:#fff8ec">
+      <td style="text-align:center;color:#c47a00;font-size:11px">+</td>
+      <td colspan="4" style="color:#c47a00;font-weight:600;padding:8px 12px">
+        ${c.desc}
+        <span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;margin-right:8px;font-weight:700">مصروف إضافي</span>
+      </td>
+      <td style="text-align:left;font-weight:600;color:#c47a00;padding:8px 12px">${c.amount.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>`).join('');
 
   const html = `<!DOCTYPE html>
@@ -1679,15 +1740,16 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
   thead tr { background:#1a1a1a; color:#fff; }
   thead th { padding:10px 12px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
   tbody tr { border-bottom:1px solid #eee; }
-  tbody tr:nth-child(even) { background:#fafafa; }
+  tbody tr:nth-child(even):not(.extra-row):not(.subtotal-row) { background:#fafafa; }
   tbody td { padding:10px 12px; vertical-align:middle; }
 
   /* Total */
   .total-section { display:flex; justify-content:flex-end; margin-bottom:24px; }
-  .total-box { background:#1a1a1a; color:#fff; border-radius:10px; padding:16px 24px; min-width:220px; }
+  .total-box { background:#1a1a1a; color:#fff; border-radius:10px; padding:16px 24px; min-width:260px; }
   .total-label { font-size:12px; color:#aaa; margin-bottom:4px; }
   .total-amount { font-size:24px; font-weight:800; color:#fff; }
   .total-currency { font-size:13px; color:#aaa; margin-top:2px; }
+  .total-sub-row { display:flex; justify-content:space-between; font-size:12px; color:#aaa; padding:3px 0; border-top:1px solid #444; margin-top:8px; padding-top:8px; }
 
   /* Notes */
   .notes-section { background:#f8f9fa; border-radius:8px; padding:14px 16px; margin-bottom:24px; }
@@ -1759,6 +1821,10 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
         <span class="info-label">عدد السيارات / Vehicles</span>
         <span class="info-value">${items.length}</span>
       </div>
+      ${extraCharges.length>0 ? `<div class="info-row">
+        <span class="info-label">مصاريف إضافية</span>
+        <span class="info-value" style="color:#c47a00">${extraCharges.length} بند</span>
+      </div>` : ''}
     </div>
   </div>
 
@@ -1776,6 +1842,8 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
     </thead>
     <tbody>
       ${itemsHtml}
+      ${subtotalRow}
+      ${extraRowsHtml}
     </tbody>
   </table>
 
@@ -1783,8 +1851,17 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
   <div class="total-section">
     <div class="total-box">
       <div class="total-label">الإجمالي / Total Amount</div>
-      <div class="total-amount">${total.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
+      <div class="total-amount">${finalTotal.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
       <div class="total-currency">KWD / د.ك</div>
+      ${extraCharges.length>0 ? `
+      <div class="total-sub-row">
+        <span>قيمة السيارات</span>
+        <span>${total.toLocaleString('en-US',{minimumFractionDigits:2})}</span>
+      </div>
+      <div class="total-sub-row">
+        <span>مصاريف إضافية</span>
+        <span>${(finalTotal-total).toLocaleString('en-US',{minimumFractionDigits:2})}</span>
+      </div>` : ''}
     </div>
   </div>
 
@@ -1813,7 +1890,7 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
   setTimeout(() => {
     if (confirm('إرسال الفاتورة عبر واتساب؟')) {
       const phone = prompt('رقم واتساب العميل (مثال: 96512345678)\nاتركه فارغاً لاختيار يدوي:','');
-      if (phone !== null) sendWhatsappInvoice({ invNo, customer, date, fn, notes, items, total, phone });
+      if (phone !== null) sendWhatsappInvoice({ invNo, customer, date, fn, notes, items, total, extraCharges, grandTotal, phone });
     }
   }, 800);
 }
@@ -3135,6 +3212,9 @@ async function openSaleModal(fileNoOverride = null) {
 
   // السيارات
   el('saleVehiclesContainer').innerHTML = '';
+  // مسح المصاريف الإضافية
+  if (el('extraChargesContainer')) el('extraChargesContainer').innerHTML = '';
+  updateSaleTotal();
   state._saleAvailableVehicles = fileNo ? await loadAvailableVehicles(fileNo, sys) : [];
   addSaleVehicleRow();
   openModal('saleModal');
@@ -3259,19 +3339,63 @@ function onSaleVehicleChange(sel)    {}
 
 function updateSaleTotal() {
   const rows = el('saleVehiclesContainer')?.querySelectorAll('tr.sale-v-row') || [];
-  let total = 0, checked = 0;
+  let carsTotal = 0, checked = 0;
   rows.forEach(r => {
     const cb = r.querySelector('.sv-check');
     if (cb && cb.checked) {
-      total += parseFloat(r.querySelector('[name="sv-price"]')?.value) || 0;
+      carsTotal += parseFloat(r.querySelector('[name="sv-price"]')?.value) || 0;
       checked++;
     }
   });
-  if (el('saleTotalDisplay')) el('saleTotalDisplay').textContent = fmt(total);
+  if (el('saleTotalDisplay')) el('saleTotalDisplay').textContent = fmt(carsTotal);
   if (el('saleTotalWrap'))    el('saleTotalWrap').style.display  = checked > 0 ? 'flex' : 'none';
   // update label
   const lbl = el('sale-selected-count');
   if (lbl) lbl.textContent = checked > 0 ? `${checked} سيارة مختارة` : '';
+
+  // حساب المصاريف الإضافية
+  const extraRows = el('extraChargesContainer')?.querySelectorAll('.extra-charge-row') || [];
+  let extraTotal = 0;
+  extraRows.forEach(r => {
+    extraTotal += parseFloat(r.querySelector('.ec-amount')?.value) || 0;
+  });
+  if (el('extraChargesTotalDisplay')) el('extraChargesTotalDisplay').textContent = fmt(extraTotal);
+  const extraWrap = el('extraChargesTotalWrap');
+  if (extraWrap) extraWrap.style.display = extraRows.length > 0 ? 'flex' : 'none';
+
+  // الإجمالي الكلي
+  const grandTotal = carsTotal + extraTotal;
+  const grandWrap = el('saleGrandTotalWrap');
+  if (grandWrap) grandWrap.style.display = (checked > 0 || extraRows.length > 0) ? 'flex' : 'none';
+  if (el('saleGrandTotalDisplay')) el('saleGrandTotalDisplay').textContent = fmt(grandTotal);
+}
+
+function addExtraChargeRow(desc = '', amount = '') {
+  const container = el('extraChargesContainer');
+  if (!container) return;
+  const idx = Date.now();
+  const s = 'background:var(--card);border:1px solid var(--border);border-radius:4px;padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px;width:100%';
+  const sm = 'background:var(--card);border:1px solid var(--border);border-radius:4px;padding:7px 10px;color:var(--text);font-family:monospace;font-size:12px;width:100%';
+  const row = document.createElement('div');
+  row.className = 'extra-charge-row';
+  row.dataset.idx = idx;
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 140px auto;gap:8px;align-items:center;margin-bottom:8px';
+  row.innerHTML = `
+    <input type="text" class="ec-desc" placeholder="وصف المصروف (مثال: رسوم تسجيل، نقل، ...)" value="${desc}"
+      style="${s}" oninput="updateSaleTotal()">
+    <input type="number" class="ec-amount" placeholder="0.000" value="${amount}" min="0" step="0.001"
+      style="${sm}" oninput="updateSaleTotal()">
+    <button type="button" onclick="removeExtraChargeRow(this)"
+      style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:4px;padding:6px 10px;cursor:pointer;font-size:13px;line-height:1">✕</button>
+  `;
+  container.appendChild(row);
+  updateSaleTotal();
+  row.querySelector('.ec-desc').focus();
+}
+
+function removeExtraChargeRow(btn) {
+  btn.closest('.extra-charge-row').remove();
+  updateSaleTotal();
 }
 
 function toggleSalePayment(checked) {
@@ -3333,6 +3457,15 @@ async function submitSale() {
 
   if (!saleItems.length) { showFieldErr('saleError','يرجى تحديد سيارة واحدة على الأقل وإدخال سعر البيع'); return; }
 
+  // ── جمع المصاريف الإضافية على العميل ──
+  const extraCharges = [];
+  el('extraChargesContainer')?.querySelectorAll('.extra-charge-row').forEach(r => {
+    const desc   = r.querySelector('.ec-desc')?.value?.trim() || '';
+    const amount = parseFloat(r.querySelector('.ec-amount')?.value) || 0;
+    if (amount > 0) extraCharges.push({ desc: desc || 'مصروف إضافي', amount });
+  });
+  const extraTotal = extraCharges.reduce((s, c) => s + c.amount, 0);
+
   // ── منع التكرار: تحقق من رقم الفاتورة ──
   try {
     const existing = await apiGet('sales', { select:'id', system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` });
@@ -3343,6 +3476,7 @@ async function submitSale() {
   } catch(e) {}
 
   const totalPrice = saleItems.reduce((s,i)=>s+i.price,0);
+  const grandTotal = totalPrice + extraTotal; // إجمالي شامل المصاريف الإضافية
   const btn = el('saleSubmitBtn');
   _saleSaving = true;
   btn.disabled = true;
@@ -3380,13 +3514,13 @@ async function submitSale() {
     const payDate     = el('sale-pay-date')?.value || date;
     const payNotes    = el('sale-pay-notes')?.value?.trim() || null;
     const payAmtInput = parseFloat(el('sale-pay-amount')?.value) || 0;
-    const collAmt     = payAmtInput > 0 ? Math.min(payAmtInput, totalPrice) : totalPrice;
+    const collAmt     = payAmtInput > 0 ? Math.min(payAmtInput, grandTotal) : grandTotal;
     const allVins     = saleItems.map(i=>i.vin).filter(Boolean).join(' / ');
 
     closeModal('saleModal');
     invalidateCache();
 
-    // ── تحصيل واحد للفاتورة كلها (مش لكل سيارة) ──
+    // ── تحصيل واحد للفاتورة كلها (شامل المصاريف الإضافية) ──
     try {
       await apiPost('collections', {
         system_type: state.system,
@@ -3394,7 +3528,7 @@ async function submitSale() {
         inv_no:      invNo,
         customer,
         vin:         allVins,
-        amount:      totalPrice,
+        amount:      grandTotal,
         pay_method:  payMethod,
         document:    payDoc,
         due_date:    date,
@@ -3409,11 +3543,11 @@ async function submitSale() {
     } catch(e) { console.warn('collection create error:', e.message); }
 
     invalidateCache();
-    toast(`✅ تم تسجيل فاتورة ${invNo} — ${saleItems.length} سيارة`, 'ok');
+    toast(`✅ تم تسجيل فاتورة ${invNo} — ${saleItems.length} سيارة${extraCharges.length?' + '+extraCharges.length+' مصروف إضافي':''}`, 'ok');
     state.currentSales = allS || [];
     if (state.currentTab === 4) loadSalesTab(fn, state.system);
     if (state.currentTab === 0) loadSummaryTab(fn, state.system);
-    printSaleInvoice({ invNo, customer, date, fn, notes, items: saleItems, total: totalPrice });
+    printSaleInvoice({ invNo, customer, date, fn, notes, items: saleItems, total: totalPrice, extraCharges, grandTotal });
 
   } catch(e) { showFieldErr('saleError','خطأ: '+e.message); console.error(e); }
   finally {
@@ -3704,18 +3838,18 @@ function calcPayoutTotal() {
 async function getPartnerDealBalance(fileNo, partner, sys) {
   const [pmRow, payments, payouts, vehicles, sales, expenses, poRow] = await Promise.all([
     apiGet('partners_master', { select:'share_percent', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}` }),
-    apiGet('payments',        { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, payer:`eq.${partner}` }),
+    apiGet('payments',        { select:'amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, payer:`eq.${partner}` }),
     apiGet('partner_payouts', { select:'amount,payout_type,capital_amount,profit_amount,advance_amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}` }),
     apiGet('vehicles',        { select:'purchase_price', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-    apiGet('sales',           { select:'sale_price', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-    apiGet('expenses',        { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+    apiGet('sales',           { select:'sale_price,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+    apiGet('expenses',        { select:'amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
     apiGet('purchase_orders', { select:'total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
   ]);
   const share       = (pmRow?.[0]?.share_percent || 0) / 100;
-  const capitalPaid = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
+  const capitalPaid = (payments||[]).filter(isPosted).reduce((s,p)=>s+(+p.amount||0),0);
   const totalCost   = +poRow?.[0]?.total_purchase || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
-  const totalSales  = (sales||[]).reduce((s,s2)=>s+(+s2.sale_price||0),0);
-  const totalExp    = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
+  const totalSales  = (sales||[]).filter(isPosted).reduce((s,s2)=>s+(+s2.sale_price||0),0);
+  const totalExp    = (expenses||[]).filter(isPosted).reduce((s,e)=>s+(+e.amount||0),0);
   const dealProfit  = totalSales - totalCost - totalExp;
   const profit      = dealProfit * share;
   const capitalRet  = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
@@ -5224,8 +5358,22 @@ async function showContacts(type='all') {
 async function loadContacts() {
   el('contactsGrid').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
-    const contacts = await apiGet('contacts', { select:'*', system_type:`eq.${state.system}`, order:'name.asc' });
-    const jeEntries = await apiGet('journal_entries', { select:'contact_id,dr_amount,cr_amount', system_type:`eq.${state.system}`, post_status:'eq.posted' });
+    // جلب جهات الاتصال — نجلب الكل ونشمل البيانات القديمة التي ممكن تكون system_type=null أو مختلفة
+    // نستخدم or لجلب system_type المطابق + null (بيانات قديمة)
+    const sys = state.system;
+    const [contactsMatched, contactsNull] = await Promise.all([
+      apiGet('contacts', { select:'*', system_type:`eq.${sys}`, order:'name.asc' }),
+      apiGet('contacts', { select:'*', system_type:'is.null',   order:'name.asc' }),
+    ]);
+    // دمج بدون تكرار (بالـ id)
+    const seen = new Set();
+    const contacts = [];
+    [...(contactsMatched||[]), ...(contactsNull||[])].forEach(c => {
+      if (!seen.has(c.id)) { seen.add(c.id); contacts.push(c); }
+    });
+    contacts.sort((a,b) => (a.name||'').localeCompare(b.name||'', 'ar'));
+
+    const jeEntries = await apiGet('journal_entries', { select:'contact_id,dr_amount,cr_amount', system_type:`eq.${sys}`, post_status:'eq.posted' });
 
     // Aggregate balances per contact from journal_entries
     const balMap = {};
@@ -5236,7 +5384,7 @@ async function loadContacts() {
       balMap[e.contact_id].credit += +e.cr_amount || 0;
     });
 
-    contactsState.all = (contacts||[]).map(c => ({
+    contactsState.all = contacts.map(c => ({
       ...c,
       totalDebit:  (balMap[c.id]?.debit  || 0) + (+c.opening_balance > 0 ? +c.opening_balance : 0),
       totalCredit: (balMap[c.id]?.credit || 0) + (+c.opening_balance < 0 ? Math.abs(+c.opening_balance) : 0),
@@ -5348,147 +5496,244 @@ async function showLedger(contactId, contactName, contactType) {
   navActive('nav-contacts');
   el('ledgerTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
 
-  // Store globally for renderLedgerTable
   window._ledgerContactId   = contactId;
   window._ledgerContactName = contactName;
   window._ledgerContactType = contactType;
 
   try {
+    const sys  = state.system;
+    const name = contactName;
+
+    // جلب البيانات الرئيسية حسب نوع جهة الاتصال
     const contact = contactsState.all.find(c => c.id === contactId);
     window._ledgerOpening = contact?.opening_balance ? +contact.opening_balance : 0;
 
-    // جيب كل الـ entries من journal_entries
-    const jeRaw = await apiGet('journal_entries', {
-      select: '*',
-      system_type: `eq.${state.system}`,
-      contact_id: `eq.${contactId}`,
-      post_status: 'eq.posted',
-      order: 'entry_date.asc,id.asc'
-    });
-    // تحويل للشكل القديم عشان باقي الكود يشتغل
-    const entries = (jeRaw||[]).map(e => ({
-      ...e,
-      entry_date:   e.entry_date,
-      description:  e.description,
-      debit:        +e.dr_amount || 0,
-      credit:       +e.cr_amount || 0,
-      source_table: e.ref_table,
-      file_no:      e.file_no,
-    }));
-    window._ledgerAllEntries = entries || [];
+    let entries = [];
 
-    // جيب السيارات عشان نضيف VINs في بيان الشراء
-    const vehicles = await apiGet('vehicles', {
-      select: 'file_no,vin,model,vehicle_type',
-      system_type: `eq.${state.system}`
-    });
-    // بني map: file_no => list of vins
-    window._ledgerVehicleMap = {};
-    (vehicles||[]).forEach(v => {
-      if (!window._ledgerVehicleMap[v.file_no]) window._ledgerVehicleMap[v.file_no] = [];
-      window._ledgerVehicleMap[v.file_no].push(v);
-    });
+    if (contactType === 'customer') {
+      // ── عميل: مبيعات (مدين) + تحصيلات (دائن) ──
+      const [sales, collections] = await Promise.all([
+        apiGet('sales',       { select:'*', system_type:`eq.${sys}`, customer:`eq.${name}`, order:'sale_date.asc' }),
+        apiGet('collections', { select:'*', system_type:`eq.${sys}`, customer:`eq.${name}`, order:'paid_date.asc,due_date.asc' }),
+      ]);
+      // مبيعات → مدين على العميل
+      (sales||[]).filter(isPosted).forEach(r => {
+        entries.push({
+          date:   r.sale_date || r.created_at?.split('T')[0] || '',
+          type:   'بيع',
+          desc:   `فاتورة ${r.inv_no||''} — ${r.vin||''}`,
+          ref:    r.inv_no || '',
+          debit:  +r.sale_price || 0,
+          credit: 0,
+          file_no: r.file_no,
+        });
+      });
+      // تحصيلات → دائن
+      (collections||[]).filter(isPosted).forEach(r => {
+        entries.push({
+          date:   r.paid_date || r.due_date || r.created_at?.split('T')[0] || '',
+          type:   'تحصيل',
+          desc:   `تحصيل ${r.inv_no||''} — ${r.pay_method||''}`,
+          ref:    r.ref_no || r.inv_no || '',
+          debit:  0,
+          credit: +r.amount || 0,
+          file_no: r.file_no,
+        });
+      });
+
+    } else if (contactType === 'supplier') {
+      // ── مورد: شراء (دائن) + دفعات (مدين) ──
+      const [pos, payments] = await Promise.all([
+        apiGet('purchase_orders', { select:'*', system_type:`eq.${sys}`, supplier:`eq.${name}`, order:'po_date.asc' }),
+        apiGet('payments',        { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`,    order:'pay_date.asc' }),
+      ]);
+      // شراء → دائن على المورد
+      (pos||[]).forEach(r => {
+        entries.push({
+          date:   r.po_date || r.created_at?.split('T')[0] || '',
+          type:   'شراء',
+          desc:   `أمر شراء ${r.po_no||r.file_no||''} — ${r.vehicle_count||0} سيارة`,
+          ref:    r.file_no || '',
+          debit:  0,
+          credit: +r.total_purchase || 0,
+          file_no: r.file_no,
+        });
+      });
+      // دفعات → مدين (تخفيض الدين)
+      (payments||[]).filter(isPosted).forEach(r => {
+        entries.push({
+          date:   r.pay_date || r.created_at?.split('T')[0] || '',
+          type:   'دفعة',
+          desc:   `دفعة ${r.ref_no||''} — ${r.pay_method||''}`,
+          ref:    r.ref_no || '',
+          debit:  +r.amount || 0,
+          credit: 0,
+          file_no: r.file_no,
+        });
+      });
+
+    } else if (contactType === 'partner') {
+      // ── شريك: دفعات رأس مال (مدين) + مسحوبات (دائن) ──
+      const [payments, payouts] = await Promise.all([
+        apiGet('payments',        { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`,    order:'pay_date.asc' }),
+        apiGet('partner_payouts', { select:'*', system_type:`eq.${sys}`, partner:`eq.${name}`, order:'pay_date.asc' }),
+      ]);
+      (payments||[]).filter(isPosted).forEach(r => {
+        entries.push({
+          date:   r.pay_date || r.created_at?.split('T')[0] || '',
+          type:   'دفعة رأس مال',
+          desc:   `دفع ${r.ref_no||''} — ${r.pay_method||''} — ملف ${r.file_no||''}`,
+          ref:    r.ref_no || '',
+          debit:  +r.amount || 0,
+          credit: 0,
+          file_no: r.file_no,
+        });
+      });
+      (payouts||[]).filter(isPosted).forEach(r => {
+        entries.push({
+          date:   r.pay_date || r.created_at?.split('T')[0] || '',
+          type:   r.payout_type || 'مسحوبات',
+          desc:   `${r.payout_type||'صرف'} ${r.pay_id||''} — ${r.pay_method||''}`,
+          ref:    r.pay_id || '',
+          debit:  0,
+          credit: +r.amount || 0,
+          file_no: r.file_no,
+        });
+      });
+
+    } else {
+      // ── عهدة وأخرى: expenses + payments ──
+      const [expenses, payments] = await Promise.all([
+        apiGet('expenses', { select:'*', system_type:`eq.${sys}`, order:'exp_date.asc' }),
+        apiGet('payments', { select:'*', system_type:`eq.${sys}`, payer:`eq.${name}`, order:'pay_date.asc' }),
+      ]);
+      (expenses||[]).filter(isPosted).forEach(r => {
+        entries.push({
+          date:   r.exp_date || r.created_at?.split('T')[0] || '',
+          type:   'مصروف',
+          desc:   `${r.description||''} — ${r.exp_type||''}`,
+          ref:    r.ref_no || '',
+          debit:  +r.amount || 0,
+          credit: 0,
+          file_no: r.file_no,
+        });
+      });
+      (payments||[]).filter(isPosted).forEach(r => {
+        entries.push({
+          date:   r.pay_date || r.created_at?.split('T')[0] || '',
+          type:   'دفعة',
+          desc:   `دفعة ${r.ref_no||''} — ${r.pay_method||''}`,
+          ref:    r.ref_no || '',
+          debit:  +r.amount || 0,
+          credit: 0,
+          file_no: r.file_no,
+        });
+      });
+    }
+
+    // ترتيب بالتاريخ
+    entries.sort((a,b) => (a.date||'').localeCompare(b.date||''));
+    window._ledgerAllEntries = entries;
 
     // بني فلتر الملفات
-    const fileNos = [...new Set((entries||[]).map(e=>e.file_no).filter(Boolean))].sort();
+    const fileNos = [...new Set(entries.map(e=>e.file_no).filter(Boolean))].sort();
     const sel = el('ledger-file-filter');
-    sel.innerHTML = '<option value="">كل الصفقات</option>' +
-      fileNos.map(f=>`<option value="${f}">${f}</option>`).join('');
+    if (sel) {
+      sel.innerHTML = '<option value="">كل الصفقات</option>' +
+        fileNos.map(f=>`<option value="${f}">${f}</option>`).join('');
+    }
 
+    window._ledgerVehicleMap = {};
     el('ledgerView').dataset.contactName = contactName;
     renderLedgerTable();
 
   } catch(e) {
     el('ledgerTable').innerHTML = errHTML('خطأ: ' + e.message);
+    console.error('showLedger error:', e);
   }
 }
 
 function renderLedgerTable() {
   const fileFilter = el('ledger-file-filter')?.value || '';
   const allEntries = window._ledgerAllEntries || [];
-  const vehicleMap = window._ledgerVehicleMap || {};
-  const contact    = contactsState.all.find(c => c.id === window._ledgerContactId);
+  const opening    = window._ledgerOpening || 0;
 
   let list = fileFilter ? allEntries.filter(e => e.file_no === fileFilter) : allEntries;
-  let running = !fileFilter && window._ledgerOpening ? window._ledgerOpening : 0;
+  let running = opening;
 
-  const totalDebit  = list.reduce((s,e) => s + (+e.debit||0), 0) + (running > 0 ? running : 0);
-  const totalCredit = list.reduce((s,e) => s + (+e.credit||0), 0) + (running < 0 ? Math.abs(running) : 0);
-  const finalBal    = running + list.reduce((s,e) => s + (+e.debit||0) - (+e.credit||0), 0);
+  const totalDebit  = list.reduce((s,e) => s + (+e.debit||0), 0);
+  const totalCredit = list.reduce((s,e) => s + (+e.credit||0), 0);
+  const finalBal    = opening + totalDebit - totalCredit;
 
   el('ledgerKpis').innerHTML = `
     <div class="j-kpi"><div class="j-kpi-label">مجموع المدين</div><div class="j-kpi-val text-green">${fmt(totalDebit)}</div></div>
     <div class="j-kpi"><div class="j-kpi-label">مجموع الدائن</div><div class="j-kpi-val text-red">${fmt(totalCredit)}</div></div>
-    <div class="j-kpi"><div class="j-kpi-label">الرصيد الحالي</div><div class="j-kpi-val" style="color:${finalBal>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}</div></div>
+    <div class="j-kpi"><div class="j-kpi-label">الرصيد الحالي</div><div class="j-kpi-val" style="color:${finalBal>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(finalBal))} ${finalBal>0?'مدين':finalBal<0?'دائن':'متعادل'}</div></div>
     <div class="j-kpi"><div class="j-kpi-label">عدد الحركات</div><div class="j-kpi-val">${list.length}</div></div>`;
 
-  if (!list.length && !running) {
-    el('ledgerTable').innerHTML = emptyHTML('📋', 'لا توجد حركات بعد');
+  if (!list.length && !opening) {
+    el('ledgerTable').innerHTML = emptyHTML('📋', 'لا توجد حركات مسجلة لهذا الحساب');
     return;
   }
 
+  // صف الرصيد الافتتاحي
   let rows = '';
-  if (running !== 0) {
+  if (opening && !fileFilter) {
     rows += `<tr style="background:var(--card2)">
-      <td><span class="mono text-muted">—</span></td>
-      <td colspan="2"><strong>رصيد افتتاحي</strong></td>
-      <td class="mono ${running>0?'text-green':'text-red'}">${running>0?fmt(running):'—'}</td>
-      <td class="mono ${running<0?'text-red':'text-green'}">${running<0?fmt(Math.abs(running)):'—'}</td>
-      <td class="mono" style="color:${running>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(running))}</td>
+      <td colspan="3" style="padding:8px 12px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
+      <td class="mono text-green" style="padding:8px 12px">${opening > 0 ? fmt(opening) : '—'}</td>
+      <td class="mono text-red"   style="padding:8px 12px">${opening < 0 ? fmt(Math.abs(opening)) : '—'}</td>
+      <td class="mono" style="padding:8px 12px;font-weight:700">${fmt(Math.abs(opening))}</td>
     </tr>`;
+    running = opening;
   }
 
-  list.forEach(e => {
+  rows += list.map((e,i) => {
     running += (+e.debit||0) - (+e.credit||0);
-
-    // بني البيان — لو كان شراء أضف تفاصيل السيارات
-    let desc = e.description || '—';
-    if (e.source_table === 'purchase_orders' && e.file_no && vehicleMap[e.file_no]) {
-      const vList = vehicleMap[e.file_no];
-      const count = vList.length;
-      const vins  = vList.map(v => v.vin || (v.model||v.vehicle_type||'سيارة')).filter(Boolean);
-      const vinStr = vins.length <= 4
-        ? vins.join(' · ')
-        : vins.slice(0,4).join(' · ') + ` ... (+${vins.length-4})`;
-      desc = `${desc}<div style="font-size:11px;color:var(--text2);margin-top:3px">
-        ${count} سيارة — ${vinStr}
-      </div>`;
-    }
-
-    rows += `<tr onclick="${e.file_no?`openViewer('${e.file_no}')`:''}" style="${e.file_no?'cursor:pointer':''}">
-      <td class="mono text-muted">${fmtDate(e.entry_date)}</td>
-      <td>${desc}</td>
-      <td><span class="mono text-muted" style="font-size:11px">${e.file_no||'—'}</span></td>
-      <td class="mono text-green">${+e.debit?fmt(e.debit):'—'}</td>
-      <td class="mono text-red">${+e.credit?fmt(e.credit):'—'}</td>
-      <td class="mono" style="color:${running>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(Math.abs(running))}</td>
+    const runColor = running >= 0 ? 'var(--green)' : 'var(--red)';
+    return `<tr style="${i%2===0?'':'background:var(--card2)'}">
+      <td style="padding:8px 12px;font-family:monospace;font-size:12px;color:var(--text2);white-space:nowrap">${e.date||'—'}</td>
+      <td style="padding:8px 12px">
+        <div style="font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;display:inline-block;background:var(--card2);color:var(--text2);margin-bottom:2px">${e.type}</div>
+        <div style="font-size:12px">${e.desc||'—'}</div>
+        ${e.file_no?`<div style="font-size:10px;color:var(--accent);font-family:monospace">${e.file_no}</div>`:''}
+      </td>
+      <td style="padding:8px 12px;font-family:monospace;font-size:11px;color:var(--text2)">${e.ref||'—'}</td>
+      <td class="mono text-green" style="padding:8px 12px;font-weight:700">${+e.debit>0 ? fmt(e.debit) : '—'}</td>
+      <td class="mono text-red"   style="padding:8px 12px;font-weight:700">${+e.credit>0 ? fmt(e.credit) : '—'}</td>
+      <td class="mono" style="padding:8px 12px;font-weight:700;color:${runColor}">${fmt(Math.abs(running))}</td>
     </tr>`;
-  });
+  }).join('');
 
-  el('ledgerTable').innerHTML = `<table class="data-table">
-    <thead><tr>
-      <th>التاريخ</th><th>البيان</th><th>الملف</th>
-      <th style="color:var(--green)">مدين</th>
-      <th style="color:var(--red)">دائن</th>
-      <th>الرصيد</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-    <tfoot style="background:var(--card2)"><tr>
-      <td colspan="3" style="font-weight:700;padding:10px 16px">الإجمالي ${fileFilter?'— '+fileFilter:''}</td>
-      <td class="mono text-green" style="padding:10px 16px;font-weight:700">${fmt(totalDebit)}</td>
-      <td class="mono text-red" style="padding:10px 16px;font-weight:700">${fmt(totalCredit)}</td>
-      <td class="mono" style="padding:10px 16px;font-weight:700;color:${finalBal>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(finalBal))}</td>
-    </tr></tfoot>
-  </table>`;
+  const tfootColor = finalBal >= 0 ? 'var(--green)' : 'var(--red)';
+  el('ledgerTable').innerHTML = `
+    <table class="data-table">
+      <thead><tr>
+        <th>التاريخ</th>
+        <th>البيان</th>
+        <th>المرجع</th>
+        <th style="color:var(--green)">مدين</th>
+        <th style="color:var(--red)">دائن</th>
+        <th>الرصيد</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot style="background:var(--card2)"><tr>
+        <td colspan="3" style="padding:10px 14px;font-weight:700">الإجمالي</td>
+        <td class="mono text-green" style="padding:10px 14px;font-weight:900">${fmt(totalDebit)}</td>
+        <td class="mono text-red"   style="padding:10px 14px;font-weight:900">${fmt(totalCredit)}</td>
+        <td class="mono" style="padding:10px 14px;font-weight:900;color:${tfootColor}">${fmt(Math.abs(finalBal))} ${finalBal>0?'مدين':finalBal<0?'دائن':'✓'}</td>
+      </tr></tfoot>
+    </table>`;
 
+  // حفظ للتصدير
   el('ledgerView').dataset.entries = JSON.stringify(list);
 }
 
 function exportLedgerCSV() {
-  const name = el('ledgerView').dataset.contactName || 'ledger';
+  const name    = el('ledgerView').dataset.contactName || 'ledger';
   const entries = JSON.parse(el('ledgerView').dataset.entries || '[]');
-  const rows = [['التاريخ','البيان','الملف','مدين','دائن']];
-  entries.forEach(e => rows.push([e.entry_date, e.description, e.file_no||'', e.debit||0, e.credit||0]));
+  const rows    = [['التاريخ','النوع','البيان','المرجع','الملف','مدين','دائن']];
+  entries.forEach(e => rows.push([e.date||'', e.type||'', e.desc||'', e.ref||'', e.file_no||'', +e.debit||0, +e.credit||0]));
   downloadCSV(rows, `كشف_${name}.csv`);
 }
 
@@ -5524,16 +5769,11 @@ function printLedgerStatement() {
 
   list.forEach(e => {
     running += (+e.debit||0) - (+e.credit||0);
-    // Enrich description with VINs
-    let desc = (e.description||'—').replace(/<[^>]+>/g,''); // strip html tags for print
-    if (e.source_table === 'purchase_orders' && e.file_no && vehicleMap[e.file_no]) {
-      const vins = vehicleMap[e.file_no].map(v=>v.vin).filter(Boolean);
-      if (vins.length) desc += `\n شواصي: ${vins.join(' · ')}`;
-    }
+    const desc = (e.desc || e.description || '—').replace(/<[^>]+>/g,'');
     const rowBg = running < 0 ? '#fff5f5' : '';
     rows += `<tr style="background:${rowBg}">
-      <td style="white-space:nowrap">${e.entry_date||'—'}</td>
-      <td style="font-size:11px;line-height:1.6;white-space:pre-line">${desc}</td>
+      <td style="white-space:nowrap">${e.date||e.entry_date||'—'}</td>
+      <td style="font-size:11px;line-height:1.6">${e.type?`<strong>[${e.type}]</strong> `:''} ${desc}</td>
       <td style="font-family:monospace;font-size:11px;color:#666">${e.file_no||'—'}</td>
       <td style="color:#16a34a;text-align:left;font-weight:600">${+e.debit?fmt2(e.debit):'—'}</td>
       <td style="color:#dc2626;text-align:left;font-weight:600">${+e.credit?fmt2(e.credit):'—'}</td>
@@ -5652,36 +5892,82 @@ async function showTrialBalance() {
 async function loadTrialBalance() {
   el('trialTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري الحساب...</div>';
   try {
-    // جيب القيود من journal_entries مجمّعة بالحساب
-    const jeEntries = await apiGet('journal_entries', {
-      select: 'account_code,account_name,dr_amount,cr_amount',
-      system_type: `eq.${state.system}`,
-      post_status: 'eq.posted',
-    });
+    const sys = state.system;
 
-    // جمّع Dr/Cr لكل حساب
+    // جلب كل البيانات بالتوازي
+    const [pos, sales, expenses, payments, collections, payouts, contacts] = await Promise.all([
+      apiGet('purchase_orders', { select:'supplier,total_purchase,file_no', system_type:`eq.${sys}` }),
+      apiGet('sales',           { select:'customer,sale_price,post_status', system_type:`eq.${sys}` }),
+      apiGet('expenses',        { select:'amount,post_status',              system_type:`eq.${sys}` }),
+      apiGet('payments',        { select:'payer,amount,post_status',        system_type:`eq.${sys}` }),
+      apiGet('collections',     { select:'customer,amount,post_status',     system_type:`eq.${sys}` }),
+      apiGet('partner_payouts', { select:'partner,amount,post_status',      system_type:`eq.${sys}` }),
+      // جهات الاتصال (نظام + null)
+      Promise.all([
+        apiGet('contacts', { select:'id,name,type,opening_balance', system_type:`eq.${sys}` }),
+        apiGet('contacts', { select:'id,name,type,opening_balance', system_type:'is.null' }),
+      ]).then(([a,b]) => {
+        const seen = new Set(); const out = [];
+        [...(a||[]),...(b||[])].forEach(c => { if(!seen.has(c.id)){seen.add(c.id);out.push(c);} });
+        return out;
+      }),
+    ]);
+
+    // بني map اسم → رصيد { debit, credit }
     const accMap = {};
-    (jeEntries||[]).forEach(e => {
-      const code = e.account_code || 'unknown';
-      const name = e.account_name || code;
-      if (!accMap[code]) accMap[code] = { code, name, dr:0, cr:0 };
-      accMap[code].dr += +e.dr_amount || 0;
-      accMap[code].cr += +e.cr_amount || 0;
+    const add = (name, type, debit, credit) => {
+      if (!name) return;
+      if (!accMap[name]) accMap[name] = { name, type, debit:0, credit:0, id: null };
+      accMap[name].debit  += debit;
+      accMap[name].credit += credit;
+    };
+
+    // ربط جهات الاتصال
+    const contactMap = {};
+    (contacts||[]).forEach(c => { contactMap[c.name] = c; });
+
+    // ── موردون: شراء دائن، دفعات مدين ──
+    (pos||[]).forEach(r => add(r.supplier,'supplier', 0, +r.total_purchase||0));
+    (payments||[]).filter(isPosted).forEach(r => add(r.payer,'supplier', +r.amount||0, 0));
+
+    // ── عملاء: مبيعات مدين، تحصيلات دائن ──
+    (sales||[]).filter(isPosted).forEach(r => add(r.customer,'customer', +r.sale_price||0, 0));
+    (collections||[]).filter(isPosted).forEach(r => add(r.customer,'customer', 0, +r.amount||0));
+
+    // ── شركاء: مسحوبات دائن، (دفعات موردين مسجّلة كشريك) ──
+    (payouts||[]).filter(isPosted).forEach(r => add(r.partner,'partner', 0, +r.amount||0));
+
+    // رصيد افتتاحي من جهات الاتصال
+    (contacts||[]).forEach(c => {
+      if (+c.opening_balance) {
+        const ob = +c.opening_balance;
+        if (!accMap[c.name]) accMap[c.name] = { name:c.name, type:c.type, debit:0, credit:0, id:c.id };
+        if (ob > 0) accMap[c.name].debit  += ob;
+        else        accMap[c.name].credit += Math.abs(ob);
+        accMap[c.name].id = c.id;
+      }
     });
 
-    // حوّل لمصفوفة وأضف الرصيد
+    // ربط الـ id لفتح الكشف عند الضغط
+    Object.values(accMap).forEach(a => {
+      const c = contactMap[a.name];
+      if (c) { a.id = c.id; a.type = c.type || a.type; }
+    });
+
     trialState.data = Object.values(accMap).map(a => ({
-      id:          a.code,
-      name:        getAccountName(a.code) || a.name,
-      type:        getAccountTypeCOA(a.code),
-      totalDebit:  a.dr,
-      totalCredit: a.cr,
-      balance:     a.dr - a.cr,
-    })).sort((a,b) => a.id.localeCompare(b.id));
+      id:          a.id,
+      name:        a.name,
+      type:        a.type || 'other',
+      totalDebit:  a.debit,
+      totalCredit: a.credit,
+      balance:     a.debit - a.credit,
+    })).filter(a => a.totalDebit > 0 || a.totalCredit > 0)
+       .sort((a,b) => (a.name||'').localeCompare(b.name||'','ar'));
 
     filterTrial(trialState.typeFilter);
   } catch(e) {
     el('trialTable').innerHTML = errHTML('خطأ: ' + e.message);
+    console.error('loadTrialBalance:', e);
   }
 }
 
@@ -5732,11 +6018,12 @@ function renderTrialBalance() {
     revenue:'إيرادات', cogs:'تكلفة مبيعات', expense:'مصروفات', other:'أخرى',
   };
   const rows = list.map(c => `
-    <tr onclick="showLedger(${c.id},'${c.name.replace(/'/g,"\'")}','${c.type}')" style="cursor:pointer">
+    <tr onclick="${c.id ? `showLedger(${c.id},'${c.name.replace(/'/g,"\\'")}','${c.type}')` : ''}"
+      style="cursor:${c.id?'pointer':'default'}">
       <td>
         <div style="font-weight:600">${c.name}</div>
       </td>
-      <td><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--card2);color:${typeColors[c.type]||'var(--text2)'}">${typeLabels[c.type]||c.type}</span></td>
+      <td><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--card2);color:${typeColors[c.type]||'var(--text2)'}">${typeLabels[c.type]||c.type||'—'}</span></td>
       <td class="mono text-green">${fmt(c.totalDebit)}</td>
       <td class="mono text-red">${fmt(c.totalCredit)}</td>
       <td class="mono" style="font-weight:700;color:${c.balance>0?'var(--green)':c.balance<0?'var(--red)':'var(--text2)'}">
@@ -5925,11 +6212,22 @@ async function getContactsByType(type) {
   if (_acCache[key] && (Date.now() - _acCache[key].ts < 30000)) return _acCache[key].data;
   try {
     const typeParam = type === 'all' ? undefined : type;
-    const params = { select:'id,name,type', system_type:`eq.${state.system}`, order:'name.asc' };
-    if (typeParam) params.type = `eq.${typeParam}`;
-    const data = await apiGet('contacts', params);
-    _acCache[key] = { data: data||[], ts: Date.now() };
-    return data || [];
+    const baseParams = { select:'id,name,type', order:'name.asc' };
+    if (typeParam) baseParams.type = `eq.${typeParam}`;
+
+    // جلب المطابق + null (بيانات قديمة بدون system_type)
+    const [matched, nullSys] = await Promise.all([
+      apiGet('contacts', { ...baseParams, system_type:`eq.${state.system}` }),
+      apiGet('contacts', { ...baseParams, system_type:'is.null' }),
+    ]);
+    const seen = new Set();
+    const data = [];
+    [...(matched||[]), ...(nullSys||[])].forEach(c => {
+      if (!seen.has(c.id)) { seen.add(c.id); data.push(c); }
+    });
+    data.sort((a,b) => (a.name||'').localeCompare(b.name||'', 'ar'));
+    _acCache[key] = { data, ts: Date.now() };
+    return data;
   } catch(e) { return []; }
 }
 
@@ -6998,13 +7296,13 @@ async function loadViewerKpis(fn, sys) {
     ]);
 
     const totalCost    = +(po?.[0]?.total_purchase) || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
-    const totalExp     = (expenses||[]).filter(e=>e.post_status==='posted').reduce((s,e)=>s+(+e.amount||0),0);
+    const totalExp     = (expenses||[]).filter(isPosted).reduce((s,e)=>s+(+e.amount||0),0);
     const fullCost     = totalCost + totalExp;
-    const totalSales   = (sales||[]).filter(s=>s.post_status==='posted').reduce((s,s2)=>s+(+s2.sale_price||0),0);
-    const totalColl    = (collections||[]).filter(c=>c.post_status==='posted').reduce((s,c)=>s+(+c.amount||0),0);
-    const totalPaid    = (payments||[]).filter(p=>p.post_status==='posted').reduce((s,p)=>s+(+p.amount||0),0);
+    const totalSales   = (sales||[]).filter(isPosted).reduce((s,s2)=>s+(+s2.sale_price||0),0);
+    const totalColl    = (collections||[]).filter(isPosted).reduce((s,c)=>s+(+c.amount||0),0);
+    const totalPaid    = (payments||[]).filter(isPosted).reduce((s,p)=>s+(+p.amount||0),0);
     const profit       = totalSales - fullCost;
-    const soldVins     = new Set((sales||[]).filter(s=>s.post_status==='posted').map(s=>s.vin));
+    const soldVins     = new Set((sales||[]).filter(isPosted).map(s=>s.vin));
     const unsold       = (vehicles||[]).filter(v=>!soldVins.has(v.vin)).length;
     const uncollected  = totalSales - totalColl;
     const supplierLeft = totalCost - totalPaid;
@@ -7083,8 +7381,8 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
       const poData       = po?.[0] || {};
       const totalPurchase= +poData.total_purchase || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
-      const totalExp     = (expenses||[]).filter(e=>e.post_status==='posted').reduce((s,e)=>s+(+e.amount||0),0);
-      const totalSales   = (sales||[]).filter(s=>s.post_status==='posted').reduce((s,s2)=>s+(+s2.sale_price||0),0);
+      const totalExp     = (expenses||[]).filter(isPosted).reduce((s,e)=>s+(+e.amount||0),0);
+      const totalSales   = (sales||[]).filter(isPosted).reduce((s,s2)=>s+(+s2.sale_price||0),0);
       const fullCost     = totalPurchase + totalExp;
       const dealProfit   = totalSales - fullCost;
 
@@ -7095,8 +7393,8 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       const mySales      = totalSales * share;
       const myProfit     = dealProfit * share;
 
-      // ما دفعه الشريك (posted فقط)
-      const capitalPaid  = (payments||[]).filter(p=>p.post_status==='posted').reduce((s,p)=>s+(+p.amount||0),0);
+      // ما دفعه الشريك (posted + null = قديم)
+      const capitalPaid  = (payments||[]).filter(isPosted).reduce((s,p)=>s+(+p.amount||0),0);
 
       // ما استرده
       const capitalRet   = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
@@ -8043,10 +8341,10 @@ async function runCashFlowReport(from, to, sys) {
     const totalOut = outP + outE + outPo + outO;
     const net      = totalIn - totalOut;
 
-    const draftCount = (collections||[]).filter(r=>r.post_status==='draft').length +
-                       (payments||[]).filter(r=>r.post_status==='draft').length +
-                       (expenses||[]).filter(r=>r.post_status==='draft').length +
-                       (payouts||[]).filter(r=>r.post_status==='draft').length;
+    const draftCount = (collections||[]).filter(isDraft).length +
+                       (payments||[]).filter(isDraft).length +
+                       (expenses||[]).filter(isDraft).length +
+                       (payouts||[]).filter(isDraft).length;
 
     const draftNote = postFilter==='all' && draftCount > 0
       ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:7px 12px;font-size:11px;color:#92400e;margin-top:8px">
@@ -9084,8 +9382,18 @@ async function acGetContacts(type) {
   const key = state.system + ':' + type;
   if (_acCache[key] && (Date.now() - _acCache[key].ts < 60000)) return _acCache[key].data;
   try {
-    const data = await apiGet('contacts', { select:'id,name,type,phone', system_type:`eq.${state.system}`, order:'name.asc' });
-    const filtered = (data||[]).filter(c => type==='all' || c.type===type);
+    // جلب المطابق للنظام + بدون system_type (بيانات قديمة)
+    const [matched, nullSys] = await Promise.all([
+      apiGet('contacts', { select:'id,name,type,phone', system_type:`eq.${state.system}`, order:'name.asc' }),
+      apiGet('contacts', { select:'id,name,type,phone', system_type:'is.null',             order:'name.asc' }),
+    ]);
+    const seen = new Set();
+    const all = [];
+    [...(matched||[]), ...(nullSys||[])].forEach(c => {
+      if (!seen.has(c.id)) { seen.add(c.id); all.push(c); }
+    });
+    all.sort((a,b) => (a.name||'').localeCompare(b.name||'', 'ar'));
+    const filtered = all.filter(c => type === 'all' || c.type === type);
     _acCache[key] = { data: filtered, ts: Date.now() };
     return filtered;
   } catch(e) { return []; }
@@ -9178,8 +9486,12 @@ function acSelect(inputId, name) {
 async function acSelectNew(inputId, type, name) {
   if (!name) return;
   try {
-    const existing = await apiGet('contacts', { select:'id', system_type:`eq.${state.system}`, name:`eq.${name}` });
-    if (!existing || !existing.length) {
+    const [matchedSys, nullSys] = await Promise.all([
+      apiGet('contacts', { select:'id', system_type:`eq.${state.system}`, name:`eq.${name}` }),
+      apiGet('contacts', { select:'id', system_type:'is.null',             name:`eq.${name}` }),
+    ]);
+    const existing = [...(matchedSys||[]), ...(nullSys||[])];
+    if (!existing.length) {
       await apiPost('contacts', { system_type: state.system, name, type });
       acClearCache();
       toast(`✅ تم إضافة "${name}" كـ ${_acTypeLabels2[type]||type}`, 'ok');
@@ -9248,12 +9560,13 @@ function acKey(e, inputId) {
 async function ensureContact(name, type) {
   if (!name || !name.trim()) return;
   try {
-    const existing = await apiGet('contacts', {
-      select: 'id',
-      system_type: `eq.${state.system}`,
-      name: `eq.${name.trim()}`
-    });
-    if (!existing || !existing.length) {
+    // ابحث في المطابق للنظام + null (قديمة) عشان لا تكرر
+    const [matchedSys, nullSys] = await Promise.all([
+      apiGet('contacts', { select:'id', system_type:`eq.${state.system}`, name:`eq.${name.trim()}` }),
+      apiGet('contacts', { select:'id', system_type:'is.null',             name:`eq.${name.trim()}` }),
+    ]);
+    const existing = [...(matchedSys||[]), ...(nullSys||[])];
+    if (!existing.length) {
       await apiPost('contacts', { system_type: state.system, name: name.trim(), type });
       acClearCache();
     }
@@ -10883,6 +11196,147 @@ async function loadPartnerAccountBalance() {
     if(el('pacc-balance'))   { el('pacc-balance').textContent = fmt(balance); el('pacc-balance').style.color = balance>=0?'var(--purple)':'var(--red)'; }
   } catch(e) {}
 }
+
+// ════════════════════════════════════════════════════════
+// DEAL NOTES — ملاحظات الصفقة
+// تُخزَّن في audit_log بـ action='DEAL_NOTE'
+// ════════════════════════════════════════════════════════
+
+function openDealNoteModal() {
+  el('dn-text').value = '';
+  el('dn-type').value = 'عام';
+  el('dn-date').value = today();
+  el('dnError').style.display = 'none';
+  openModal('dealNoteModal');
+  setTimeout(() => el('dn-text')?.focus(), 200);
+}
+
+async function submitDealNote() {
+  const text = el('dn-text').value.trim();
+  const type = el('dn-type').value;
+  const date = el('dn-date').value;
+  const fn   = state.currentFileNo;
+
+  if (!text) { showFieldErr('dnError', 'يرجى كتابة نص الملاحظة'); return; }
+  if (!fn)   { showFieldErr('dnError', 'لا يوجد ملف محدد'); return; }
+
+  const btn = el('dnSubmitBtn');
+  btn.disabled = true; btn.textContent = '⏳ جاري الحفظ...';
+
+  try {
+    await apiPost('audit_log', {
+      system_type: state.system,
+      action:      'DEAL_NOTE',
+      table_name:  'purchase_orders',
+      file_no:     fn,
+      notes:       text,
+      old_value:   type,           // نحفظ النوع هنا
+      new_value:   date || today(), // نحفظ التاريخ المحدد هنا
+      user_email:  state.user?.email || 'unknown',
+    });
+    closeModal('dealNoteModal');
+    toast('✅ تم حفظ الملاحظة', 'ok');
+    await loadDealNotes();
+  } catch(e) {
+    showFieldErr('dnError', 'خطأ: ' + e.message);
+  }
+  btn.disabled = false; btn.textContent = '💾 حفظ الملاحظة';
+}
+
+async function loadDealNotes() {
+  const fn  = state.currentFileNo;
+  const container = el('dealNotesContainer');
+  if (!container || !fn) return;
+
+  container.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
+
+  try {
+    const notes = await apiGet('audit_log', {
+      select:     '*',
+      system_type:`eq.${state.system}`,
+      action:     'eq.DEAL_NOTE',
+      file_no:    `eq.${fn}`,
+      order:      'created_at.desc',
+    });
+
+    if (!notes?.length) {
+      container.innerHTML = `
+        <div style="text-align:center;padding:48px 20px;color:var(--text2)">
+          <div style="font-size:40px;margin-bottom:12px">📝</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:6px">لا توجد ملاحظات بعد</div>
+          <div style="font-size:12px">اضغط "إضافة ملاحظة" لتسجيل أول ملاحظة على هذه الصفقة</div>
+        </div>`;
+      return;
+    }
+
+    const typeStyles = {
+      'عام':     { icon:'📌', bg:'var(--card2)',       border:'var(--border)',  color:'var(--text2)'  },
+      'متابعة':  { icon:'🔔', bg:'var(--blue-dim)',    border:'var(--blue)',    color:'var(--blue)'   },
+      'مشكلة':   { icon:'⚠️', bg:'var(--accent-dim)',  border:'var(--accent)',  color:'var(--accent)' },
+      'مهم':     { icon:'🔴', bg:'var(--red-dim)',      border:'var(--red)',     color:'var(--red)'    },
+      'تم':      { icon:'✅', bg:'var(--green-dim)',    border:'var(--green)',   color:'var(--green)'  },
+    };
+
+    const rows = notes.map(n => {
+      const noteType = n.old_value || 'عام';
+      const noteDate = n.new_value || '';
+      const st = typeStyles[noteType] || typeStyles['عام'];
+      const createdAt = n.created_at ? new Date(n.created_at).toLocaleString('en-GB', {
+        day:'2-digit', month:'2-digit', year:'numeric',
+        hour:'2-digit', minute:'2-digit'
+      }) : '—';
+      const author = (n.user_email || 'unknown').split('@')[0];
+
+      return `
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:10px;border-right:4px solid ${st.border}">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+            <div style="flex:1">
+              <!-- نوع + تاريخ الملاحظة -->
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+                <span style="background:${st.bg};color:${st.color};border:1px solid ${st.border};padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">
+                  ${st.icon} ${noteType}
+                </span>
+                ${noteDate ? `<span style="font-size:11px;color:var(--text2);font-family:monospace">📅 ${noteDate}</span>` : ''}
+              </div>
+              <!-- نص الملاحظة -->
+              <div style="font-size:13px;line-height:1.7;color:var(--text);white-space:pre-wrap">${(n.notes||'').replace(/</g,'&lt;')}</div>
+            </div>
+            <!-- حذف -->
+            ${can('delete') ? `
+            <button onclick="deleteDealNote(${n.id})"
+              style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;font-family:'Cairo',sans-serif;flex-shrink:0"
+              title="حذف الملاحظة">🗑</button>` : ''}
+          </div>
+          <!-- معلومات التسجيل -->
+          <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px;font-size:11px;color:var(--text2)">
+            <span>👤 ${author}</span>
+            <span>🕐 ${createdAt}</span>
+          </div>
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:12px;color:var(--text2)">${notes.length} ملاحظة مسجلة</div>
+      </div>
+      ${rows}`;
+
+  } catch(e) {
+    container.innerHTML = errHTML('خطأ في تحميل الملاحظات: ' + e.message);
+  }
+}
+
+async function deleteDealNote(noteId) {
+  showConfirm('حذف الملاحظة', 'هل تريد حذف هذه الملاحظة نهائياً؟', async () => {
+    try {
+      await apiDelete('audit_log', { id:`eq.${noteId}` });
+      toast('✅ تم حذف الملاحظة', 'ok');
+      await loadDealNotes();
+    } catch(e) { toast('خطأ: ' + e.message, 'err'); }
+  });
+}
+
+// ════════════════════════════════════════════════════════
 
 // PWA Install prompt
 let _pwaInstallPrompt = null;
