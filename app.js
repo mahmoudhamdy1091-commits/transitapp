@@ -352,7 +352,7 @@ function logout() {
 const TX_CONFIG = {
   sales:       { title:'المبيعات',         icon:'🧾', color:'var(--green)',  table:'sales',           amountField:'sale_price',     dateField:'sale_date', labelField:'customer' },
   expenses:    { title:'المصاريف',         icon:'💸', color:'var(--red)',    table:'expenses',        amountField:'amount',         dateField:'exp_date',  labelField:'description' },
-  collections: { title:'التحصيلات',        icon:'💰', color:'var(--blue)',   table:'collections',     amountField:'amount',         dateField:'paid_date', labelField:'customer' },
+  collections: { title:'التحصيلات',        icon:'💰', color:'var(--blue)',   table:'collections',     amountField:'amount',         dateField:'due_date',  labelField:'customer' },
   payments:    { title:'دفعات الموردين',   icon:'💳', color:'var(--cyan)',   table:'payments',        amountField:'amount',         dateField:'pay_date',  labelField:'payer' },
   payouts:     { title:'مسحوبات الشركاء', icon:'👥', color:'var(--purple)', table:'partner_payouts', amountField:'amount',         dateField:'pay_date',  labelField:'partner' },
   opex:        { title:'مصروفات عامة',     icon:'💼', color:'var(--text2)',  table:'operating_expenses', amountField:'amount',    dateField:'exp_date',  labelField:'description' },
@@ -546,7 +546,7 @@ function renderTxTable(rows, cfg, auditMap, type) {
     deals:       [{k:'po_date',t:'التاريخ'},{k:'file_no',t:'رقم الملف'},{k:'supplier',t:'المورد'},{k:'vehicle_count',t:'سيارات'},{k:'total_purchase',t:'القيمة',mono:true},{k:'status',t:'الحالة'}],
     sales:       [{k:'sale_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'inv_no',t:'الفاتورة'},{k:'customer',t:'العميل'},{k:'vin',t:'شاصي'},{k:'sale_price',t:'السعر',mono:true}],
     expenses:    [{k:'exp_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'ref_no',t:'المرجع'},{k:'description',t:'الوصف'},{k:'exp_type',t:'النوع'},{k:'amount',t:'المبلغ',mono:true}],
-    collections: [{k:'paid_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'inv_no',t:'الفاتورة'},{k:'customer',t:'العميل'},{k:'amount',t:'المبلغ',mono:true}],
+    collections: [{k:'due_date',t:'الاستحقاق'},{k:'paid_date',t:'تاريخ الدفع'},{k:'file_no',t:'الملف'},{k:'inv_no',t:'الفاتورة'},{k:'customer',t:'العميل'},{k:'amount',t:'المبلغ',mono:true}],
     payments:    [{k:'pay_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'ref_no',t:'المرجع'},{k:'payer',t:'الدافع'},{k:'pay_method',t:'الطريقة'},{k:'amount',t:'المبلغ',mono:true}],
     payouts:     [{k:'pay_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'pay_id',t:'المرجع'},{k:'partner',t:'الشريك'},{k:'payout_type',t:'النوع'},{k:'amount',t:'المبلغ',mono:true}],
     opex:        [{k:'exp_date',t:'التاريخ'},{k:'ref_no',t:'المرجع'},{k:'description',t:'الوصف'},{k:'category',t:'الفئة'},{k:'amount',t:'المبلغ',mono:true}],
@@ -564,14 +564,27 @@ function renderTxTable(rows, cfg, auditMap, type) {
   const tbody = rows.map(r => {
     const cells = typeCols.map(col => {
       let v = r[col.k] ?? '—';
-      if (col.k.includes('date')) v = fmtDate(v);
-      if (col.mono) v = `<span class="mono" style="color:${cfg.color};font-weight:700">${fmt(v)}</span>`;
+      if (col.k.includes('date')) v = v && v !== '—' ? fmtDate(v) : '—';
+      if (col.mono) {
+        // لا تعرض fmt على قيمة فارغة أو '—'
+        v = (v !== null && v !== undefined && v !== '—' && v !== '' && +v !== 0 || (+v === 0 && v === 0))
+          ? `<span class="mono" style="color:${cfg.color};font-weight:700">${fmt(v)}</span>`
+          : (r[col.k] > 0 ? `<span class="mono" style="color:${cfg.color};font-weight:700">${fmt(r[col.k])}</span>` : '—');
+      }
       return `<td>${v}</td>`;
     }).join('');
     const user = auditMap[String(r.id)] || '—';
     const shortUser = user.split('@')[0];
     const rowClick = type==='deals' ? `onclick="openViewer('${r.file_no}')" style="cursor:pointer"` : '';
-    return `<tr ${rowClick}>${cells}<td style="font-size:11px;color:var(--text2)">${shortUser}</td><td>${statusBadge(r)}</td></tr>`;
+    // شارة الحالة للتحصيلات
+    let statusCell = statusBadge(r);
+    if (type === 'collections') {
+      const collStatus = r.paid_date
+        ? '<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">✅ محصّل</span>'
+        : '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">⏳ مستحق</span>';
+      statusCell = collStatus;
+    }
+    return `<tr ${rowClick}>${cells}<td style="font-size:11px;color:var(--text2)">${shortUser}</td><td>${statusCell}</td></tr>`;
   }).join('');
 
   const total = rows.reduce((s,r)=>s+(+r[cfg.amountField]||0),0);
@@ -681,12 +694,12 @@ function getAccountTypeCOA(code) {
 function switchSystem(sys) {
   state.system = sys;
   state.currentFileNo = null;
+  invalidateCache(); // إجبار إعادة تحميل بيانات النظام الجديد
   document.getElementById('sysBox').classList.toggle('active', sys === 'BOX');
   document.getElementById('sysTm').classList.toggle('active', sys === 'TM');
   updateSystemUI();
   loadChartOfAccounts();
-  showDashboard();
-  loadDashboard();
+  showDashboard(); // showDashboard تستدعي loadDashboard داخلياً
 }
 
 function updateSystemUI() {
@@ -2946,11 +2959,14 @@ async function submitEditFileFull() {
       });
       // Update existing payment or create new one
       if (p.paid > 0) {
-        // Try to delete old payment for this partner then reinsert
-        try { await apiDelete('payments', { system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}`, payer:`eq.${p.name}` }); } catch(e) {}
+        // حذف الدفعة الأولية المسجّلة عند إنشاء الصفقة فقط (بالـ pay_id الأولي)
+        // لا نحذف الدفعات الإضافية اللي أُضيفت لاحقاً من موديل الدفعات
+        const initialPmtId = `PMT-${oldFileNo}-P${p.name.slice(0,3)}`;
+        try { await apiDelete('payments', { system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}`, pay_id:`eq.${initialPmtId}` }); } catch(e) {}
+        const newPmtId = `PMT-${newFileNo}-P${p.name.slice(0,3)}`;
         await apiPost('payments', {
           system_type:state.system, file_no:newFileNo,
-          pay_id:`PMT-${newFileNo}-P${p.name.slice(0,3)}`, ref_no:`PMT-${newFileNo}-P${p.name.slice(0,3)}`,
+          pay_id: newPmtId, ref_no: newPmtId,
           po_no:poNo||null, payer:p.name,
           amount:p.paid, pay_method:p.method||'تحويل بنكي',
           document:p.doc||null, pay_date:p.payDate||poDate||null,
@@ -5330,7 +5346,12 @@ function filterJournalByType(filterVal, key) {
 function renderJournalEntries() {
   const typeFilter = el('jTypeFilter')?.value || 'all';
   let entries = journalState.entries;
-  if (typeFilter !== 'all') entries = entries.filter(e=>e.type===typeFilter);
+  if (typeFilter === 'expense') {
+    // مصاريف الصفقات + المصاريف التشغيلية معاً
+    entries = entries.filter(e => e.type === 'expense' || e.type === 'opex');
+  } else if (typeFilter !== 'all') {
+    entries = entries.filter(e => e.type === typeFilter);
+  }
 
   if (!entries.length) {
     el('journalTimeline').innerHTML = `<div class="empty-state"><div class="e-icon">📅</div><p>لا توجد عمليات في هذه الفترة</p></div>`;
@@ -8235,24 +8256,46 @@ async function loadAllCollections() {
   el('allCollectionsTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
     await ensureCache();
-    const data = [...state.allCollections].sort((a,b)=>(b.paid_date||'').localeCompare(a.paid_date||''));
+    // ترتيب: غير محصّل أولاً، ثم حسب تاريخ الاستحقاق
+    const data = [...state.allCollections].sort((a,b) => {
+      if (!a.paid_date && b.paid_date) return -1;
+      if (a.paid_date && !b.paid_date) return 1;
+      return (b.due_date||b.paid_date||'').localeCompare(a.due_date||a.paid_date||'');
+    });
     if (!data?.length) { el('allCollectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
-    const total = data.reduce((s,r)=>s+(+r.amount||0),0);
-    const rows = data.map(r=>`<tr onclick="openViewer('${r.file_no}')" style="cursor:pointer">
-      <td class="mono text-muted">${fmtDate(r.paid_date)}</td>
-      <td><span class="mono text-amber">${r.file_no||'—'}</span></td>
-      <td>${r.customer||'—'}</td>
-      <td class="mono text-muted">${r.inv_no||'—'}</td>
-      <td>${r.pay_method||'—'}</td>
-      <td class="mono text-blue">${fmt(r.amount)}</td>
-    </tr>`).join('');
-    el('allCollectionsTable').innerHTML = `<table class="data-table">
-      <thead><tr><th>التاريخ</th><th>الملف</th><th>العميل</th><th>الفاتورة</th><th>الطريقة</th><th>المبلغ</th></tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot style="background:var(--card2)"><tr>
-        <td colspan="5" style="padding:10px 16px;font-weight:700">الإجمالي (${data.length})</td>
-        <td class="mono text-blue" style="padding:10px 16px;font-weight:700">${fmt(total)}</td>
-      </tr></tfoot></table>`;
+    const total         = data.reduce((s,r)=>s+(+r.amount||0),0);
+    const collectedAmt  = data.filter(r=>r.paid_date).reduce((s,r)=>s+(+r.amount||0),0);
+    const pendingAmt    = total - collectedAmt;
+    const rows = data.map(r=>{
+      const statusBadge = r.paid_date
+        ? `<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">✅ محصّل</span>`
+        : `<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">⏳ مستحق</span>`;
+      return `<tr onclick="openViewer('${r.file_no}')" style="cursor:pointer">
+        <td class="mono text-muted">${fmtDate(r.due_date||'—')}</td>
+        <td class="mono text-muted">${r.paid_date ? fmtDate(r.paid_date) : '—'}</td>
+        <td><span class="mono text-amber">${r.file_no||'—'}</span></td>
+        <td>${r.customer||'—'}</td>
+        <td class="mono text-muted">${r.inv_no||'—'}</td>
+        <td>${r.pay_method||'—'}</td>
+        <td class="mono text-blue">${fmt(r.amount)}</td>
+        <td>${statusBadge}</td>
+      </tr>`;
+    }).join('');
+    el('allCollectionsTable').innerHTML = `
+      <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <div class="j-kpi" style="border-right:3px solid var(--blue)"><div class="j-kpi-label">إجمالي</div><div class="j-kpi-val text-blue">${fmt(total)}</div></div>
+        <div class="j-kpi" style="border-right:3px solid var(--green)"><div class="j-kpi-label">✅ محصّل</div><div class="j-kpi-val text-green">${fmt(collectedAmt)}</div></div>
+        <div class="j-kpi" style="border-right:3px solid var(--accent)"><div class="j-kpi-label">⏳ مستحق</div><div class="j-kpi-val" style="color:${pendingAmt>0?'var(--accent)':'var(--green)'}">${fmt(pendingAmt)}</div></div>
+      </div>
+      <table class="data-table">
+        <thead><tr><th>الاستحقاق</th><th>تاريخ الدفع</th><th>الملف</th><th>العميل</th><th>الفاتورة</th><th>الطريقة</th><th>المبلغ</th><th>الحالة</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot style="background:var(--card2)"><tr>
+          <td colspan="6" style="padding:10px 16px;font-weight:700">الإجمالي (${data.length})</td>
+          <td class="mono text-blue" style="padding:10px 16px;font-weight:700">${fmt(total)}</td>
+          <td></td>
+        </tr></tfoot>
+      </table>`;
   } catch(e) { el('allCollectionsTable').innerHTML = errHTML(e.message); }
 }
 
@@ -8357,8 +8400,15 @@ async function runReport() {
         apiGetDateRange('sales', 'sale_date', from, to),
         fetchOpexForJournal(from, to, sys),
       ]);
-      const sales    = salesPeriod;
-      const expenses = state.allExpenses;
+      // فلتر: مرحّلة فقط
+      const sales = (salesPeriod||[]).filter(isPosted);
+
+      // فلتر المصاريف بالفترة الزمنية + مرحّلة فقط (إصلاح: كانت تأخذ كل المصاريف من كل الأوقات)
+      const expenses = (state.allExpenses||[]).filter(e => {
+        if (!isPosted(e)) return false;
+        const d = e.exp_date || e.expense_date || e.created_at?.split('T')[0] || '';
+        return d >= from && d <= to;
+      });
       const deals    = state.allDeals;
 
       // Map التكاليف
@@ -8371,12 +8421,12 @@ async function runReport() {
         salesByFile[r.file_no] = (salesByFile[r.file_no]||0) + (+r.sale_price||0);
       });
 
-      // بناء fileMap — كل الصفقات (بمبيعات أو بدون)
-      const allFileNos = new Set([...Object.keys(salesByFile), ...Object.keys(dealMap)]);
+      // بناء fileMap — فقط الصفقات التي فيها مبيعات في الفترة (إصلاح: كانت تضم كل الصفقات)
+      const allFileNos = new Set(Object.keys(salesByFile));
       const fileMap = {};
       allFileNos.forEach(fn => {
         const d = dealMap[fn] || {};
-        const fe = (expenses||[]).filter(e=>e.file_no===fn).reduce((s,e)=>s+(+e.amount||0),0);
+        const fe = expenses.filter(e=>e.file_no===fn).reduce((s,e)=>s+(+e.amount||0),0);
         fileMap[fn] = {
           file:     fn,
           supplier: d.supplier || '—',
@@ -8458,6 +8508,7 @@ async function runReport() {
     } else if (type === 'sales') {
       await ensureCache();
       const data = state.allSales.filter(s => {
+        if (!isPosted(s)) return false; // استبعاد المسودات
         const d = s.sale_date || s.created_at?.split('T')[0] || '';
         return d >= from && d <= to;
       }).sort((a,b)=>(b.sale_date||'').localeCompare(a.sale_date||''));
@@ -8475,6 +8526,7 @@ async function runReport() {
     } else if (type === 'expenses') {
       await ensureCache();
       const data = state.allExpenses.filter(e => {
+        if (!isPosted(e)) return false; // استبعاد المسودات
         const d = e.exp_date || e.expense_date || e.created_at?.split('T')[0] || '';
         return d >= from && d <= to;
       }).sort((a,b)=>(b.exp_date||'').localeCompare(a.exp_date||''));
@@ -9485,24 +9537,25 @@ async function loadDealStatement(fn, sys) {
 
     const entries = [
       { date:deal.po_date||deal.created_at, type:'شراء', icon:'📋', color:'var(--blue)',
-        party:deal.supplier||'—', debit:totalPurchase, credit:0,
+        party:deal.supplier||'—', debit:0, credit:totalPurchase, _pl:true,
         desc:`سند شراء ${fn}${deal.po_no?' — PO: '+deal.po_no:''}`,
         extra:`${(vehicles||[]).length} سيارة` },
       ...(payments||[]).map(p=>({ date:p.pay_date, type:'دفعة للمورد', icon:'💳', color:'var(--cyan)',
-        party:p.payer||'—', debit:0, credit:+p.amount,
+        party:p.payer||'—', debit:+p.amount, credit:0, _pl:false,
         desc:`دفعة من ${p.payer||'—'}`, extra:`${p.pay_method||''}${p.document?' · '+p.document:''}` })),
       ...(expenses||[]).map(e=>({ date:e.exp_date||e.expense_date, type:'مصروف', icon:'💸', color:'var(--red)',
-        party:e.vendor||'—', debit:0, credit:+e.amount,
+        party:e.vendor||'—', debit:0, credit:+e.amount, _pl:true,
         desc:e.category||e.description||'مصروف', extra:`${e.pay_method||''}` })),
       ...(sales||[]).map(s=>({ date:s.sale_date, type:'بيع', icon:'🤝', color:'var(--green)',
-        party:s.customer||'—', debit:+s.sale_price, credit:0,
+        party:s.customer||'—', debit:+s.sale_price, credit:0, _pl:true,
         desc:`بيع ${s.model||s.vin||'سيارة'} — ${s.customer||'—'}`,
         extra:`${s.vin?'شاصي: '+s.vin:''}${s.invoice_no?' · '+s.invoice_no:''}` })),
+      // التحصيلات: معلوماتية فقط لا تدخل في الربح/الخسارة
       ...(collections||[]).map(c=>({ date:c.paid_date, type:'تحصيل', icon:'💰', color:'var(--green)',
-        party:c.customer||'—', debit:+c.amount, credit:0,
+        party:c.customer||'—', debit:+c.amount, credit:0, _pl:false,
         desc:`تحصيل من ${c.customer||'—'}`, extra:`${c.pay_method||''}` })),
       ...(payouts||[]).map(p=>({ date:p.pay_date, type:'صرف شريك', icon:'👥', color:'var(--purple)',
-        party:p.partner||'—', debit:0, credit:+p.amount,
+        party:p.partner||'—', debit:0, credit:+p.amount, _pl:false,
         desc:`${p.payout_type||'صرف'} — ${p.partner||'—'}`, extra:`${p.pay_method||''}${p.notes?' · '+p.notes:''}` })),
     ].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
 
@@ -9519,15 +9572,24 @@ async function loadDealStatement(fn, sys) {
 
     let running = 0;
     const rows = entries.map(e => {
-      if (e.debit>0) running += e.debit; if (e.credit>0) running -= e.credit;
+      // الرصيد الجاري يعكس ربح/خسارة الصفقة فقط (بيع - شراء - مصاريف)
+      if (e._pl) {
+        if (e.debit>0) running += e.debit;
+        if (e.credit>0) running -= e.credit;
+      }
+      const infoTag = !e._pl
+        ? `<span style="font-size:9px;background:var(--card2);color:var(--text2);padding:1px 5px;border-radius:6px;margin-right:4px">معلوماتي</span>`
+        : '';
       return `<tr onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
         <td style="padding:10px 12px;font-size:11px;color:var(--text3);white-space:nowrap">${e.date||'—'}</td>
-        <td style="padding:10px 12px"><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${e.color}22;color:${e.color}">${e.icon} ${e.type}</span></td>
+        <td style="padding:10px 12px"><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${e.color}22;color:${e.color}">${e.icon} ${e.type}</span>${infoTag}</td>
         <td style="padding:10px 12px"><div style="font-size:12px;font-weight:600">${e.desc}</div>${e.extra?`<div style="font-size:10px;color:var(--text3)">${e.extra}</div>`:''}</td>
         <td style="padding:10px 12px;font-size:12px;color:var(--text2)">${e.party}</td>
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--green)">${e.debit>0?fmt(e.debit):'—'}</td>
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--red)">${e.credit>0?fmt(e.credit):'—'}</td>
-        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:13px;font-weight:700;color:${running>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(running))}</td>
+        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:13px;font-weight:700;color:${e._pl?(running>=0?'var(--green)':'var(--red)'):'var(--text2)'}">
+          ${e._pl?fmt(Math.abs(running)):'—'}
+        </td>
       </tr>`;
     }).join('');
 
@@ -9549,9 +9611,12 @@ async function loadDealStatement(fn, sys) {
 
     wrap.innerHTML = kpis + `
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <div style="padding:8px 14px;background:var(--card2);border-bottom:1px solid var(--border);font-size:11px;color:var(--text2)">
+          📊 الرصيد الجاري = صافي ربح/خسارة الصفقة (مبيعات − تكلفة شراء − مصاريف) · الصفوف المعلّمة "معلوماتي" لا تدخل في الحساب
+        </div>
         <table style="width:100%;border-collapse:collapse">
           <thead><tr style="background:var(--card2);border-bottom:1px solid var(--border)">
-            ${['التاريخ','النوع','البيان','الطرف','مدين','دائن','الرصيد'].map((h,i)=>`<th style="padding:10px 12px;font-size:11px;color:var(--text3);font-weight:700;text-align:${i>=4?'left':'right'}">${h}</th>`).join('')}
+            ${['التاريخ','النوع','البيان','الطرف','مدين','دائن','الرصيد (ر/خ)'].map((h,i)=>`<th style="padding:10px 12px;font-size:11px;color:var(--text3);font-weight:700;text-align:${i>=4?'left':'right'}">${h}</th>`).join('')}
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -9575,12 +9640,13 @@ async function printDealStatement(fileNo) {
   const { fn, deal, entries, totalPurchase, totalPaid, totalExp, totalSales, totalColl, profit } = d;
   let running = 0;
   const rows = entries.map(e => {
-    if(e.debit>0) running+=e.debit; if(e.credit>0) running-=e.credit;
-    return `<tr><td>${e.date||'—'}</td><td>${e.type}</td><td><b>${e.desc}</b>${e.extra?'<br><small>'+e.extra+'</small>':''}</td>
+    if(e._pl) { if(e.debit>0) running+=e.debit; if(e.credit>0) running-=e.credit; }
+    const infoNote = !e._pl ? ' *' : '';
+    return `<tr><td>${e.date||'—'}</td><td>${e.type}${infoNote}</td><td><b>${e.desc}</b>${e.extra?'<br><small>'+e.extra+'</small>':''}</td>
     <td>${e.party}</td>
     <td style="text-align:left;color:green">${e.debit>0?e.debit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
     <td style="text-align:left;color:red">${e.credit>0?e.credit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
-    <td style="text-align:left;font-weight:700;color:${running>=0?'green':'red'}">${Math.abs(running).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`;
+    <td style="text-align:left;font-weight:700;color:${e._pl?(running>=0?'green':'red'):'gray'}">${e._pl?Math.abs(running).toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td></tr>`;
   }).join('');
   const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>كشف الصفقة ${fn}</title>
   <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;padding:20px}
@@ -11796,12 +11862,13 @@ async function je_collection({sys,date,amount,fileNo,customer,invNo,method}) {
 }
 
 // دفعة مورد: مورد Dr / نقد Cr
-async function je_payment({sys,date,amount,fileNo,supplier,supplierName,method}) {
+async function je_payment({sys,date,amount,fileNo,supplier,supplierName,payer,payerName,method}) {
   if(!amount||amount<=0) return;
-  const sup = supplier || supplierName || 'مورد';
+  const sup      = supplier || supplierName || 'مورد';
+  const payerStr = payer || payerName || sup;
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
-  await postDoubleEntry({sys,date,fileNo,refTable:'payments',desc:`دفعة للمورد ${sup} — ملف ${fileNo}`,lines:[
+  await postDoubleEntry({sys,date,fileNo,refTable:'payments',desc:`دفعة للمورد ${sup} بواسطة ${payerStr} — ملف ${fileNo}`,lines:[
     {acc:'2100',  name:`مورد: ${sup}`,          dr:amount, cr:0     },
     {acc:cashAcc, name:cashNm,                  dr:0,      cr:amount},
   ]});
