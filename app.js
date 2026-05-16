@@ -10691,16 +10691,31 @@ function renderDrillDown(type) {
       if (c.due_date && (!colMap[c.inv_no].due_date || c.due_date < colMap[c.inv_no].due_date))
         colMap[c.inv_no].due_date = c.due_date;
     });
-    const rows = allSalesD.map(s => {
-      if (!s.inv_no) return null;
-      const total = +s.sale_price||0;
-      const cm = colMap[s.inv_no]||{collected:0,due_date:''};
-      const remaining = total - cm.collected;
+    // تجميع المبيعات بالفاتورة (inv_no) — فاتورة واحدة = صف واحد بغض النظر عن عدد السيارات
+    const invMap = {};
+    allSalesD.forEach(s => {
+      const key = s.inv_no || `no-inv-${s.id}`;
+      if (!invMap[key]) invMap[key] = {
+        inv_no: s.inv_no||'—', file_no: s.file_no, customer: s.customer||'—',
+        sale_date: s.sale_date, total: 0, vins: [], carCount: 0,
+      };
+      invMap[key].total    += +s.sale_price||0;
+      invMap[key].carCount += 1;
+      if (s.vin) invMap[key].vins.push(s.vin);
+    });
+
+    const rows = Object.values(invMap).map(inv => {
+      const cm        = colMap[inv.inv_no] || { collected:0, due_date:'' };
+      const remaining = inv.total - cm.collected;
       if (remaining < 0.01) return null;
-      const due_date = cm.due_date||s.sale_date||'';
-      const days = due_date ? daysSince(due_date) : null;
-      return {...s, _total:total, _collected:cm.collected, _remaining:remaining, _due:due_date, _days:days, _overdue: due_date && due_date <= d.todayStr};
-    }).filter(Boolean).sort((a,b)=> a._overdue&&!b._overdue?-1:!a._overdue&&b._overdue?1:(a._due||'')>(b._due||'')?1:-1);
+      const due_date  = cm.due_date || inv.sale_date || '';
+      const days      = due_date ? daysSince(due_date) : null;
+      return { ...inv, _collected: cm.collected, _remaining: remaining,
+               _due: due_date, _days: days,
+               _overdue: due_date && due_date <= d.todayStr };
+    }).filter(Boolean).sort((a,b)=>
+      a._overdue&&!b._overdue?-1:!a._overdue&&b._overdue?1:(a._due||'')>(b._due||'')?1:-1
+    );
     const totRem = rows.reduce((s,r)=>s+r._remaining,0);
     const totCol = rows.reduce((s,r)=>s+r._collected,0);
     const overdueCount = rows.filter(r=>r._overdue).length;
@@ -10716,22 +10731,22 @@ function renderDrillDown(type) {
     renderDDChart(Object.entries(byCust).sort((a,b)=>b[1]-a[1]).slice(0,8),'var(--accent)');
     ddTable.innerHTML = rows.length ? `
       <table class="data-table"><thead><tr>
-        <th>الملف</th><th>رقم الفاتورة</th><th>العميل</th><th>الشاصي</th>
-        <th style="text-align:left">اجمالي الفاتورة</th>
-        <th style="text-align:left">المحصل</th>
+        <th>الملف</th><th>رقم الفاتورة</th><th>العميل</th><th style="text-align:center">السيارات</th>
+        <th style="text-align:left">إجمالي الفاتورة</th>
+        <th style="text-align:left">المحصّل</th>
         <th style="text-align:left;color:var(--accent)">الباقي</th>
-        <th>الاستحقاق</th><th>الايام</th>
+        <th>الاستحقاق</th><th>الأيام</th>
       </tr></thead><tbody>
       ${rows.map(r=>{
         const dc=r._overdue?'var(--red)':r._due?'var(--accent)':'var(--text2)';
         const db=r._overdue?'var(--red-dim)':r._due?'var(--accent-dim)':'var(--card2)';
-        const dl=r._overdue?`متاخر ${r._days} يوم`:r._days!==null?`${r._days} يوم`:'---';
+        const dl=r._overdue?`متأخر ${r._days} يوم`:r._days!==null?`${r._days} يوم`:'---';
         return `<tr onclick="openViewer('${r.file_no||''}')" style="cursor:pointer">
           <td class="mono text-amber" style="font-weight:700">${r.file_no||'---'}</td>
           <td class="mono">${r.inv_no||'---'}</td>
           <td style="font-weight:600">${r.customer||'---'}</td>
-          <td class="mono" style="font-size:10px">${r.vin||'---'}</td>
-          <td class="mono text-blue" style="text-align:left">${fmt(r._total)}</td>
+          <td style="text-align:center;font-weight:700">${r.carCount} سيارة</td>
+          <td class="mono text-blue" style="text-align:left">${fmt(r.total)}</td>
           <td class="mono text-green" style="text-align:left">${fmt(r._collected)}</td>
           <td class="mono" style="text-align:left;font-weight:900;color:var(--accent)">${fmt(r._remaining)}</td>
           <td class="mono" style="font-size:11px">${r._due||'---'}</td>
