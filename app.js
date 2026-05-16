@@ -11918,7 +11918,8 @@ async function runAllReviewChecks() {
       status: overdue30.length===0?'pass':overdue30.length<=3?'warn':'fail',
       value: overdue30.length===0?'✓ لا يوجد':fmt(overdue30Amt),
       detail: overdue30.length===0?'لا توجد تحصيلات متأخرة ✓':`${overdue30.length} فاتورة · إجمالي ${fmt(overdue30Amt)}`,
-      rows: overdue30.slice(0,5).map(c=>({ cols:[c.customer||'—',c.inv_no||'—',fmt(c.amount),`${daysSince(c.due_date)} يوم`] })) });
+      rows: overdue30.slice(0,5).map(c=>({ cols:[c.customer||'—',c.inv_no||'—',fmt(c.amount),`${daysSince(c.due_date)} يوم`], action:`openViewer('${c.file_no}')`, actionLabel:'📂 فتح الملف' })),
+      action: overdue30.length>0?{ label:'📂 فتح التحصيلات', fn:`showAllCollections()` }:null });
 
     const pendingPeriod  = collections.filter(c=>isPosted(c)&&!c.paid_date&&inPeriod(c.due_date||c.created_at?.split('T')[0]));
     const pendingAmt     = pendingPeriod.reduce((s,c)=>s+(+c.amount||0),0);
@@ -11927,7 +11928,8 @@ async function runAllReviewChecks() {
       status: pendingPeriod.length===0?'pass':'warn',
       value: pendingPeriod.length===0?'✓ كل محصّل':fmt(pendingAmt),
       detail: pendingPeriod.length===0?'كل فواتير الفترة محصّلة ✓':`${pendingPeriod.length} فاتورة بمبلغ ${fmt(pendingAmt)} منتظرة`,
-      rows: pendingPeriod.slice(0,5).map(c=>({ cols:[c.customer||'—',c.inv_no||'—',fmt(c.amount),c.due_date||'—'] })) });
+      rows: pendingPeriod.slice(0,5).map(c=>({ cols:[c.customer||'—',c.inv_no||'—',fmt(c.amount),c.due_date||'—'], action:`openViewer('${c.file_no}')`, actionLabel:'📂 الملف' })),
+      action: pendingPeriod.length>0?{ label:'📂 كل التحصيلات', fn:`showAllCollections()` }:null });
 
     // ══ C. الموردون ══
     const payMap = {};
@@ -11938,7 +11940,8 @@ async function runAllReviewChecks() {
       status: overpaid.length===0?'pass':'fail',
       value: overpaid.length===0?'✓ سليم':overpaid.length,
       detail: overpaid.length===0?'كل الدفعات في حدود قيم الصفقات ✓':`${overpaid.length} صفقة فيها دفع زائد`,
-      rows: overpaid.map(d=>({ cols:[d.file_no,d.supplier||'—',fmt(d.total_purchase),fmt(payMap[d.file_no]),`↑ ${fmt((payMap[d.file_no]||0)-(+d.total_purchase||0))}`] })) });
+      rows: overpaid.map(d=>({ cols:[d.file_no,d.supplier||'—',fmt(d.total_purchase),fmt(payMap[d.file_no]),`↑ زيادة ${fmt((payMap[d.file_no]||0)-(+d.total_purchase||0))}`], action:`openViewer('${d.file_no}')`, actionLabel:'📂 فتح' })),
+      action: overpaid.length>0?{ label:'📂 فتح الصفقة', fn:`openViewer('${overpaid[0]?.file_no}')` }:null });
 
     const openOld = deals.filter(d=>d.status==='OPEN'&&daysSince(d.po_date||d.created_at)>90);
     checks.push({ cat:'C', icon:'🏭', catLabel:'الموردون',
@@ -11946,7 +11949,8 @@ async function runAllReviewChecks() {
       status: openOld.length===0?'pass':openOld.length<=2?'warn':'fail',
       value: openOld.length===0?'✓ لا يوجد':openOld.length,
       detail: openOld.length===0?'لا توجد صفقات قديمة مفتوحة ✓':`${openOld.length} صفقة مفتوحة منذ > 90 يوم`,
-      rows: openOld.map(d=>({ cols:[d.file_no,d.supplier||'—',fmt(d.total_purchase),`${daysSince(d.po_date||d.created_at)} يوم`] })) });
+      rows: openOld.map(d=>({ cols:[d.file_no,d.supplier||'—',fmt(d.total_purchase),`${daysSince(d.po_date||d.created_at)} يوم`], action:`openViewer('${d.file_no}')`, actionLabel:'📂 فتح' })),
+      action: openOld.length>0?{ label:'📂 فتح الصفقة', fn:`openViewer('${openOld[0]?.file_no}')` }:null });
 
     // ══ D. المخزون ══
     const noVin = vehicles.filter(v=>!v.vin);
@@ -11955,7 +11959,7 @@ async function runAllReviewChecks() {
       status: noVin.length===0?'pass':'warn',
       value: noVin.length===0?'✓ كل السيارات':noVin.length,
       detail: noVin.length===0?'كل السيارات لها VIN ✓':`${noVin.length} سيارة بدون VIN`,
-      rows: noVin.slice(0,5).map(v=>({ cols:[v.file_no||'—',v.model||'—',v.vehicle_type||'—','⚠️ لا يوجد VIN'] })) });
+      rows: noVin.slice(0,5).map(v=>({ cols:[v.file_no||'—',v.model||'—',v.vehicle_type||'—','⚠️ بدون VIN'], action:`openViewer('${v.file_no}')`, actionLabel:'📂 فتح' })) });
 
     const soldVinsSet  = new Set(sales.filter(isPosted).map(s=>s.vin).filter(Boolean));
     const stockV       = vehicles.filter(v=>!soldVinsSet.has(v.vin));
@@ -12012,13 +12016,23 @@ async function runAllReviewChecks() {
       rows: missingColJE.slice(0,5).map(c=>({ cols:[c.file_no||'—',c.customer||'—',c.inv_no||'—',fmt(c.amount),c.paid_date||'—'] })) });
 
     // ══ F. سلامة البيانات ══
-    const invNos    = pSales.map(s=>s.inv_no).filter(Boolean);
-    const dupInv    = [...new Set(invNos.filter((v,i,a)=>a.indexOf(v)!==a.lastIndexOf(v)))];
+    // الفحص الصحيح: نفس inv_no في file_no مختلف = تكرار حقيقي
+    // نفس inv_no في نفس file_no = طبيعي (فاتورة متعددة السيارات)
+    const invFileMap = {};
+    pSales.forEach(s => {
+      if (!s.inv_no) return;
+      if (!invFileMap[s.inv_no]) invFileMap[s.inv_no] = new Set();
+      invFileMap[s.inv_no].add(s.file_no);
+    });
+    const dupInv = Object.entries(invFileMap)
+      .filter(([,files]) => files.size > 1)
+      .map(([inv]) => inv);
     checks.push({ cat:'F', icon:'🛡️', catLabel:'سلامة البيانات',
-      id:'F1', label:'فواتير مبيعات مكررة',
+      id:'F1', label:'فواتير مبيعات مكررة في ملفات مختلفة',
       status: dupInv.length===0?'pass':'fail',
-      value: dupInv.length===0?'✓ لا يوجد':dupInv.length,
-      detail: dupInv.length===0?'لا توجد فواتير مكررة ✓':`أرقام مكررة: ${dupInv.join(', ')}` });
+      value:  dupInv.length===0?'✓ لا يوجد':dupInv.length,
+      detail: dupInv.length===0?'لا توجد فواتير مكررة ✓':`أرقام مكررة في ملفات مختلفة: ${dupInv.join(', ')}`,
+      action: dupInv.length>0?{ label:'🔍 فتح المبيعات', fn:`showTransactions();setTimeout(()=>{const s=document.getElementById('tx-type');if(s){s.value='sales';loadTransactions();}},300)` }:null });
 
     const shareMap  = {};
     (allPartners||[]).forEach(p=>{ shareMap[p.file_no]=(shareMap[p.file_no]||0)+(+p.share_percent||0); });
@@ -12026,16 +12040,19 @@ async function runAllReviewChecks() {
     checks.push({ cat:'F', icon:'🛡️', catLabel:'سلامة البيانات',
       id:'F2', label:'صفقات بحصص شركاء ≠ 100%',
       status: wrongShr.length===0?'pass':'fail',
-      value: wrongShr.length===0?'✓ سليم':wrongShr.length,
-      detail: wrongShr.length===0?'كل حصص الشركاء 100% ✓':`${wrongShr.length} صفقة: ${wrongShr.map(([fn,t])=>`${fn}(${t.toFixed(1)}%)`).join(', ')}` });
+      value:  wrongShr.length===0?'✓ سليم':wrongShr.length,
+      detail: wrongShr.length===0?'كل حصص الشركاء 100% ✓':`${wrongShr.length} صفقة: ${wrongShr.map(([fn,t])=>`${fn}(${t.toFixed(1)}%)`).join(', ')}`,
+      rows:   wrongShr.map(([fn,t])=>({ cols:[fn, t.toFixed(1)+'%', '⚠️ ليست 100%'], action:`openViewer('${fn}')` })),
+      action: wrongShr.length>0?{ label:'🔍 فتح أول صفقة', fn:`openViewer('${wrongShr[0]?.[0]}')` }:null });
 
     const zeroDeals = deals.filter(d=>!(+d.total_purchase));
     checks.push({ cat:'F', icon:'🛡️', catLabel:'سلامة البيانات',
       id:'F3', label:'صفقات بقيمة شراء صفر',
       status: zeroDeals.length===0?'pass':'warn',
-      value: zeroDeals.length===0?'✓ لا يوجد':zeroDeals.length,
+      value:  zeroDeals.length===0?'✓ لا يوجد':zeroDeals.length,
       detail: zeroDeals.length===0?'كل الصفقات لها قيمة ✓':`${zeroDeals.length} صفقة بقيمة صفر`,
-      rows: zeroDeals.slice(0,3).map(d=>({ cols:[d.file_no,d.supplier||'—',d.po_date||'—','⚠️ قيمة صفر'] })) });
+      rows:   zeroDeals.slice(0,3).map(d=>({ cols:[d.file_no, d.supplier||'—', d.po_date||'—', '⚠️ قيمة صفر'], action:`openViewer('${d.file_no}')` })),
+      action: zeroDeals.length>0?{ label:'🔍 فتح الصفقة', fn:`openViewer('${zeroDeals[0]?.file_no}')` }:null });
 
     // ══ G. حسابات الشركاء ══
     const partnerNames = [...new Set((allPartners||[]).map(p=>p.partner).filter(Boolean))];
@@ -12056,9 +12073,13 @@ async function runAllReviewChecks() {
     checks.push({ cat:'G', icon:'👥', catLabel:'حسابات الشركاء',
       id:'G1', label:'شركاء بحساب سالب (سحبوا أكثر من المستحق)',
       status: partnerBadList.length===0?'pass':'fail',
-      value: partnerBadList.length===0?'✓ كل الحسابات سليمة':partnerBadList.length,
+      value:  partnerBadList.length===0?'✓ كل الحسابات سليمة':partnerBadList.length,
       detail: partnerBadList.length===0?'كل حسابات الشركاء إيجابية ✓':`${partnerBadList.length} شريك: ${partnerBadList.map(p=>p.name).join(', ')}`,
-      rows: partnerBadList.map(p=>({ cols:[p.name,fmt(p.capPaid),fmt(p.profitDue),fmt(p.withdrawn),fmt(p.balance)] })) });
+      rows:   partnerBadList.map(p=>({
+        cols: [p.name, `رأس مال: ${fmt(p.capPaid)}`, `أرباح: ${fmt(p.profitDue)}`, `مسحوب: ${fmt(p.withdrawn)}`, `رصيد: ${fmt(p.balance)}`],
+        action: `showPartnerStatement('${p.name.replace(/'/g,"\\'")}')`,
+        actionLabel: '📋 كشف الحساب',
+      })) });
 
     // ════ النتائج الإجمالية ════
     const passCount = checks.filter(c=>c.status==='pass').length;
@@ -12127,16 +12148,24 @@ function renderCheckItem(c) {
     fail:{ bg:'var(--red-dim)',    border:'var(--red)',    icon:'❌', lbl:'فشل' },
   };
   const st = ss[c.status]||ss.pass;
+
+  // جدول التفاصيل مع زر تنقل لكل صف
   const detailRows = c.rows?.length ? `
     <div style="margin-top:8px;overflow-x:auto;border-radius:4px;overflow:hidden">
       <table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--card)">
-        <tbody>${c.rows.map(r=>`<tr>${r.cols.map(v=>`<td style="padding:4px 8px;border-bottom:1px solid var(--border)">${v}</td>`).join('')}</tr>`).join('')}</tbody>
+        <tbody>${c.rows.map(r=>`<tr>
+          ${r.cols.map(v=>`<td style="padding:5px 8px;border-bottom:1px solid var(--border)">${v}</td>`).join('')}
+          <td style="padding:5px 8px;border-bottom:1px solid var(--border);white-space:nowrap">
+            ${r.action ? `<button class="btn btn-sm" onclick="closeModal&&closeModal();${r.action}" style="font-size:10px;padding:2px 8px;background:var(--card2)">${r.actionLabel||'🔍 فتح'}</button>` : ''}
+          </td>
+        </tr>`).join('')}</tbody>
       </table>
     </div>` : '';
+
   return `<div style="background:${st.bg};border:1px solid ${st.border};border-radius:var(--radius-sm);padding:10px 14px">
-    <div style="display:flex;align-items:center;gap:10px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span style="font-size:16px;flex-shrink:0">${st.icon}</span>
-      <div style="flex:1;min-width:0">
+      <div style="flex:1;min-width:120px">
         <div style="font-size:12px;font-weight:700;color:var(--text)">${c.label}</div>
         <div style="font-size:11px;color:var(--text2);margin-top:1px">${c.detail}</div>
       </div>
@@ -12144,7 +12173,7 @@ function renderCheckItem(c) {
         <div style="font-size:13px;font-weight:700;color:${st.border};font-family:var(--mono)">${c.value}</div>
         <div style="font-size:10px;color:var(--text2)">${st.lbl}</div>
       </div>
-      ${c.action?`<button class="btn btn-sm" onclick="${c.action.fn}" style="font-size:10px;padding:4px 8px;flex-shrink:0">${c.action.label}</button>`:''}
+      ${c.action ? `<button class="btn btn-sm" onclick="${c.action.fn}" style="font-size:10px;padding:4px 10px;flex-shrink:0;white-space:nowrap">${c.action.label}</button>` : ''}
     </div>${detailRows}
   </div>`;
 }
