@@ -2835,7 +2835,11 @@ async function submitNewFile() {
     // 2. Ledger entry for supplier — امسح القديم وأضف جديد
     if (finalTotal > 0) {
       const vinList = vehicles.filter(v=>v.vin).map(v=>v.vin).join(' / ');
-      if (entryStatus()==='posted') await je_purchase({sys:state.system,date:poDate||today(),amount:finalTotal,fileNo,supplier});
+      if (entryStatus()==='posted') {
+        try {
+          await je_purchase({sys:state.system,date:poDate||today(),amount:finalTotal,fileNo,supplier});
+        } catch(jeErr) { toast(`⚠️ تم حفظ الصفقة لكن فشل قيد الشراء: ${jeErr.message}`,'warn'); }
+      }
     }
 
     // 3. Insert vehicles
@@ -2869,7 +2873,11 @@ async function submitNewFile() {
           notes: `حصة ${p.share}% — دفع مقدماً`
         });
         // Ledger: partner paid (credit partner account)
-        if (entryStatus()==='posted') await je_payment({sys:state.system,date:poDate||today(),amount:p.paid,fileNo,supplierName:supplier,payerName:p.name,method:p.method||'تحويل بنكي'});
+        if (entryStatus()==='posted') {
+          try {
+            await je_payment({sys:state.system,date:poDate||today(),amount:p.paid,fileNo,supplierName:supplier,payerName:p.name,method:p.method||'تحويل بنكي'});
+          } catch(jeErr) { toast(`⚠️ فشل قيد دفعة ${p.name}: ${jeErr.message}`,'warn'); }
+        }
       }
     }
 
@@ -3630,7 +3638,9 @@ async function submitSale() {
     }
     if (customer) await ensureContact(customer, 'customer');
     if (entryStatus()==='posted') {
-      await je_sale({sys:state.system, date, amount:totalPrice, cost:0, fileNo:fn, customer, invNo});
+      try {
+        await je_sale({sys:state.system, date, amount:totalPrice, cost:0, fileNo:fn, customer, invNo});
+      } catch(jeErr) { toast(`⚠️ تم حفظ الفاتورة لكن فشل قيد البيع: ${jeErr.message}`,'warn'); }
     }
 
     // ── تحديث حالة الصفقة ──
@@ -3672,7 +3682,9 @@ async function submitSale() {
         ref_no:      `COL-${invNo}`,
       });
       if (isPaid && entryStatus()==='posted') {
-        await je_collection({ sys:state.system, date:payDate, amount:collAmt, fileNo:fn, customer, invNo, method:payMethod });
+        try {
+          await je_collection({ sys:state.system, date:payDate, amount:collAmt, fileNo:fn, customer, invNo, method:payMethod });
+        } catch(jeErr) { toast(`⚠️ فشل قيد التحصيل: ${jeErr.message}`,'warn'); }
       }
     } catch(e) { console.warn('collection create error:', e.message); }
 
@@ -5067,162 +5079,80 @@ function getJournalDateRange() {
 }
 
 async function loadJournal() {
-  el('journalTimeline').innerHTML = `<div class="loading"><div class="spinner"></div><br>جاري تحميل اليومية...</div>`;
+  el('journalTimeline').innerHTML = `<div class="loading"><div class="spinner"></div><br>جاري تحميل اليومية من القيود...</div>`;
   el('journalKpis').innerHTML = '';
 
   const { from, to } = getJournalDateRange();
-  if (!from || !to) { el('journalTimeline').innerHTML = `<div class="empty-state"><div class="e-icon">📅</div><p>اختر نطاق تاريخ</p></div>`; return; }
-
-  const toPlus = to + 'T23:59:59';
+  if (!from || !to) {
+    el('journalTimeline').innerHTML = `<div class="empty-state"><div class="e-icon">📅</div><p>اختر نطاق تاريخ</p></div>`;
+    return;
+  }
 
   try {
-    const sys = state.system;
+    const sys    = state.system;
+    const toEOD  = to + 'T23:59:59';
 
-    async function apiGetRange(table, dateCol, from, to, extra={}) {
-      const toEOD = to + 'T23:59:59';
-      const makeUrl = (sysParam) => {
-        let url = `${SB_URL}/rest/v1/${table}?${sysParam}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`;
-        for (const [k,v] of Object.entries(extra)) url += `&${k}=${encodeURIComponent(v)}`;
-        return url;
-      };
-      const [r1, r2] = await Promise.all([
-        fetch(makeUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: headers() }),
-        fetch(makeUrl('system_type=is.null'), { headers: headers() }),
-      ]);
-      const [d1, d2] = await Promise.all([r1.ok ? r1.json() : [], r2.ok ? r2.json() : []]);
-      const seen = new Set(); const out = [];
-      [...(d1||[]), ...(d2||[])].forEach(r => {
-        const key = r.id ?? JSON.stringify(r);
-        if (!seen.has(key)) { seen.add(key); out.push(r); }
+    // ── مصدر واحد: journal_entries فقط ──
+    const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&order=entry_date.desc,entry_no.desc&select=*&limit=5000`;
+    const res  = await fetch(url, { headers: headers() });
+    if (!res.ok) throw new Error(await res.text());
+    const jeRows = await res.json();
+
+    // ── ربط نوع العملية بـ ref_table ──
+    const RT = {
+      'purchase_orders':    { type:'purchase',   sign:-1, icon:'📋', color:'var(--accent)',  label:'شراء'           },
+      'sales':              { type:'sale',        sign:+1, icon:'🤝', color:'var(--green)',   label:'بيع'            },
+      'collections':        { type:'collection',  sign:+1, icon:'💰', color:'var(--blue)',    label:'تحصيل'          },
+      'payments':           { type:'payment',     sign:-1, icon:'💳', color:'var(--cyan)',    label:'دفعة مورد'      },
+      'expenses':           { type:'expense',     sign:-1, icon:'💸', color:'var(--red)',     label:'مصروف'          },
+      'partner_payouts':    { type:'payout',      sign:-1, icon:'👥', color:'var(--purple)',  label:'صرف شريك'       },
+      'operating_expenses': { type:'opex',        sign:-1, icon:'💼', color:'var(--purple)',  label:'مصروف تشغيلي'   },
+      'manual':             { type:'manual',      sign: 0, icon:'✍️', color:'var(--text)',    label:'يدوي'           },
+    };
+
+    // ── تجميع بـ entry_no ──
+    const grouped = {};
+    jeRows.forEach(r => {
+      const no = r.entry_no || `single_${r.id}`;
+      if (!grouped[no]) {
+        const cfg = RT[r.ref_table] || RT['manual'];
+        grouped[no] = { no, date: r.entry_date, desc: r.description,
+          file_no: r.file_no, ref_table: r.ref_table,
+          type: cfg.type, sign: cfg.sign, icon: cfg.icon,
+          color: cfg.color, label: cfg.label,
+          lines: [], totalDr: 0, totalCr: 0 };
+      }
+      grouped[no].lines.push(r);
+      grouped[no].totalDr += +r.dr_amount || 0;
+      grouped[no].totalCr += +r.cr_amount || 0;
+    });
+
+    // ── تحويل إلى entries متوافقة مع renderJournalEntries ──
+    const entries = Object.values(grouped).map(g => {
+      // بناء meta من أسطر القيد
+      const meta = g.lines.map(l => {
+        const side = l.dr_amount > 0
+          ? `<span style="color:var(--green)">مدين ${fmt(l.dr_amount)}</span>`
+          : `<span style="color:var(--red)">دائن ${fmt(l.cr_amount)}</span>`;
+        return `<span style="font-size:10px;color:var(--text2);display:inline-block;margin-left:8px">${l.account_code||''} ${l.account_name||'—'}: ${side}</span>`;
       });
-      out.sort((a,b) => (b[dateCol]||'').localeCompare(a[dateCol]||''));
-      return out;
-    }
+      return {
+        type:    g.type, date: g.date,
+        amount:  g.totalDr, sign: g.sign,
+        title:   g.desc || '—',
+        entryNo: g.no,  fileNo: g.file_no,
+        meta,   raw: g,
+        status: 'posted',
+      };
+    }).sort((a,b) => (b.date||'').localeCompare(a.date||''));
 
-    const [purchases, sales, expenses, payments, payouts, opexItems] = await Promise.all([
-      apiGetRange('purchase_orders', 'po_date', from, to),
-      apiGetRange('sales',           'sale_date', from, to),
-      apiGetRange('expenses',        'exp_date',  from, to),
-      apiGetRange('payments',        'pay_date',  from, to),
-      apiGetRange('partner_payouts', 'pay_date',  from, to),
-      fetchOpexForJournal(from, to, sys),
-    ]);
-
-    const toEOD2 = to + 'T23:59:59';
-    const makeColUrl = (sysParam, dateCol) =>
-      `${SB_URL}/rest/v1/collections?${sysParam}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD2)}&order=${dateCol}.desc`;
-    const [colByDue, colByPaid, colByDueNull, colByPaidNull] = await Promise.all([
-      fetch(makeColUrl(`system_type=eq.${encodeURIComponent(sys)}`, 'due_date'),  { headers: headers() }).then(r=>r.ok?r.json():[]),
-      fetch(makeColUrl(`system_type=eq.${encodeURIComponent(sys)}`, 'paid_date'), { headers: headers() }).then(r=>r.ok?r.json():[]),
-      fetch(makeColUrl('system_type=is.null', 'due_date'),  { headers: headers() }).then(r=>r.ok?r.json():[]),
-      fetch(makeColUrl('system_type=is.null', 'paid_date'), { headers: headers() }).then(r=>r.ok?r.json():[]),
-    ]);
-    const colMap = {};
-    [...(colByDue||[]), ...(colByPaid||[]), ...(colByDueNull||[]), ...(colByPaidNull||[])].forEach(c => { colMap[c.id] = c; });
-    const collections = Object.values(colMap);
-
-    // Normalize entries
-    const entries = [
-      ...(purchases||[]).map(r=>({type:'purchase',date:r.po_date||from,amount:+r.total_purchase||0,sign:-1,
-        title:`سند شراء — ${r.supplier||''}`,status:r.post_status||'posted',
-        entryNo: r._entryNo||'',
-        meta:[r.file_no?`<span style="background:var(--accent-dim);color:var(--accent);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.file_no}</span>`:'',r.supplier?`مورد: ${r.supplier}`:''].filter(Boolean),fileNo:r.file_no,raw:r})),
-      ...(sales||[]).map(r=>({
-        type:'sale', date: r.sale_date||r.created_at?.split('T')[0]||from,
-        amount: +r.sale_price||0, sign:+1,
-        title:`بيع سيارة — ${r.vin||''}`,
-        entryNo: `MIG-SALE-${r.id}`,
-        meta:[
-          r.customer?`عميل: ${r.customer}`:'',
-          `ملف: ${r.file_no||'—'}`,
-          r.vin?`شاصي: ${r.vin}`:'',
-          r.inv_no||r.invoice_no?`فاتورة: ${r.inv_no||r.invoice_no}`:'',
-          r.sale_date?`تاريخ: ${r.sale_date}`:'',
-        ],
-        fileNo: r.file_no, raw: r,
-      })),
-      ...(collections||[]).map(r=>({
-        type:'collection',
-        date: r.due_date||r.paid_date||r.created_at?.split('T')[0]||from,
-        amount: +r.amount||0, sign:+1,
-        entryNo: `MIG-COL-${r.id}`,
-        title:`تحصيل — ${r.customer||r.inv_no||''}`,
-        meta:[
-          r.ref_no?`<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
-          r.customer?`من: ${r.customer}`:'',
-          `ملف: ${r.file_no||'—'}`,
-          r.inv_no?`فاتورة: ${r.inv_no}`:'',
-          r.pay_method?`طريقة: ${r.pay_method}`:'',
-          r.paid_date?`تاريخ الدفع: ${r.paid_date}`:r.due_date?`استحقاق: ${r.due_date}`:'',
-        ],
-        fileNo: r.file_no, raw: r,
-      })),
-      ...(expenses||[]).map(r=>({
-        type:'expense',
-        date: r.exp_date||r.expense_date||r.created_at?.split('T')[0]||from,
-        amount: +r.amount||0, sign:-1,
-        entryNo: `MIG-EXP-${r.id}`,
-        title:`مصروف — ${r.exp_type||r.description||''}`,
-        meta:[
-          r.ref_no?`<span style="background:var(--red-dim);color:var(--red);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
-          r.description?`بيان: ${r.description}`:'',
-          `ملف: ${r.file_no||'—'}`,
-          r.pay_method?`طريقة: ${r.pay_method}`:'',
-        ],
-        fileNo: r.file_no, raw: r,
-      })),
-      ...(payments||[]).map(r=>({
-        type:'payment',
-        date: r.pay_date||r.created_at?.split('T')[0]||from,
-        amount: +r.amount||0, sign:-1,
-        entryNo: `MIG-PAY-${r.id}`,
-        title:`دفعة للمورد — ${r.payer||''}`,
-        meta:[
-          r.ref_no?`<span style="background:var(--cyan-dim);color:var(--cyan);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
-          `ملف: ${r.file_no||'—'}`,
-          r.pay_method?`طريقة: ${r.pay_method}`:'',
-          r.pay_date?`تاريخ: ${r.pay_date}`:'',
-        ],
-        fileNo: r.file_no, raw: r,
-      })),
-      ...(payouts||[]).map(r=>({
-        type:'payout',
-        date: r.pay_date||r.created_at?.split('T')[0]||from,
-        amount: +r.amount||0, sign:-1,
-        entryNo: `MIG-POUT-${r.id}`,
-        title:`صرف لشريك — ${r.partner||''}`,
-        meta:[
-          r.pay_id?`<span style="background:var(--purple-dim);color:var(--purple);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.pay_id}</span>`:'',
-          `ملف: ${r.file_no||'—'}`,
-          r.payout_type?`نوع: ${r.payout_type}`:'',
-          r.pay_method?`طريقة: ${r.pay_method}`:'',
-        ],
-        fileNo: r.file_no, raw: r,
-      })),
-      ...(opexItems||[]).map(r=>({
-        type:'opex',
-        date: r.exp_date||r.created_at?.split('T')[0]||from,
-        amount: +r.amount||0, sign:-1,
-        title:`مصروف تشغيلي — ${r.exp_type||''}: ${r.description||''}`,
-        meta:[
-          r.ref_no?`<span style="background:var(--purple-dim);color:var(--purple);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${r.ref_no}</span>`:'',
-          r.beneficiary?`جهة: ${r.beneficiary}`:'',
-          r.pay_method?`طريقة: ${r.pay_method}`:'',
-          r.exp_date?`تاريخ: ${r.exp_date}`:'',
-          r.document?`مستند: ${r.document}`:'',
-          r.notes?`ملاحظة: ${r.notes}`:'',
-        ],
-        fileNo: null, raw: r,
-      })),
-    ];
-
-    entries.sort((a,b) => (b.date||'').localeCompare(a.date||''));
     journalState.entries = entries;
     renderJournalKpis(entries);
     renderJournalEntries();
     loadJournalDrafts();
   } catch(e) {
     el('journalTimeline').innerHTML = errHTML('خطأ في تحميل اليومية: ' + e.message);
+    console.error(e);
   }
 }
 
@@ -6475,7 +6405,7 @@ async function deleteContact(id, name) {
 // hideAllViews helper
 // ════════════════════════════════════════
 function hideAllViews() {
-  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView','reviewView']
+  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView','reviewView','jeManagerView']
     .forEach(id => {
       const e = el(id);
       if (e) {
@@ -8630,118 +8560,144 @@ async function runReport() {
 }
 
 // ════════════════════════════════════════
-// CASH FLOW REPORT
+// CASH FLOW REPORT — من القيود المحاسبية
 // ════════════════════════════════════════
 async function runCashFlowReport(from, to, sys) {
   el('reportKpis').innerHTML = '';
-  el('reportTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري إعداد تقرير التدفقات...</div>';
+  el('reportTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري إعداد تقرير التدفقات من القيود...</div>';
   try {
     const toEOD = to + 'T23:59:59';
-    // جيب كل البيانات بدون فلتر post_status — التقرير يعرض الكل
-    async function cfGet(table, dateCol) {
-      const [r1, r2] = await Promise.all([
-        fetch(`${SB_URL}/rest/v1/${table}?system_type=eq.${encodeURIComponent(sys)}&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`, { headers: headers() }),
-        fetch(`${SB_URL}/rest/v1/${table}?system_type=is.null&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`, { headers: headers() }),
-      ]);
-      const [d1, d2] = await Promise.all([r1.ok?r1.json():[], r2.ok?r2.json():[]]);
-      const seen = new Set(); const out = [];
-      [...(d1||[]),...(d2||[])].forEach(r => { const k=r.id??JSON.stringify(r); if(!seen.has(k)){seen.add(k);out.push(r);} });
-      return out;
-    }
-    const [collections, payments, expenses, payouts, opexItems] = await Promise.all([
-      cfGet('collections',     'paid_date'),
-      cfGet('payments',        'pay_date'),
-      cfGet('expenses',        'exp_date'),
-      cfGet('partner_payouts', 'pay_date'),
-      fetchOpexForJournal(from, to, sys),
-    ]);
+    // ── مصدر واحد: journal_entries فقط — حسابات النقد والبنك ──
+    const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&select=*&limit=10000`;
+    const res  = await fetch(url, { headers: headers() });
+    if (!res.ok) throw new Error(await res.text());
+    const jeRows = await res.json();
 
-    // فلتر post_status
-    const postFilter = el('r-post-filter')?.value || 'all';
-    const filterFn = arr => {
-      if (postFilter === 'all') return arr||[];
-      return (arr||[]).filter(r => {
-        if (postFilter === 'posted') return r.post_status === 'posted' || !r.post_status;
-        if (postFilter === 'draft')  return r.post_status === 'draft';
-        return true;
-      });
-    };
+    // حركات حسابات النقد/البنك
+    const cashRows = jeRows.filter(r => r.account_code === '1110' || r.account_code === '1120');
 
-    const inC   = filterFn(collections).reduce((s,r)=>s+(+r.amount||0),0);
-    const outP  = filterFn(payments).reduce((s,r)=>s+(+r.amount||0),0);
-    const outE  = filterFn(expenses).reduce((s,r)=>s+(+r.amount||0),0);
-    const outPo = filterFn(payouts).reduce((s,r)=>s+(+r.amount||0),0);
-    const outO  = filterFn(opexItems).reduce((s,r)=>s+(+r.amount||0),0);
+    // داخل = مدين على النقد/البنك
+    const inflows  = cashRows.filter(r => (+r.dr_amount||0) > 0);
+    // خارج = دائن على النقد/البنك
+    const outflows = cashRows.filter(r => (+r.cr_amount||0) > 0);
 
-    const totalIn  = inC;
-    const totalOut = outP + outE + outPo + outO;
+    const totalIn  = inflows.reduce((s,r)=>s+(+r.dr_amount||0),0);
+    const totalOut = outflows.reduce((s,r)=>s+(+r.cr_amount||0),0);
     const net      = totalIn - totalOut;
 
-    const draftCount = (collections||[]).filter(isDraft).length +
-                       (payments||[]).filter(isDraft).length +
-                       (expenses||[]).filter(isDraft).length +
-                       (payouts||[]).filter(isDraft).length;
+    // تجميع الداخل حسب المصدر (ref_table)
+    const inBySource = {};
+    inflows.forEach(r => {
+      const src = r.ref_table || 'manual';
+      if (!inBySource[src]) inBySource[src] = { amount:0, count:0 };
+      inBySource[src].amount += +r.dr_amount||0;
+      inBySource[src].count++;
+    });
 
-    const draftNote = postFilter==='all' && draftCount > 0
-      ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:7px 12px;font-size:11px;color:#92400e;margin-top:8px">
-          ⏳ يشمل ${draftCount} عملية معلقة — غيّر الفلتر لعرض المرحَّل فقط
-         </div>` : '';
+    // تجميع الخارج حسب المصدر
+    const outBySource = {};
+    outflows.forEach(r => {
+      const src = r.ref_table || 'manual';
+      if (!outBySource[src]) outBySource[src] = { amount:0, count:0 };
+      outBySource[src].amount += +r.cr_amount||0;
+      outBySource[src].count++;
+    });
+
+    const srcLabels = {
+      collections:'تحصيلات العملاء', payments:'دفعات الموردين',
+      expenses:'مصاريف الصفقات', partner_payouts:'صرف الشركاء',
+      operating_expenses:'مصاريف تشغيلية', manual:'قيود يدوية', sales:'مبيعات',
+    };
+    const srcIcons = {
+      collections:'💰', payments:'💳', expenses:'💸',
+      partner_payouts:'👥', operating_expenses:'💼', manual:'✍️', sales:'🤝',
+    };
 
     el('reportKpis').innerHTML = `
       <div class="j-kpi" style="border-right:3px solid var(--green);background:var(--green-dim)">
         <div class="j-kpi-label">💚 إجمالي الداخل</div>
         <div class="j-kpi-val text-green" style="font-size:20px;font-weight:900">${fmt(totalIn)}</div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">تحصيلات العملاء (${filterFn(collections).length} عملية)</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">قيود نقدية مدينة — ${inflows.length} سطر</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--red);background:var(--red-dim)">
         <div class="j-kpi-label">❤️ إجمالي الخارج</div>
         <div class="j-kpi-val text-red" style="font-size:20px;font-weight:900">${fmt(totalOut)}</div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">دفعات + مصاريف + صرف + تشغيلية</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">قيود نقدية دائنة — ${outflows.length} سطر</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid ${net>=0?'var(--green)':'var(--red)'};background:${net>=0?'var(--green-dim)':'var(--red-dim)'}">
         <div class="j-kpi-label">💵 صافي التدفق</div>
         <div class="j-kpi-val" style="color:${net>=0?'var(--green)':'var(--red)'};font-size:22px;font-weight:900">${net>=0?'+':''}${fmt(net)}</div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">${net>=0?'▲ موجب':'▼ سالب'}</div>
-      </div>
-      ${draftNote}`;
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">من القيود المحاسبية ${from} — ${to}</div>
+      </div>`;
 
-    const breakdown=[
-      {label:'تحصيلات العملاء',amount:inC,  dir:+1,icon:'💰',color:'var(--green)', count:filterFn(collections).length},
-      {label:'دفعات للموردين', amount:outP,  dir:-1,icon:'💳',color:'var(--cyan)',  count:filterFn(payments).length},
-      {label:'مصاريف الصفقات', amount:outE,  dir:-1,icon:'💸',color:'var(--red)',   count:filterFn(expenses).length},
-      {label:'صرف الشركاء',    amount:outPo, dir:-1,icon:'👥',color:'var(--purple)',count:filterFn(payouts).length},
-      {label:'مصاريف تشغيلية',amount:outO,  dir:-1,icon:'💼',color:'var(--text2)', count:filterFn(opexItems).length},
-    ];
+    // تفصيل الداخل والخارج
+    const inRows  = Object.entries(inBySource).map(([src, d]) => `
+      <tr><td><div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:18px">${srcIcons[src]||'📌'}</span>
+        <div><div style="font-weight:600">${srcLabels[src]||src}</div>
+        <div style="font-size:11px;color:var(--text2)">${d.count} قيد</div></div></div></td>
+      <td><span style="background:var(--green-dim);color:var(--green);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">↑ داخل</span></td>
+      <td class="mono text-green" style="font-weight:700">${fmt(d.amount)}</td>
+      <td><div style="background:var(--card2);border-radius:4px;height:8px;overflow:hidden;min-width:80px"><div style="width:${totalIn>0?Math.round(d.amount/totalIn*100):0}%;height:100%;background:var(--green);border-radius:4px"></div></div></td></tr>`).join('');
 
-    const months={};
-    const addM=(d,a,dir)=>{if(!d)return;const m=d.slice(0,7);if(!months[m])months[m]={in:0,out:0};if(dir>0)months[m].in+=a;else months[m].out+=a;};
-    filterFn(collections).forEach(r=>addM(r.paid_date||r.due_date,+r.amount||0,+1));
-    filterFn(payments).forEach(r=>addM(r.pay_date,+r.amount||0,-1));
-    filterFn(expenses).forEach(r=>addM(r.exp_date||r.expense_date,+r.amount||0,-1));
-    filterFn(payouts).forEach(r=>addM(r.pay_date,+r.amount||0,-1));
-    filterFn(opexItems).forEach(r=>addM(r.exp_date,+r.amount||0,-1));
-    const mks=Object.keys(months).sort();
-    const mx=Math.max(...mks.map(m=>Math.max(months[m].in,months[m].out)),1);
-    const bar=(v,col)=>`<div style="height:6px;background:${col};border-radius:3px;width:${Math.round(v/mx*100)}%;margin-top:3px;min-width:${v>0?'4px':'0'}"></div>`;
+    const outRows = Object.entries(outBySource).map(([src, d]) => `
+      <tr><td><div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:18px">${srcIcons[src]||'📌'}</span>
+        <div><div style="font-weight:600">${srcLabels[src]||src}</div>
+        <div style="font-size:11px;color:var(--text2)">${d.count} قيد</div></div></div></td>
+      <td><span style="background:var(--red-dim);color:var(--red);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">↓ خارج</span></td>
+      <td class="mono text-red" style="font-weight:700">${fmt(d.amount)}</td>
+      <td><div style="background:var(--card2);border-radius:4px;height:8px;overflow:hidden;min-width:80px"><div style="width:${totalOut>0?Math.round(d.amount/totalOut*100):0}%;height:100%;background:var(--red);border-radius:4px"></div></div></td></tr>`).join('');
 
-    const detailRows=breakdown.map(b=>{
-      const pct=b.dir>0?(totalIn>0?Math.round(b.amount/totalIn*100):0):(totalOut>0?Math.round(b.amount/totalOut*100):0);
-      return `<tr><td><div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">${b.icon}</span><div><div style="font-weight:600;font-size:13px">${b.label}</div><div style="font-size:11px;color:var(--text2)">${b.count} عملية</div></div></div></td><td style="text-align:center"><span style="background:${b.dir>0?'var(--green-dim)':'var(--red-dim)'};color:${b.dir>0?'var(--green)':'var(--red)'};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">${b.dir>0?'↑ داخل':'↓ خارج'}</span></td><td class="mono" style="font-weight:700;color:${b.color};font-size:14px">${fmt(b.amount)}</td><td><div style="background:var(--card2);border-radius:4px;height:8px;overflow:hidden;min-width:80px"><div style="width:${pct}%;height:100%;background:${b.color};border-radius:4px"></div></div><div style="font-size:10px;color:var(--text2);margin-top:2px">${pct}%</div></td></tr>`;
+    // تحليل شهري
+    const months = {};
+    const addM = (date, amt, dir) => {
+      if (!date) return;
+      const m = date.slice(0,7);
+      if (!months[m]) months[m] = { in:0, out:0 };
+      if (dir > 0) months[m].in  += amt;
+      else         months[m].out += amt;
+    };
+    inflows.forEach(r => addM((r.entry_date||'').split('T')[0], +r.dr_amount||0, +1));
+    outflows.forEach(r => addM((r.entry_date||'').split('T')[0], +r.cr_amount||0, -1));
+    const mks = Object.keys(months).sort();
+    const monthRows = mks.map(m => {
+      const n = months[m].in - months[m].out;
+      return `<tr><td style="font-family:monospace">${m}</td>
+        <td class="mono text-green">${fmt(months[m].in)}</td>
+        <td class="mono text-red">${fmt(months[m].out)}</td>
+        <td class="mono" style="font-weight:700;color:${n>=0?'var(--green)':'var(--red)'}">${n>=0?'+':''}${fmt(n)}</td></tr>`;
     }).join('');
 
-    const monthRows=mks.map(m=>{const n=months[m].in-months[m].out;return `<tr><td style="font-family:monospace">${m}</td><td><div class="mono text-green">${fmt(months[m].in)}</div>${bar(months[m].in,'var(--green)')}</td><td><div class="mono text-red">${fmt(months[m].out)}</div>${bar(months[m].out,'var(--red)')}</td><td class="mono" style="font-weight:700;color:${n>=0?'var(--green)':'var(--red)'}">${n>=0?'+':''}${fmt(n)}</td></tr>`;}).join('');
+    reportState.data = [...Object.entries(inBySource).map(([src,d])=>({البند:srcLabels[src]||src,الاتجاه:'داخل',المبلغ:d.amount})),
+                        ...Object.entries(outBySource).map(([src,d])=>({البند:srcLabels[src]||src,الاتجاه:'خارج',المبلغ:d.amount}))];
 
-    reportState.data=breakdown.map(b=>({البند:b.label,الاتجاه:b.dir>0?'داخل':'خارج',المبلغ:b.amount,العمليات:b.count}));
-    el('reportTable').innerHTML=`
+    el('reportTable').innerHTML = `
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px;display:flex;justify-content:space-between"><span>📊 تفصيل مصادر التدفق</span><span style="font-size:11px;color:var(--text2)">${from} — ${to}</span></div>
-        <table class="data-table"><thead><tr><th>البند</th><th style="text-align:center">الاتجاه</th><th>المبلغ</th><th style="min-width:120px">النسبة</th></tr></thead><tbody>${detailRows}</tbody>
-        <tfoot style="background:var(--card2)"><tr><td colspan="2" style="padding:10px 16px;font-weight:700">صافي التدفق النقدي</td><td class="mono" style="padding:10px 16px;font-weight:900;font-size:15px;color:${net>=0?'var(--green)':'var(--red)'}">${net>=0?'+':''}${fmt(net)}</td><td></td></tr></tfoot></table>
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px;display:flex;justify-content:space-between">
+          <span>📊 تفصيل التدفقات النقدية (من القيود)</span>
+          <span style="font-size:11px;color:var(--text2)">${from} — ${to}</span>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>البند</th><th style="text-align:center">الاتجاه</th><th>المبلغ</th><th style="min-width:100px">النسبة</th></tr></thead>
+          <tbody>${inRows}${outRows}</tbody>
+          <tfoot style="background:var(--card2)">
+            <tr><td colspan="2" style="padding:10px 16px;font-weight:700">صافي التدفق</td>
+            <td class="mono" style="padding:10px 16px;font-weight:900;font-size:15px;color:${net>=0?'var(--green)':'var(--red)'}">${net>=0?'+':''}${fmt(net)}</td><td></td></tr>
+          </tfoot>
+        </table>
       </div>
-      ${mks.length>1?`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden"><div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px">📅 التحليل الشهري</div><table class="data-table"><thead><tr><th>الشهر</th><th style="color:var(--green)">↑ داخل</th><th style="color:var(--red)">↓ خارج</th><th>الصافي</th></tr></thead><tbody>${monthRows}</tbody><tfoot style="background:var(--card2)"><tr><td style="padding:10px 16px;font-weight:700">الإجمالي</td><td class="mono text-green" style="padding:10px 16px;font-weight:700">${fmt(totalIn)}</td><td class="mono text-red" style="padding:10px 16px;font-weight:700">${fmt(totalOut)}</td><td class="mono" style="padding:10px 16px;font-weight:900;color:${net>=0?'var(--green)':'var(--red)'}">${net>=0?'+':''}${fmt(net)}</td></tr></tfoot></table></div>`:''}`;
-  } catch(e) { el('reportTable').innerHTML=`<div class="empty-state"><div class="e-icon">⚠️</div><p>خطأ: ${e.message}</p></div>`; console.error(e); }
+      ${mks.length>1?`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px">📅 التحليل الشهري</div>
+        <table class="data-table"><thead><tr><th>الشهر</th><th style="color:var(--green)">↑ داخل</th><th style="color:var(--red)">↓ خارج</th><th>الصافي</th></tr></thead>
+        <tbody>${monthRows}</tbody>
+        <tfoot style="background:var(--card2)"><tr><td style="padding:10px 16px;font-weight:700">الإجمالي</td>
+          <td class="mono text-green" style="padding:10px 16px;font-weight:700">${fmt(totalIn)}</td>
+          <td class="mono text-red" style="padding:10px 16px;font-weight:700">${fmt(totalOut)}</td>
+          <td class="mono" style="padding:10px 16px;font-weight:900;color:${net>=0?'var(--green)':'var(--red)'}">${net>=0?'+':''}${fmt(net)}</td>
+        </tr></tfoot></table></div>`:''}`;
+  } catch(e) { el('reportTable').innerHTML = errHTML('خطأ: '+e.message); console.error(e); }
 }
-
 // ════════════════════════════════════════
 // INVENTORY REPORT — تقرير المخزون
 // ════════════════════════════════════════
@@ -10056,9 +10012,34 @@ async function submitEditCollection() {
   const notes  = el('ec-notes').value.trim();
   if (!amount) { showFieldErr('ecError','يرجى إدخال المبلغ'); return; }
   try {
+    // اجلب البيانات القديمة قبل التعديل — لنعرف هل paid_date جديد
+    const oldData = await apiGetAll('collections', { select:'paid_date,file_no,customer,inv_no,pay_method,post_status', id:`eq.${id}` });
+    const old = oldData?.[0] || {};
+    const wasUnpaid = !old.paid_date;
+    const nowPaid   = !!paid;
+
     await apiPatch('collections', { id:`eq.${id}` }, { amount, pay_method:method, due_date:due||null, paid_date:paid||null, document:doc||null, notes:notes||null });
+
+    // إذا كانت غير مدفوعة وأصبحت مدفوعة الآن → أنشئ قيد تحصيل
+    if (wasUnpaid && nowPaid && old.post_status !== 'draft') {
+      try {
+        await je_collection({
+          sys:      state.system,
+          date:     paid,
+          amount:   amount,
+          fileNo:   old.file_no,
+          customer: old.customer || '—',
+          invNo:    old.inv_no   || '',
+          method:   method,
+        });
+      } catch(jeErr) {
+        toast(`⚠️ تم الحفظ لكن فشل القيد المحاسبي: ${jeErr.message}`, 'warn');
+      }
+    }
+
     markSaving('editCollectionModal'); closeModal('editCollectionModal');
     toast('✅ تم تعديل التحصيل','ok');
+    invalidateCache();
     if (state.currentTab === 5) loadCollectionsTab(state.currentFileNo, state.system);
     if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);
   } catch(e) { showFieldErr('ecError','خطأ: '+e.message); }
@@ -10264,6 +10245,12 @@ async function submitOpex() {
     };
     await apiPost('operating_expenses', payload);
     await logAudit('INSERT','operating_expenses', null, null, payload);
+    // قيد محاسبي مزدوج للمصروف التشغيلي
+    try {
+      await je_opex({ sys:state.system, date, amount, expType:finalType, desc, method, refNo });
+    } catch(jeErr) {
+      toast(`⚠️ تم الحفظ لكن فشل القيد المحاسبي: ${jeErr.message}`, 'warn');
+    }
     markSaving('opexModal'); closeModal('opexModal');
     invalidateCache();
     toast('✅ تم تسجيل المصروف التشغيلي','ok');
@@ -11197,7 +11184,11 @@ async function approveItem(type, id) {
     }
     if (type === 'collection') {
       const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
-      if (item) await je_collection({ sys:state.system, date:item.paid_date||today(), amount:+item.amount||0, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
+      // القيد يُولَّد فقط إذا كان مدفوعاً فعلاً (paid_date موجود)
+      if (item && item.paid_date) {
+        await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
+      }
+      // لو لا يوجد paid_date → لا قيد الآن، سيُنشأ عند تسجيل الدفع لاحقاً
     }
     if (type === 'payment') {
       const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
@@ -11985,6 +11976,20 @@ async function runAllReviewChecks() {
       rows: dealsNoJE.map(d=>({ cols:[d.file_no,d.supplier||'—',fmt(d.total_purchase),d.po_date||'—'] })),
       action: dealsNoJE.length>0?{ label:'فتح قائمة الانتظار', fn:'showApprovalQueue()' }:null });
 
+    // فحص: تحصيلات مدفوعة بدون قيد تحصيل
+    const jeRefSet = new Set((jeData||[]).map(e=>e.ref_table&&e.file_no?`${e.ref_table}|${e.file_no}`:'').filter(Boolean));
+    const paidColNoJE = collections.filter(c => isPosted(c) && c.paid_date && inPeriod(c.paid_date));
+    const missingColJE = paidColNoJE.filter(c => {
+      // تحقق وجود قيد تحصيل لهذا الملف
+      return !(jeData||[]).some(e => e.ref_table==='collections' && e.file_no===c.file_no && e.account_code==='1200' && Math.abs((+e.cr_amount||0)-(+c.amount||0))<0.01);
+    });
+    checks.push({ cat:'E', icon:'📒', catLabel:'القيود المحاسبية',
+      id:'E3', label:'تحصيلات مدفوعة بدون قيد محاسبي',
+      status: missingColJE.length===0?'pass':missingColJE.length<=2?'warn':'fail',
+      value: missingColJE.length===0?'✓ مكتمل':missingColJE.length,
+      detail: missingColJE.length===0?'كل التحصيلات المدفوعة لها قيود ✓':`${missingColJE.length} تحصيل مدفوع بدون قيد — يؤثر على ميزان المراجعة`,
+      rows: missingColJE.slice(0,5).map(c=>({ cols:[c.file_no||'—',c.customer||'—',c.inv_no||'—',fmt(c.amount),c.paid_date||'—'] })) });
+
     // ══ F. سلامة البيانات ══
     const invNos    = pSales.map(s=>s.inv_no).filter(Boolean);
     const dupInv    = [...new Set(invNos.filter((v,i,a)=>a.indexOf(v)!==a.lastIndexOf(v)))];
@@ -12409,6 +12414,701 @@ async function loadReviewHistory() {
   } catch(e) { wrap.innerHTML=errHTML('خطأ: '+e.message); }
 }
 
+// ════════════════════════════════════════════════════════
+// JOURNAL ENTRIES MANAGER — دفتر القيود
+// ════════════════════════════════════════════════════════
+
+const jeMgrState = {
+  period: 'month', from: null, to: null,
+  allEntries: [],    // flat rows from journal_entries
+  grouped: {},       // entry_no → { header, lines[] }
+  editEntryNo: null, // للتعديل
+};
+
+// ── الدوال الحسابية المعرّفة للحسابات ──
+const JE_ACCOUNT_SUGGESTIONS = [
+  { code:'1110', name:'النقد',                  type:'أصول'        },
+  { code:'1120', name:'البنك',                  type:'أصول'        },
+  { code:'1200', name:'ذمم العملاء',             type:'أصول'        },
+  { code:'1300', name:'المخزون — سيارات',        type:'أصول'        },
+  { code:'1400', name:'مصاريف مدفوعة مقدماً',   type:'أصول'        },
+  { code:'1500', name:'أصول ثابتة',             type:'أصول'        },
+  { code:'2100', name:'ذمم الموردين',            type:'التزامات'    },
+  { code:'2200', name:'مصاريف مستحقة',          type:'التزامات'    },
+  { code:'2300', name:'ضرائب مستحقة',           type:'التزامات'    },
+  { code:'2400', name:'حسابات الشركاء',         type:'التزامات'    },
+  { code:'3100', name:'رأس المال',              type:'حقوق الملكية'},
+  { code:'3200', name:'الأرباح المبقاة',        type:'حقوق الملكية'},
+  { code:'4100', name:'إيرادات المبيعات',       type:'إيرادات'     },
+  { code:'4200', name:'إيرادات أخرى',          type:'إيرادات'     },
+  { code:'5100', name:'تكلفة المخزون المباع',   type:'تكلفة'       },
+  { code:'6100', name:'مصروف رواتب',           type:'مصروفات'     },
+  { code:'6200', name:'مصروف إيجارات',         type:'مصروفات'     },
+  { code:'6300', name:'مصروف عمولات',          type:'مصروفات'     },
+  { code:'6400', name:'مصروف نظافة',           type:'مصروفات'     },
+  { code:'6500', name:'مصروف ضيافة',           type:'مصروفات'     },
+  { code:'6600', name:'مصروفات حكومية',        type:'مصروفات'     },
+  { code:'6700', name:'مصروفات أخرى',          type:'مصروفات'     },
+];
+
+function showJEManager() {
+  hideAllViews();
+  el('jeManagerView').style.display = 'block';
+  el('topBarTitle').textContent  = '📝 دفتر القيود';
+  el('topBarSub').textContent    = `نظام ${state.system}`;
+  navActive('nav-je-manager');
+  sessionStorage.setItem('tm_last_view','je-manager');
+  setJEMgrPeriod('month');
+}
+
+function setJEMgrPeriod(period) {
+  jeMgrState.period = period;
+  document.querySelectorAll('[id^="je-period-"]').forEach(b => b.classList.remove('active'));
+  el('je-period-'+period)?.classList.add('active');
+  const customWrap = el('je-custom-dates');
+  if (period === 'custom') { if (customWrap) customWrap.style.display='flex'; return; }
+  if (customWrap) customWrap.style.display = 'none';
+  const pad = n => String(n).padStart(2,'0');
+  const now = new Date(), yr = now.getFullYear();
+  let from, to;
+  if (period === 'month') {
+    from = `${yr}-${pad(now.getMonth()+1)}-01`;
+    const last = new Date(yr, now.getMonth()+1, 0);
+    to   = `${last.getFullYear()}-${pad(last.getMonth()+1)}-${pad(last.getDate())}`;
+  } else if (period === 'lastmonth') {
+    const lm = new Date(yr, now.getMonth()-1, 1), lme = new Date(yr, now.getMonth(), 0);
+    from = `${lm.getFullYear()}-${pad(lm.getMonth()+1)}-01`;
+    to   = `${lme.getFullYear()}-${pad(lme.getMonth()+1)}-${pad(lme.getDate())}`;
+  } else if (period === 'year')  { from=`${yr}-01-01`; to=`${yr}-12-31`; }
+  else if (period === 'all')     { from='2000-01-01'; to='2099-12-31'; }
+  if (el('je-from')) el('je-from').value = from || '';
+  if (el('je-to'))   el('je-to').value   = to   || '';
+  jeMgrState.from = from; jeMgrState.to = to;
+  loadJEManager();
+}
+
+async function loadJEManager() {
+  const wrap = el('je-mgr-table');
+  if (!wrap) return;
+  const from = el('je-from')?.value || jeMgrState.from;
+  const to   = el('je-to')?.value   || jeMgrState.to;
+  jeMgrState.from = from; jeMgrState.to = to;
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل القيود...</div>';
+  if (el('je-mgr-kpis')) el('je-mgr-kpis').innerHTML = '';
+  if (el('je-balance-banner')) el('je-balance-banner').innerHTML = '';
+  if (el('je-mgr-sub')) el('je-mgr-sub').textContent = `${from} — ${to} · نظام ${state.system}`;
+
+  try {
+    const params = {
+      select:      '*',
+      system_type: `eq.${state.system}`,
+      order:       'entry_date.desc,entry_no.desc',
+    };
+    if (from) params['entry_date'] = `gte.${from}`;
+    // Supabase: can't use two conditions on same field in params object — build URL manually
+    let url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(state.system)}&order=entry_date.desc,entry_no.desc&select=*`;
+    if (from) url += `&entry_date=gte.${encodeURIComponent(from)}`;
+    if (to)   url += `&entry_date=lte.${encodeURIComponent(to+'T23:59:59')}`;
+    url += `&limit=2000`;
+    const res  = await fetch(url, { headers: headers() });
+    if (!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    jeMgrState.allEntries = rows || [];
+
+    // تجميع بـ entry_no
+    const grouped = {};
+    (rows||[]).forEach(r => {
+      const no = r.entry_no || `SINGLE-${r.id}`;
+      if (!grouped[no]) grouped[no] = { no, date:r.entry_date, desc:r.description, file_no:r.file_no, ref_table:r.ref_table, lines:[], totalDr:0, totalCr:0, isManual: r.ref_table==='manual' || !r.ref_table };
+      grouped[no].lines.push(r);
+      grouped[no].totalDr += +r.dr_amount||0;
+      grouped[no].totalCr += +r.cr_amount||0;
+    });
+    jeMgrState.grouped = grouped;
+
+    // KPIs
+    const totalDr  = (rows||[]).reduce((s,r)=>s+(+r.dr_amount||0),0);
+    const totalCr  = (rows||[]).reduce((s,r)=>s+(+r.cr_amount||0),0);
+    const diff     = Math.abs(totalDr-totalCr);
+    const entCount = Object.keys(grouped).length;
+    const manualCount = Object.values(grouped).filter(g=>g.isManual).length;
+    const autoCount   = entCount - manualCount;
+
+    if (el('je-mgr-kpis')) el('je-mgr-kpis').innerHTML = [
+      ['إجمالي القيود', entCount, 'var(--text)'],
+      ['🤖 تلقائي', autoCount, 'var(--blue)'],
+      ['✍️ يدوي', manualCount, 'var(--purple)'],
+      ['إجمالي مدين', fmt(totalDr), 'var(--green)'],
+      ['إجمالي دائن', fmt(totalCr), 'var(--red)'],
+      ['الفرق', diff<0.01?'✓ متوازن':fmt(diff), diff<0.01?'var(--green)':'var(--red)'],
+    ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c}">${v}</div></div>`).join('');
+
+    // Balance banner
+    if (el('je-balance-banner')) {
+      if (diff < 0.01) {
+        el('je-balance-banner').innerHTML = `<div style="background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:8px 14px;font-size:12px;font-weight:700;color:var(--green)">✅ القيود متوازنة — مدين = دائن = ${fmt(totalDr)}</div>`;
+      } else {
+        el('je-balance-banner').innerHTML = `<div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius-sm);padding:8px 14px;font-size:12px;font-weight:700;color:var(--red)">❌ تحذير: فرق ${fmt(diff)} بين المدين والدائن — يؤثر على ميزان المراجعة!</div>`;
+      }
+    }
+
+    renderJEManagerTable();
+  } catch(e) {
+    wrap.innerHTML = errHTML('خطأ: '+e.message);
+    console.error(e);
+  }
+}
+
+function renderJEManagerTable() {
+  const wrap     = el('je-mgr-table');
+  if (!wrap) return;
+  const srcFilter = el('je-filter-source')?.value || '';
+  const search    = (el('je-filter-search')?.value||'').trim().toLowerCase();
+
+  let entries = Object.values(jeMgrState.grouped);
+
+  // فلتر المصدر
+  if (srcFilter === 'manual') {
+    entries = entries.filter(g => g.isManual);
+  } else if (srcFilter === 'auto') {
+    entries = entries.filter(g => !g.isManual);
+  } else if (srcFilter) {
+    entries = entries.filter(g => g.ref_table === srcFilter);
+  }
+
+  // فلتر البحث
+  if (search) {
+    entries = entries.filter(g =>
+      (g.no||'').toLowerCase().includes(search) ||
+      (g.desc||'').toLowerCase().includes(search) ||
+      (g.file_no||'').toLowerCase().includes(search) ||
+      g.lines.some(l => (l.account_name||'').toLowerCase().includes(search) || (l.account_code||'').toLowerCase().includes(search))
+    );
+  }
+
+  if (!entries.length) {
+    wrap.innerHTML = emptyHTML('📝','لا توجد قيود في هذه الفترة');
+    return;
+  }
+
+  const srcLabels = {
+    purchase_orders:'شراء', sales:'بيع', collections:'تحصيل',
+    payments:'دفعة مورد', expenses:'مصروف', partner_payouts:'صرف شريك',
+    operating_expenses:'مصروف تشغيلي', manual:'يدوي',
+  };
+  const srcColors = {
+    purchase_orders:'var(--accent)', sales:'var(--green)', collections:'var(--blue)',
+    payments:'var(--cyan)', expenses:'var(--red)', partner_payouts:'var(--purple)',
+    operating_expenses:'var(--purple)', manual:'var(--text)',
+  };
+  const isAdmin = state.userRole === 'admin';
+
+  const rows = entries.map(g => {
+    const balanced = Math.abs(g.totalDr - g.totalCr) < 0.01;
+    const srcLabel = srcLabels[g.ref_table] || (g.isManual?'يدوي':'تلقائي');
+    const srcColor = srcColors[g.ref_table] || 'var(--text2)';
+    const balIcon  = balanced ? '<span style="color:var(--green);font-weight:700">✓</span>' : '<span style="color:var(--red);font-weight:700">!</span>';
+
+    const linesHtml = g.lines.map(l => `
+      <tr style="background:var(--card2)">
+        <td style="padding:5px 12px 5px 28px;font-size:11px">
+          <span class="mono" style="color:var(--text2)">${l.account_code||'—'}</span>
+        </td>
+        <td style="padding:5px 12px;font-size:11px;color:var(--text2)">${l.account_name||'—'}</td>
+        <td style="padding:5px 12px;text-align:left;font-family:var(--mono);font-size:11px;color:var(--green)">${+l.dr_amount>0?fmt(l.dr_amount):'—'}</td>
+        <td style="padding:5px 12px;text-align:left;font-family:var(--mono);font-size:11px;color:var(--red)">${+l.cr_amount>0?fmt(l.cr_amount):'—'}</td>
+        <td></td>
+      </tr>`).join('');
+
+    const editBtn = (g.isManual && isAdmin)
+      ? `<button class="btn btn-secondary btn-sm" onclick="openEditJEModal('${g.no}')" title="تعديل">✏️</button>`
+      : '';
+    const delBtn  = isAdmin
+      ? `<button class="btn btn-sm" onclick="deleteJEEntry('${g.no}')" title="حذف" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>`
+      : '';
+
+    return `
+      <tr class="je-entry-row" onclick="toggleJELines(this)" style="cursor:pointer">
+        <td style="padding:10px 12px">
+          <div style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--accent)">${g.no}</div>
+          <div style="font-size:10px;color:var(--text2);margin-top:1px">${g.date||'—'}</div>
+        </td>
+        <td style="padding:10px 12px">
+          <div style="font-size:12px;font-weight:600">${g.desc||'—'}</div>
+          ${g.file_no?`<div style="font-size:10px;color:var(--text2);margin-top:1px">ملف: ${g.file_no}</div>`:''}
+        </td>
+        <td style="padding:10px 12px">
+          <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${srcColor}22;color:${srcColor}">${srcLabel}</span>
+        </td>
+        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green)">${fmt(g.totalDr)}</td>
+        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--red)">${fmt(g.totalCr)}</td>
+        <td style="padding:10px 12px;text-align:center">${balIcon}</td>
+        <td style="padding:10px 12px;white-space:nowrap;display:flex;gap:4px">${editBtn}${delBtn}</td>
+      </tr>
+      <tr class="je-lines-row" style="display:none">
+        <td colspan="7" style="padding:0;background:var(--card2)">
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="background:var(--card);border-bottom:1px solid var(--border)">
+              <th style="padding:5px 12px 5px 28px;font-size:10px;color:var(--text3);text-align:right">الكود</th>
+              <th style="padding:5px 12px;font-size:10px;color:var(--text3);text-align:right">الحساب</th>
+              <th style="padding:5px 12px;font-size:10px;color:var(--green);text-align:left">مدين</th>
+              <th style="padding:5px 12px;font-size:10px;color:var(--red);text-align:left">دائن</th>
+              <th></th>
+            </tr></thead>
+            <tbody>${linesHtml}</tbody>
+          </table>
+        </td>
+      </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div style="font-size:11px;color:var(--text2);margin-bottom:6px">${entries.length} قيد · اضغط على أي صف لعرض الأسطر</div>
+    <div style="overflow-x:auto">
+    <table class="data-table" style="min-width:700px">
+      <thead><tr>
+        <th>رقم القيد</th>
+        <th>البيان</th>
+        <th>المصدر</th>
+        <th style="text-align:left;color:var(--green)">مدين</th>
+        <th style="text-align:left;color:var(--red)">دائن</th>
+        <th style="text-align:center">توازن</th>
+        <th></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
+}
+
+function toggleJELines(row) {
+  const next = row.nextElementSibling;
+  if (!next || !next.classList.contains('je-lines-row')) return;
+  const isHidden = next.style.display === 'none' || !next.style.display;
+  next.style.display = isHidden ? 'table-row' : 'none';
+  row.style.background = isHidden ? 'var(--accent-dim)' : '';
+}
+
+// ═══ إنشاء / تعديل قيد يدوي ═══
+
+let _jeLines = []; // أسطر القيد الحالية في الموديل
+
+function openNewJEModal() {
+  jeMgrState.editEntryNo = null;
+  _jeLines = [
+    { acc:'', name:'', dr:0, cr:0 },
+    { acc:'', name:'', dr:0, cr:0 },
+  ];
+  el('je-modal-title').textContent  = '📝 قيد محاسبي جديد';
+  el('je-edit-entry-no').value      = '';
+  el('je-date').value               = today();
+  el('je-file-no').value            = '';
+  el('je-desc').value               = '';
+  el('je-submit-btn').textContent   = '💾 حفظ القيد';
+  el('jeError').style.display       = 'none';
+  renderJELines();
+  openModal('jeModal');
+}
+
+function openEditJEModal(entryNo) {
+  const group = jeMgrState.grouped[entryNo];
+  if (!group) { toast('القيد غير موجود','err'); return; }
+  if (!group.isManual) { toast('⚠️ لا يمكن تعديل القيود التلقائية — راجع العملية الأصلية','warn'); return; }
+  jeMgrState.editEntryNo = entryNo;
+  _jeLines = group.lines.map(l => ({ acc: l.account_code||'', name: l.account_name||'', dr: +l.dr_amount||0, cr: +l.cr_amount||0 }));
+  el('je-modal-title').textContent  = `✏️ تعديل قيد — ${entryNo}`;
+  el('je-edit-entry-no').value      = entryNo;
+  el('je-date').value               = (group.date||'').split('T')[0];
+  el('je-file-no').value            = group.file_no || '';
+  el('je-desc').value               = group.desc    || '';
+  el('je-submit-btn').textContent   = '💾 حفظ التعديل';
+  el('jeError').style.display       = 'none';
+  renderJELines();
+  openModal('jeModal');
+}
+
+function renderJELines() {
+  const tbody = el('je-lines-body');
+  if (!tbody) return;
+  tbody.innerHTML = _jeLines.map((line, i) => {
+    const suggestions = JE_ACCOUNT_SUGGESTIONS.map(s =>
+      `<option value="${s.code}" data-name="${s.name}">${s.code} — ${s.name}</option>`
+    ).join('');
+    return `<tr id="je-line-${i}">
+      <td style="padding:4px 6px">
+        <div style="position:relative">
+          <input list="je-acc-list-${i}" type="text" value="${line.acc}"
+            placeholder="1110" style="width:90px;background:var(--card2);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px"
+            oninput="onJEAccInput(${i},this.value)" onchange="onJEAccChange(${i},this.value)">
+          <datalist id="je-acc-list-${i}">${suggestions}</datalist>
+        </div>
+      </td>
+      <td style="padding:4px 6px">
+        <input type="text" value="${line.name}" placeholder="اسم الحساب"
+          style="width:100%;min-width:160px;background:var(--card2);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px"
+          oninput="_jeLines[${i}].name=this.value">
+      </td>
+      <td style="padding:4px 6px">
+        <input type="number" value="${line.dr||''}" placeholder="0.00" min="0" step="0.01"
+          style="width:110px;background:var(--card2);border:1px solid var(--green);border-radius:4px;padding:5px 8px;color:var(--green);font-family:var(--mono);font-size:12px;text-align:left"
+          oninput="_jeLines[${i}].dr=parseFloat(this.value)||0;_jeLines[${i}].cr=0;updateJETotals()">
+      </td>
+      <td style="padding:4px 6px">
+        <input type="number" value="${line.cr||''}" placeholder="0.00" min="0" step="0.01"
+          style="width:110px;background:var(--card2);border:1px solid var(--red);border-radius:4px;padding:5px 8px;color:var(--red);font-family:var(--mono);font-size:12px;text-align:left"
+          oninput="_jeLines[${i}].cr=parseFloat(this.value)||0;_jeLines[${i}].dr=0;updateJETotals()">
+      </td>
+      <td style="padding:4px 6px;text-align:center">
+        ${_jeLines.length > 2 ? `<button onclick="removeJELine(${i})" class="btn btn-sm" style="background:var(--red-dim);color:var(--red);border:none;padding:3px 8px;font-size:11px">✕</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+  updateJETotals();
+}
+
+function addJELine() {
+  _jeLines.push({ acc:'', name:'', dr:0, cr:0 });
+  renderJELines();
+}
+
+function removeJELine(i) {
+  if (_jeLines.length <= 2) return;
+  _jeLines.splice(i, 1);
+  renderJELines();
+}
+
+function onJEAccInput(i, val) {
+  _jeLines[i].acc = val;
+  // auto-fill name from suggestions
+  const match = JE_ACCOUNT_SUGGESTIONS.find(s => s.code === val.trim());
+  if (match) {
+    _jeLines[i].name = match.name;
+    // update name input
+    const row  = el(`je-line-${i}`);
+    const ninp = row?.querySelectorAll('input[type="text"]')[1];
+    if (ninp) ninp.value = match.name;
+  }
+}
+
+function onJEAccChange(i, val) {
+  _jeLines[i].acc = val.trim();
+  const match = JE_ACCOUNT_SUGGESTIONS.find(s => s.code === val.trim());
+  if (match && !_jeLines[i].name) {
+    _jeLines[i].name = match.name;
+    const row  = el(`je-line-${i}`);
+    const ninp = row?.querySelectorAll('input[type="text"]')[1];
+    if (ninp) ninp.value = match.name;
+  }
+}
+
+function updateJETotals() {
+  const totalDr = _jeLines.reduce((s,l)=>s+(+l.dr||0),0);
+  const totalCr = _jeLines.reduce((s,l)=>s+(+l.cr||0),0);
+  const diff    = Math.abs(totalDr-totalCr);
+  if (el('je-total-dr')) el('je-total-dr').textContent = fmt(totalDr);
+  if (el('je-total-cr')) el('je-total-cr').textContent = fmt(totalCr);
+  const ind = el('je-balance-indicator');
+  if (ind) {
+    if (totalDr===0 && totalCr===0) { ind.style.display='none'; return; }
+    ind.style.display = 'block';
+    if (diff < 0.01) {
+      ind.style.background = 'var(--green-dim)';
+      ind.style.border     = '1px solid var(--green)';
+      ind.style.color      = 'var(--green)';
+      ind.textContent      = `✅ القيد متوازن — مدين = دائن = ${fmt(totalDr)}`;
+    } else {
+      ind.style.background = 'var(--red-dim)';
+      ind.style.border     = '1px solid var(--red)';
+      ind.style.color      = 'var(--red)';
+      ind.textContent      = `❌ غير متوازن — مدين: ${fmt(totalDr)} · دائن: ${fmt(totalCr)} · فرق: ${fmt(diff)}`;
+    }
+  }
+}
+
+async function submitJE() {
+  const date    = el('je-date').value;
+  const desc    = el('je-desc').value.trim();
+  const fileNo  = el('je-file-no').value.trim() || null;
+  const entryNo = el('je-edit-entry-no').value || null;
+  const errEl   = el('jeError');
+
+  // قراءة القيم من الـ inputs (لأن _jeLines قد لا يتحدث لحظياً مع كل keypress)
+  document.querySelectorAll('#je-lines-body tr').forEach((row, i) => {
+    const inputs = row.querySelectorAll('input');
+    if (inputs.length >= 4) {
+      if (_jeLines[i]) {
+        _jeLines[i].acc  = inputs[0].value.trim();
+        _jeLines[i].name = inputs[1].value.trim();
+        _jeLines[i].dr   = parseFloat(inputs[2].value) || 0;
+        _jeLines[i].cr   = parseFloat(inputs[3].value) || 0;
+      }
+    }
+  });
+
+  errEl.style.display = 'none';
+  if (!date) { showFieldErr('jeError','يرجى تحديد التاريخ'); return; }
+  if (!desc) { showFieldErr('jeError','يرجى كتابة بيان القيد'); return; }
+
+  const validLines = _jeLines.filter(l => l.acc || l.name || l.dr || l.cr);
+  if (validLines.length < 2) { showFieldErr('jeError','يجب أن يكون في القيد سطران على الأقل'); return; }
+
+  const totalDr = validLines.reduce((s,l)=>s+(+l.dr||0),0);
+  const totalCr = validLines.reduce((s,l)=>s+(+l.cr||0),0);
+  if (Math.abs(totalDr-totalCr) > 0.01) {
+    showFieldErr('jeError',`❌ القيد غير متوازن — مدين: ${fmt(totalDr)} · دائن: ${fmt(totalCr)} · فرق: ${fmt(Math.abs(totalDr-totalCr))}`);
+    return;
+  }
+  if (totalDr <= 0) { showFieldErr('jeError','المبالغ يجب أن تكون أكبر من صفر'); return; }
+
+  const btn = el('je-submit-btn');
+  btn.disabled = true; btn.textContent = '⏳ جاري الحفظ...';
+
+  try {
+    // لو تعديل: احذف القيود القديمة بنفس entry_no أولاً
+    if (entryNo) {
+      const delRes = await fetch(`${SB_URL}/rest/v1/journal_entries?entry_no=eq.${encodeURIComponent(entryNo)}&system_type=eq.${encodeURIComponent(state.system)}`, {
+        method: 'DELETE', headers: headers(),
+      });
+      if (!delRes.ok && delRes.status !== 404) throw new Error('فشل حذف القيد القديم');
+    }
+
+    // إنشاء رقم قيد جديد
+    const no = entryNo || await _jeNo(state.system);
+
+    // إدراج الأسطر
+    for (const l of validLines) {
+      const row = {
+        system_type:  state.system,
+        entry_no:     no,
+        entry_date:   date,
+        account_code: l.acc  || null,
+        account_name: l.name || null,
+        dr_amount:    +l.dr  || 0,
+        cr_amount:    +l.cr  || 0,
+        description:  desc,
+        ref_table:    'manual',
+        ref_id:       null,
+        file_no:      fileNo,
+        post_status:  'posted',
+        posted_at:    new Date().toISOString(),
+      };
+      const r = await fetch(`${SB_URL}/rest/v1/journal_entries`, {
+        method:'POST', headers:{...headers(),'Prefer':'return=minimal'}, body:JSON.stringify(row),
+      });
+      if (!r.ok) throw new Error(`فشل إدراج السطر: ${await r.text()}`);
+    }
+
+    await logAudit(entryNo?'UPDATE':'INSERT','journal_entries', fileNo, null, { entry_no:no, desc, totalDr, totalCr });
+    closeModal('jeModal');
+    toast(`✅ تم ${entryNo?'تعديل':'حفظ'} القيد ${no}`, 'ok');
+    await loadJEManager();
+  } catch(e) {
+    showFieldErr('jeError','خطأ: '+e.message);
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = entryNo ? '💾 حفظ التعديل' : '💾 حفظ القيد';
+  }
+}
+
+async function deleteJEEntry(entryNo) {
+  const group = jeMgrState.grouped[entryNo];
+  if (!group) return;
+  const isManual = group.isManual;
+  const warnTxt  = isManual
+    ? `هل تريد حذف القيد اليدوي "${entryNo}" نهائياً؟\nهذا الإجراء لا يمكن التراجع عنه.`
+    : `⚠️ تحذير: هذا قيد تلقائي مرتبط بعملية "${group.ref_table||'غير محدد'}".\n\nحذف القيد لن يحذف العملية الأصلية، لكنه سيؤثر على ميزان المراجعة ودفتر الأستاذ.\n\nهل أنت متأكد من الحذف؟`;
+
+  showConfirm(`حذف القيد ${entryNo}`, warnTxt, async () => {
+    try {
+      const delRes = await fetch(
+        `${SB_URL}/rest/v1/journal_entries?entry_no=eq.${encodeURIComponent(entryNo)}&system_type=eq.${encodeURIComponent(state.system)}`,
+        { method:'DELETE', headers: headers() }
+      );
+      if (!delRes.ok && delRes.status !== 404) throw new Error('فشل الحذف: '+await delRes.text());
+      await logAudit('DELETE','journal_entries', group.file_no||null, { entry_no:entryNo, desc:group.desc, totalDr:group.totalDr }, null);
+      toast(`✅ تم حذف القيد ${entryNo}`,'ok');
+      await loadJEManager();
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
+
+// ════════════════════════════════════════════════════════
+// HISTORICAL DATA MIGRATION — ترحيل البيانات التاريخية
+// ════════════════════════════════════════════════════════
+
+function openMigrationModal() {
+  const inp = el('mig-confirm-input');
+  if (inp) inp.value = '';
+  if (el('mig-pre-run'))  el('mig-pre-run').style.display  = 'block';
+  if (el('mig-progress')) el('mig-progress').style.display = 'none';
+  if (el('mig-footer'))   el('mig-footer').style.display   = 'flex';
+  if (el('mig-pre-error')) el('mig-pre-error').style.display = 'none';
+  if (el('mig-system-label')) el('mig-system-label').textContent = state.system;
+  if (el('mig-close-btn'))    el('mig-close-btn').style.display = 'inline-flex';
+  openModal('migrationModal');
+}
+
+function _migLog(msg, type='info') {
+  const log = el('mig-log');
+  if (!log) return;
+  const color = type==='ok'?'var(--green)':type==='err'?'var(--red)':type==='warn'?'var(--accent)':'var(--text2)';
+  log.innerHTML += `<div style="color:${color}">${msg}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function _migProgress(pct, label) {
+  if (el('mig-progress-bar'))  el('mig-progress-bar').style.width = pct + '%';
+  if (el('mig-step-label'))    el('mig-step-label').textContent   = label;
+}
+
+async function runMigration() {
+  const confirm = el('mig-confirm-input')?.value?.trim();
+  if (confirm !== 'MIGRATE') {
+    if (el('mig-pre-error')) { el('mig-pre-error').style.display='block'; el('mig-pre-error').textContent='اكتب MIGRATE بالأحرف الكبيرة للتأكيد'; }
+    return;
+  }
+  // Switch UI
+  if (el('mig-pre-run'))    el('mig-pre-run').style.display    = 'none';
+  if (el('mig-progress'))   el('mig-progress').style.display   = 'block';
+  if (el('mig-footer'))     el('mig-footer').style.display     = 'none';
+  if (el('mig-close-btn'))  el('mig-close-btn').style.display  = 'none';
+  if (el('mig-status-text')) el('mig-status-text').textContent = '⚡ جاري الترحيل — لا تغلق النافذة...';
+  if (el('mig-log')) el('mig-log').innerHTML = '';
+
+  const sys = state.system;
+  let created = 0, skipped = 0, errors = 0;
+
+  try {
+    // ── الخطوة 1: حذف كل القيود التلقائية ──
+    _migProgress(5, 'الخطوة 1/8: حذف القيود التلقائية القديمة...');
+    _migLog(`🗑 حذف القيود التلقائية لنظام ${sys}...`);
+    const delRes = await fetch(
+      `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&ref_table=neq.manual&ref_table=not.is.null`,
+      { method:'DELETE', headers: headers() }
+    );
+    if (!delRes.ok && delRes.status !== 404) throw new Error('فشل حذف القيود القديمة: '+await delRes.text());
+    // حذف كذلك القيود بدون ref_table (قديمة)
+    const delRes2 = await fetch(
+      `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&ref_table=is.null&entry_no=not.like.MAN*`,
+      { method:'DELETE', headers: headers() }
+    );
+    _migLog('✅ تم مسح القيود التلقائية القديمة', 'ok');
+
+    // جلب كل البيانات
+    _migProgress(10, 'الخطوة 2/8: جلب بيانات الصفقات...');
+    const [deals, payments, expenses, sales, collections, payouts, opexItems] = await Promise.all([
+      apiGetAll('purchase_orders',   { select:'*', system_type:`eq.${sys}` }),
+      apiGetAll('payments',          { select:'*', system_type:`eq.${sys}` }),
+      apiGetAll('expenses',          { select:'*', system_type:`eq.${sys}` }),
+      apiGetAll('sales',             { select:'*', system_type:`eq.${sys}` }),
+      apiGetAll('collections',       { select:'*', system_type:`eq.${sys}` }),
+      apiGetAll('partner_payouts',   { select:'*', system_type:`eq.${sys}` }),
+      apiGetAll('operating_expenses',{ select:'*', system_type:`eq.${sys}` }),
+    ]);
+
+    const total = (deals?.length||0)+(payments?.length||0)+(expenses?.length||0)+
+                  (sales?.length||0)+(collections?.length||0)+(payouts?.length||0)+(opexItems?.length||0);
+    _migLog(`📊 إجمالي السجلات: ${total} سجل`);
+    let done = 0;
+    const tick = () => { done++; _migProgress(10+Math.round(done/total*85), `${done}/${total} سجل`); };
+
+    // مساعد ترحيل آمن
+    const safe = async (label, fn) => {
+      try { await fn(); created++; tick(); }
+      catch(e) { errors++; tick(); _migLog(`⚠️ ${label}: ${e.message}`, 'warn'); }
+    };
+
+    // ── الخطوة 3: صفقات الشراء ──
+    _migProgress(12, 'الخطوة 3/8: قيود الشراء...');
+    _migLog(`📋 ${(deals||[]).filter(isPosted).length} صفقة شراء...`);
+    for (const d of (deals||[]).filter(isPosted)) {
+      if (!d.total_purchase||!+d.total_purchase) { skipped++; tick(); continue; }
+      await safe(`شراء ${d.file_no}`, () => je_purchase({ sys, date:d.po_date||today(), amount:+d.total_purchase, fileNo:d.file_no, supplier:d.supplier||'' }));
+    }
+
+    // ── الخطوة 4: الدفعات ──
+    _migProgress(24, 'الخطوة 4/8: قيود الدفعات...');
+    _migLog(`💳 ${(payments||[]).filter(isPosted).length} دفعة مورد...`);
+    for (const p of (payments||[]).filter(isPosted)) {
+      if (!p.amount||!+p.amount) { skipped++; tick(); continue; }
+      await safe(`دفعة ${p.pay_id||p.id}`, () => je_payment({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no, supplierName:p.supplier||'', payerName:p.payer||'', method:p.pay_method||'تحويل بنكي' }));
+    }
+
+    // ── الخطوة 5: المبيعات ──
+    _migProgress(38, 'الخطوة 5/8: قيود المبيعات...');
+    // تجميع بالفاتورة (inv_no) — قيد واحد لكل فاتورة
+    const salesByInv = {};
+    (sales||[]).filter(isPosted).forEach(s => {
+      const k = `${s.file_no}__${s.inv_no||s.id}`;
+      if (!salesByInv[k]) salesByInv[k] = { ...s, total:0 };
+      salesByInv[k].total += +s.sale_price||0;
+    });
+    _migLog(`🤝 ${Object.keys(salesByInv).length} فاتورة بيع...`);
+    for (const s of Object.values(salesByInv)) {
+      if (!s.total) { skipped++; done++; continue; }
+      await safe(`بيع ${s.inv_no||s.id}`, () => je_sale({ sys, date:s.sale_date||today(), amount:s.total, cost:0, fileNo:s.file_no, customer:s.customer||'', invNo:s.inv_no||'' }));
+    }
+
+    // ── الخطوة 6: التحصيلات ──
+    _migProgress(54, 'الخطوة 6/8: قيود التحصيلات المدفوعة...');
+    const paidCols = (collections||[]).filter(c => isPosted(c) && c.paid_date);
+    _migLog(`💰 ${paidCols.length} تحصيل مدفوع...`);
+    for (const c of paidCols) {
+      if (!c.amount||!+c.amount) { skipped++; tick(); continue; }
+      await safe(`تحصيل ${c.ref_no||c.id}`, () => je_collection({ sys, date:c.paid_date, amount:+c.amount, fileNo:c.file_no, customer:c.customer||'', invNo:c.inv_no||'', method:c.pay_method||'تحويل بنكي' }));
+    }
+    const pendingCount = (collections||[]).filter(c=>isPosted(c)&&!c.paid_date).length;
+    if (pendingCount>0) _migLog(`ℹ️ ${pendingCount} تحصيل منتظر — سيُضاف قيده عند الدفع`, 'warn');
+
+    // ── الخطوة 7: المصاريف ──
+    _migProgress(68, 'الخطوة 7/8: قيود المصاريف...');
+    _migLog(`💸 ${(expenses||[]).filter(isPosted).length} مصروف + ${(payouts||[]).filter(isPosted).length} صرف شريك...`);
+    for (const e of (expenses||[]).filter(isPosted)) {
+      if (!e.amount||!+e.amount) { skipped++; tick(); continue; }
+      await safe(`مصروف ${e.ref_no||e.id}`, () => je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no, desc:e.description||e.category||'مصروف', expType:e.exp_type||e.category||'أخرى', method:e.pay_method||'نقد' }));
+    }
+    for (const p of (payouts||[]).filter(isPosted)) {
+      if (!p.amount||!+p.amount) { skipped++; tick(); continue; }
+      await safe(`صرف ${p.pay_id||p.id}`, () => je_payout({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no, partner:p.partner||'', method:p.pay_method||'نقد' }));
+    }
+
+    // ── الخطوة 8: المصاريف التشغيلية ──
+    _migProgress(84, 'الخطوة 8/8: قيود المصاريف التشغيلية...');
+    _migLog(`💼 ${(opexItems||[]).length} مصروف تشغيلي...`);
+    for (const o of (opexItems||[])) {
+      if (!o.amount||!+o.amount) { skipped++; tick(); continue; }
+      await safe(`OPEX ${o.ref_no||o.id}`, () => je_opex({ sys, date:o.exp_date||today(), amount:+o.amount, expType:o.exp_type||'أخرى', desc:o.description||'', method:o.pay_method||'نقد', refNo:o.ref_no||null }));
+    }
+
+    // ── النتيجة النهائية ──
+    _migProgress(100, 'اكتمل الترحيل ✅');
+    if (el('mig-status-text')) el('mig-status-text').textContent = `✅ اكتمل الترحيل — ${created} قيد جديد`;
+    _migLog(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    _migLog(`✅ تم إنشاء: ${created} قيد`, 'ok');
+    if (skipped>0) _migLog(`⏭ تجاهل:    ${skipped} (مبلغ صفر)`, 'warn');
+    if (errors>0)  _migLog(`❌ أخطاء:    ${errors}`, 'err');
+    _migLog(`━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    _migLog(`📊 اذهب إلى: دفتر القيود أو ميزان المراجعة للتحقق`, 'ok');
+
+    // زر إغلاق + تحديث
+    if (el('mig-footer')) el('mig-footer').innerHTML =
+      `<button class="btn btn-primary" onclick="closeModal('migrationModal');loadJEManager();invalidateCache()">✅ إغلاق وتحديث</button>`;
+    if (el('mig-footer')) el('mig-footer').style.display = 'flex';
+    if (el('mig-close-btn')) el('mig-close-btn').style.display = 'inline-flex';
+    invalidateCache();
+    await logAudit('MIGRATION','journal_entries',null,null,{ sys, created, skipped, errors, total });
+
+  } catch(e) {
+    _migProgress(100, '❌ حدث خطأ أثناء الترحيل');
+    _migLog(`❌ خطأ عام: ${e.message}`, 'err');
+    if (el('mig-status-text')) el('mig-status-text').textContent = '❌ توقف الترحيل بسبب خطأ';
+    if (el('mig-footer')) el('mig-footer').innerHTML =
+      `<button class="btn btn-secondary" onclick="closeModal('migrationModal')">إغلاق</button>
+       <button class="btn btn-primary" onclick="runMigration()">🔄 إعادة المحاولة</button>`;
+    if (el('mig-footer')) el('mig-footer').style.display = 'flex';
+    console.error('Migration error:', e);
+  }
+}
+
 let _pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
@@ -12446,29 +13146,44 @@ async function _jeNo(sys) {
 }
 
 async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}) {
+  if (!lines || !lines.length) { console.warn('postDoubleEntry: no lines'); return; }
   const dr = lines.reduce((s,l)=>s+(+l.dr||0),0);
   const cr = lines.reduce((s,l)=>s+(+l.cr||0),0);
-  if (Math.abs(dr-cr)>0.01) { console.warn(`قيد غير متوازن Dr=${dr} Cr=${cr} — ${desc}`); return; }
-  try {
-    const no = await _jeNo(sys);
-    for (const l of lines) {
-      await apiPost('journal_entries',{
-        system_type: sys,
-        entry_no:    no,
-        entry_date:  date || today(),
-        account_code: l.acc,
-        account_name: l.name,
-        dr_amount:   +l.dr||0,
-        cr_amount:   +l.cr||0,
-        description: l.desc || desc,
-        ref_table:   refTable||null,
-        ref_id:      refId||null,
-        file_no:     fileNo||null,
-        post_status: 'posted',
-        posted_at:   new Date().toISOString(),
-      });
+  // التحقق من التوازن قبل الترحيل
+  if (Math.abs(dr-cr)>0.01) {
+    const msg = `قيد غير متوازن: مدين=${dr.toFixed(2)} دائن=${cr.toFixed(2)} — ${desc}`;
+    console.error(msg);
+    throw new Error(msg); // نرفع خطأ بدل الصمت
+  }
+  const no = await _jeNo(sys);
+  // نسجّل كل أسطر القيد في batch
+  const inserts = lines.map(l => ({
+    system_type:  sys,
+    entry_no:     no,
+    entry_date:   date || today(),
+    account_code: l.acc,
+    account_name: l.name,
+    dr_amount:    +l.dr || 0,
+    cr_amount:    +l.cr || 0,
+    description:  l.desc || desc,
+    ref_table:    refTable || null,
+    ref_id:       refId    || null,
+    file_no:      fileNo   || null,
+    post_status:  'posted',
+    posted_at:    new Date().toISOString(),
+  }));
+  // إدراج كل الأسطر — لو فشل واحد يُرجع خطأ واضح
+  for (const row of inserts) {
+    const res = await fetch(`${SB_URL}/rest/v1/journal_entries`, {
+      method: 'POST',
+      headers: { ...headers(), 'Prefer': 'return=minimal' },
+      body: JSON.stringify(row),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(()=>'');
+      throw new Error(`فشل تسجيل القيد "${desc}" — ${res.status}: ${body}`);
     }
-  } catch(e) { console.warn('postDoubleEntry:', e.message); }
+  }
 }
 
 // شراء: مخزون Dr / مورد Cr
@@ -12538,6 +13253,23 @@ async function je_payout({sys,date,amount,fileNo,partner,method}) {
   await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
     {acc:'2400',  name:`شريك: ${partner}`, dr:amount, cr:0     },
     {acc:cashAcc, name:cashNm,             dr:0,      cr:amount},
+  ]});
+}
+
+// مصروف تشغيلي: مصروف Dr / نقد Cr
+async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
+  if(!amount||amount<=0) return;
+  const OPEX_ACC_MAP = {
+    'رواتب':'6100', 'إيجارات':'6200', 'عمولات':'6300',
+    'نظافة':'6400', 'ضيافة':'6500',   'مصروفات حكومية':'6600', 'أخرى':'6700',
+  };
+  const eAcc    = OPEX_ACC_MAP[expType] || '6700';
+  const cashAcc = method==='نقد'?'1110':'1120';
+  const cashNm  = method==='نقد'?'النقد':'البنك';
+  await postDoubleEntry({sys,date,fileNo:null,refTable:'operating_expenses',refId:refNo||null,
+    desc:`مصروف تشغيلي: ${desc||expType}`,lines:[
+    {acc:eAcc,    name:`مصروف تشغيلي — ${expType||'أخرى'}`, dr:amount, cr:0     },
+    {acc:cashAcc, name:cashNm,                               dr:0,      cr:amount},
   ]});
 }
 

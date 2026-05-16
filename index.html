@@ -199,6 +199,9 @@
           <div class="nav-item" id="nav-ledger" onclick="showContacts()">
             <span class="ni-icon">📖</span><span>دفتر الأستاذ</span>
           </div>
+          <div class="nav-item" id="nav-je-manager" onclick="showJEManager()">
+            <span class="ni-icon">📝</span><span>دفتر القيود</span>
+          </div>
           <div class="nav-item" id="nav-trial" onclick="showTrialBalance()">
             <span class="ni-icon">⚖️</span><span>ميزان المراجعة</span>
           </div>
@@ -1293,6 +1296,66 @@
         </div>
 
       </div><!-- /reviewView -->
+
+      <!-- ════ JOURNAL ENTRIES MANAGER ════ -->
+      <div id="jeManagerView" style="display:none">
+
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <div>
+            <div style="font-size:16px;font-weight:900">📝 دفتر القيود</div>
+            <div id="je-mgr-sub" style="font-size:12px;color:var(--text2);margin-top:2px">القيود المحاسبية المزدوجة</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="openNewJEModal()">➕ قيد يدوي جديد</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadJEManager()">🔄 تحديث</button>
+            <button class="btn btn-sm" onclick="openMigrationModal()" style="background:var(--accent-dim);border:1px solid var(--accent);color:var(--accent);font-weight:700">⚡ ترحيل البيانات التاريخية</button>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button class="dash-period-btn active" id="je-period-month"    onclick="setJEMgrPeriod('month')">هذا الشهر</button>
+            <button class="dash-period-btn" id="je-period-lastmonth" onclick="setJEMgrPeriod('lastmonth')">الماضي</button>
+            <button class="dash-period-btn" id="je-period-year"     onclick="setJEMgrPeriod('year')">هذا العام</button>
+            <button class="dash-period-btn" id="je-period-all"      onclick="setJEMgrPeriod('all')">الكل</button>
+            <button class="dash-period-btn" id="je-period-custom"   onclick="setJEMgrPeriod('custom')">مخصص</button>
+          </div>
+          <div id="je-custom-dates" style="display:none;align-items:center;gap:6px">
+            <input type="date" id="je-from" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <span style="color:var(--text2)">—</span>
+            <input type="date" id="je-to"   style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <button class="btn btn-primary btn-sm" onclick="loadJEManager()">🔍</button>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-right:auto">
+            <select id="je-filter-source" onchange="renderJEManagerTable()" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+              <option value="">كل المصادر</option>
+              <option value="manual">يدوي فقط</option>
+              <option value="auto">تلقائي فقط</option>
+              <option value="purchase_orders">شراء</option>
+              <option value="sales">مبيعات</option>
+              <option value="collections">تحصيلات</option>
+              <option value="payments">دفعات</option>
+              <option value="expenses">مصاريف</option>
+              <option value="partner_payouts">صرف شركاء</option>
+              <option value="operating_expenses">مصاريف تشغيلية</option>
+            </select>
+            <input type="text" id="je-filter-search" placeholder="🔍 قيد، حساب، ملف..." oninput="renderJEManagerTable()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:160px">
+          </div>
+        </div>
+
+        <!-- KPIs -->
+        <div id="je-mgr-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px"></div>
+
+        <!-- Balance Check Banner -->
+        <div id="je-balance-banner" style="margin-bottom:10px"></div>
+
+        <!-- Table -->
+        <div id="je-mgr-table"><div class="loading"><div class="spinner"></div><br>جاري التحميل...</div></div>
+
+      </div><!-- /jeManagerView -->
 
 </div><!-- /content-area -->
   </div><!-- /main-area -->
@@ -2742,6 +2805,111 @@
   </div>
 </div>
 
+
+<!-- MIGRATION MODAL -->
+<div class="modal-overlay" id="migrationModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--accent-dim)">⚡</div>
+      <h3>ترحيل البيانات التاريخية</h3>
+      <button class="modal-close" id="mig-close-btn" onclick="closeModal('migrationModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="mig-pre-run">
+        <div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:12px 14px;font-size:12px;margin-bottom:14px;line-height:1.7">
+          <div style="font-weight:700;margin-bottom:6px;font-size:13px">⚡ ماذا يفعل هذا الإجراء؟</div>
+          <div>✅ يحذف كل القيود التلقائية القديمة (غير اليدوية) للنظام الحالي</div>
+          <div>✅ يُعيد توليد قيود مزدوجة لكل: صفقات الشراء — المبيعات — التحصيلات — الدفعات — المصاريف — صرف الشركاء — المصاريف التشغيلية</div>
+          <div>✅ يحتفظ بكل القيود اليدوية التي أنشأتها سابقاً</div>
+          <div style="color:var(--red);margin-top:6px;font-weight:700">⚠️ القيود اليدوية ستبقى — لكن كل القيود التلقائية ستُعاد من الصفر</div>
+        </div>
+        <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px 14px;font-size:12px;margin-bottom:14px">
+          🔒 النظام الحالي: <strong id="mig-system-label">—</strong>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px">تأكيد: اكتب <strong>MIGRATE</strong> للمتابعة</div>
+        <input type="text" id="mig-confirm-input" placeholder="MIGRATE" autocomplete="off"
+          style="width:100%;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;color:var(--text);font-family:var(--mono);font-size:13px;margin-bottom:4px">
+        <div id="mig-pre-error" class="alert alert-err" style="display:none"></div>
+      </div>
+      <!-- Progress section -->
+      <div id="mig-progress" style="display:none">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px" id="mig-status-text">جاري الترحيل...</div>
+        <div style="height:10px;background:var(--card2);border-radius:10px;overflow:hidden;margin-bottom:8px">
+          <div id="mig-progress-bar" style="height:100%;background:var(--accent);border-radius:10px;transition:width .3s;width:0%"></div>
+        </div>
+        <div id="mig-step-label" style="font-size:11px;color:var(--text2);margin-bottom:12px">—</div>
+        <div id="mig-log" style="background:var(--card2);border-radius:var(--radius-sm);padding:10px;font-size:11px;max-height:200px;overflow-y:auto;font-family:var(--mono);line-height:1.8"></div>
+      </div>
+    </div>
+    <div class="modal-footer" id="mig-footer">
+      <button class="btn btn-secondary" onclick="closeModal('migrationModal')">إلغاء</button>
+      <button class="btn btn-primary" id="mig-run-btn" onclick="runMigration()" style="background:var(--accent);border-color:var(--accent)">⚡ ابدأ الترحيل</button>
+    </div>
+  </div>
+</div>
+
+<!-- JOURNAL ENTRY MODAL -->
+<div class="modal-overlay" id="jeModal">
+  <div class="modal" style="max-width:700px;width:95%">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--blue-dim)">📝</div>
+      <h3 id="je-modal-title">قيد محاسبي جديد</h3>
+      <button class="modal-close" onclick="closeModal('jeModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="je-edit-entry-no">
+      <!-- Header fields -->
+      <div class="form-row" style="margin-bottom:10px">
+        <div class="field">
+          <label>تاريخ القيد *</label>
+          <input type="date" id="je-date">
+        </div>
+        <div class="field">
+          <label>رقم الملف (اختياري)</label>
+          <input type="text" id="je-file-no" placeholder="مثال: BOX-001">
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label>بيان القيد *</label>
+        <input type="text" id="je-desc" placeholder="وصف القيد المحاسبي...">
+      </div>
+
+      <!-- Lines table -->
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px;color:var(--text2)">أسطر القيد — يجب أن يتوازن المدين = الدائن</div>
+      <div style="overflow-x:auto;margin-bottom:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px" id="je-lines-table">
+          <thead>
+            <tr style="background:var(--card2)">
+              <th style="padding:7px 10px;text-align:right;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">كود الحساب</th>
+              <th style="padding:7px 10px;text-align:right;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">اسم الحساب</th>
+              <th style="padding:7px 10px;text-align:left;font-size:11px;color:var(--green);border-bottom:1px solid var(--border)">مدين Dr</th>
+              <th style="padding:7px 10px;text-align:left;font-size:11px;color:var(--red);border-bottom:1px solid var(--border)">دائن Cr</th>
+              <th style="padding:7px 10px;border-bottom:1px solid var(--border)"></th>
+            </tr>
+          </thead>
+          <tbody id="je-lines-body"></tbody>
+          <tfoot>
+            <tr style="background:var(--card2)">
+              <td colspan="2" style="padding:7px 10px;font-size:12px;font-weight:700">الإجمالي</td>
+              <td style="padding:7px 10px;text-align:left;font-weight:700;color:var(--green);font-family:var(--mono)" id="je-total-dr">0.00</td>
+              <td style="padding:7px 10px;text-align:left;font-weight:700;color:var(--red);font-family:var(--mono)" id="je-total-cr">0.00</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="addJELine()" style="margin-bottom:10px">➕ إضافة سطر</button>
+
+      <!-- Balance indicator -->
+      <div id="je-balance-indicator" style="padding:8px 12px;border-radius:var(--radius-sm);font-size:12px;font-weight:700;margin-bottom:8px;display:none"></div>
+      <div id="jeError" class="alert alert-err" style="display:none"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('jeModal')">إلغاء</button>
+      <button class="btn btn-primary" id="je-submit-btn" onclick="submitJE()">💾 حفظ القيد</button>
+    </div>
+  </div>
+</div>
 
 <!-- PRINT OVERLAY -->
 <div id="printOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:#fff;overflow-y:auto"><div id="printOverlayToolbar" style="position:sticky;top:0;background:#1a1a1a;display:flex;align-items:center;gap:10px;padding:10px 20px"><span style="color:#fff;font-family:Cairo,sans-serif;font-size:14px;font-weight:700;flex:1" id="printOverlayTitle">معاينة الطباعة</span><button onclick="window.print()" style="background:#e6930a;color:#000;border:none;padding:8px 20px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;font-weight:700;cursor:pointer">🖨️ طباعة</button><button onclick="closePrintOverlay()" style="background:#444;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;cursor:pointer">✕ إغلاق</button></div><div id="printOverlayBody" style="padding:24px;max-width:1000px;margin:0 auto"></div></div>
