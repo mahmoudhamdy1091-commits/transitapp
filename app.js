@@ -823,13 +823,17 @@ async function loadDashboard() {
     };
 
     // ── KPIs ──
-    const totCollections = (_ddState.data.periodCollections||[]).reduce((s,c)=>s+(+c.amount||0),0);
-    const totFullCost    = totPurchase + totExp;
+    // فلتر التحصيلات: فقط المقبوض فعلاً (paid_date موجود) — لا نعرض الفواتير غير المدفوعة كتحصيل
+    const paidCollections   = (_ddState.data.periodCollections||[]).filter(c => isPosted(c) && c.paid_date);
+    const pendingCollections = (_ddState.data.periodCollections||[]).filter(c => isPosted(c) && !c.paid_date);
+    const totCollections    = paidCollections.reduce((s,c)=>s+(+c.amount||0),0);
+    const totPending        = pendingCollections.reduce((s,c)=>s+(+c.amount||0),0);
+    const totFullCost       = totPurchase + totExp;
 
     const setKpi = (id, val, color) => { const e = el(id); if(!e) return; animateCount(e, String(val), color); };
     setKpi('kpi-purchase',    fmt(totPurchase),    'var(--blue)');
     setKpi('kpi-sales',       fmt(totSales),       'var(--green)');
-    setKpi('kpi-collections', fmt(totCollections), 'var(--blue)');
+    setKpi('kpi-collections', fmt(totCollections), totCollections>0?'var(--green)':'var(--text2)');
     setKpi('kpi-month-exp',   fmt(totExp),         totExp>0?'var(--red)':'var(--text2)');
     setKpi('kpi-fullcost',    fmt(totFullCost),     'var(--accent)');
     setKpi('kpi-profit',      fmt(profit),          profit>=0?'var(--green)':'var(--red)');
@@ -837,7 +841,11 @@ async function loadDashboard() {
 
     if(el('kpi-purchase-sub'))    el('kpi-purchase-sub').textContent    = `${periodPurchaseDeals.length} صفقة`;
     if(el('kpi-sales-sub'))       el('kpi-sales-sub').textContent       = `${periodSales.length} فاتورة`;
-    if(el('kpi-collections-sub')) el('kpi-collections-sub').textContent = `${(_ddState.data.periodCollections||[]).length} قيد`;
+    // التحصيلات: عرض المقبوض فعلاً + المنتظر
+    if(el('kpi-collections-sub')) el('kpi-collections-sub').textContent =
+      paidCollections.length > 0
+        ? `${paidCollections.length} مقبوض${totPending>0?' · منتظر '+fmt(totPending):''}`
+        : totPending > 0 ? `⏳ كل التحصيلات منتظرة` : `—`;
     if(el('kpi-month-exp-sub'))   el('kpi-month-exp-sub').textContent   = `${periodExp.length} بند`;
     if(el('kpi-fullcost-sub'))    el('kpi-fullcost-sub').textContent    = `شراء ${fmt(totPurchase)} + مصاريف ${fmt(totExp)}`;
     if(el('kpi-profit-sub'))      el('kpi-profit-sub').textContent      = `هامش ${margin}%`;
@@ -1342,7 +1350,9 @@ async function loadSummaryTab(fn, sys) {
     const totalPaid      = postedPay.reduce((s,p)=>s+(+p.amount||0),0);
     const totalExp       = postedExp.reduce((s,e)=>s+(+e.amount||0),0);
     const totalSales     = postedSal.reduce((s,s2)=>s+(+s2.sale_price||0),0);
-    const totalCollected = postedCol.reduce((s,c)=>s+(+c.amount||0),0);
+    // فقط التحصيلات المقبوضة فعلاً (paid_date موجود) — الفواتير المنتظرة لا تُعدّ محصّلة
+    const totalCollected = postedCol.filter(c => c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
+    const totalPending   = postedCol.filter(c => !c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
     const totalPayouts   = postedPout.reduce((s,p)=>s+(+p.amount||0),0);
     const fullCost       = totalPurchase + totalExp;
     const profit         = totalSales - fullCost;
@@ -1378,7 +1388,7 @@ async function loadSummaryTab(fn, sys) {
         <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
           <div style="font-size:11px;color:var(--text2);margin-bottom:4px">غير محصّل</div>
           <div style="font-size:20px;font-weight:700;color:${uncollected>0?'var(--accent)':'var(--green)'}">${fmt(uncollected)}</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">من العملاء</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">${totalPending>0?`⏳ ${fmt(totalPending)} منتظر`:'من العملاء'}</div>
         </div>
       </div>
 
@@ -1393,8 +1403,9 @@ async function loadSummaryTab(fn, sys) {
           ${summRow('التكلفة الكاملة','',fmt(fullCost),true)}
           <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
           ${summRow('المبيعات','text-green',fmt(totalSales))}
-          ${summRow('المحصّل','text-green',fmt(totalCollected))}
-          ${summRow('متبقي تحصيل',uncollected>0?'text-amber':'text-green',fmt(uncollected))}
+          ${summRow('مقبوض فعلاً','text-green',fmt(totalCollected))}
+          ${totalPending > 0 ? summRow('⏳ منتظر تحصيل','text-amber',fmt(totalPending)) : ''}
+          ${summRow('متبقي غير محصّل',uncollected>0?'text-amber':'text-green',fmt(uncollected))}
           <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
           <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:14px;font-weight:700">
             <span>الربح الصافي</span>
@@ -1961,20 +1972,37 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
 
 async function loadCollectionsTab(fn, sys) {
   try {
-    const data = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.desc' });
+    const data = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'due_date.desc' });
     if (!data?.length) { el('collectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
-    const total = data.reduce((s,c)=>s+(+c.amount||0),0);
-    const csvRows = data.map(c=>[c.ref_no||'—', c.inv_no||'—', c.customer||'—', c.vin||'—', +c.amount||0, c.pay_method||'—', c.due_date||'—', c.paid_date||'—']);
-    const csvHeaders = ['رقم التحصيل','رقم الفاتورة','العميل','الشاصي','المبلغ','طريقة الدفع','تاريخ الاستحقاق','تاريخ الدفع'];
+
+    // فصل المقبوض عن المنتظر
+    const paidData    = data.filter(c => c.paid_date);
+    const pendingData = data.filter(c => !c.paid_date);
+    const totalInvoiced = data.reduce((s,c)=>s+(+c.amount||0),0);
+    const totalPaid     = paidData.reduce((s,c)=>s+(+c.amount||0),0);
+    const totalPending  = pendingData.reduce((s,c)=>s+(+c.amount||0),0);
+
+    const csvRows = data.map(c=>[c.ref_no||'—', c.inv_no||'—', c.customer||'—', c.vin||'—', +c.amount||0, c.pay_method||'—', c.due_date||'—', c.paid_date||'—', c.paid_date?'محصّل':'مستحق']);
+    const csvHeaders = ['رقم التحصيل','رقم الفاتورة','العميل','الشاصي','المبلغ','طريقة الدفع','تاريخ الاستحقاق','تاريخ الدفع','الحالة'];
+
+    const statusBadge = c => c.paid_date
+      ? `<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">✅ محصّل</span>`
+      : `<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">⏳ مستحق</span>`;
+
     el('collectionsTable').innerHTML = `
       ${exportBtns(
         `exportCSV(${JSON.stringify(csvHeaders)},${JSON.stringify(csvRows)},'تحصيلات_${fn}')`,
         `printSection('التحصيلات','ملف: ${fn}',document.querySelector('#tab-5 table')?.outerHTML||'')`
       )}
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <div class="j-kpi" style="border-right:3px solid var(--blue)"><div class="j-kpi-label">📄 إجمالي الفواتير</div><div class="j-kpi-val text-blue">${fmt(totalInvoiced)}</div></div>
+        <div class="j-kpi" style="border-right:3px solid var(--green)"><div class="j-kpi-label">✅ مقبوض فعلاً</div><div class="j-kpi-val text-green">${fmt(totalPaid)}</div></div>
+        <div class="j-kpi" style="border-right:3px solid var(--accent)"><div class="j-kpi-label">⏳ منتظر تحصيل</div><div class="j-kpi-val" style="color:${totalPending>0?'var(--accent)':'var(--text2)'}">${fmt(totalPending)}</div></div>
+      </div>
       <table class="data-table">
         <thead><tr>
           <th>رقم التحصيل</th><th>رقم الفاتورة</th><th>العميل</th><th>الشاصي</th>
-          <th>المبلغ</th><th>طريقة الدفع</th><th>الاستحقاق</th><th>تاريخ الدفع</th><th></th>
+          <th>المبلغ</th><th>طريقة الدفع</th><th>الاستحقاق</th><th>تاريخ الدفع</th><th>الحالة</th><th></th>
         </tr></thead>
         <tbody>
           ${data.map(c=>`<tr>
@@ -1982,16 +2010,21 @@ async function loadCollectionsTab(fn, sys) {
             <td class="mono">${c.inv_no||'—'}</td>
             <td>${c.customer||'—'}</td>
             <td class="mono">${c.vin||'—'}</td>
-            <td class="mono text-green">${fmt(c.amount)}</td>
+            <td class="mono text-blue" style="font-weight:700">${fmt(c.amount)}</td>
             <td>${c.pay_method||'—'}</td>
             <td class="mono">${fmtDate(c.due_date)}</td>
-            <td class="mono">${fmtDate(c.paid_date)}</td>
+            <td class="mono">${c.paid_date ? fmtDate(c.paid_date) : '—'}</td>
+            <td>${statusBadge(c)}</td>
             <td><button class="btn btn-secondary btn-sm" onclick="openEditCollectionModal(${c.id})">✏️</button></td>
           </tr>`).join('')}
-          <tr style="background:var(--surface)">
-            <td colspan="4"><strong>الإجمالي</strong></td>
-            <td class="mono text-green"><strong>${fmt(total)}</strong></td>
-            <td colspan="3"></td>
+          <tr style="background:var(--card2);font-weight:700">
+            <td colspan="4">الإجمالي</td>
+            <td class="mono text-blue"><strong>${fmt(totalInvoiced)}</strong></td>
+            <td colspan="4" style="font-size:11px;color:var(--text2)">
+              محصّل: <span style="color:var(--green)">${fmt(totalPaid)}</span>
+              ${totalPending>0?` · منتظر: <span style="color:var(--accent)">${fmt(totalPending)}</span>`:''}
+            </td>
+            <td></td>
           </tr>
         </tbody>
       </table>`;
@@ -6442,7 +6475,7 @@ async function deleteContact(id, name) {
 // hideAllViews helper
 // ════════════════════════════════════════
 function hideAllViews() {
-  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView']
+  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView','reviewView']
     .forEach(id => {
       const e = el(id);
       if (e) {
@@ -11765,6 +11798,617 @@ async function checkDbStructure() {
       </div>
     </div>`;
 }
+// ════════════════════════════════════════════════════════
+// REVIEW MODULE — مراجعة الحسابات الشاملة
+// ════════════════════════════════════════════════════════
+
+const reviewState = {
+  period: 'month', from: null, to: null,
+  checkResults: [], activeTab: 0,
+};
+
+function showReview() {
+  hideAllViews();
+  el('reviewView').style.display = 'block';
+  el('topBarTitle').textContent  = '🔍 مراجعة الحسابات';
+  el('topBarSub').textContent    = `نظام ${state.system}`;
+  navActive('nav-review');
+  sessionStorage.setItem('tm_last_view','review');
+  setReviewPeriod('month');
+  renderReviewChecklist();
+}
+
+function setReviewPeriod(period) {
+  reviewState.period = period;
+  document.querySelectorAll('[id^="rvperiod-"]').forEach(b => b.classList.remove('active'));
+  el('rvperiod-'+period)?.classList.add('active');
+  const customWrap = el('rvCustomDateWrap');
+  if (period === 'custom') { if (customWrap) customWrap.style.display='flex'; return; }
+  if (customWrap) customWrap.style.display = 'none';
+  const pad = n => String(n).padStart(2,'0');
+  const now = new Date(), yr = now.getFullYear();
+  let from, to;
+  if (period === 'month') {
+    from = `${yr}-${pad(now.getMonth()+1)}-01`;
+    const last = new Date(yr, now.getMonth()+1, 0);
+    to   = `${last.getFullYear()}-${pad(last.getMonth()+1)}-${pad(last.getDate())}`;
+  } else if (period === 'lastmonth') {
+    const lm = new Date(yr, now.getMonth()-1, 1), lme = new Date(yr, now.getMonth(), 0);
+    from = `${lm.getFullYear()}-${pad(lm.getMonth()+1)}-01`;
+    to   = `${lme.getFullYear()}-${pad(lme.getMonth()+1)}-${pad(lme.getDate())}`;
+  } else if (period === 'year')     { from=`${yr}-01-01`; to=`${yr}-12-31`; }
+  else if (period === 'lastyear')   { from=`${yr-1}-01-01`; to=`${yr-1}-12-31`; }
+  if (el('rv-from')) el('rv-from').value = from;
+  if (el('rv-to'))   el('rv-to').value   = to;
+  reviewState.from = from; reviewState.to = to;
+  const mnths = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+  const lbl = period==='month'?`${mnths[now.getMonth()]} ${yr}`:period==='lastmonth'?`${mnths[(now.getMonth()-1+12)%12]} ${now.getMonth()===0?yr-1:yr}`:period==='year'?`سنة ${yr}`:period==='lastyear'?`سنة ${yr-1}`:`${from} — ${to}`;
+  if (el('review-period-label')) el('review-period-label').textContent = `الفترة: ${lbl} · نظام ${state.system}`;
+  runAllReviewChecks();
+}
+
+function switchReviewTab(idx) {
+  reviewState.activeTab = idx;
+  document.querySelectorAll('.review-tab-content').forEach((c,i) => c.style.display=i===idx?'block':'none');
+  document.querySelectorAll('.rv-tab-btn').forEach((t,i) => t.classList.toggle('active', i===idx));
+  if (idx===2) loadReconciliations();
+  if (idx===3) loadReviewHistory();
+}
+
+// ════ الفحوصات التلقائية ════
+async function runAllReviewChecks() {
+  const wrap = el('review-auto-checks');
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="loading"><div class="spinner"></div><br>جاري الفحص الشامل لـ ${reviewState.from} — ${reviewState.to}...</div>`;
+  const sys  = state.system;
+  const from = reviewState.from;
+  const to   = reviewState.to;
+  if (!from||!to) { wrap.innerHTML=errHTML('يرجى تحديد الفترة'); return; }
+
+  try {
+    await ensureCache();
+    const [allPayments, allPayouts, allPartners, jeData] = await Promise.all([
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}` }),
+      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}` }),
+      apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}` }),
+      apiGet('journal_entries', { select:'id,dr_amount,cr_amount,entry_no,file_no', system_type:`eq.${sys}`, post_status:'eq.posted' }).catch(()=>[]),
+    ]);
+
+    const deals=state.allDeals||[], vehicles=state.allVehicles||[];
+    const sales=state.allSales||[], expenses=state.allExpenses||[];
+    const collections=state.allCollections||[];
+    const inPeriod = d => d&&d>=from&&d<=to;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const pSales   = sales.filter(s=>isPosted(s)&&inPeriod(s.sale_date||s.created_at?.split('T')[0]));
+    const pDeals   = deals.filter(d=>inPeriod(d.po_date||d.created_at?.split('T')[0]));
+    const checks   = [];
+
+    // ══ A. العمليات المعلقة ══
+    const draftCounts = {
+      sales:(sales||[]).filter(isDraft).length, expenses:(expenses||[]).filter(isDraft).length,
+      payments:(allPayments||[]).filter(isDraft).length, collections:(collections||[]).filter(isDraft).length,
+      payouts:(allPayouts||[]).filter(isDraft).length,
+    };
+    const totalDrafts = Object.values(draftCounts).reduce((s,v)=>s+v,0);
+    checks.push({ cat:'A', icon:'⏳', catLabel:'العمليات المعلقة',
+      id:'A1', label:'عمليات غير مرحّلة (Draft معلق)',
+      status: totalDrafts===0?'pass':totalDrafts<=5?'warn':'fail',
+      value: totalDrafts===0?'✓ صفر':totalDrafts,
+      detail: totalDrafts===0?'كل العمليات مرحّلة ✓':`مبيعات: ${draftCounts.sales} · مصاريف: ${draftCounts.expenses} · دفعات: ${draftCounts.payments} · تحصيلات: ${draftCounts.collections} · توزيعات: ${draftCounts.payouts}`,
+      action: totalDrafts>0?{ label:'فتح قائمة الانتظار', fn:'showApprovalQueue()' }:null });
+
+    // ══ B. التحصيلات ══
+    const overdueCol     = collections.filter(c=>isPosted(c)&&!c.paid_date&&c.due_date&&c.due_date<todayStr);
+    const overdue30      = overdueCol.filter(c=>daysSince(c.due_date)>30);
+    const overdue30Amt   = overdue30.reduce((s,c)=>s+(+c.amount||0),0);
+    checks.push({ cat:'B', icon:'💰', catLabel:'التحصيلات',
+      id:'B1', label:'تحصيلات متأخرة أكثر من 30 يوم',
+      status: overdue30.length===0?'pass':overdue30.length<=3?'warn':'fail',
+      value: overdue30.length===0?'✓ لا يوجد':fmt(overdue30Amt),
+      detail: overdue30.length===0?'لا توجد تحصيلات متأخرة ✓':`${overdue30.length} فاتورة · إجمالي ${fmt(overdue30Amt)}`,
+      rows: overdue30.slice(0,5).map(c=>({ cols:[c.customer||'—',c.inv_no||'—',fmt(c.amount),`${daysSince(c.due_date)} يوم`] })) });
+
+    const pendingPeriod  = collections.filter(c=>isPosted(c)&&!c.paid_date&&inPeriod(c.due_date||c.created_at?.split('T')[0]));
+    const pendingAmt     = pendingPeriod.reduce((s,c)=>s+(+c.amount||0),0);
+    checks.push({ cat:'B', icon:'💰', catLabel:'التحصيلات',
+      id:'B2', label:'فواتير الفترة لم تُحصَّل بعد',
+      status: pendingPeriod.length===0?'pass':'warn',
+      value: pendingPeriod.length===0?'✓ كل محصّل':fmt(pendingAmt),
+      detail: pendingPeriod.length===0?'كل فواتير الفترة محصّلة ✓':`${pendingPeriod.length} فاتورة بمبلغ ${fmt(pendingAmt)} منتظرة`,
+      rows: pendingPeriod.slice(0,5).map(c=>({ cols:[c.customer||'—',c.inv_no||'—',fmt(c.amount),c.due_date||'—'] })) });
+
+    // ══ C. الموردون ══
+    const payMap = {};
+    (allPayments||[]).filter(isPosted).forEach(p=>{ payMap[p.file_no]=(payMap[p.file_no]||0)+(+p.amount||0); });
+    const overpaid = deals.filter(d=>(payMap[d.file_no]||0)>(+d.total_purchase||0)+0.01);
+    checks.push({ cat:'C', icon:'🏭', catLabel:'الموردون',
+      id:'C1', label:'دفعات تجاوزت قيمة الصفقة',
+      status: overpaid.length===0?'pass':'fail',
+      value: overpaid.length===0?'✓ سليم':overpaid.length,
+      detail: overpaid.length===0?'كل الدفعات في حدود قيم الصفقات ✓':`${overpaid.length} صفقة فيها دفع زائد`,
+      rows: overpaid.map(d=>({ cols:[d.file_no,d.supplier||'—',fmt(d.total_purchase),fmt(payMap[d.file_no]),`↑ ${fmt((payMap[d.file_no]||0)-(+d.total_purchase||0))}`] })) });
+
+    const openOld = deals.filter(d=>d.status==='OPEN'&&daysSince(d.po_date||d.created_at)>90);
+    checks.push({ cat:'C', icon:'🏭', catLabel:'الموردون',
+      id:'C2', label:'صفقات مفتوحة أكثر من 90 يوم',
+      status: openOld.length===0?'pass':openOld.length<=2?'warn':'fail',
+      value: openOld.length===0?'✓ لا يوجد':openOld.length,
+      detail: openOld.length===0?'لا توجد صفقات قديمة مفتوحة ✓':`${openOld.length} صفقة مفتوحة منذ > 90 يوم`,
+      rows: openOld.map(d=>({ cols:[d.file_no,d.supplier||'—',fmt(d.total_purchase),`${daysSince(d.po_date||d.created_at)} يوم`] })) });
+
+    // ══ D. المخزون ══
+    const noVin = vehicles.filter(v=>!v.vin);
+    checks.push({ cat:'D', icon:'🚗', catLabel:'المخزون',
+      id:'D1', label:'سيارات بدون رقم شاصي VIN',
+      status: noVin.length===0?'pass':'warn',
+      value: noVin.length===0?'✓ كل السيارات':noVin.length,
+      detail: noVin.length===0?'كل السيارات لها VIN ✓':`${noVin.length} سيارة بدون VIN`,
+      rows: noVin.slice(0,5).map(v=>({ cols:[v.file_no||'—',v.model||'—',v.vehicle_type||'—','⚠️ لا يوجد VIN'] })) });
+
+    const soldVinsSet  = new Set(sales.filter(isPosted).map(s=>s.vin).filter(Boolean));
+    const stockV       = vehicles.filter(v=>!soldVinsSet.has(v.vin));
+    const oldStock     = stockV.filter(v=>daysSince(v.created_at)>90);
+    const oldStockVal  = oldStock.reduce((s,v)=>s+(+v.purchase_price||0),0);
+    checks.push({ cat:'D', icon:'🚗', catLabel:'المخزون',
+      id:'D2', label:'مخزون راكد أكثر من 90 يوم',
+      status: oldStock.length===0?'pass':oldStock.length<=3?'warn':'fail',
+      value: oldStock.length===0?'✓ لا يوجد':`${oldStock.length} (${fmt(oldStockVal)})`,
+      detail: oldStock.length===0?'لا يوجد مخزون راكد ✓':`${oldStock.length} سيارة بقيمة ${fmt(oldStockVal)} راكدة`,
+      rows: oldStock.slice(0,5).map(v=>({ cols:[v.file_no||'—',v.vin||'—',v.model||'—',`${daysSince(v.created_at)} يوم`,fmt(v.purchase_price)] })) });
+
+    const vMap = {}; vehicles.forEach(v=>{ if(v.vin) vMap[v.vin]=v; });
+    const lossySales = pSales.filter(s=>{ const v=vMap[s.vin]; return v&&(+s.sale_price||0)<(+v.purchase_price||0)-0.01; });
+    checks.push({ cat:'D', icon:'🚗', catLabel:'المخزون',
+      id:'D3', label:'مبيعات الفترة بأقل من سعر الشراء',
+      status: lossySales.length===0?'pass':'warn',
+      value: lossySales.length===0?'✓ لا يوجد':lossySales.length,
+      detail: lossySales.length===0?'لا توجد مبيعات بخسارة ✓':`${lossySales.length} سيارة بيعت بأقل من تكلفتها`,
+      rows: lossySales.slice(0,5).map(s=>{ const v=vMap[s.vin]; return { cols:[s.file_no||'—',s.vin||'—',fmt(v?.purchase_price),fmt(s.sale_price),`خسارة ${fmt((+v?.purchase_price||0)-(+s.sale_price||0))}`] }; }) });
+
+    // ══ E. القيود المحاسبية ══
+    const jeTotalDr = (jeData||[]).reduce((s,e)=>s+(+e.dr_amount||0),0);
+    const jeTotalCr = (jeData||[]).reduce((s,e)=>s+(+e.cr_amount||0),0);
+    const jeDiff    = Math.abs(jeTotalDr-jeTotalCr);
+    checks.push({ cat:'E', icon:'📒', catLabel:'القيود المحاسبية',
+      id:'E1', label:'توازن القيود المزدوجة Dr = Cr',
+      status: jeDiff<0.01?'pass':'fail',
+      value: jeDiff<0.01?'✓ متوازن':fmt(jeDiff),
+      detail: jeDiff<0.01?`مدين = دائن = ${fmt(jeTotalDr)} ✓`:`فرق ${fmt(jeDiff)} — مدين: ${fmt(jeTotalDr)} · دائن: ${fmt(jeTotalCr)}` });
+
+    const jeFileSet = new Set((jeData||[]).map(e=>e.file_no).filter(Boolean));
+    const dealsNoJE = pDeals.filter(d=>d.file_no&&!jeFileSet.has(d.file_no));
+    checks.push({ cat:'E', icon:'📒', catLabel:'القيود المحاسبية',
+      id:'E2', label:'صفقات الفترة بدون قيود محاسبية',
+      status: dealsNoJE.length===0?'pass':dealsNoJE.length<=2?'warn':'fail',
+      value: dealsNoJE.length===0?'✓ مكتمل':dealsNoJE.length,
+      detail: dealsNoJE.length===0?'كل الصفقات لها قيود ✓':`${dealsNoJE.length} صفقة بدون قيود — تحتاج ترحيل`,
+      rows: dealsNoJE.map(d=>({ cols:[d.file_no,d.supplier||'—',fmt(d.total_purchase),d.po_date||'—'] })),
+      action: dealsNoJE.length>0?{ label:'فتح قائمة الانتظار', fn:'showApprovalQueue()' }:null });
+
+    // ══ F. سلامة البيانات ══
+    const invNos    = pSales.map(s=>s.inv_no).filter(Boolean);
+    const dupInv    = [...new Set(invNos.filter((v,i,a)=>a.indexOf(v)!==a.lastIndexOf(v)))];
+    checks.push({ cat:'F', icon:'🛡️', catLabel:'سلامة البيانات',
+      id:'F1', label:'فواتير مبيعات مكررة',
+      status: dupInv.length===0?'pass':'fail',
+      value: dupInv.length===0?'✓ لا يوجد':dupInv.length,
+      detail: dupInv.length===0?'لا توجد فواتير مكررة ✓':`أرقام مكررة: ${dupInv.join(', ')}` });
+
+    const shareMap  = {};
+    (allPartners||[]).forEach(p=>{ shareMap[p.file_no]=(shareMap[p.file_no]||0)+(+p.share_percent||0); });
+    const wrongShr  = Object.entries(shareMap).filter(([,t])=>Math.abs(t-100)>0.01);
+    checks.push({ cat:'F', icon:'🛡️', catLabel:'سلامة البيانات',
+      id:'F2', label:'صفقات بحصص شركاء ≠ 100%',
+      status: wrongShr.length===0?'pass':'fail',
+      value: wrongShr.length===0?'✓ سليم':wrongShr.length,
+      detail: wrongShr.length===0?'كل حصص الشركاء 100% ✓':`${wrongShr.length} صفقة: ${wrongShr.map(([fn,t])=>`${fn}(${t.toFixed(1)}%)`).join(', ')}` });
+
+    const zeroDeals = deals.filter(d=>!(+d.total_purchase));
+    checks.push({ cat:'F', icon:'🛡️', catLabel:'سلامة البيانات',
+      id:'F3', label:'صفقات بقيمة شراء صفر',
+      status: zeroDeals.length===0?'pass':'warn',
+      value: zeroDeals.length===0?'✓ لا يوجد':zeroDeals.length,
+      detail: zeroDeals.length===0?'كل الصفقات لها قيمة ✓':`${zeroDeals.length} صفقة بقيمة صفر`,
+      rows: zeroDeals.slice(0,3).map(d=>({ cols:[d.file_no,d.supplier||'—',d.po_date||'—','⚠️ قيمة صفر'] })) });
+
+    // ══ G. حسابات الشركاء ══
+    const partnerNames = [...new Set((allPartners||[]).map(p=>p.partner).filter(Boolean))];
+    const partnerBadList = [];
+    for (const pName of partnerNames) {
+      const capPaid   = (allPayments||[]).filter(p=>isPosted(p)&&p.payer===pName).reduce((s,p)=>s+(+p.amount||0),0);
+      const withdrawn = (allPayouts||[]).filter(p=>isPosted(p)&&p.partner===pName).reduce((s,p)=>s+(+p.amount||0),0);
+      let profitDue=0;
+      (allPartners||[]).filter(p=>p.partner===pName).forEach(pd=>{
+        const deal=deals.find(d=>d.file_no===pd.file_no); if(!deal) return;
+        const dSales=sales.filter(s=>isPosted(s)&&s.file_no===pd.file_no).reduce((s,x)=>s+(+x.sale_price||0),0);
+        const dExp  =expenses.filter(e=>isPosted(e)&&e.file_no===pd.file_no).reduce((s,x)=>s+(+x.amount||0),0);
+        profitDue  +=(dSales-(+deal.total_purchase||0)-dExp)*(+pd.share_percent||0)/100;
+      });
+      const balance = capPaid+profitDue-withdrawn;
+      if (balance<-0.01) partnerBadList.push({ name:pName, capPaid, profitDue, withdrawn, balance });
+    }
+    checks.push({ cat:'G', icon:'👥', catLabel:'حسابات الشركاء',
+      id:'G1', label:'شركاء بحساب سالب (سحبوا أكثر من المستحق)',
+      status: partnerBadList.length===0?'pass':'fail',
+      value: partnerBadList.length===0?'✓ كل الحسابات سليمة':partnerBadList.length,
+      detail: partnerBadList.length===0?'كل حسابات الشركاء إيجابية ✓':`${partnerBadList.length} شريك: ${partnerBadList.map(p=>p.name).join(', ')}`,
+      rows: partnerBadList.map(p=>({ cols:[p.name,fmt(p.capPaid),fmt(p.profitDue),fmt(p.withdrawn),fmt(p.balance)] })) });
+
+    // ════ النتائج الإجمالية ════
+    const passCount = checks.filter(c=>c.status==='pass').length;
+    const warnCount = checks.filter(c=>c.status==='warn').length;
+    const failCount = checks.filter(c=>c.status==='fail').length;
+    const score     = Math.round((passCount/checks.length)*100);
+    reviewState.checkResults = checks;
+
+    // Banner
+    const bColor = failCount>0?'var(--red)':warnCount>0?'var(--accent)':'var(--green)';
+    const bBg    = failCount>0?'var(--red-dim)':warnCount>0?'var(--accent-dim)':'var(--green-dim)';
+    const bLabel = failCount>0?'🔴 يحتاج تصحيح فوري قبل الإغلاق':warnCount>0?'🟡 يحتاج مراجعة — تحقق من التحذيرات':'🟢 اجتاز كل الفحوصات — جاهز للإغلاق';
+    if (el('review-score-banner')) el('review-score-banner').innerHTML = `
+      <div style="background:${bBg};border:2px solid ${bColor};border-radius:var(--radius);padding:14px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div style="width:60px;height:60px;border-radius:50%;background:${bColor}22;border:3px solid ${bColor};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:${bColor};flex-shrink:0">${score}%</div>
+        <div style="flex:1;min-width:160px">
+          <div style="font-size:14px;font-weight:700;color:${bColor};margin-bottom:4px">${bLabel}</div>
+          <div style="font-size:12px;color:var(--text2)">
+            ✅ نجح: <strong style="color:var(--green)">${passCount}</strong> &nbsp;·&nbsp;
+            ⚠️ تحذير: <strong style="color:var(--accent)">${warnCount}</strong> &nbsp;·&nbsp;
+            ❌ فشل: <strong style="color:var(--red)">${failCount}</strong>
+            &nbsp;·&nbsp; إجمالي: ${checks.length} فحص
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">${from} — ${to} · نظام ${sys}</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="runAllReviewChecks()" style="font-size:11px">🔄 إعادة الفحص</button>
+          <button class="btn btn-primary btn-sm" onclick="switchReviewTab(1)" style="font-size:11px">📋 قائمة المراجعة</button>
+        </div>
+      </div>`;
+
+    // تحديث Badge
+    if (el('review-issues-badge')) {
+      el('review-issues-badge').style.display = failCount>0?'inline-block':'none';
+      el('review-issues-badge').textContent   = failCount;
+    }
+
+    // عرض الفحوصات مقسّمة بالفئة
+    const cats = ['A','B','C','D','E','F','G'];
+    const catLabels2 = { A:'⏳ العمليات المعلقة', B:'💰 التحصيلات', C:'🏭 الموردون', D:'🚗 المخزون', E:'📒 القيود المحاسبية', F:'🛡️ سلامة البيانات', G:'👥 حسابات الشركاء' };
+    wrap.innerHTML = cats.map(cat => {
+      const catChecks = checks.filter(c=>c.cat===cat);
+      if (!catChecks.length) return '';
+      const catFail = catChecks.filter(c=>c.status==='fail').length;
+      const catWarn = catChecks.filter(c=>c.status==='warn').length;
+      const catIcon = catFail>0?'❌':catWarn>0?'⚠️':'✅';
+      return `<div style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px;padding:6px 10px;background:var(--card2);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center">
+          <span>${catLabels2[cat]||cat}</span>
+          <span style="font-size:11px">${catIcon} ${catFail>0?catFail+' فشل':''}${catWarn>0?' '+catWarn+' تحذير':''}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">${catChecks.map(renderCheckItem).join('')}</div>
+      </div>`;
+    }).join('');
+
+  } catch(e) {
+    if(wrap) wrap.innerHTML = errHTML('خطأ في الفحص: '+e.message);
+    console.error(e);
+  }
+}
+
+function renderCheckItem(c) {
+  const ss = {
+    pass:{ bg:'var(--green-dim)',  border:'var(--green)',  icon:'✅', lbl:'نجح' },
+    warn:{ bg:'var(--accent-dim)', border:'var(--accent)', icon:'⚠️', lbl:'تحذير' },
+    fail:{ bg:'var(--red-dim)',    border:'var(--red)',    icon:'❌', lbl:'فشل' },
+  };
+  const st = ss[c.status]||ss.pass;
+  const detailRows = c.rows?.length ? `
+    <div style="margin-top:8px;overflow-x:auto;border-radius:4px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--card)">
+        <tbody>${c.rows.map(r=>`<tr>${r.cols.map(v=>`<td style="padding:4px 8px;border-bottom:1px solid var(--border)">${v}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+    </div>` : '';
+  return `<div style="background:${st.bg};border:1px solid ${st.border};border-radius:var(--radius-sm);padding:10px 14px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:16px;flex-shrink:0">${st.icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;color:var(--text)">${c.label}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:1px">${c.detail}</div>
+      </div>
+      <div style="text-align:left;flex-shrink:0">
+        <div style="font-size:13px;font-weight:700;color:${st.border};font-family:var(--mono)">${c.value}</div>
+        <div style="font-size:10px;color:var(--text2)">${st.lbl}</div>
+      </div>
+      ${c.action?`<button class="btn btn-sm" onclick="${c.action.fn}" style="font-size:10px;padding:4px 8px;flex-shrink:0">${c.action.label}</button>`:''}
+    </div>${detailRows}
+  </div>`;
+}
+
+// ════ قائمة المراجعة اليدوية ════
+const REVIEW_CHECKLIST = [
+  { id:'CL01', cat:'المستندات', label:'مراجعة كل الفواتير ومطابقتها مع مستندات العملاء الأصلية', risk:'high' },
+  { id:'CL02', cat:'البنك',     label:'مطابقة إجمالي التحصيلات المدفوعة مع كشف الحساب البنكي', risk:'high' },
+  { id:'CL03', cat:'المبيعات',  label:'التحقق من صحة أسعار البيع ومقارنتها بأسعار السوق', risk:'medium' },
+  { id:'CL04', cat:'المصاريف',  label:'مراجعة كل المصاريف والتأكد من وجود مستنداتها وفواتيرها', risk:'high' },
+  { id:'CL05', cat:'المخزون',   label:'التحقق الميداني الفعلي من عدد السيارات في المخزن', risk:'high' },
+  { id:'CL06', cat:'الموردون',  label:'مراجعة دفعات الموردين وتأكيد الأرصدة المستحقة', risk:'high' },
+  { id:'CL07', cat:'الشركاء',   label:'مراجعة حسابات الشركاء وتوزيعات الأرباح والسحوبات', risk:'high' },
+  { id:'CL08', cat:'القيود',    label:'التحقق من صحة القيود المحاسبية المرحّلة في الفترة', risk:'medium' },
+  { id:'CL09', cat:'التشغيل',   label:'مراجعة وتوثيق كل المصاريف التشغيلية (إيجار، رواتب، إلخ)', risk:'medium' },
+  { id:'CL10', cat:'الختام',    label:'الموافقة النهائية على إقفال الفترة — لا تعديل بعد ذلك', risk:'high' },
+];
+
+function renderReviewChecklist() {
+  const wrap = el('review-checklist-wrap');
+  if (!wrap) return;
+  const riskColor = { high:'var(--red)', medium:'var(--accent)', low:'var(--text2)' };
+  const riskLabel = { high:'مهم جداً', medium:'مهم', low:'عادي' };
+  wrap.innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px">
+        📋 قائمة التحقق اليدوي
+        <span style="font-size:11px;font-weight:400;color:var(--text2)">— يجب إكمالها بعد الفحص التلقائي قبل إغلاق الفترة</span>
+      </div>
+      ${REVIEW_CHECKLIST.map(item=>`
+      <label style="display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:var(--radius-sm);margin-bottom:6px;cursor:pointer;border:1px solid var(--border);background:var(--card2);transition:background .15s"
+        onmouseover="this.style.background='var(--card)'" onmouseout="this.style.background='var(--card2)'"
+        id="cl-label-${item.id}">
+        <input type="checkbox" id="cl-${item.id}" onchange="updateChecklistProgress()"
+          style="width:18px;height:18px;margin-top:1px;accent-color:var(--green);flex-shrink:0;cursor:pointer">
+        <div style="flex:1">
+          <div style="font-size:12px;font-weight:600;color:var(--text)">${item.label}</div>
+          <div style="display:flex;gap:8px;margin-top:3px">
+            <span style="font-size:10px;color:var(--text2)">${item.cat}</span>
+            <span style="font-size:10px;font-weight:700;color:${riskColor[item.risk]}">${riskLabel[item.risk]}</span>
+          </div>
+        </div>
+        <span id="cl-tick-${item.id}" style="display:none;color:var(--green);font-size:16px;flex-shrink:0">✓</span>
+      </label>`).join('')}
+
+      <div style="margin-top:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:12px;font-weight:700">التقدم في المراجعة</span>
+          <span id="cl-progress-text" style="font-size:12px;color:var(--text2)">0 / ${REVIEW_CHECKLIST.length}</span>
+        </div>
+        <div style="height:8px;background:var(--card2);border-radius:10px;overflow:hidden">
+          <div id="cl-progress-bar" style="height:100%;background:var(--red);border-radius:10px;transition:width .4s,background .4s;width:0%"></div>
+        </div>
+      </div>
+    </div>`;
+  renderSignoff();
+  updateChecklistProgress();
+}
+
+function updateChecklistProgress() {
+  const total   = REVIEW_CHECKLIST.length;
+  const checked = REVIEW_CHECKLIST.filter(item => el('cl-'+item.id)?.checked).length;
+  const pct     = Math.round((checked/total)*100);
+  if (el('cl-progress-text')) el('cl-progress-text').textContent = `${checked} / ${total}`;
+  if (el('cl-progress-bar'))  {
+    el('cl-progress-bar').style.width      = pct+'%';
+    el('cl-progress-bar').style.background = pct===100?'var(--green)':pct>50?'var(--accent)':'var(--red)';
+  }
+  REVIEW_CHECKLIST.forEach(item => {
+    const lbl  = el('cl-label-'+item.id);
+    const tick = el('cl-tick-'+item.id);
+    const chk  = el('cl-'+item.id)?.checked;
+    if (lbl)  lbl.style.borderColor  = chk?'var(--green)':'var(--border)';
+    if (lbl)  lbl.style.background   = chk?'var(--green-dim)':'var(--card2)';
+    if (tick) tick.style.display     = chk?'inline':'none';
+  });
+  const saveBtn = el('review-save-btn');
+  if (saveBtn) {
+    saveBtn.disabled = checked<total;
+    saveBtn.style.opacity  = checked<total?'0.5':'1';
+    saveBtn.textContent    = checked<total
+      ? `⏳ أكمل القائمة — ${total-checked} بند متبقي`
+      : '💾 حفظ وإغلاق الفترة';
+  }
+}
+
+function renderSignoff() {
+  const wrap = el('review-signoff-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <div style="background:var(--card);border:2px solid var(--border);border-radius:var(--radius);padding:20px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:14px">✍️ التوقيع والاعتماد النهائي</div>
+      <div class="field" style="margin-bottom:14px">
+        <label>ملاحظات المراجعة</label>
+        <textarea id="review-notes" rows="3"
+          placeholder="أي ملاحظات أو تحفظات أو بنود للمتابعة في الدورة القادمة..."
+          style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;width:100%;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;resize:vertical"></textarea>
+      </div>
+      <div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 14px;font-size:11px;color:var(--text);margin-bottom:14px;line-height:1.6">
+        ⚠️ <strong>تنبيه:</strong> بالضغط على "حفظ وإغلاق الفترة" أنت تؤكد رسمياً أنك راجعت كل البنود المذكورة أعلاه، وأن الأرقام مطابقة للواقع لهذه الفترة. سيتم تسجيل هذا الإقرار باسمك وتاريخه.
+      </div>
+      <button id="review-save-btn" class="btn btn-primary" onclick="saveReviewSignoff()" disabled style="opacity:0.5;width:100%;padding:12px">
+        ⏳ أكمل قائمة المراجعة أولاً
+      </button>
+    </div>`;
+}
+
+async function saveReviewSignoff() {
+  const from  = reviewState.from;
+  const to    = reviewState.to;
+  const notes = el('review-notes')?.value?.trim() || '';
+  const allChecked = REVIEW_CHECKLIST.every(item => el('cl-'+item.id)?.checked);
+  if (!allChecked) { toast('يرجى إكمال كل بنود القائمة أولاً','err'); return; }
+  const failCount = reviewState.checkResults.filter(c=>c.status==='fail').length;
+  if (failCount>0) {
+    const go = confirm(`⚠️ يوجد ${failCount} فحص فاشل.\nهل تريد المتابعة بالإغلاق رغم ذلك؟\n\nيُنصح بتصحيح المشاكل أولاً.`);
+    if (!go) return;
+  }
+  const btn = el('review-save-btn');
+  btn.disabled=true; btn.textContent='⏳ جاري الحفظ...';
+  try {
+    await apiPost('audit_log', {
+      system_type: state.system,
+      action:      'PERIOD_REVIEW',
+      table_name:  'review_sessions',
+      file_no:     null,
+      notes:       notes || `مراجعة ${from} — ${to}`,
+      old_value:   JSON.stringify({ from, to, checks: reviewState.checkResults.map(c=>({ id:c.id,status:c.status })) }),
+      new_value:   JSON.stringify({
+        period_from:from, period_to:to, system:state.system,
+        reviewer: state.user?.email,
+        checks_passed: reviewState.checkResults.filter(c=>c.status==='pass').length,
+        checks_warned: reviewState.checkResults.filter(c=>c.status==='warn').length,
+        checks_failed: failCount, notes,
+      }),
+      user_email: state.user?.email || 'unknown',
+    });
+    toast(`✅ تم حفظ مراجعة الفترة ${from} — ${to}`,'ok');
+    switchReviewTab(3);
+    await loadReviewHistory();
+  } catch(e) {
+    toast('خطأ في الحفظ: '+e.message,'err');
+    btn.disabled=false; btn.textContent='💾 حفظ وإغلاق الفترة';
+  }
+}
+
+// ════ التسويات ════
+async function loadReconciliations() {
+  const wrap = el('review-reconciliation-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل التسويات...</div>';
+  const sys=state.system;
+  try {
+    await ensureCache();
+    const [allPayments, allPayouts, allPartners] = await Promise.all([
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}` }),
+      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}` }),
+      apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}` }),
+    ]);
+    const deals=state.allDeals||[], sales=state.allSales||[], expenses=state.allExpenses||[], collections=state.allCollections||[];
+
+    // ── تسوية التحصيلات ──
+    const invMap={};
+    sales.filter(isPosted).forEach(s=>{ const k=`${s.file_no}__${s.inv_no}`; if(!invMap[k]) invMap[k]={inv_no:s.inv_no,file_no:s.file_no,customer:s.customer,invoiced:0,collected:0}; invMap[k].invoiced+=(+s.sale_price||0); });
+    collections.filter(isPosted).forEach(c=>{ if(!c.inv_no) return; const k=`${c.file_no}__${c.inv_no}`; if(invMap[k]) invMap[k].collected+=c.paid_date?(+c.amount||0):0; });
+    const invRows=Object.values(invMap).map(v=>({...v,outstanding:v.invoiced-v.collected})).sort((a,b)=>b.outstanding-a.outstanding);
+    const tInv=invRows.reduce((s,r)=>s+r.invoiced,0), tCol=invRows.reduce((s,r)=>s+r.collected,0), tOut=invRows.reduce((s,r)=>s+r.outstanding,0);
+
+    // ── تسوية الموردين ──
+    const payM={};
+    (allPayments||[]).filter(isPosted).forEach(p=>{ payM[p.file_no]=(payM[p.file_no]||0)+(+p.amount||0); });
+    const dealRows=deals.map(d=>({ file_no:d.file_no,supplier:d.supplier||'—',total:+d.total_purchase||0,paid:payM[d.file_no]||0,outstanding:(+d.total_purchase||0)-(payM[d.file_no]||0),status:d.status })).sort((a,b)=>b.outstanding-a.outstanding);
+    const tDC=dealRows.reduce((s,r)=>s+r.total,0), tPD=dealRows.reduce((s,r)=>s+r.paid,0), tDD=dealRows.reduce((s,r)=>s+r.outstanding,0);
+
+    // ── تسوية الشركاء ──
+    const partnerNames=[...new Set((allPartners||[]).map(p=>p.partner).filter(Boolean))];
+    const partnerRows=partnerNames.map(pName=>{
+      const capPaid=(allPayments||[]).filter(p=>isPosted(p)&&p.payer===pName).reduce((s,p)=>s+(+p.amount||0),0);
+      const withdrawn=(allPayouts||[]).filter(p=>isPosted(p)&&p.partner===pName).reduce((s,p)=>s+(+p.amount||0),0);
+      let profitDue=0;
+      (allPartners||[]).filter(p=>p.partner===pName).forEach(pd=>{ const deal=deals.find(d=>d.file_no===pd.file_no); if(!deal) return; const dS=sales.filter(s=>isPosted(s)&&s.file_no===pd.file_no).reduce((s,x)=>s+(+x.sale_price||0),0); const dE=expenses.filter(e=>isPosted(e)&&e.file_no===pd.file_no).reduce((s,x)=>s+(+x.amount||0),0); profitDue+=(dS-(+deal.total_purchase||0)-dE)*(+pd.share_percent||0)/100; });
+      return { name:pName,capPaid,profitDue,withdrawn,balance:capPaid+profitDue-withdrawn };
+    });
+
+    const tblStyle='width:100%;border-collapse:collapse';
+    const thStyle='background:var(--card2);padding:8px 12px;font-size:11px;font-weight:700;text-align:right;border-bottom:2px solid var(--border)';
+    const tdStyle='padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px';
+
+    wrap.innerHTML = `
+      <!-- 1. تسوية التحصيلات -->
+      <div style="margin-bottom:20px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <div style="padding:12px 16px;border-bottom:2px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <span style="font-size:13px;font-weight:700">💰 تسوية التحصيلات — فاتورة بفاتورة</span>
+          <div style="display:flex;gap:12px;font-size:11px">
+            <span>مُفوتَر: <b>${fmt(tInv)}</b></span>
+            <span style="color:var(--green)">محصّل: <b>${fmt(tCol)}</b></span>
+            <span style="color:${tOut>0?'var(--red)':'var(--green)'}">متبقي: <b>${fmt(tOut)}</b></span>
+          </div>
+        </div>
+        <div style="overflow-x:auto;max-height:280px;overflow-y:auto">
+          <table style="${tblStyle}">
+            <thead><tr><th style="${thStyle}">الفاتورة</th><th style="${thStyle}">الملف</th><th style="${thStyle}">العميل</th><th style="${thStyle}">المُفوتَر</th><th style="${thStyle}">المحصّل</th><th style="${thStyle}">المتبقي</th><th style="${thStyle}">الحالة</th></tr></thead>
+            <tbody>${invRows.map(r=>{ const sc=r.outstanding<0.01?'var(--green)':r.outstanding<r.invoiced?'var(--accent)':'var(--red)'; const si=r.outstanding<0.01?'✅ مكتمل':r.outstanding<r.invoiced?'⚡ جزئي':'⏳ مستحق';
+              return `<tr><td style="${tdStyle}" class="mono text-amber">${r.inv_no||'—'}</td><td style="${tdStyle}" class="mono">${r.file_no||'—'}</td><td style="${tdStyle}">${r.customer||'—'}</td><td style="${tdStyle}" class="mono">${fmt(r.invoiced)}</td><td style="${tdStyle}" class="mono text-green">${fmt(r.collected)}</td><td style="${tdStyle}" class="mono" style="color:${sc};font-weight:700">${fmt(r.outstanding)}</td><td style="${tdStyle}"><span style="font-size:10px;color:${sc};font-weight:700">${si}</span></td></tr>`;
+            }).join('')}</tbody>
+            <tfoot><tr style="background:var(--card2);font-weight:700"><td colspan="3" style="${tdStyle}">الإجمالي</td><td style="${tdStyle}" class="mono">${fmt(tInv)}</td><td style="${tdStyle}" class="mono text-green">${fmt(tCol)}</td><td style="${tdStyle}" class="mono" style="color:${tOut>0?'var(--red)':'var(--green)'}">${fmt(tOut)}</td><td style="${tdStyle}"></td></tr></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- 2. تسوية الموردين -->
+      <div style="margin-bottom:20px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <div style="padding:12px 16px;border-bottom:2px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <span style="font-size:13px;font-weight:700">🏭 تسوية الموردين — صفقة بصفقة</span>
+          <div style="display:flex;gap:12px;font-size:11px">
+            <span>إجمالي: <b>${fmt(tDC)}</b></span>
+            <span style="color:var(--green)">مدفوع: <b>${fmt(tPD)}</b></span>
+            <span style="color:${tDD>0?'var(--accent)':'var(--green)'}">مستحق: <b>${fmt(tDD)}</b></span>
+          </div>
+        </div>
+        <div style="overflow-x:auto;max-height:260px;overflow-y:auto">
+          <table style="${tblStyle}">
+            <thead><tr><th style="${thStyle}">الملف</th><th style="${thStyle}">المورد</th><th style="${thStyle}">قيمة الصفقة</th><th style="${thStyle}">المدفوع</th><th style="${thStyle}">المستحق</th><th style="${thStyle}">الحالة</th></tr></thead>
+            <tbody>${dealRows.map(r=>{ const sc=r.outstanding<0.01?'var(--green)':r.outstanding>0?'var(--accent)':'var(--red)'; const si=r.outstanding<0.01?'✅ مسدّد':r.outstanding>0?'⏳ متبقي':'⚠️ زيادة';
+              return `<tr><td style="${tdStyle}" class="mono text-amber" onclick="openViewer('${r.file_no}')" style="cursor:pointer">${r.file_no}</td><td style="${tdStyle}">${r.supplier}</td><td style="${tdStyle}" class="mono">${fmt(r.total)}</td><td style="${tdStyle}" class="mono text-green">${fmt(r.paid)}</td><td style="${tdStyle}" class="mono" style="font-weight:700;color:${sc}">${fmt(Math.abs(r.outstanding))}</td><td style="${tdStyle}"><span style="font-size:10px;color:${sc};font-weight:700">${si}</span></td></tr>`;
+            }).join('')}</tbody>
+            <tfoot><tr style="background:var(--card2);font-weight:700"><td colspan="2" style="${tdStyle}">الإجمالي</td><td style="${tdStyle}" class="mono">${fmt(tDC)}</td><td style="${tdStyle}" class="mono text-green">${fmt(tPD)}</td><td style="${tdStyle}" class="mono" style="color:${tDD>0?'var(--accent)':'var(--green)'}">${fmt(tDD)}</td><td style="${tdStyle}"></td></tr></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- 3. تسوية الشركاء -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <div style="padding:12px 16px;border-bottom:2px solid var(--border);font-size:13px;font-weight:700">👥 تسوية حسابات الشركاء</div>
+        <div style="overflow-x:auto">
+          <table style="${tblStyle}">
+            <thead><tr><th style="${thStyle}">الشريك</th><th style="${thStyle}">رأس المال المدفوع</th><th style="${thStyle}">الأرباح المستحقة</th><th style="${thStyle}">إجمالي المسحوب</th><th style="${thStyle}">الرصيد الصافي</th><th style="${thStyle}">الحالة</th></tr></thead>
+            <tbody>${partnerRows.map(r=>{ const sc=r.balance>=0?'var(--green)':'var(--red)'; const si=r.balance>=0?'✅ سليم':'🔴 سالب!';
+              return `<tr><td style="${tdStyle}" style="font-weight:700">${r.name}</td><td style="${tdStyle}" class="mono text-blue">${fmt(r.capPaid)}</td><td style="${tdStyle}" class="mono" style="color:${r.profitDue>=0?'var(--green)':'var(--red)'}">${fmt(r.profitDue)}</td><td style="${tdStyle}" class="mono text-amber">${fmt(r.withdrawn)}</td><td style="${tdStyle}" class="mono" style="font-weight:900;color:${sc}">${fmt(r.balance)}</td><td style="${tdStyle}"><span style="font-size:10px;color:${sc};font-weight:700">${si}</span></td></tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+  } catch(e) { wrap.innerHTML=errHTML('خطأ: '+e.message); }
+}
+
+// ════ سجل المراجعات ════
+async function loadReviewHistory() {
+  const wrap = el('review-history-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
+  try {
+    const reviews = await apiGet('audit_log', {
+      select:'*', system_type:`eq.${state.system}`,
+      action:'eq.PERIOD_REVIEW', order:'created_at.desc', limit:'20',
+    });
+    if (!reviews?.length) {
+      wrap.innerHTML = `<div style="text-align:center;padding:48px 20px;color:var(--text2)">
+        <div style="font-size:40px;margin-bottom:12px">📋</div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:6px">لا توجد مراجعات محفوظة بعد</div>
+        <div style="font-size:12px">أكمل أول مراجعة وستظهر هنا كسجل تاريخي</div>
+      </div>`;
+      return;
+    }
+    wrap.innerHTML = `
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">${reviews.length} مراجعة محفوظة — آخر تحديث ${fmtDate(reviews[0]?.created_at?.split('T')[0])}</div>
+      ${reviews.map(r => {
+        let data={}; try { data=JSON.parse(r.new_value||'{}'); } catch(e) {}
+        const passed=data.checks_passed||0,warned=data.checks_warned||0,failed=data.checks_failed||0;
+        const total=passed+warned+failed;
+        const score=total>0?Math.round((passed/total)*100):0;
+        const sc=failed>0?'var(--red)':warned>0?'var(--accent)':'var(--green)';
+        const label=failed>0?'يحتاج متابعة':warned>0?'مع تحفظات':'مكتمل ✓';
+        const dt=r.created_at?new Date(r.created_at).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+        const reviewer=(r.user_email||'unknown').split('@')[0];
+        return `<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div style="width:54px;height:54px;border-radius:50%;background:${sc}22;border:2px solid ${sc};display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0">
+            <div style="font-size:15px;font-weight:900;color:${sc};line-height:1">${score}%</div>
+          </div>
+          <div style="flex:1;min-width:120px">
+            <div style="font-size:13px;font-weight:700;margin-bottom:3px">${data.period_from||'—'} — ${data.period_to||'—'}</div>
+            <div style="font-size:11px;color:var(--text2)">✅ ${passed} · ⚠️ ${warned} · ❌ ${failed} &nbsp;|&nbsp; 👤 ${reviewer} &nbsp;|&nbsp; 🕐 ${dt}</div>
+            <div style="font-size:11px;color:${sc};font-weight:700;margin-top:3px">${label}</div>
+            ${r.notes?`<div style="font-size:11px;color:var(--text2);margin-top:3px;font-style:italic">"${r.notes}"</div>`:''}
+          </div>
+        </div>`;
+      }).join('')}`;
+  } catch(e) { wrap.innerHTML=errHTML('خطأ: '+e.message); }
+}
+
 let _pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();

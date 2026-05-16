@@ -212,9 +212,13 @@
           <span class="ns-arrow">▼</span>
         </div>
         <div class="nav-section-items">
+          <div class="nav-item" id="nav-review" onclick="showReview()">
+            <span class="ni-icon">🔍</span><span>مراجعة الحسابات</span>
+            <span id="review-issues-badge" style="display:none;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;margin-right:auto"></span>
+          </div>
           <div class="nav-item" id="nav-approval" onclick="showApprovalQueue()">
-            <span class="ni-icon">🔍</span><span>المراجعة</span>
-            <span id="approval-badge" style="display:none;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;margin-right:auto"></span>
+            <span class="ni-icon">⏳</span><span>قائمة الانتظار</span>
+            <span id="approval-badge" style="display:none;background:var(--accent);color:#000;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;margin-right:auto"></span>
           </div>
           <div class="nav-item" id="nav-activity" onclick="showActivityLog()">
             <span class="ni-icon">🕵️</span><span>سجل النشاط</span>
@@ -1225,6 +1229,71 @@
         <!-- Table -->
         <div class="data-table-wrap"><div id="tx-table"></div></div>
       </div>
+
+      <!-- ════ REVIEW VIEW ════ -->
+      <div id="reviewView" style="display:none">
+
+        <!-- Header + Period -->
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <div>
+            <div style="font-size:16px;font-weight:900">🔍 مراجعة الحسابات</div>
+            <div id="review-period-label" style="font-size:12px;color:var(--text2);margin-top:2px">جاري التحميل...</div>
+          </div>
+          <div style="display:flex;gap:4px;background:var(--card2);border-radius:var(--radius-sm);padding:4px;flex-wrap:wrap">
+            <button class="dash-period-btn active" id="rvperiod-month"     onclick="setReviewPeriod('month')">هذا الشهر</button>
+            <button class="dash-period-btn" id="rvperiod-lastmonth" onclick="setReviewPeriod('lastmonth')">الشهر الماضي</button>
+            <button class="dash-period-btn" id="rvperiod-year"      onclick="setReviewPeriod('year')">هذا العام</button>
+            <button class="dash-period-btn" id="rvperiod-lastyear"  onclick="setReviewPeriod('lastyear')">العام الماضي</button>
+            <button class="dash-period-btn" id="rvperiod-custom"    onclick="setReviewPeriod('custom')">مخصص</button>
+          </div>
+        </div>
+        <div id="rvCustomDateWrap" style="display:none;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <input type="date" id="rv-from" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <span style="color:var(--text2)">—</span>
+          <input type="date" id="rv-to"   style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="reviewState.from=el('rv-from').value;reviewState.to=el('rv-to').value;runAllReviewChecks()">🔍 فحص</button>
+        </div>
+
+        <!-- Score Banner -->
+        <div id="review-score-banner" style="margin-bottom:14px"></div>
+
+        <!-- Tabs -->
+        <div style="display:flex;gap:4px;background:var(--card2);border-radius:var(--radius-sm);padding:4px;margin-bottom:16px;flex-wrap:wrap">
+          <button class="btn rv-tab-btn active" onclick="switchReviewTab(0)" style="font-size:12px">🤖 فحوصات تلقائية</button>
+          <button class="btn rv-tab-btn"        onclick="switchReviewTab(1)" style="font-size:12px">✅ قائمة المراجعة</button>
+          <button class="btn rv-tab-btn"        onclick="switchReviewTab(2)" style="font-size:12px">📊 التسويات</button>
+          <button class="btn rv-tab-btn"        onclick="switchReviewTab(3)" style="font-size:12px">📜 سجل المراجعات</button>
+        </div>
+
+        <!-- Tab 0: Auto Checks -->
+        <div id="rv-tab-0" class="review-tab-content">
+          <div id="review-auto-checks">
+            <div class="loading"><div class="spinner"></div><br>جاري الفحص الشامل...</div>
+          </div>
+        </div>
+
+        <!-- Tab 1: Manual Checklist -->
+        <div id="rv-tab-1" class="review-tab-content" style="display:none">
+          <div id="review-checklist-wrap"></div>
+          <div id="review-signoff-wrap" style="margin-top:16px"></div>
+        </div>
+
+        <!-- Tab 2: Reconciliations -->
+        <div id="rv-tab-2" class="review-tab-content" style="display:none">
+          <div id="review-reconciliation-wrap">
+            <div class="loading"><div class="spinner"></div><br>جاري تحميل التسويات...</div>
+          </div>
+        </div>
+
+        <!-- Tab 3: History -->
+        <div id="rv-tab-3" class="review-tab-content" style="display:none">
+          <div id="review-history-wrap">
+            <div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>
+          </div>
+        </div>
+
+      </div><!-- /reviewView -->
+
 </div><!-- /content-area -->
   </div><!-- /main-area -->
 </div><!-- /app-layout -->
