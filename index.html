@@ -293,6 +293,7 @@
         <!-- KPIs — كل كارت قابل للضغط -->
         <!-- صف 1: مؤشرات الأداء الرئيسية -->
         <!-- صف 1: 6 مؤشرات - مشتريات | مصروفات | تكلفة كاملة | مبيعات | تحصيلات | ربح/خسارة -->
+        <!-- صف 1: KPIs -->
         <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:10px" id="kpiGrid">
           <div class="kpi-card kpi-blue kpi-clickable" onclick="toggleDrillDown('purchase')" id="kpi-card-purchase">
             <div class="kpi-top"><span class="kpi-label">المشتريات</span><div class="kpi-icon">📋</div></div>
@@ -316,12 +317,7 @@
             <div class="kpi-top"><span class="kpi-label">المبيعات</span><div class="kpi-icon">💹</div></div>
             <div class="kpi-val" id="kpi-sales">—</div>
             <div class="kpi-sub" id="kpi-sales-sub">في الفترة</div>
-            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
-          </div>
-          <div class="kpi-card kpi-blue kpi-clickable" onclick="toggleDrillDown('collections')" id="kpi-card-collections">
-            <div class="kpi-top"><span class="kpi-label">التحصيلات</span><div class="kpi-icon">💰</div></div>
-            <div class="kpi-val" id="kpi-collections">—</div>
-            <div class="kpi-sub" id="kpi-collections-sub">في الفترة</div>
+            <div id="kpi-pending-collections" style="display:none;margin-top:4px;font-size:10px;font-weight:700;color:var(--accent);background:var(--accent-dim);border-radius:6px;padding:2px 7px;width:fit-content">⏳ — منتظرة</div>
             <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
           </div>
           <div class="kpi-card kpi-green kpi-clickable" onclick="toggleDrillDown('profit')" id="kpi-card-profit">
@@ -330,10 +326,16 @@
             <div class="kpi-sub" id="kpi-profit-sub">مبيعات - تكلفة</div>
             <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
           </div>
+          <div class="kpi-card kpi-purple kpi-clickable" onclick="toggleDrillDown('stock')" id="kpi-card-stock">
+            <div class="kpi-top"><span class="kpi-label">في المخزن</span><div class="kpi-icon">🚗</div></div>
+            <div class="kpi-val" id="kpi-stock">—</div>
+            <div class="kpi-sub" id="kpi-stock-sub">لم تُباع بعد</div>
+            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
+          </div>
         </div>
 
         <!-- صف 2: المستحقات -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
           <div class="kpi-card kpi-red kpi-clickable" onclick="toggleDrillDown('supplier_due')" id="kpi-card-supplier_due"
             style="padding:12px 16px">
             <div class="kpi-top"><span class="kpi-label">🔴 مستحق للموردين</span></div>
@@ -345,12 +347,6 @@
             <div class="kpi-top"><span class="kpi-label">🟠 تحصيلات مستحقة من العملاء</span></div>
             <div class="kpi-val" style="color:var(--accent);font-size:18px" id="dash-overdue-amt">—</div>
             <div id="dash-overdue-list" style="font-size:11px;margin-top:4px"></div>
-          </div>
-          <div class="kpi-card kpi-purple kpi-clickable" onclick="toggleDrillDown('stock')" id="kpi-card-stock">
-            <div class="kpi-top"><span class="kpi-label">في المخزن</span><div class="kpi-icon">🚗</div></div>
-            <div class="kpi-val" id="kpi-stock">—</div>
-            <div class="kpi-sub" id="kpi-stock-sub">لم تُباع بعد</div>
-            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
           </div>
         </div>
 
