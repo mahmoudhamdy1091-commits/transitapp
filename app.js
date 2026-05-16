@@ -823,29 +823,35 @@ async function loadDashboard() {
     };
 
     // ── KPIs ──
-    // فلتر التحصيلات: فقط المقبوض فعلاً (paid_date موجود) — لا نعرض الفواتير غير المدفوعة كتحصيل
-    const paidCollections   = (_ddState.data.periodCollections||[]).filter(c => isPosted(c) && c.paid_date);
+    // فلتر التحصيلات: فقط المقبوض فعلاً (paid_date موجود)
+    const paidCollections    = (_ddState.data.periodCollections||[]).filter(c => isPosted(c) && c.paid_date);
     const pendingCollections = (_ddState.data.periodCollections||[]).filter(c => isPosted(c) && !c.paid_date);
-    const totCollections    = paidCollections.reduce((s,c)=>s+(+c.amount||0),0);
-    const totPending        = pendingCollections.reduce((s,c)=>s+(+c.amount||0),0);
-    const totFullCost       = totPurchase + totExp;
+    const totCollections     = paidCollections.reduce((s,c)=>s+(+c.amount||0),0);
+    const totPending         = pendingCollections.reduce((s,c)=>s+(+c.amount||0),0);
+    const totFullCost        = totPurchase + totExp;
 
     const setKpi = (id, val, color) => { const e = el(id); if(!e) return; animateCount(e, String(val), color); };
     setKpi('kpi-purchase',    fmt(totPurchase),    'var(--blue)');
     setKpi('kpi-sales',       fmt(totSales),       'var(--green)');
-    setKpi('kpi-collections', fmt(totCollections), totCollections>0?'var(--green)':'var(--text2)');
     setKpi('kpi-month-exp',   fmt(totExp),         totExp>0?'var(--red)':'var(--text2)');
     setKpi('kpi-fullcost',    fmt(totFullCost),     'var(--accent)');
     setKpi('kpi-profit',      fmt(profit),          profit>=0?'var(--green)':'var(--red)');
     setKpi('kpi-stock',       stockVehicles.length, stockVehicles.length>0?'var(--purple)':'var(--green)');
 
-    if(el('kpi-purchase-sub'))    el('kpi-purchase-sub').textContent    = `${periodPurchaseDeals.length} صفقة`;
-    if(el('kpi-sales-sub'))       el('kpi-sales-sub').textContent       = `${periodSales.length} فاتورة`;
-    // التحصيلات: عرض المقبوض فعلاً + المنتظر
-    if(el('kpi-collections-sub')) el('kpi-collections-sub').textContent =
-      paidCollections.length > 0
-        ? `${paidCollections.length} مقبوض${totPending>0?' · منتظر '+fmt(totPending):''}`
-        : totPending > 0 ? `⏳ كل التحصيلات منتظرة` : `—`;
+    if(el('kpi-purchase-sub'))  el('kpi-purchase-sub').textContent  = `${periodPurchaseDeals.length} صفقة`;
+    if(el('kpi-sales-sub'))     el('kpi-sales-sub').textContent     = `${periodSales.length} فاتورة`;
+
+    // Indicator التحصيلات المنتظرة جوه كارت المبيعات
+    const pendEl = el('kpi-pending-collections');
+    if (pendEl) {
+      if (totPending > 0) {
+        pendEl.style.display = 'block';
+        pendEl.textContent   = `⏳ ${fmt(totPending)} منتظرة`;
+        pendEl.title         = `${pendingCollections.length} فاتورة لم تُحصَّل بعد`;
+      } else {
+        pendEl.style.display = 'none';
+      }
+    }
     if(el('kpi-month-exp-sub'))   el('kpi-month-exp-sub').textContent   = `${periodExp.length} بند`;
     if(el('kpi-fullcost-sub'))    el('kpi-fullcost-sub').textContent    = `شراء ${fmt(totPurchase)} + مصاريف ${fmt(totExp)}`;
     if(el('kpi-profit-sub'))      el('kpi-profit-sub').textContent      = `هامش ${margin}%`;
