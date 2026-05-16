@@ -267,11 +267,13 @@
         <!-- Period Selector -->
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
           <div style="display:flex;gap:4px;background:var(--card2);border-radius:var(--radius-sm);padding:4px">
-            <button class="dash-period-btn" id="period-btn-7"      onclick="setDashPeriod(7)">آخر أسبوع</button>
+            <button class="dash-period-btn" id="period-btn-7"        onclick="setDashPeriod(7)">آخر أسبوع</button>
             <button class="dash-period-btn active" id="period-btn-30" onclick="setDashPeriod(30)">آخر شهر</button>
-            <button class="dash-period-btn" id="period-btn-60"     onclick="setDashPeriod(60)">آخر شهرين</button>
-            <button class="dash-period-btn" id="period-btn-90"     onclick="setDashPeriod(90)">آخر 3 أشهر</button>
-            <button class="dash-period-btn" id="period-btn-custom" onclick="setDashPeriod('custom')">تاريخ محدد</button>
+            <button class="dash-period-btn" id="period-btn-60"       onclick="setDashPeriod(60)">آخر شهرين</button>
+            <button class="dash-period-btn" id="period-btn-90"       onclick="setDashPeriod(90)">آخر 3 أشهر</button>
+            <button class="dash-period-btn" id="period-btn-year"     onclick="setDashPeriod('year')">هذه السنة</button>
+            <button class="dash-period-btn" id="period-btn-lastyear" onclick="setDashPeriod('lastyear')">السنة السابقة</button>
+            <button class="dash-period-btn" id="period-btn-custom"   onclick="setDashPeriod('custom')">تاريخ محدد</button>
           </div>
           <div id="dash-custom-dates" style="display:none;align-items:center;gap:6px">
             <input type="date" id="dash-from" onchange="setDashPeriod('custom')" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
@@ -283,7 +285,8 @@
 
         <!-- KPIs — كل كارت قابل للضغط -->
         <!-- صف 1: مؤشرات الأداء الرئيسية -->
-        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:10px" id="kpiGrid">
+        <!-- صف 1: 6 مؤشرات - مشتريات | مصروفات | تكلفة كاملة | مبيعات | تحصيلات | ربح/خسارة -->
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:10px" id="kpiGrid">
           <div class="kpi-card kpi-blue kpi-clickable" onclick="toggleDrillDown('purchase')" id="kpi-card-purchase">
             <div class="kpi-top"><span class="kpi-label">المشتريات</span><div class="kpi-icon">📋</div></div>
             <div class="kpi-val" id="kpi-purchase">—</div>
@@ -308,8 +311,14 @@
             <div class="kpi-sub" id="kpi-sales-sub">في الفترة</div>
             <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
           </div>
+          <div class="kpi-card kpi-blue kpi-clickable" onclick="toggleDrillDown('collections')" id="kpi-card-collections">
+            <div class="kpi-top"><span class="kpi-label">التحصيلات</span><div class="kpi-icon">💰</div></div>
+            <div class="kpi-val" id="kpi-collections">—</div>
+            <div class="kpi-sub" id="kpi-collections-sub">في الفترة</div>
+            <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
+          </div>
           <div class="kpi-card kpi-green kpi-clickable" onclick="toggleDrillDown('profit')" id="kpi-card-profit">
-            <div class="kpi-top"><span class="kpi-label">الأرباح / الخسائر</span><div class="kpi-icon">📈</div></div>
+            <div class="kpi-top"><span class="kpi-label">صافي الربح / الخسارة</span><div class="kpi-icon">📈</div></div>
             <div class="kpi-val" id="kpi-profit">—</div>
             <div class="kpi-sub" id="kpi-profit-sub">مبيعات - تكلفة</div>
             <div class="kpi-drill-hint">اضغط للتفاصيل ↓</div>
@@ -541,10 +550,12 @@
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
             <span style="font-size:11px;color:var(--text2);font-weight:500">الفترة:</span>
             <div style="display:flex;background:var(--card2);border-radius:var(--radius-sm);padding:3px;gap:2px">
-              <button class="btn btn-sm journal-period-btn active" id="jperiod-today"  onclick="setJournalPeriod('today')">اليوم</button>
-              <button class="btn btn-sm journal-period-btn"        id="jperiod-week"   onclick="setJournalPeriod('week')">هذا الأسبوع</button>
-              <button class="btn btn-sm journal-period-btn"        id="jperiod-month"  onclick="setJournalPeriod('month')">هذا الشهر</button>
-              <button class="btn btn-sm journal-period-btn"        id="jperiod-custom" onclick="setJournalPeriod('custom')">تاريخ محدد</button>
+              <button class="btn btn-sm journal-period-btn active" id="jperiod-today"    onclick="setJournalPeriod('today')">اليوم</button>
+              <button class="btn btn-sm journal-period-btn"        id="jperiod-week"     onclick="setJournalPeriod('week')">هذا الأسبوع</button>
+              <button class="btn btn-sm journal-period-btn"        id="jperiod-month"    onclick="setJournalPeriod('month')">هذا الشهر</button>
+              <button class="btn btn-sm journal-period-btn"        id="jperiod-year"     onclick="setJournalPeriod('year')">هذه السنة</button>
+              <button class="btn btn-sm journal-period-btn"        id="jperiod-lastyear" onclick="setJournalPeriod('lastyear')">السنة السابقة</button>
+              <button class="btn btn-sm journal-period-btn"        id="jperiod-custom"   onclick="setJournalPeriod('custom')">تاريخ محدد</button>
             </div>
             <div id="jCustomDateWrap" style="display:none;align-items:center;gap:6px">
               <input type="date" id="jDateFrom" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
@@ -726,10 +737,12 @@
             <button class="btn btn-sm journal-period-btn" id="rtype-opex"      onclick="setReportType('opex')">💼 التشغيلية</button>
           </div>
           <div style="display:flex;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;gap:2px">
-            <button class="btn btn-sm journal-period-btn active" id="rperiod-today"  onclick="setReportPeriod('today')">اليوم</button>
-            <button class="btn btn-sm journal-period-btn"        id="rperiod-week"   onclick="setReportPeriod('week')">هذا الأسبوع</button>
-            <button class="btn btn-sm journal-period-btn"        id="rperiod-month"  onclick="setReportPeriod('month')">هذا الشهر</button>
-            <button class="btn btn-sm journal-period-btn"        id="rperiod-custom" onclick="setReportPeriod('custom')">تاريخ محدد</button>
+            <button class="btn btn-sm journal-period-btn active" id="rperiod-today"    onclick="setReportPeriod('today')">اليوم</button>
+            <button class="btn btn-sm journal-period-btn"        id="rperiod-week"     onclick="setReportPeriod('week')">هذا الأسبوع</button>
+            <button class="btn btn-sm journal-period-btn"        id="rperiod-month"    onclick="setReportPeriod('month')">هذا الشهر</button>
+            <button class="btn btn-sm journal-period-btn"        id="rperiod-year"     onclick="setReportPeriod('year')">هذه السنة</button>
+            <button class="btn btn-sm journal-period-btn"        id="rperiod-lastyear" onclick="setReportPeriod('lastyear')">السنة السابقة</button>
+            <button class="btn btn-sm journal-period-btn"        id="rperiod-custom"   onclick="setReportPeriod('custom')">تاريخ محدد</button>
           </div>
           <div id="rCustomDateWrap" style="display:none;align-items:center;gap:6px">
             <input type="date" id="r-from" onchange="runReport()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
@@ -1151,11 +1164,13 @@
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
             <span style="font-size:11px;color:var(--text2);font-weight:500">الفترة:</span>
             <div style="display:flex;background:var(--card2);border-radius:var(--radius-sm);padding:3px;gap:2px">
-              <button class="btn btn-sm journal-period-btn active" id="txperiod-today"   onclick="setTxPeriod('today')">اليوم</button>
-              <button class="btn btn-sm journal-period-btn"        id="txperiod-week"    onclick="setTxPeriod('week')">هذا الأسبوع</button>
-              <button class="btn btn-sm journal-period-btn"        id="txperiod-month"   onclick="setTxPeriod('month')">هذا الشهر</button>
-              <button class="btn btn-sm journal-period-btn"        id="txperiod-3months" onclick="setTxPeriod('3months')">آخر 3 أشهر</button>
-              <button class="btn btn-sm journal-period-btn"        id="txperiod-custom"  onclick="setTxPeriod('custom')">تاريخ محدد</button>
+              <button class="btn btn-sm journal-period-btn active" id="txperiod-today"    onclick="setTxPeriod('today')">اليوم</button>
+              <button class="btn btn-sm journal-period-btn"        id="txperiod-week"     onclick="setTxPeriod('week')">هذا الأسبوع</button>
+              <button class="btn btn-sm journal-period-btn"        id="txperiod-month"    onclick="setTxPeriod('month')">هذا الشهر</button>
+              <button class="btn btn-sm journal-period-btn"        id="txperiod-3months"  onclick="setTxPeriod('3months')">آخر 3 أشهر</button>
+              <button class="btn btn-sm journal-period-btn"        id="txperiod-year"     onclick="setTxPeriod('year')">هذه السنة</button>
+              <button class="btn btn-sm journal-period-btn"        id="txperiod-lastyear" onclick="setTxPeriod('lastyear')">السنة السابقة</button>
+              <button class="btn btn-sm journal-period-btn"        id="txperiod-custom"   onclick="setTxPeriod('custom')">تاريخ محدد</button>
             </div>
           </div>
           <!-- الصف الثاني: تاريخ محدد + فلاتر -->
@@ -1322,7 +1337,7 @@
           <label>المورد *</label>
           <div class="ac-wrap" id="ac-wrap-supplier">
             <input type="text" id="nf-supplier" class="ac-input" placeholder="🔍 ابحث أو أضف مورد جديد..." autocomplete="off"
-              oninput="acSearch('supplier','nf-supplier')" onfocus="acSearch('supplier','nf-supplier')" onblur="acBlur('nf-supplier')" onkeydown="acKey(event,'nf-supplier')">
+              oninput="acSearch('supplier','nf-supplier')" onfocus="acPreload('supplier')" onblur="acBlur('nf-supplier')" onkeydown="acKey(event,'nf-supplier')">
             <div class="ac-dropdown" id="ac-nf-supplier"></div>
           </div>
         </div>
@@ -1560,30 +1575,37 @@
           <label>العميل / Customer *</label>
           <div class="ac-wrap" id="ac-wrap-sale-customer">
             <input type="text" id="sale-customer" class="ac-input" placeholder="🔍 ابحث أو أضف عميل جديد..." autocomplete="off"
-              oninput="acSearch('customer','sale-customer')" onfocus="acSearch('customer','sale-customer')" onblur="acBlur('sale-customer')" onkeydown="acKey(event,'sale-customer')">
+              oninput="acSearch('customer','sale-customer')" onfocus="acPreload('customer')" onblur="acBlur('sale-customer')" onkeydown="acKey(event,'sale-customer')">
             <div class="ac-dropdown" id="ac-sale-customer"></div>
           </div>
         </div>
       </div>
       <div class="form-row"><div class="field"><label>رقم الملف *</label><select id="sale-fileNo" onchange="onSaleFileChange(this.value)" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;width:100%"><option value="">— اختر الملف —</option></select></div></div>
 
-      <!-- Vehicles Table -->
-      <div class="divider-label">
-        السيارات
-        <button class="btn btn-secondary btn-sm" onclick="addSaleVehicleRow()" style="margin-right:auto">➕ إضافة سيارة</button>
+      <!-- Vehicles Picker -->
+      <div class="divider-label" style="display:flex;align-items:center;justify-content:space-between">
+        <span>السيارات المتاحة</span>
+        <div style="display:flex;gap:6px">
+          <span id="sale-selected-count" style="font-size:11px;color:var(--green);font-weight:700"></span>
+          <button class="btn btn-secondary btn-sm" onclick="saleToggleAll(document.getElementById('sale-check-all'))" style="font-size:11px;padding:2px 8px">☑ اختر الكل</button>
+        </div>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:12px" id="saleVehiclesTable">
           <thead>
             <tr style="background:var(--card2)">
-              <th style="padding:7px 8px;text-align:right;font-weight:600;color:var(--text2);min-width:200px">السيارة</th>
-              <th style="padding:7px 8px;text-align:right;font-weight:600;color:var(--text2);min-width:130px;direction:ltr">VIN</th>
-              <th style="padding:7px 8px;text-align:right;font-weight:600;color:var(--text2);min-width:110px">سعر البيع *</th>
+              <th style="width:36px;text-align:center;padding:7px 6px">
+                <input type="checkbox" id="sale-check-all" onclick="saleToggleAll(this)" style="width:15px;height:15px;cursor:pointer;accent-color:var(--green)">
+              </th>
+              <th style="padding:7px 8px;text-align:right;font-weight:600;color:var(--text2)">السيارة / VIN</th>
+              <th style="padding:7px 8px;text-align:center;font-weight:600;color:var(--text2)">تكلفة الشراء</th>
+              <th style="padding:7px 8px;text-align:right;font-weight:600;color:var(--text2);min-width:130px">سعر البيع *</th>
               <th style="padding:7px 8px;text-align:right;font-weight:600;color:var(--text2);min-width:100px">ملاحظات</th>
-              <th style="width:30px"></th>
             </tr>
           </thead>
-          <tbody id="saleVehiclesContainer"></tbody>
+          <tbody id="saleVehiclesContainer">
+            <tr id="sale-no-file-msg"><td colspan="5" style="padding:20px;text-align:center;color:var(--text2);font-size:12px">اختر رقم الملف لعرض السيارات المتاحة</td></tr>
+          </tbody>
         </table>
       </div>
       <div id="saleTotalWrap" style="display:none;margin-top:8px;padding:10px 14px;background:var(--card2);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center">
@@ -1914,7 +1936,7 @@
         <label>العميل *</label>
         <div class="ac-wrap">
             <input type="text" id="qs-customer" class="ac-input" placeholder="🔍 ابحث أو أضف عميل جديد..." autocomplete="off"
-              oninput="acSearch('customer','qs-customer')" onfocus="acSearch('customer','qs-customer')" onblur="acBlur('qs-customer')" onkeydown="acKey(event,'qs-customer')">
+              oninput="acSearch('customer','qs-customer')" onfocus="acPreload('customer')" onblur="acBlur('qs-customer')" onkeydown="acKey(event,'qs-customer')">
             <div class="ac-dropdown" id="ac-qs-customer"></div>
           </div>
       </div>

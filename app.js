@@ -357,6 +357,7 @@ function setTxPeriod(period) {
   const pad = n => String(n).padStart(2,'0');
   const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   const now = new Date();
+  const yr  = now.getFullYear();
 
   if (period === 'custom') {
     customWrap.style.display = 'flex';
@@ -372,11 +373,17 @@ function setTxPeriod(period) {
     const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
     from = toDate(sun); to = toDate(sat);
   } else if (period === 'month') {
-    from = `${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;
-    to   = toDate(new Date(now.getFullYear(), now.getMonth()+1, 0));
+    from = `${yr}-${pad(now.getMonth()+1)}-01`;
+    to   = toDate(new Date(yr, now.getMonth()+1, 0));
   } else if (period === '3months') {
     const f = new Date(now); f.setMonth(f.getMonth() - 3);
     from = toDate(f); to = toDate(now);
+  } else if (period === 'year') {
+    from = `${yr}-01-01`;
+    to   = `${yr}-12-31`;
+  } else if (period === 'lastyear') {
+    from = `${yr-1}-01-01`;
+    to   = `${yr-1}-12-31`;
   }
 
   if (el('tx-from')) el('tx-from').value = from;
@@ -650,6 +657,9 @@ function setDashPeriod(days) {
   if (btn) btn.classList.add('active');
 
   const customDates = el('dash-custom-dates');
+  const now = new Date();
+  const yr  = now.getFullYear();
+
   if (days === 'custom') {
     if (customDates) customDates.style.display = 'flex';
     const from = el('dash-from')?.value;
@@ -658,17 +668,26 @@ function setDashPeriod(days) {
     dashState.days = 'custom';
     dashState.from = from;
     dashState.to   = to;
+  } else if (days === 'year') {
+    if (customDates) customDates.style.display = 'none';
+    dashState.days = 'year';
+    dashState.from = `${yr}-01-01`;
+    dashState.to   = `${yr}-12-31`;
+  } else if (days === 'lastyear') {
+    if (customDates) customDates.style.display = 'none';
+    dashState.days = 'lastyear';
+    dashState.from = `${yr-1}-01-01`;
+    dashState.to   = `${yr-1}-12-31`;
   } else {
     if (customDates) customDates.style.display = 'none';
     dashState.days = days;
-    const toDate   = new Date();
     const fromDate = new Date(Date.now() - days * 864e5);
     dashState.from = fromDate.toISOString().split('T')[0];
-    dashState.to   = toDate.toISOString().split('T')[0];
+    dashState.to   = now.toISOString().split('T')[0];
   }
 
   // Update period label
-  const labels = {7:'آخر 7 أيام', 30:'آخر 30 يوم', 60:'آخر 60 يوم', 90:'آخر 90 يوم'};
+  const labels = {7:'آخر 7 أيام', 30:'آخر 30 يوم', 60:'آخر 60 يوم', 90:'آخر 90 يوم', year:`سنة ${yr}`, lastyear:`سنة ${yr-1}`};
   if (el('dash-period-label')) {
     el('dash-period-label').textContent = days === 'custom'
       ? `${dashState.from} — ${dashState.to}`
@@ -1516,6 +1535,7 @@ async function loadSalesTab(fn, sys) {
         <td class="mono text-green" style="font-weight:700">${fmt(invTotal)}</td>
         <td>
           <button class="btn btn-secondary btn-sm" onclick="reprintInvoice('${inv.inv_no}','${fn}')">🖨️ طباعة</button>
+          <button class="btn btn-secondary btn-sm" onclick="deleteSaleInvoice('${inv.inv_no}','${fn}')" style="color:var(--red)">🗑 حذف</button>
           <button class="btn btn-secondary btn-sm" onclick="sendWhatsappInvoice({invNo:'${inv.inv_no}',customer:'${(inv.customer||'').replace(/'/g,"\\'")}',date:'${inv.sale_date||''}',items:${JSON.stringify(inv._items||[])},total:${inv._total||0},phone:''})" style="background:rgba(37,211,102,.1);border-color:#25d366;color:#25d366">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-left:3px"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.135.558 4.14 1.535 5.878L.057 23.943l6.235-1.635A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.001-1.366l-.36-.214-3.7.971.988-3.608-.236-.372A9.818 9.818 0 0112 2.182c5.42 0 9.818 4.398 9.818 9.818 0 5.42-4.398 9.818-9.818 9.818z"/></svg>
             واتساب
@@ -1575,6 +1595,36 @@ async function reprintInvoice(invNo, fn) {
       items, total: items.reduce((t,i)=>t+i.price,0)
     });
   } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
+async function deleteSaleInvoice(invNo, fileNo) {
+  showConfirm(
+    `حذف فاتورة ${invNo}`,
+    `سيتم حذف الفاتورة وجميع التحصيلات المرتبطة بها نهائياً. لا يمكن التراجع.`,
+    async () => {
+      try {
+        await apiDelete('sales', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
+        try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` }); } catch(e) {}
+        // تحديث حالة الصفقة
+        try {
+          const allV = await apiGet('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
+          const allS = await apiGet('sales',    { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
+          const soldSet = new Set((allS||[]).map(s=>s.vin));
+          const hasAnySales = (allS||[]).length > 0;
+          const allSold = hasAnySales && (allV||[]).every(v=>soldSet.has(v.vin));
+          await apiPatch('purchase_orders',
+            { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` },
+            { status: !hasAnySales ? 'OPEN' : (allSold ? 'CLOSED' : 'IN PROGRESS') }
+          );
+        } catch(e) {}
+        invalidateCache();
+        toast(`✅ تم حذف فاتورة ${invNo}`, 'ok');
+        await loadSalesTab(fileNo, state.system);
+        if (state.currentTab === 5) loadCollectionsTab(fileNo, state.system);
+        if (state.currentTab === 0) loadSummaryTab(fileNo, state.system);
+      } catch(e) { toast('خطأ: ' + e.message, 'err'); }
+    }
+  );
 }
 
 function printSaleInvoice({ invNo, customer, date, fn, notes, items, total }) {
@@ -2644,9 +2694,10 @@ async function submitNewFile() {
       }
     }
 
-    // 5. Audit
+    // 5. Audit + تسجيل جهة الاتصال تلقائياً
     await logAudit('INSERT','purchase_orders', fileNo, null, poData);
-    closeModal('newFileModal');
+    if (supplier) await ensureContact(supplier, 'supplier');
+    markSaving('newFileModal'); closeModal('newFileModal');
     toast(`✅ تم إنشاء الملف ${fileNo} — ${vehicles.length} سيارة`, 'ok');
     invalidateCache();
     await loadDashboard();
@@ -2778,7 +2829,7 @@ async function submitEditFileFull() {
     // 4. Update ledger entry for supplier if total changed
     await logAudit('UPDATE','purchase_orders',oldFileNo,null,{newFileNo,supplier,finalTotal});
 
-    closeModal('newFileModal');
+    markSaving('newFileModal'); closeModal('newFileModal');
     toast(`✅ تم تعديل الصفقة ${newFileNo}`,'ok');
     await loadDashboard();
     if (state.currentFileNo === oldFileNo || state.currentFileNo === newFileNo) {
@@ -2978,7 +3029,7 @@ async function submitExpense() {
       await logAudit('INSERT','expenses', expFileNo, null, data);
       if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method});
     }
-    closeModal('expenseModal');
+    markSaving('expenseModal'); closeModal('expenseModal');
     invalidateCache();
     toast(`✅ تم تسجيل ${expenses.length} مصروف`,'ok');
     if (state.currentFileNo) {
@@ -3002,11 +3053,17 @@ async function submitPayment() {
 
   if (!payer || !amount || !date) { showFieldErr('payError','يرجى ملء الحقول المطلوبة'); return; }
 
-  // تحذير لو الدفعة أكبر من المتبقي (من البطاقة المحسوبة)
+  // تحذير لو الدفعة أكبر من المتبقي
   const remainingText = el('pay-card-remaining')?.textContent?.replace(/,/g,'');
   const remaining = parseFloat(remainingText) || 0;
-  if (remaining > 0 && amount > remaining + 0.001) {
-    const proceed = confirm(`⚠️ قيمة الدفعة (${fmt(amount)}) أكبر من الباقي للمورد (${fmt(remaining)}).\n\nهل تريد المتابعة؟`);
+  const totalPOText = el('pay-card-total')?.textContent?.replace(/,/g,'');
+  const totalPO = parseFloat(totalPOText) || 0;
+  if (amount > remaining + 0.001) {
+    const exceedTotal = totalPO > 0 && amount > totalPO + 0.001;
+    const msg = exceedTotal
+      ? `⚠️ تحذير: قيمة الدفعة (${fmt(amount)}) تتجاوز إجمالي الصفقة (${fmt(totalPO)}).\n\nهل تريد المتابعة رغم ذلك؟`
+      : `⚠️ قيمة الدفعة (${fmt(amount)}) أكبر من المتبقي للمورد (${fmt(remaining)}).\n\nهل تريد المتابعة؟`;
+    const proceed = confirm(msg);
     if (!proceed) return;
   }
 
@@ -3025,7 +3082,7 @@ async function submitPayment() {
     const poArr = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
     if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo:fn,supplierName,payerName:payer,method});
-    closeModal('paymentModal');
+    markSaving('paymentModal'); closeModal('paymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
     if (state.currentTab === 2) loadPaymentsTab(fn, state.system);
     if (state.currentTab === 0) loadSummaryTab(fn, state.system);
@@ -3091,10 +3148,7 @@ async function onSaleFileChange(fn) {
       el('sale-invNo').value = `INV-${fn}-${String(max+1).padStart(3,'0')}`;
     }
   } catch(e) {}
-  state._saleAvailableVehicles = fn ? await loadAvailableVehicles(fn, state.system) : [];
-  el('saleVehiclesContainer').innerHTML = '';
-  addSaleVehicleRow();
-  updateSaleTotal();
+  await renderSaleVehiclePicker(fn, state.system);
 }
 
 async function loadAvailableVehicles(fn, sys) {
@@ -3105,93 +3159,119 @@ async function loadAvailableVehicles(fn, sys) {
 }
 
 
+// ════════════════════════════════════════
+// SALE VEHICLE PICKER — checkboxes
+// ════════════════════════════════════════
+async function renderSaleVehiclePicker(fn, sys) {
+  const container = el('saleVehiclesContainer');
+  if (!fn) {
+    container.innerHTML = `<tr id="sale-no-file-msg"><td colspan="5" style="padding:20px;text-align:center;color:var(--text2);font-size:12px">اختر رقم الملف لعرض السيارات المتاحة</td></tr>`;
+    updateSaleTotal();
+    return;
+  }
+  container.innerHTML = `<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--text2);font-size:12px"><div class="spinner" style="display:inline-block;width:16px;height:16px;margin-left:6px"></div> جاري تحميل السيارات...</td></tr>`;
+  try {
+    const vehicles = await loadAvailableVehicles(fn, sys);
+    state._saleAvailableVehicles = vehicles;
+    if (!vehicles.length) {
+      container.innerHTML = `<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text2);font-size:12px">⚠️ لا توجد سيارات متاحة في هذا الملف</td></tr>`;
+      updateSaleTotal();
+      return;
+    }
+    const s = 'width:100%;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text);font-family:monospace;font-size:12px';
+    const sn = 'width:100%;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px';
+    container.innerHTML = vehicles.map((v, i) => `
+      <tr class="sale-v-row"
+        data-vehicle-id="${v.id}"
+        data-vin="${(v.vin||'').replace(/"/g,'&quot;')}"
+        data-model="${(v.model||v.vehicle_type||'').replace(/"/g,'&quot;')}"
+        data-plate="${(v.plate||'').replace(/"/g,'&quot;')}"
+        data-color="${(v.color||'').replace(/"/g,'&quot;')}"
+        data-year="${v.year||''}"
+        data-engine="${v.engine_size||''}"
+        style="transition:background .15s">
+        <td style="padding:6px 8px;text-align:center;width:36px">
+          <input type="checkbox" class="sv-check"
+            onchange="onSaleVehicleCheck(this)"
+            style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">
+        </td>
+        <td style="padding:6px 8px">
+          <div style="font-weight:600;font-size:12px">${v.model||v.vehicle_type||'—'} ${v.year||''}</div>
+          <div style="font-family:monospace;font-size:11px;color:var(--accent);direction:ltr">${v.vin||'—'}</div>
+          <div style="font-size:11px;color:var(--text2)">${v.color||''}${v.plate?' · '+v.plate:''}</div>
+        </td>
+        <td style="padding:6px 8px;text-align:center">
+          <span style="color:var(--blue);font-family:monospace;font-size:12px;font-weight:600">${fmt(v.purchase_price)}</span>
+        </td>
+        <td style="padding:6px 8px">
+          <input type="number" name="sv-price" placeholder="سعر البيع *" min="0" step="0.001"
+            disabled oninput="updateSaleTotal()"
+            style="${s};opacity:.4;cursor:not-allowed">
+        </td>
+        <td style="padding:6px 8px">
+          <input type="text" name="sv-notes" placeholder="ملاحظة" disabled
+            style="${sn};opacity:.4;cursor:not-allowed">
+        </td>
+      </tr>`).join('');
+    updateSaleTotal();
+  } catch(e) {
+    container.innerHTML = `<tr><td colspan="5" style="padding:12px;color:var(--red);font-size:12px">خطأ: ${e.message}</td></tr>`;
+  }
+}
+
+function onSaleVehicleCheck(checkbox) {
+  const row      = checkbox.closest('tr');
+  const priceInp = row.querySelector('[name="sv-price"]');
+  const notesInp = row.querySelector('[name="sv-notes"]');
+  const checked  = checkbox.checked;
+  row.style.background = checked ? 'var(--green-dim)' : '';
+  if (priceInp) {
+    priceInp.disabled = !checked;
+    priceInp.style.opacity  = checked ? '1' : '.4';
+    priceInp.style.cursor   = checked ? '' : 'not-allowed';
+    if (checked) { priceInp.focus(); priceInp.select(); }
+  }
+  if (notesInp) {
+    notesInp.disabled = !checked;
+    notesInp.style.opacity = checked ? '1' : '.4';
+    notesInp.style.cursor  = checked ? '' : 'not-allowed';
+  }
+  updateSaleTotal();
+}
+
+function saleToggleAll(masterCheck) {
+  const rows = el('saleVehiclesContainer').querySelectorAll('tr.sale-v-row');
+  rows.forEach(row => {
+    const cb = row.querySelector('.sv-check');
+    if (cb) { cb.checked = masterCheck.checked; onSaleVehicleCheck(cb); }
+  });
+}
+
+// kept for backward compat (openEditSaleApproval uses addSaleVehicleRow)
 function addSaleVehicleRow() {
   const container = el('saleVehiclesContainer');
-  const tr = document.createElement('tr');
-  tr.className = 'sale-v-row';
-  const vehicles = state._saleAvailableVehicles || [];
-  const vOpts = ['<option value="">— اختر سيارة (رقم الشاصي) —</option>',
-    ...vehicles.map(v => {
-      const vin = v.vin || '—';
-      const info = [v.model||v.vehicle_type, v.year, v.color].filter(Boolean).join(' · ');
-      // Label = VIN فقط (المعلومات الإضافية في data-* للـ JS)
-      return `<option value="${v.id}" data-vin="${v.vin||''}" data-model="${v.model||v.vehicle_type||''}" data-plate="${v.plate||''}" data-color="${v.color||''}" data-year="${v.year||''}" title="${info}">${vin}</option>`;
-    })
-  ].join('');
-  tr.innerHTML = `
-    <td style="padding:4px 3px">
-      <select name="sv-vehicle" onchange="onSaleRowVehicleChange(this)"
-        style="width:100%;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px">
-        ${vOpts}
-      </select>
-    </td>
-    <td style="padding:4px 3px">
-      <input type="text" name="sv-vin" readonly placeholder="—"
-        style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text);font-family:monospace;font-size:11px;direction:ltr;opacity:.8">
-    </td>
-    <td style="padding:4px 3px">
-      <input type="number" name="sv-price" placeholder="0.000" min="0" step="0.001"
-        oninput="updateSaleTotal()"
-        style="width:100%;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text);font-family:monospace;font-size:12px">
-    </td>
-    <td style="padding:4px 3px">
-      <input type="text" name="sv-notes" placeholder="ملاحظة"
-        style="width:100%;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px">
-    </td>
-    <td style="padding:4px 3px;text-align:center">
-      <button class="btn-remove" onclick="this.closest('tr').remove();updateSaleTotal()" title="حذف">✕</button>
-    </td>
-  `;
-  container.appendChild(tr);
+  // In picker mode, this is no-op — rows are auto-generated
+  // Only used when editing from approval queue via openEditSaleApproval
 }
 
-async function onSaleRowFileChange(sel) {
-  const fn  = sel.value;
-  const row = sel.closest('tr');
-  const vehicleSel = row.querySelector('[name="sv-vehicle"]');
-  vehicleSel.innerHTML = '<option value="">⏳ جاري التحميل...</option>';
-  if (!fn) { vehicleSel.innerHTML = '<option value="">-- اختر ملف أولاً --</option>'; return; }
-  try {
-    const vehicles = await apiGet('vehicles', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
-    const sales    = await apiGet('sales',    { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
-    const soldVins = new Set((sales||[]).map(s=>s.vin));
-    const avail    = (vehicles||[]).filter(v=>!soldVins.has(v.vin));
-    vehicleSel.innerHTML = '<option value="">— اختر سيارة (رقم الشاصي) —</option>' +
-      avail.map(v=>{
-        const info = [v.model||v.vehicle_type, v.year, v.color].filter(Boolean).join(' · ');
-        return `<option value="${v.id}"
-          data-vin="${v.vin||''}"
-          data-model="${v.model||v.vehicle_type||''}"
-          data-plate="${v.plate||''}"
-          data-color="${v.color||''}"
-          data-engine="${v.engine_size||''}"
-          data-year="${v.year||''}"
-          title="${info}">${v.vin||'—'}</option>`;
-      }).join('');
-  } catch(e) { vehicleSel.innerHTML = '<option value="">خطأ في التحميل</option>'; }
-}
-
-function onSaleRowVehicleChange(sel) {
-  const opt = sel.options[sel.selectedIndex];
-  const row = sel.closest('tr');
-  row.querySelector('[name="sv-vin"]').value = opt?.dataset?.vin || '';
-  updateSaleTotal();
-}
-
-function onSaleVehicleChange(sel) {
-  const opt = sel.options[sel.selectedIndex];
-  const row = sel.closest('tr');
-  if (row.querySelector('[name="sv-vin"]'))
-    row.querySelector('[name="sv-vin"]').value = opt.dataset.vin || '';
-  updateSaleTotal();
-}
+function onSaleRowVehicleChange(sel) {}
+function onSaleVehicleChange(sel)    {}
 
 function updateSaleTotal() {
   const rows = el('saleVehiclesContainer')?.querySelectorAll('tr.sale-v-row') || [];
-  let total = 0;
-  rows.forEach(r => { total += parseFloat(r.querySelector('[name="sv-price"]')?.value) || 0; });
+  let total = 0, checked = 0;
+  rows.forEach(r => {
+    const cb = r.querySelector('.sv-check');
+    if (cb && cb.checked) {
+      total += parseFloat(r.querySelector('[name="sv-price"]')?.value) || 0;
+      checked++;
+    }
+  });
   if (el('saleTotalDisplay')) el('saleTotalDisplay').textContent = fmt(total);
-  if (el('saleTotalWrap')) el('saleTotalWrap').style.display = rows.length ? 'flex' : 'none';
+  if (el('saleTotalWrap'))    el('saleTotalWrap').style.display  = checked > 0 ? 'flex' : 'none';
+  // update label
+  const lbl = el('sale-selected-count');
+  if (lbl) lbl.textContent = checked > 0 ? `${checked} سيارة مختارة` : '';
 }
 
 function toggleSalePayment(checked) {
@@ -3209,7 +3289,10 @@ function toggleSalePayment(checked) {
   }
 }
 
+let _saleSaving = false;
 async function submitSale() {
+  if (_saleSaving) { toast('⏳ جاري الحفظ، انتظر...', 'err'); return; }
+
   const fn       = el('sale-fileNo').value.trim();
   const invNo    = el('sale-invNo').value.trim();
   const customer = el('sale-customer')?.value?.trim() || '';
@@ -3221,55 +3304,68 @@ async function submitSale() {
   if (!date)     { showFieldErr('saleError','يرجى إدخال التاريخ'); return; }
   if (!invNo)    { showFieldErr('saleError','يرجى إدخال رقم الفاتورة'); return; }
 
-  // Collect vehicles from table rows
+  // ── جمع السيارات المحددة من الـ picker ──
   const rows = el('saleVehiclesContainer').querySelectorAll('tr.sale-v-row');
   const saleItems = [];
   rows.forEach(row => {
+    const cb    = row.querySelector('.sv-check');
+    // support both picker mode (checkbox) and legacy mode (select)
+    const isChecked = cb ? cb.checked : !!row.querySelector('[name="sv-vehicle"]')?.value;
+    if (!isChecked) return;
+    const price = parseFloat(row.querySelector('[name="sv-price"]')?.value) || 0;
+    const vnote = row.querySelector('[name="sv-notes"]')?.value?.trim() || '';
+    const vin   = row.dataset?.vin  || row.querySelector('[name="sv-vin"]')?.value || '';
     const vehicleSel = row.querySelector('[name="sv-vehicle"]');
-    const opt        = vehicleSel?.options[vehicleSel?.selectedIndex];
-    const price      = parseFloat(row.querySelector('[name="sv-price"]')?.value) || 0;
-    const vnote      = row.querySelector('[name="sv-notes"]')?.value?.trim() || '';
-    if (vehicleSel?.value && price > 0) {
+    const opt   = vehicleSel?.options[vehicleSel?.selectedIndex];
+    if (price > 0) {
       saleItems.push({
-        vehicleId: vehicleSel.value, price, vnote,
-        fileNo: fn,
-        vin:   opt?.dataset?.vin   || row.querySelector('[name="sv-vin"]')?.value || '',
-        model: opt?.dataset?.model || '',
-        plate: opt?.dataset?.plate || '',
-        color: opt?.dataset?.color || '',
-        year:  opt?.dataset?.year  || '',
+        vehicleId: row.dataset?.vehicleId || vehicleSel?.value || '',
+        price, vnote, fileNo: fn,
+        vin:    vin  || opt?.dataset?.vin    || '',
+        model:  row.dataset?.model  || opt?.dataset?.model  || '',
+        plate:  row.dataset?.plate  || opt?.dataset?.plate  || '',
+        color:  row.dataset?.color  || opt?.dataset?.color  || '',
+        year:   row.dataset?.year   || opt?.dataset?.year   || '',
+        engine: row.dataset?.engine || opt?.dataset?.engine || '',
       });
     }
   });
 
-  if (!saleItems.length) { showFieldErr('saleError','يرجى إضافة سيارة واحدة على الأقل مع السعر'); return; }
+  if (!saleItems.length) { showFieldErr('saleError','يرجى تحديد سيارة واحدة على الأقل وإدخال سعر البيع'); return; }
+
+  // ── منع التكرار: تحقق من رقم الفاتورة ──
+  try {
+    const existing = await apiGet('sales', { select:'id', system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` });
+    if (existing?.length && !el('saleSubmitBtn')._editMode) {
+      showFieldErr('saleError', `⚠️ رقم الفاتورة "${invNo}" مسجّل مسبقاً — غيّر الرقم أو استخدم 🔄 لتوليد رقم جديد`);
+      return;
+    }
+  } catch(e) {}
 
   const totalPrice = saleItems.reduce((s,i)=>s+i.price,0);
   const btn = el('saleSubmitBtn');
-  btn.disabled = true; btn.textContent = '⏳ جاري الحفظ...';
+  _saleSaving = true;
+  btn.disabled = true;
+  btn.textContent = '⏳ جاري الحفظ...';
 
   try {
-    // Insert a sale record per vehicle
-    const insertedSales = [];
+    // ── تسجيل سجل بيع لكل سيارة ──
     for (const item of saleItems) {
       const data = {
         system_type: state.system, file_no: item.fileNo||fn,
         inv_no: invNo, vin: item.vin||null, customer,
-        sale_price: item.price, sale_date: date, post_status:entryStatus(), notes: item.vnote||notes||null
+        sale_price: item.price, sale_date: date, post_status: entryStatus(),
+        notes: item.vnote||notes||null
       };
       await apiPost('sales', data);
-      insertedSales.push(data);
-      await logAudit('INSERT','sales',item.fileNo||fn,null,data);
+      await logAudit('INSERT','sales', item.fileNo||fn, null, data);
     }
-
-    // Journal Entry: بيع
+    if (customer) await ensureContact(customer, 'customer');
     if (entryStatus()==='posted') {
-      for (const item of saleItems) {
-        await je_sale({sys:state.system,date,amount:item.price,cost:0,fileNo:item.fileNo||fn,customer,invNo});
-      }
+      await je_sale({sys:state.system, date, amount:totalPrice, cost:0, fileNo:fn, customer, invNo});
     }
 
-    // Update PO status
+    // ── تحديث حالة الصفقة ──
     const allV = await apiGet('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const allS = await apiGet('sales',    { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const soldSet = new Set((allS||[]).map(s=>s.vin));
@@ -3277,65 +3373,54 @@ async function submitSale() {
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` },
       { status: allSold ? 'CLOSED' : 'IN PROGRESS' });
 
-    // اقرأ بيانات الدفع قبل ما تتقفل الـ modal
-    const isPaid    = el('sale-paid-now')?.checked || false;
-    const payMethod = el('sale-pay-method')?.value || 'تحويل بنكي';
-    const payDoc    = el('sale-pay-doc')?.value?.trim() || null;
-    const payDate   = el('sale-pay-date')?.value || date;
-    const payNotes  = el('sale-pay-notes')?.value?.trim() || null;
+    // اقرأ بيانات الدفع
+    const isPaid      = el('sale-paid-now')?.checked || false;
+    const payMethod   = el('sale-pay-method')?.value || 'تحويل بنكي';
+    const payDoc      = el('sale-pay-doc')?.value?.trim() || null;
+    const payDate     = el('sale-pay-date')?.value || date;
+    const payNotes    = el('sale-pay-notes')?.value?.trim() || null;
     const payAmtInput = parseFloat(el('sale-pay-amount')?.value) || 0;
+    const collAmt     = payAmtInput > 0 ? Math.min(payAmtInput, totalPrice) : totalPrice;
+    const allVins     = saleItems.map(i=>i.vin).filter(Boolean).join(' / ');
 
     closeModal('saleModal');
     invalidateCache();
-    // أضف تحصيل لكل سيارة
 
-    for (const item of saleItems) {
-      try {
-        // المبلغ المدفوع — لو جزئي نوزّعه بالنسبة
-        const itemPaidAmt = isPaid
-          ? (payAmtInput > 0 ? Math.min(payAmtInput, item.price) : item.price)
-          : 0;
+    // ── تحصيل واحد للفاتورة كلها (مش لكل سيارة) ──
+    try {
+      await apiPost('collections', {
+        system_type: state.system,
+        file_no:     fn,
+        inv_no:      invNo,
+        customer,
+        vin:         allVins,
+        amount:      totalPrice,
+        pay_method:  payMethod,
+        document:    payDoc,
+        due_date:    date,
+        paid_date:   isPaid ? payDate : null,
+        notes:       payNotes,
+        post_status: entryStatus(),
+        ref_no:      `COL-${invNo}`,
+      });
+      if (isPaid && entryStatus()==='posted') {
+        await je_collection({ sys:state.system, date:payDate, amount:collAmt, fileNo:fn, customer, invNo, method:payMethod });
+      }
+    } catch(e) { console.warn('collection create error:', e.message); }
 
-        await apiPost('collections', {
-          system_type: state.system,
-          file_no:     item.fileNo || fn,
-          inv_no:      invNo,
-          customer,
-          vin:         item.vin || '',
-          amount:      item.price,
-          pay_method:  payMethod,
-          document:    payDoc,
-          due_date:    date,
-          paid_date:   isPaid ? payDate : null,
-          notes:       payNotes,
-          post_status: entryStatus(),
-          ref_no:      `COL-${invNo}-${item.vin||Math.random().toString(36).slice(2,6)}`,
-        });
-
-        if (isPaid && entryStatus()==='posted') {
-          await je_collection({
-            sys:      state.system,
-            date:     payDate,
-            amount:   itemPaidAmt,
-            fileNo:   item.fileNo || fn,
-            customer,
-            invNo,
-            method:   payMethod,
-          });
-        }
-      } catch(e) { console.warn('collection create error:', e.message); }
-    }
     invalidateCache();
-    toast(`✅ تم تسجيل فاتورة ${invNo} — ${saleItems.length} سيارة`,'ok');
+    toast(`✅ تم تسجيل فاتورة ${invNo} — ${saleItems.length} سيارة`, 'ok');
     state.currentSales = allS || [];
     if (state.currentTab === 4) loadSalesTab(fn, state.system);
     if (state.currentTab === 0) loadSummaryTab(fn, state.system);
-
-    // Open printable invoice
     printSaleInvoice({ invNo, customer, date, fn, notes, items: saleItems, total: totalPrice });
 
   } catch(e) { showFieldErr('saleError','خطأ: '+e.message); console.error(e); }
-  btn.disabled = false; btn.textContent = '💾 حفظ وعرض الفاتورة';
+  finally {
+    _saleSaving = false;
+    btn.disabled = false;
+    btn.textContent = '💾 حفظ وعرض الفاتورة';
+  }
 }
 
 // ════════════════════════════════════════
@@ -3371,33 +3456,40 @@ async function openCollectionModal() {
       if (c.inv_no) collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
     });
 
-    const normalizedSales = (sales||[]).map(s => ({
-      ...s, inv_no: s.inv_no || '',
-    })).filter(s => s.inv_no);
+    // ── تجميع بالفاتورة (inv_no) بدل كل سيارة على حدة ──
+    const invMap = {};
+    (sales||[]).filter(s => s.inv_no).forEach(s => {
+      const k = s.inv_no;
+      if (!invMap[k]) invMap[k] = { inv_no:k, customer:s.customer, file_no:s.file_no, sale_date:s.sale_date, total:0, vins:[] };
+      invMap[k].total += +s.sale_price || 0;
+      if (s.vin) invMap[k].vins.push(s.vin);
+    });
 
-    const pendingSales = normalizedSales.map(s => ({
-      ...s,
-      collected: collectedMap[s.inv_no] || 0,
-      remaining: (+s.sale_price||0) - (collectedMap[s.inv_no]||0),
-    })).filter(s => s.remaining > 0.001);
+    const pendingSales = Object.values(invMap).map(inv => ({
+      ...inv,
+      sale_price: inv.total,
+      vin:        inv.vins.join(' / '),
+      collected:  collectedMap[inv.inv_no] || 0,
+      remaining:  inv.total - (collectedMap[inv.inv_no] || 0),
+    })).filter(inv => inv.remaining > 0.001)
+       .sort((a,b) => (a.sale_date||'') > (b.sale_date||'') ? -1 : 1);
 
     if (!pendingSales.length) {
       el('col-invNo').innerHTML = '<option value="">لا توجد فواتير غير محصّلة</option>';
       return;
     }
 
-    el('col-invNo').innerHTML = '<option value="">— اختر بالشاصي أو الفاتورة —</option>' +
+    el('col-invNo').innerHTML = '<option value="">— اختر فاتورة —</option>' +
       pendingSales.map(s => `
         <option value="${s.inv_no}"
           data-customer="${s.customer||''}"
           data-vin="${s.vin||''}"
-          data-total="${s.sale_price||0}"
+          data-total="${s.total||0}"
           data-collected="${s.collected}"
           data-remaining="${s.remaining}">
-          ${s.vin||'—'}  |  ${s.inv_no||'—'} — ${s.customer||''}  (باقي: ${fmt(s.remaining)})
+          ${s.inv_no} — ${s.customer||'—'} — ${s.vins.length} سيارة  (باقي: ${fmt(s.remaining)})
         </option>`).join('');
 
-    // حفظ البيانات للاستخدام في onchange
     el('col-invNo')._salesData = pendingSales;
 
   } catch(e) {
@@ -3478,8 +3570,9 @@ async function submitCollection() {
     , post_status:entryStatus()};
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
+    if (cust) await ensureContact(cust, 'customer');
     if (entryStatus()==='posted' && cust) await je_collection({sys:state.system,date:paid||today(),amount,fileNo:fn,customer:cust,invNo:invNo||'',method});
-    closeModal('collectionModal');
+    markSaving('collectionModal'); closeModal('collectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     invalidateCache();
     if (state.currentTab === 5) loadCollectionsTab(fn, state.system);
@@ -3682,7 +3775,7 @@ async function submitPayout() {
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fn,null,data);
     if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo:fn,partner,method});
-    closeModal('payoutModal');
+    markSaving('payoutModal'); closeModal('payoutModal');
     toast(`✅ تم تسجيل ${type} للشريك ${partner}`,'ok');
     invalidateCache();
     if (state.currentTab === 6) loadPayoutsTab(fn, state.system);
@@ -3725,7 +3818,7 @@ async function submitAddVehicle() {
     const vCount = (await apiGet('vehicles', { select:'id', system_type:`eq.${state.system}`, file_no:`eq.${fn}` })).length;
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` }, { vehicle_count: vCount });
     await logAudit('INSERT','vehicles',fn,null,data);
-    closeModal('addVehicleModal');
+    markSaving('addVehicleModal'); closeModal('addVehicleModal');
     invalidateCache();
     toast('✅ تم إضافة السيارة','ok');
     loadVehiclesTab(fn, state.system);
@@ -3976,7 +4069,7 @@ async function submitQuickSale() {
     await apiPost('sales', data);
     await logAudit('INSERT','sales',fileNo,null,data);
     if (entryStatus()==='posted') await je_sale({sys:state.system,date,amount:price,cost:0,fileNo,customer,invNo:invNo||'QS'});
-    closeModal('quickSaleModal');
+    markSaving('quickSaleModal'); closeModal('quickSaleModal');
     toast('✅ تم تسجيل البيع بنجاح','ok');
     invalidateCache();
     loadJournal();
@@ -4021,7 +4114,7 @@ async function submitQuickCollection() {
     await apiPost('collections', data);
     await logAudit('INSERT','collections', fileNo, null, data);
     if (entryStatus()==='posted' && customer) await je_collection({sys:state.system,date:paid||today(),amount,fileNo,customer,invNo,method});
-    closeModal('quickCollectionModal');
+    markSaving('quickCollectionModal'); closeModal('quickCollectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     invalidateCache();
     loadJournal();
@@ -4052,7 +4145,7 @@ async function submitQuickExpense() {
     await apiPost('expenses', data);
     await logAudit('INSERT','expenses',fileNo,null,data);
     if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount,fileNo,desc,expType:type,method});
-    closeModal('quickExpenseModal');
+    markSaving('quickExpenseModal'); closeModal('quickExpenseModal');
     toast('✅ تم تسجيل المصروف بنجاح','ok');
     invalidateCache();
     loadJournal();
@@ -4135,7 +4228,7 @@ async function submitQuickPayment() {
     await apiPost('payments', data);
     await logAudit('INSERT','payments', fileNo, null, data);
     if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo,supplierName,payerName:payer,method});
-    closeModal('quickPaymentModal');
+    markSaving('quickPaymentModal'); closeModal('quickPaymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
     loadJournal();
     if (state.currentTab === 2 && state.currentFileNo === fileNo) loadPaymentsTab(fileNo, state.system);
@@ -4171,7 +4264,7 @@ async function submitQuickPayout() {
     await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
     if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo,partner,method});
-    closeModal('quickPayoutModal');
+    markSaving('quickPayoutModal'); closeModal('quickPayoutModal');
     invalidateCache();
     toast('✅ تم تسجيل الصرف بنجاح','ok');
     loadJournal();
@@ -4394,15 +4487,63 @@ function showView(viewId) {
   else { hideAllViews(); const e = el(viewId); if(e) e.style.display=''; }
 }
 
+// ════════════════════════════════════════
+// MODAL DIRTY TRACKING — Unsaved data warning
+// ════════════════════════════════════════
+const _modalDirty   = new Map();
+const _modalSaving  = new Set();
+
 function openModal(id) {
-  document.getElementById(id).classList.add('show');
+  const overlay = document.getElementById(id);
+  if (!overlay) return;
+  overlay.classList.add('show');
   document.body.style.overflow = 'hidden';
+
+  // Remove old handler if any
+  if (overlay._dirtyHandler) {
+    overlay.removeEventListener('input',  overlay._dirtyHandler, true);
+    overlay.removeEventListener('change', overlay._dirtyHandler, true);
+  }
+  _modalDirty.set(id, false);
+
+  // Attach dirty tracking after 200ms (avoids catching programmatic fills on open)
+  setTimeout(() => {
+    overlay._dirtyHandler = (e) => {
+      if (e.target && e.target.matches('input:not([type="hidden"]):not([type="checkbox"]), textarea')) {
+        _modalDirty.set(id, true);
+      }
+      if (e.type === 'change' && e.target && e.target.tagName === 'SELECT') {
+        // Only mark dirty for "meaningful" select changes (amount, description fields)
+        const name = e.target.name || e.target.id || '';
+        if (!['pay-method','exp-method','col-method','qc-method','qe-method','qp-method',
+              'qpo-method','pout-method','ep-method','ec-method','ee-method','gw-method'].includes(name)) {
+          _modalDirty.set(id, true);
+        }
+      }
+    };
+    overlay.addEventListener('input',  overlay._dirtyHandler, true);
+    overlay.addEventListener('change', overlay._dirtyHandler, true);
+  }, 200);
 }
 
 function closeModal(id) {
-  document.getElementById(id).classList.remove('show');
+  if (_modalDirty.get(id) && !_modalSaving.has(id)) {
+    if (!confirm('⚠️ توجد بيانات غير محفوظة\nهل تريد الخروج بدون حفظ؟\n\nاضغط "إلغاء" للبقاء والحفظ.')) return;
+  }
+  const overlay = document.getElementById(id);
+  if (overlay && overlay._dirtyHandler) {
+    overlay.removeEventListener('input',  overlay._dirtyHandler, true);
+    overlay.removeEventListener('change', overlay._dirtyHandler, true);
+    delete overlay._dirtyHandler;
+  }
+  _modalDirty.delete(id);
+  _modalSaving.delete(id);
+  overlay?.classList.remove('show');
   document.body.style.overflow = '';
 }
+
+// Mark modal as "being saved" — prevents dirty warning on close
+function markSaving(id) { _modalSaving.add(id); }
 
 function el(id) { return document.getElementById(id); }
 
@@ -4571,28 +4712,34 @@ function setJournalPeriod(period) {
 function getJournalDateRange() {
   const pad = n => String(n).padStart(2,'0');
   const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const now = new Date();
+  const yr  = now.getFullYear();
 
   if (journalState.period === 'today') {
-    const t = toDate(new Date());
+    const t = toDate(now);
     return { from: t, to: t };
   }
   if (journalState.period === 'week') {
-    const now  = new Date();
-    const day  = now.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-    const sun  = new Date(now); sun.setDate(now.getDate() - day);       // الأحد = بداية الأسبوع
-    const sat  = new Date(sun); sat.setDate(sun.getDate() + 6);         // السبت = نهاية الأسبوع
+    const day  = now.getDay();
+    const sun  = new Date(now); sun.setDate(now.getDate() - day);
+    const sat  = new Date(sun); sat.setDate(sun.getDate() + 6);
     return { from: toDate(sun), to: toDate(sat) };
   }
   if (journalState.period === 'month') {
-    const now  = new Date();
-    const from = `${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;
-    const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
+    const from = `${yr}-${pad(now.getMonth()+1)}-01`;
+    const last = new Date(yr, now.getMonth()+1, 0);
     return { from, to: toDate(last) };
+  }
+  if (journalState.period === 'year') {
+    return { from: `${yr}-01-01`, to: `${yr}-12-31` };
+  }
+  if (journalState.period === 'lastyear') {
+    return { from: `${yr-1}-01-01`, to: `${yr-1}-12-31` };
   }
   if (journalState.period === 'custom') {
     return { from: el('jDateFrom').value, to: el('jDateTo').value };
   }
-  return { from: toDate(new Date()), to: toDate(new Date()) };
+  return { from: toDate(now), to: toDate(now) };
 }
 
 async function loadJournal() {
@@ -5732,7 +5879,7 @@ async function submitContact() {
       await apiPost('contacts', data);
     }
     Object.keys(_acCache).forEach(k => { if(k.startsWith(state.system)) delete _acCache[k]; });
-    closeModal('contactModal');
+    markSaving('contactModal'); closeModal('contactModal');
     toast('✅ تم حفظ جهة الاتصال','ok');
     await loadContacts();
   } catch(e) { showFieldErr('cmError','خطأ: '+e.message); }
@@ -5906,7 +6053,7 @@ async function submitEditVehicle() {
   };
   try {
     await apiPatch('vehicles', { id:`eq.${_editVehicleId}` }, data);
-    closeModal('editVehicleModal');
+    markSaving('editVehicleModal'); closeModal('editVehicleModal');
     toast('✅ تم تعديل بيانات السيارة','ok');
     loadVehiclesTab(state.currentFileNo, state.system);
   } catch(e) { showFieldErr('evError','خطأ: '+e.message); }
@@ -6477,7 +6624,7 @@ function fillRowFromLicense(row, data) {
 
 // ════ ENTRY STATUS ════
 function isAdminUser() { return _currentRole === 'admin'; }
-function adminPostsImmediately() { return localStorage.getItem('tm_admin_post') !== 'draft'; }
+function adminPostsImmediately() { return localStorage.getItem('tm_admin_post') === 'posted'; }
 function entryStatus() { return (isAdminUser() && adminPostsImmediately()) ? 'posted' : 'draft'; }
 function toggleAdminPostSetting() {
   const v = adminPostsImmediately() ? 'draft' : 'posted';
@@ -7618,6 +7765,7 @@ function setReportPeriod(period, autoRun = true) {
   const pad = n => String(n).padStart(2,'0');
   const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   const now = new Date();
+  const yr  = now.getFullYear();
   let from, to;
   if (period === 'today') {
     from = to = toDate(now);
@@ -7626,11 +7774,16 @@ function setReportPeriod(period, autoRun = true) {
     const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
     from = toDate(sun); to = toDate(sat);
   } else if (period === 'month') {
-    from = `${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;
-    const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
+    from = `${yr}-${pad(now.getMonth()+1)}-01`;
+    const last = new Date(yr, now.getMonth()+1, 0);
     to = toDate(last);
+  } else if (period === 'year') {
+    from = `${yr}-01-01`;
+    to   = `${yr}-12-31`;
+  } else if (period === 'lastyear') {
+    from = `${yr-1}-01-01`;
+    to   = `${yr-1}-12-31`;
   }
-  // ضع القيم في الـ inputs (مخفية أو ظاهرة)
   if (el('r-from')) el('r-from').value = from;
   if (el('r-to'))   el('r-to').value   = to;
   if (autoRun) runReport();
@@ -8945,62 +9098,166 @@ const _acTypeBadges  = { customer:'ac-badge-customer', supplier:'ac-badge-suppli
 const _acTypeIcons   = { customer:'🤝', supplier:'🏭', partner:'👥', custodian:'🗝' };
 let _acActiveIndex = -1;
 
+// Pre-load contacts cache on focus (no display)
+function acPreload(type) {
+  acGetContacts(type); // warm cache silently
+}
+
+// ── الدالة الرئيسية للبحث ──
 async function acSearch(type, inputId) {
   const inp  = el(inputId);
   const drop = el('ac-' + inputId);
   if (!inp || !drop) return;
-  const q = inp.value.trim().toLowerCase();
+  const q = inp.value.trim();
+
+  // لا تعرض شيء إذا كان الحقل فارغ
+  if (!q) {
+    drop.style.cssText = 'display:none';
+    drop.innerHTML = '';
+    return;
+  }
+
   const contacts = await acGetContacts(type);
-  const filtered = q ? contacts.filter(c => c.name.toLowerCase().includes(q)) : contacts;
+  const filtered = contacts.filter(c => c.name.toLowerCase().includes(q.toLowerCase()));
   _acActiveIndex = -1;
+
   let html = '';
-  filtered.slice(0,8).forEach(c => {
-    html += `<div class="ac-item" data-name="${c.name}" onmousedown="acSelect('${inputId}','${c.name.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">
-      <span>${_acTypeIcons[c.type]||'👤'}</span>
-      <span class="ac-item-name">${c.name}</span>
-      <span class="ac-item-badge ${_acTypeBadges[c.type]||''}">${_acTypeLabels2[c.type]||c.type}</span>
-      ${c.phone?`<span style="font-size:10px;color:var(--text3)">${c.phone}</span>`:''}
+  filtered.slice(0, 10).forEach(c => {
+    const safeName = c.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    html += `
+    <div class="ac-item" data-id="${c.id}" data-name="${c.name}" style="display:flex;align-items:center;gap:0;padding:0">
+      <div style="display:flex;align-items:center;gap:6px;flex:1;padding:8px 10px;cursor:pointer"
+        onmousedown="event.preventDefault();acSelect('${inputId}','${safeName}')">
+        <span style="font-size:14px">${_acTypeIcons[c.type]||'👤'}</span>
+        <span class="ac-item-name" style="font-weight:600">${c.name}</span>
+        <span class="ac-item-badge ${_acTypeBadges[c.type]||''}" style="font-size:10px;padding:1px 7px;border-radius:10px">${_acTypeLabels2[c.type]||c.type}</span>
+        ${c.phone ? `<span style="font-size:10px;color:var(--text3);margin-right:auto">${c.phone}</span>` : ''}
+      </div>
+      <div style="display:flex;gap:2px;padding:4px 6px;flex-shrink:0;border-right:1px solid var(--border)">
+        <button onmousedown="event.preventDefault();event.stopPropagation();acEditContact(${c.id})"
+          style="background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;font-family:Cairo,sans-serif;line-height:1.2"
+          title="تعديل">✏️</button>
+        <button onmousedown="event.preventDefault();event.stopPropagation();acDeleteContact(${c.id},'${inputId}')"
+          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;font-family:Cairo,sans-serif;line-height:1.2"
+          title="حذف">🗑</button>
+      </div>
     </div>`;
   });
-  if (q && !contacts.find(c => c.name.toLowerCase()===q)) {
-    html += `<div class="ac-item" onmousedown="acSelectNew('${inputId}','${type}','${inp.value.trim().replace(/'/g,"\\'")}')">
-      <span>➕</span><span class="ac-item-name ac-item-new">إضافة "${inp.value.trim()}" كـ ${_acTypeLabels2[type]||type} جديد</span>
+
+  // زر إضافة جديد لو الاسم مش موجود
+  const exact = contacts.find(c => c.name.toLowerCase() === q.toLowerCase());
+  if (!exact) {
+    html += `
+    <div class="ac-item ac-item-add" style="padding:8px 10px;display:flex;align-items:center;gap:6px;cursor:pointer;border-top:1px solid var(--border)"
+      onmousedown="event.preventDefault();acSelectNew('${inputId}','${type}','${inp.value.trim().replace(/'/g, "\\'")}')">
+      <span style="color:var(--green);font-size:14px">➕</span>
+      <span style="color:var(--green);font-weight:600;font-size:12px">إضافة "${inp.value.trim()}" كـ ${_acTypeLabels2[type]||type} جديد</span>
     </div>`;
   }
-  drop.innerHTML = html || `<div class="ac-item" style="color:var(--text3);cursor:default">لا توجد نتائج</div>`;
-  drop.classList.add('open');
+
+  if (!filtered.length && exact) {
+    html = `<div style="padding:10px 14px;color:var(--text3);font-size:12px">لا توجد نتائج مطابقة</div>`;
+  }
+  if (!html && !filtered.length) {
+    html = `<div style="padding:10px 14px;color:var(--text3);font-size:12px">لا توجد نتائج — اكتب لإضافة جديد</div>`;
+  }
+
+  drop.innerHTML = html;
+  drop.style.cssText = 'display:block;position:absolute;top:100%;right:0;left:0;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);z-index:9999;max-height:260px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.2);margin-top:2px';
 }
 
+// ── تحديد جهة اتصال ──
 function acSelect(inputId, name) {
-  const inp = el(inputId); if(inp) inp.value = name;
-  const drop = el('ac-'+inputId); if(drop) drop.classList.remove('open');
+  const inp  = el(inputId);
+  const drop = el('ac-' + inputId);
+  if (inp)  inp.value = name;
+  if (drop) { drop.style.display = 'none'; drop.innerHTML = ''; }
 }
 
+// ── إضافة جهة اتصال جديدة ──
 async function acSelectNew(inputId, type, name) {
   if (!name) return;
   try {
-    const existing = await apiGet('contacts',{select:'id',system_type:`eq.${state.system}`,name:`eq.${name}`});
-    if (!existing||!existing.length) {
-      await apiPost('contacts',{system_type:state.system,name,type});
+    const existing = await apiGet('contacts', { select:'id', system_type:`eq.${state.system}`, name:`eq.${name}` });
+    if (!existing || !existing.length) {
+      await apiPost('contacts', { system_type: state.system, name, type });
       acClearCache();
-      toast(`✅ تم إضافة "${name}"`,'ok');
+      toast(`✅ تم إضافة "${name}" كـ ${_acTypeLabels2[type]||type}`, 'ok');
     }
     acSelect(inputId, name);
-  } catch(e) { toast('خطأ: '+e.message,'err'); }
+  } catch(e) { toast('خطأ: ' + e.message, 'err'); }
 }
 
+// ── تعديل جهة اتصال من الـ dropdown ──
+async function acEditContact(contactId) {
+  document.querySelectorAll('[id^="ac-"]').forEach(d => { d.style.display = 'none'; d.innerHTML = ''; });
+  try {
+    const data = await apiGet('contacts', { select:'*', id:`eq.${contactId}` });
+    const c = data?.[0];
+    if (c) openContactModal(c);
+    else toast('لم يُعثر على جهة الاتصال', 'err');
+  } catch(e) { toast('خطأ: ' + e.message, 'err'); }
+}
+
+// ── حذف جهة اتصال من الـ dropdown ──
+async function acDeleteContact(contactId, inputId) {
+  document.querySelectorAll('[id^="ac-"]').forEach(d => { d.style.display = 'none'; d.innerHTML = ''; });
+  showConfirm('حذف جهة الاتصال', 'هل تريد حذف هذه الجهة نهائياً؟ لا يمكن التراجع.', async () => {
+    try {
+      await apiDelete('contacts', { id:`eq.${contactId}` });
+      acClearCache();
+      toast('✅ تم الحذف', 'ok');
+      const inp = el(inputId);
+      if (inp) inp.value = '';
+      if (el('contactsView')?.style?.display !== 'none') loadContacts();
+    } catch(e) { toast('خطأ: ' + e.message, 'err'); }
+  });
+}
+
+// ── إغلاق عند الـ blur ──
 function acBlur(inputId) {
-  setTimeout(() => { const d=el('ac-'+inputId); if(d) d.classList.remove('open'); }, 200);
+  setTimeout(() => {
+    const d = el('ac-' + inputId);
+    if (d) { d.style.display = 'none'; }
+  }, 250);
 }
 
+// ── التنقل بالكيبورد ──
 function acKey(e, inputId) {
-  const drop = el('ac-'+inputId);
-  if (!drop||!drop.classList.contains('open')) return;
+  const drop = el('ac-' + inputId);
+  if (!drop || drop.style.display === 'none') return;
   const items = drop.querySelectorAll('.ac-item');
-  if (e.key==='ArrowDown')  { e.preventDefault(); _acActiveIndex=Math.min(_acActiveIndex+1,items.length-1); items.forEach((it,i)=>it.classList.toggle('active',i===_acActiveIndex)); }
-  else if (e.key==='ArrowUp')   { e.preventDefault(); _acActiveIndex=Math.max(_acActiveIndex-1,0); items.forEach((it,i)=>it.classList.toggle('active',i===_acActiveIndex)); }
-  else if (e.key==='Enter'&&_acActiveIndex>=0) { e.preventDefault(); items[_acActiveIndex]?.dispatchEvent(new MouseEvent('mousedown')); }
-  else if (e.key==='Escape') drop.classList.remove('open');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _acActiveIndex = Math.min(_acActiveIndex + 1, items.length - 1);
+    items.forEach((it, i) => it.style.background = i === _acActiveIndex ? 'var(--card2)' : '');
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _acActiveIndex = Math.max(_acActiveIndex - 1, 0);
+    items.forEach((it, i) => it.style.background = i === _acActiveIndex ? 'var(--card2)' : '');
+  } else if (e.key === 'Enter' && _acActiveIndex >= 0) {
+    e.preventDefault();
+    const activeDiv = items[_acActiveIndex]?.querySelector('[onmousedown]');
+    if (activeDiv) activeDiv.dispatchEvent(new MouseEvent('mousedown'));
+  } else if (e.key === 'Escape') {
+    drop.style.display = 'none';
+  }
+}
+
+// ── تسجيل جهة اتصال تلقائياً لو مش موجودة ──
+async function ensureContact(name, type) {
+  if (!name || !name.trim()) return;
+  try {
+    const existing = await apiGet('contacts', {
+      select: 'id',
+      system_type: `eq.${state.system}`,
+      name: `eq.${name.trim()}`
+    });
+    if (!existing || !existing.length) {
+      await apiPost('contacts', { system_type: state.system, name: name.trim(), type });
+      acClearCache();
+    }
+  } catch(e) { /* silent */ }
 }
 
 // Patch populateContactSelect — ac inputs just clear value & pre-cache
@@ -9057,7 +9314,7 @@ async function submitEditPayment() {
   if (!payer || !amount || !date) { showFieldErr('epError','يرجى ملء الحقول المطلوبة'); return; }
   try {
     await apiPatch('payments', { id:`eq.${id}` }, { payer, amount, pay_method:method, pay_date:date, document:doc||null, notes:notes||null });
-    closeModal('editPaymentModal');
+    markSaving('editPaymentModal'); closeModal('editPaymentModal');
     toast('✅ تم تعديل الدفعة','ok');
     if (state.currentTab === 2) loadPaymentsTab(state.currentFileNo, state.system);
     if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);
@@ -9097,7 +9354,7 @@ async function submitEditExpense() {
   if (!desc || !amount || !date) { showFieldErr('eeError','يرجى ملء الحقول المطلوبة'); return; }
   try {
     await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null });
-    closeModal('editExpenseModal');
+    markSaving('editExpenseModal'); closeModal('editExpenseModal');
     toast('✅ تم تعديل المصروف','ok');
     if (state.currentTab === 3) loadExpensesTab(state.currentFileNo, state.system);
     if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);
@@ -9137,7 +9394,7 @@ async function submitEditCollection() {
   if (!amount) { showFieldErr('ecError','يرجى إدخال المبلغ'); return; }
   try {
     await apiPatch('collections', { id:`eq.${id}` }, { amount, pay_method:method, due_date:due||null, paid_date:paid||null, document:doc||null, notes:notes||null });
-    closeModal('editCollectionModal');
+    markSaving('editCollectionModal'); closeModal('editCollectionModal');
     toast('✅ تم تعديل التحصيل','ok');
     if (state.currentTab === 5) loadCollectionsTab(state.currentFileNo, state.system);
     if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);
@@ -9336,7 +9593,7 @@ async function submitOpex() {
     };
     await apiPost('operating_expenses', payload);
     await logAudit('INSERT','operating_expenses', null, null, payload);
-    closeModal('opexModal');
+    markSaving('opexModal'); closeModal('opexModal');
     invalidateCache();
     toast('✅ تم تسجيل المصروف التشغيلي','ok');
     invalidateCache();
@@ -9367,7 +9624,7 @@ async function submitEditOpex() {
       exp_date: date, pay_method: method,
       document: doc||null, beneficiary: beneficiary||null, notes: notes||null
     });
-    closeModal('opexModal');
+    markSaving('opexModal'); closeModal('opexModal');
     toast('✅ تم تعديل المصروف','ok');
     await loadOpex();
   } catch(e) { showFieldErr('opexError','خطأ: '+e.message); }
@@ -10123,6 +10380,96 @@ async function rejectFromDetail() {
   await rejectItem(type, id);
 }
 
+// ════════════════════════════════════════
+// EDIT SALE FROM APPROVAL QUEUE
+// ════════════════════════════════════════
+async function openEditSaleApproval(saleId, fileNo, invNo) {
+  if (!fileNo || !invNo) { toast('بيانات الفاتورة ناقصة', 'err'); return; }
+  try {
+    // جيب كل سطور الفاتورة (ممكن أكثر من سيارة)
+    const allSaleItems = await apiGet('sales', {
+      select: '*',
+      system_type: `eq.${state.system}`,
+      file_no: `eq.${fileNo}`,
+      inv_no: `eq.${invNo}`
+    });
+    if (!allSaleItems?.length) { toast('لم يُعثر على بيانات الفاتورة', 'err'); return; }
+    const firstItem = allSaleItems[0];
+
+    // عشان الـ modal يعرف يجيب السيارات المتاحة
+    state.currentFileNo = fileNo;
+
+    // افتح modal الـ sale وامليه بالبيانات
+    await openSaleModal(fileNo);
+
+    // بعد ما الـ modal يتفتح وتتحمّل السيارات
+    setTimeout(async () => {
+      if (el('sale-invNo'))    el('sale-invNo').value    = invNo || '';
+      if (el('sale-date'))     el('sale-date').value     = firstItem.sale_date || today();
+      if (el('sale-customer')) el('sale-customer').value = firstItem.customer || '';
+      if (el('sale-notes'))    el('sale-notes').value    = firstItem.notes || '';
+
+      // امسح الصف الافتراضي وحط صفوف الفاتورة الحقيقية
+      el('saleVehiclesContainer').innerHTML = '';
+      for (const item of allSaleItems) {
+        addSaleVehicleRow();
+        const rows = el('saleVehiclesContainer').querySelectorAll('tr.sale-v-row');
+        const row  = rows[rows.length - 1];
+        if (!row) continue;
+        // حدد السيارة في الـ select بالـ VIN
+        const vehicleSel = row.querySelector('[name="sv-vehicle"]');
+        if (vehicleSel && item.vin) {
+          Array.from(vehicleSel.options).forEach(opt => {
+            if (opt.dataset?.vin === item.vin) vehicleSel.value = opt.value;
+          });
+          // trigger change لتحديث VIN display
+          onSaleRowVehicleChange(vehicleSel);
+        }
+        const vinInp   = row.querySelector('[name="sv-vin"]');
+        const priceInp = row.querySelector('[name="sv-price"]');
+        const notesInp = row.querySelector('[name="sv-notes"]');
+        if (vinInp)   vinInp.value   = item.vin || '';
+        if (priceInp) priceInp.value = item.sale_price || '';
+        if (notesInp) notesInp.value = item.notes || '';
+      }
+      updateSaleTotal();
+
+      // Override زرار الحفظ — يمسح الـ draft القديم ويحفظ الجديد
+      const submitBtn = el('saleSubmitBtn');
+      submitBtn._editMode = true;
+      submitBtn._editInvNo = invNo;
+      submitBtn._editFileNo = fileNo;
+      submitBtn.onclick = async () => {
+        try {
+          // امسح الـ sale records القديمة
+          await apiDelete('sales', {
+            system_type: `eq.${state.system}`,
+            file_no:     `eq.${fileNo}`,
+            inv_no:      `eq.${invNo}`
+          });
+          // امسح الـ collections المرتبطة (غير مدفوعة)
+          try {
+            await apiDelete('collections', {
+              system_type: `eq.${state.system}`,
+              inv_no:      `eq.${invNo}`,
+              paid_date:   'is.null'
+            });
+          } catch(e) {}
+        } catch(e) { console.warn('edit sale cleanup:', e.message); }
+        // إعادة تعيين الـ onclick للأصل وبعدين submit
+        submitBtn.onclick = () => submitSale();
+        submitBtn._editMode = false;
+        await submitSale();
+      };
+
+      toast('✏️ جاهز للتعديل — عدّل ثم اضغط حفظ', 'ok');
+    }, 700);
+  } catch(e) {
+    toast('خطأ في فتح الفاتورة: ' + e.message, 'err');
+    console.error(e);
+  }
+}
+
 async function editFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id, item } = approvalState.currentItem;
@@ -10130,9 +10477,8 @@ async function editFromDetail() {
   // فتح الأمر مع إمكانية التعديل
   if (type === 'purchase' && item?.file_no) {
     openNewFileModal(item.file_no);
-  } else if (type === 'sale' && item?.file_no) {
-    openViewer(item.file_no);
-    setTimeout(() => switchTab(4), 500); // تبويب المبيعات
+  } else if (type === 'sale') {
+    await openEditSaleApproval(id, item?.file_no, item?.inv_no || item?.invoice_no);
   } else if (type === 'payment') {
     openEditPaymentModal(id);
   } else if (type === 'expense') {
@@ -10193,10 +10539,23 @@ async function rejectItem(type, id) {
   showConfirm('مسح نهائي', '⚠️ هل تريد مسح هذه العملية نهائياً؟ لا يمكن التراجع.', async () => {
     try {
       const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
-      await apiDelete(cfg.table, { id:`eq.${id}` });
-      if (type === 'sale' && item?.inv_no) {
-        try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, paid_date:'is.null' }); } catch(e) {}
+
+      if (type === 'purchase' && item?.file_no) {
+        // cascade delete لأمر الشراء — امسح كل البيانات المرتبطة
+        const sys = state.system;
+        const fn  = item.file_no;
+        const cascadeTables = ['vehicles','payments','expenses','sales','collections','partner_payouts','partners_master','journal_entries'];
+        for (const t of cascadeTables) {
+          try { await apiDelete(t, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) {}
+        }
+        await apiDelete('purchase_orders', { id:`eq.${id}` });
+      } else {
+        await apiDelete(cfg.table, { id:`eq.${id}` });
+        if (type === 'sale' && item?.inv_no) {
+          try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, paid_date:'is.null' }); } catch(e) {}
+        }
       }
+
       invalidateCache();
       toast('🗑 تم المسح النهائي','ok');
       await loadApprovalQueue();
@@ -10465,7 +10824,7 @@ async function submitGeneralWithdraw() {
       document:doc||null, notes:notes||null
     });
     await logAudit('INSERT','partner_accounts', null, null, {partner, amount, date});
-    closeModal('generalWithdrawModal');
+    markSaving('generalWithdrawModal'); closeModal('generalWithdrawModal');
     toast(`✅ تم تسجيل السحب العام — ${fmt(amount)}`,'ok');
     await loadPartnerAccountLedger();
   } catch(e) { showFieldErr('gwError','خطأ: '+e.message); }
