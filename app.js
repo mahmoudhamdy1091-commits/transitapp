@@ -12548,7 +12548,17 @@ async function loadJEManager() {
       if (diff < 0.01) {
         el('je-balance-banner').innerHTML = `<div style="background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:8px 14px;font-size:12px;font-weight:700;color:var(--green)">✅ القيود متوازنة — مدين = دائن = ${fmt(totalDr)}</div>`;
       } else {
-        el('je-balance-banner').innerHTML = `<div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius-sm);padding:8px 14px;font-size:12px;font-weight:700;color:var(--red)">❌ تحذير: فرق ${fmt(diff)} بين المدين والدائن — يؤثر على ميزان المراجعة!</div>`;
+        // حساب القيود غير المتوازنة
+        const unbalanced = Object.values(jeMgrState.grouped).filter(g => Math.abs(g.totalDr-g.totalCr)>0.01);
+        el('je-balance-banner').innerHTML = `
+          <div style="background:var(--red-dim);border:2px solid var(--red);border-radius:var(--radius-sm);padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:200px">
+              <div style="font-size:12px;font-weight:700;color:var(--red)">❌ فرق ${fmt(diff)} بين المدين والدائن — يؤثر على ميزان المراجعة!</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:3px">${unbalanced.length} قيد غير متوازن — السبب: فشل جزئي أثناء الترحيل أو الإدخال</div>
+            </div>
+            <button class="btn btn-sm" onclick="fixUnbalancedEntries()" style="background:var(--red);color:#fff;border:none;font-weight:700;white-space:nowrap">🔧 إصلاح تلقائي</button>
+            <button class="btn btn-secondary btn-sm" onclick="showUnbalancedDetail()" style="white-space:nowrap">🔍 تفاصيل</button>
+          </div>`;
       }
     }
 
@@ -12679,6 +12689,134 @@ function renderJEManagerTable() {
     </div>`;
 }
 
+function showUnbalancedDetail() {
+  const unbalanced = Object.values(jeMgrState.grouped).filter(g => Math.abs(g.totalDr-g.totalCr)>0.01);
+  if (!unbalanced.length) { toast('✅ لا توجد قيود غير متوازنة','ok'); return; }
+
+  const rows = unbalanced.map(g => {
+    const diff = g.totalDr - g.totalCr;
+    return `<tr style="background:var(--red-dim)">
+      <td class="mono" style="color:var(--accent);font-weight:700;padding:8px 12px">${g.no}</td>
+      <td style="padding:8px 12px;font-size:11px">${g.desc||'—'}</td>
+      <td style="padding:8px 12px;font-size:11px">${g.ref_table||'manual'}</td>
+      <td style="padding:8px 12px;font-size:11px">${g.file_no||'—'}</td>
+      <td class="mono" style="padding:8px 12px;color:var(--green)">${fmt(g.totalDr)}</td>
+      <td class="mono" style="padding:8px 12px;color:var(--red)">${fmt(g.totalCr)}</td>
+      <td class="mono" style="padding:8px 12px;font-weight:700;color:var(--red)">${diff>0?'+':''}${fmt(diff)}</td>
+    </tr>`;
+  }).join('');
+
+  showConfirm(
+    `🔍 ${unbalanced.length} قيد غير متوازن`,
+    `<div style="overflow-x:auto;max-height:300px;overflow-y:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:var(--card2)">
+          <th style="padding:7px 10px;text-align:right">القيد</th>
+          <th style="padding:7px 10px;text-align:right">البيان</th>
+          <th style="padding:7px 10px;text-align:right">المصدر</th>
+          <th style="padding:7px 10px;text-align:right">الملف</th>
+          <th style="padding:7px 10px;text-align:left;color:var(--green)">مدين</th>
+          <th style="padding:7px 10px;text-align:left;color:var(--red)">دائن</th>
+          <th style="padding:7px 10px;text-align:left">الفرق</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--text2)">اضغط "إصلاح" لحذف هذه القيود وإعادة ترحيل بياناتها</div>`,
+    () => fixUnbalancedEntries(),
+    'إصلاح تلقائي'
+  );
+}
+
+async function fixUnbalancedEntries() {
+  const unbalanced = Object.values(jeMgrState.grouped).filter(g => Math.abs(g.totalDr-g.totalCr)>0.01);
+  if (!unbalanced.length) { toast('✅ لا توجد قيود غير متوازنة','ok'); return; }
+
+  const sys = state.system;
+  toast(`⏳ جاري إصلاح ${unbalanced.length} قيد...`,'ok');
+
+  let fixed = 0, failed = 0;
+
+  for (const g of unbalanced) {
+    try {
+      // حذف القيد الناقص
+      const delRes = await fetch(
+        `${SB_URL}/rest/v1/journal_entries?entry_no=eq.${encodeURIComponent(g.no)}&system_type=eq.${encodeURIComponent(sys)}`,
+        { method:'DELETE', headers: headers() }
+      );
+      if (!delRes.ok && delRes.status !== 404) throw new Error('فشل الحذف');
+
+      // إعادة توليد القيد من المصدر الأصلي
+      if (g.ref_table && g.ref_table !== 'manual') {
+        const refTable = g.ref_table;
+        const fileNo   = g.file_no;
+
+        // جلب السجل الأصلي
+        if (refTable === 'purchase_orders' && fileNo) {
+          const data = await apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+          const d = data?.[0];
+          if (d && +d.total_purchase > 0)
+            await je_purchase({ sys, date:d.po_date||today(), amount:+d.total_purchase, fileNo:d.file_no, supplier:d.supplier||'' });
+
+        } else if (refTable === 'payments' && fileNo) {
+          // جلب كل الدفعات لهذا الملف وإعادة قيدها
+          const data = await apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+          for (const p of (data||[]).filter(isPosted)) {
+            if (+p.amount > 0)
+              await je_payment({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no, supplierName:p.supplier||'', payerName:p.payer||'', method:p.pay_method||'تحويل بنكي' });
+          }
+
+        } else if (refTable === 'sales' && fileNo) {
+          const data = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+          const byInv = {};
+          (data||[]).filter(isPosted).forEach(s => { const k=s.inv_no||s.id; if(!byInv[k])byInv[k]={...s,total:0}; byInv[k].total+=+s.sale_price||0; });
+          for (const s of Object.values(byInv)) {
+            if (s.total > 0)
+              await je_sale({ sys, date:s.sale_date||today(), amount:s.total, cost:0, fileNo:s.file_no, customer:s.customer||'', invNo:s.inv_no||'' });
+          }
+
+        } else if (refTable === 'collections' && fileNo) {
+          const data = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+          for (const c of (data||[]).filter(c=>isPosted(c)&&c.paid_date)) {
+            if (+c.amount > 0)
+              await je_collection({ sys, date:c.paid_date, amount:+c.amount, fileNo:c.file_no, customer:c.customer||'', invNo:c.inv_no||'', method:c.pay_method||'تحويل بنكي' });
+          }
+
+        } else if (refTable === 'expenses' && fileNo) {
+          const data = await apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+          for (const e of (data||[]).filter(isPosted)) {
+            if (+e.amount > 0)
+              await je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no, desc:e.description||'مصروف', expType:e.exp_type||'أخرى', method:e.pay_method||'نقد' });
+          }
+
+        } else if (refTable === 'partner_payouts' && fileNo) {
+          const data = await apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+          for (const p of (data||[]).filter(isPosted)) {
+            if (+p.amount > 0)
+              await je_payout({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no, partner:p.partner||'', method:p.pay_method||'نقد' });
+          }
+
+        } else if (refTable === 'operating_expenses') {
+          const data = await apiGetAll('operating_expenses', { select:'*', system_type:`eq.${sys}` });
+          for (const o of (data||[])) {
+            if (+o.amount > 0)
+              await je_opex({ sys, date:o.exp_date||today(), amount:+o.amount, expType:o.exp_type||'أخرى', desc:o.description||'', method:o.pay_method||'نقد', refNo:o.ref_no||null });
+          }
+        }
+      }
+      fixed++;
+    } catch(e) {
+      failed++;
+      console.warn(`Fix failed for ${g.no}:`, e.message);
+    }
+  }
+
+  const msg = failed > 0
+    ? `⚠️ تم إصلاح ${fixed} قيد — فشل ${failed}. شغّل الترحيل الكامل لو المشكلة مستمرة.`
+    : `✅ تم إصلاح ${fixed} قيد بنجاح`;
+  toast(msg, failed > 0 ? 'warn' : 'ok');
+  await loadJEManager();
+}
 function toggleJELines(row) {
   const next = row.nextElementSibling;
   if (!next || !next.classList.contains('je-lines-row')) return;
@@ -13149,40 +13287,44 @@ async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}
   if (!lines || !lines.length) { console.warn('postDoubleEntry: no lines'); return; }
   const dr = lines.reduce((s,l)=>s+(+l.dr||0),0);
   const cr = lines.reduce((s,l)=>s+(+l.cr||0),0);
-  // التحقق من التوازن قبل الترحيل
   if (Math.abs(dr-cr)>0.01) {
     const msg = `قيد غير متوازن: مدين=${dr.toFixed(2)} دائن=${cr.toFixed(2)} — ${desc}`;
     console.error(msg);
-    throw new Error(msg); // نرفع خطأ بدل الصمت
+    throw new Error(msg);
   }
-  const no = await _jeNo(sys);
-  // نسجّل كل أسطر القيد في batch
+  const no      = await _jeNo(sys);
+  const now     = new Date().toISOString();
   const inserts = lines.map(l => ({
     system_type:  sys,
     entry_no:     no,
     entry_date:   date || today(),
-    account_code: l.acc,
-    account_name: l.name,
-    dr_amount:    +l.dr || 0,
-    cr_amount:    +l.cr || 0,
+    account_code: l.acc  || null,
+    account_name: l.name || null,
+    dr_amount:    +l.dr  || 0,
+    cr_amount:    +l.cr  || 0,
     description:  l.desc || desc,
     ref_table:    refTable || null,
     ref_id:       refId    || null,
     file_no:      fileNo   || null,
     post_status:  'posted',
-    posted_at:    new Date().toISOString(),
+    posted_at:    now,
   }));
-  // إدراج كل الأسطر — لو فشل واحد يُرجع خطأ واضح
-  for (const row of inserts) {
-    const res = await fetch(`${SB_URL}/rest/v1/journal_entries`, {
-      method: 'POST',
-      headers: { ...headers(), 'Prefer': 'return=minimal' },
-      body: JSON.stringify(row),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(()=>'');
-      throw new Error(`فشل تسجيل القيد "${desc}" — ${res.status}: ${body}`);
-    }
+
+  // ── Batch insert: كل الأسطر في request واحد — إما كلها أو لا شيء ──
+  const res = await fetch(`${SB_URL}/rest/v1/journal_entries`, {
+    method:  'POST',
+    headers: { ...headers(), 'Prefer': 'return=minimal' },
+    body:    JSON.stringify(inserts),   // array = batch
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(()=>'');
+    // محاولة حذف أي سطر تسرّب بنفس entry_no (حماية من التكرار)
+    try {
+      await fetch(`${SB_URL}/rest/v1/journal_entries?entry_no=eq.${encodeURIComponent(no)}&system_type=eq.${encodeURIComponent(sys)}`,
+        { method:'DELETE', headers: headers() });
+    } catch(_) {}
+    throw new Error(`فشل تسجيل القيد "${desc}" — ${res.status}: ${body}`);
   }
 }
 
