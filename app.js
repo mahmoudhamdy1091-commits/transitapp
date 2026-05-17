@@ -3960,18 +3960,19 @@ async function openCollectionModal() {
       ? { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }
       : { select:'*', system_type:`eq.${sys}`, order:'sale_date.desc' };
     const colParams = fn
-      ? { select:'inv_no,amount,file_no', system_type:`eq.${sys}`, file_no:`eq.${fn}` }
-      : { select:'inv_no,amount,file_no', system_type:`eq.${sys}` };
+      ? { select:'inv_no,amount,paid_date,file_no', system_type:`eq.${sys}`, file_no:`eq.${fn}` }
+      : { select:'inv_no,amount,paid_date,file_no', system_type:`eq.${sys}` };
 
     const [sales, collections] = await Promise.all([
       apiGetAll('sales',       salesParams),
       apiGetAll('collections', colParams),
     ]);
 
+    // فقط المحصّل فعلاً (paid_date موجود)
     const collectedMap = {};
     (collections||[]).forEach(c => {
       const key = `${c.file_no}__${c.inv_no}`;
-      if (c.inv_no) collectedMap[key] = (collectedMap[key]||0) + (+c.amount||0);
+      if (c.inv_no && c.paid_date) collectedMap[key] = (collectedMap[key]||0) + (+c.amount||0);
     });
 
     // تجميع بالفاتورة (inv_no + file_no)
@@ -4515,14 +4516,20 @@ async function loadQuickInvoices(fileNo) {
 
     const [sales, collections] = await Promise.all([
       apiGetAll('sales',       { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
-      apiGetAll('collections', { select:'inv_no,amount,file_no', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('collections', { select:'inv_no,amount,paid_date,file_no', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
-    // مجموع ما تم تحصيله لكل inv_no
+    // مجموع ما تم تحصيله فعلاً (paid_date موجود فقط — المسجّل بدون دفع لا يُحسب)
     const collectedMap = {};
     (collections||[]).forEach(c => {
-      if (c.inv_no) collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
+      if (c.inv_no && c.paid_date)
+        collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
     });
+
+    // الفواتير اللي فيها سجل collection بدون paid_date = منتظرة (مش مدفوعة)
+    const pendingInvSet = new Set(
+      (collections||[]).filter(c => c.inv_no && !c.paid_date).map(c => c.inv_no)
+    );
 
     // تجميع السيارات بنفس inv_no في فاتورة واحدة
     const invMap = {};
@@ -4553,15 +4560,21 @@ async function loadQuickInvoices(fileNo) {
     }
 
     invSel.innerHTML = '<option value="">— اختر الفاتورة —</option>' +
-      pending.map(inv => `
-        <option value="${inv.inv_no}"
+      pending.map(inv => {
+        const hasPendingCol = pendingInvSet.has(inv.inv_no);
+        const label = hasPendingCol
+          ? `${inv.inv_no} — ${inv.customer||'—'} — ${inv.vins.length} سيارة — ⏳ تحصيل منتظر (${fmt(inv.remaining)})`
+          : `${inv.inv_no} — ${inv.customer||'—'} — ${inv.vins.length} سيارة (باقي: ${fmt(inv.remaining)})`;
+        return `<option value="${inv.inv_no}"
           data-customer="${inv.customer||''}"
           data-vin="${inv.vin||''}"
           data-total="${inv.total||0}"
           data-collected="${inv.collected}"
-          data-remaining="${inv.remaining}">
-          ${inv.inv_no} — ${inv.customer||'—'} — ${inv.vins.length} سيارة (باقي: ${fmt(inv.remaining)})
-        </option>`).join('');
+          data-remaining="${inv.remaining}"
+          data-has-pending="${hasPendingCol}">
+          ${label}
+        </option>`;
+      }).join('');
 
   } catch(e) {
     console.error('loadQuickInvoices error:', e.message, e);
