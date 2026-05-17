@@ -5793,11 +5793,11 @@ function renderContactsList() {
 async function showLedger(contactId, contactName, contactType) {
   hideAllViews();
   el('ledgerView').style.display = 'block';
-  el('topBarTitle').textContent = 'كشف حساب';
-  el('ledger-contact-badge').innerHTML = `<span style="color:var(--text2);font-weight:400;font-size:13px">كشف حساب /</span> ${contactName}
+  el('topBarTitle').textContent = 'دفتر الأستاذ';
+  el('ledger-contact-badge').innerHTML = `<span style="color:var(--text2);font-weight:400;font-size:13px">دفتر الأستاذ /</span> ${contactName}
     <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--blue-dim);color:var(--blue);margin-right:6px">${typeLabels[contactType]||contactType}</span>`;
   navActive('nav-contacts');
-  el('ledgerTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
+  el('ledgerTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل من القيود...</div>';
 
   window._ledgerContactId   = contactId;
   window._ledgerContactName = contactName;
@@ -5808,45 +5808,46 @@ async function showLedger(contactId, contactName, contactType) {
     const contact = contactsState.all.find(c => c.id === contactId);
     window._ledgerOpening = contact?.opening_balance ? +contact.opening_balance : 0;
 
-    // ── حساب اسم الحساب المرتبط بجهة الاتصال ──
-    // في journal_entries اسم الحساب بصيغة "عميل: X" أو "مورد: X" أو "شريك: X"
-    const prefixMap = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
-    const prefix    = prefixMap[contactType] || contactType;
-    const accName   = `${prefix}: ${contactName}`;
+    // ── الجلب الأساسي: بـ contact_name (البيانات الجديدة) ──
+    const byContactName = await apiGetAll('journal_entries', {
+      select: 'id,entry_date,account_code,account_name,contact_name,dr_amount,cr_amount,description,file_no,entry_no,ref_table,post_status',
+      system_type:  `eq.${sys}`,
+      contact_name: `eq.${contactName}`,
+      order: 'entry_date.asc,id.asc',
+    });
 
-    // ── جلب كل القيود المرتبطة بجهة الاتصال من journal_entries ──
-    // نجلب بـ account_name أو contact_id
-    const [byName, byContactId] = await Promise.all([
-      apiGetAll('journal_entries', {
-        select: 'id,entry_date,entry_type,account_code,account_name,dr_amount,cr_amount,description,file_no,entry_no,ref_table,post_status',
-        system_type: `eq.${sys}`,
-        account_name: `eq.${accName}`,
-        order: 'entry_date.asc,id.asc',
-      }),
-      contactId ? apiGetAll('journal_entries', {
-        select: 'id,entry_date,entry_type,account_code,account_name,dr_amount,cr_amount,description,file_no,entry_no,ref_table,post_status',
-        system_type: `eq.${sys}`,
-        contact_id:  `eq.${contactId}`,
-        order: 'entry_date.asc,id.asc',
-      }) : Promise.resolve([]),
-    ]);
+    // ── Fallback: البيانات القديمة (قبل إضافة contact_name) ──
+    // نجلب بالأنماط القديمة: "عميل: X", "مورد: X", "شريك: X"
+    const prefixMap  = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
+    const prefix     = prefixMap[contactType] || '';
+    const oldPattern = prefix ? `${prefix}: ${contactName}` : contactName;
 
-    // دمج بدون تكرار بالـ id
+    const byOldFormat = prefix ? await apiGetAll('journal_entries', {
+      select: 'id,entry_date,account_code,account_name,contact_name,dr_amount,cr_amount,description,file_no,entry_no,ref_table,post_status',
+      system_type:  `eq.${sys}`,
+      account_name: `eq.${oldPattern}`,
+      order: 'entry_date.asc,id.asc',
+    }) : [];
+
+    // ── دمج بدون تكرار ──
     const seen = new Set();
     const raw  = [];
-    [...(byName||[]), ...(byContactId||[])].forEach(r => {
+    [...(byContactName||[]), ...(byOldFormat||[])].forEach(r => {
       if (!seen.has(r.id)) { seen.add(r.id); raw.push(r); }
     });
 
-    // فلتر posted فقط
     const jeRows = raw.filter(isPosted);
     jeRows.sort((a,b) => (a.entry_date||'').localeCompare(b.entry_date||'') || a.id - b.id);
 
-    // تحويل لصيغة موحدة
-    const typeLabel = { sale:'بيع', collection:'تحصيل', payment:'دفعة', expense:'مصروف', payout:'صرف شريك', journal:'قيد' };
+    const srcLabels = {
+      purchase_orders:'شراء', sales:'بيع', collections:'تحصيل',
+      payments:'دفعة مورد', expenses:'مصروف', partner_payouts:'صرف شريك',
+      operating_expenses:'مصروف تشغيلي', manual:'يدوي',
+    };
+
     const entries = jeRows.map(r => ({
-      date:    r.entry_date || '',
-      type:    typeLabel[r.entry_type] || r.entry_type || 'قيد',
+      date:    (r.entry_date||'').split('T')[0],
+      type:    srcLabels[r.ref_table] || r.ref_table || 'قيد',
       desc:    r.description || '—',
       ref:     r.entry_no   || '',
       debit:   +r.dr_amount || 0,
@@ -5856,12 +5857,17 @@ async function showLedger(contactId, contactName, contactType) {
 
     window._ledgerAllEntries = entries;
 
-    // بناء فلتر الملفات
+    // فلتر الملفات
     const fileNos = [...new Set(entries.map(e=>e.file_no).filter(Boolean))].sort();
     const sel = el('ledger-file-filter');
     if (sel) {
       sel.innerHTML = '<option value="">كل الصفقات</option>' +
         fileNos.map(f=>`<option value="${f}">${f}</option>`).join('');
+    }
+
+    // تنبيه لو بيانات قديمة
+    if (byContactName?.length === 0 && byOldFormat?.length > 0) {
+      toast('⚠️ بيانات قديمة — شغّل الترحيل لتحديث القيود','warn');
     }
 
     el('ledgerView').dataset.contactName = contactName;
@@ -6099,254 +6105,539 @@ function printLedgerStatement() {
 // ════════════════════════════════════════
 // TRIAL BALANCE
 // ════════════════════════════════════════
-const trialState = { data: [], typeFilter: 'all' };
+// ════════════════════════════════════════════════════════
+// ACCOUNTING SYSTEM — ميزان المراجعة + دفتر الأستاذ + شجرة الحسابات
+// ════════════════════════════════════════════════════════
 
-async function showTrialBalance() {
+const trialState  = { data:[], typeFilter:'all', from:null, to:null, period:'all' };
+const ledgerState = { accountCode:null, accountName:null, from:null, to:null, period:'all' };
+
+// ── Period helper ──
+function _periodDates(period) {
+  const pad=n=>String(n).padStart(2,'0'), now=new Date(), yr=now.getFullYear();
+  if (period==='month') {
+    const last=new Date(yr,now.getMonth()+1,0);
+    return {from:`${yr}-${pad(now.getMonth()+1)}-01`,to:`${last.getFullYear()}-${pad(last.getMonth()+1)}-${pad(last.getDate())}`};
+  }
+  if (period==='lastmonth') {
+    const lm=new Date(yr,now.getMonth()-1,1),lme=new Date(yr,now.getMonth(),0);
+    return {from:`${lm.getFullYear()}-${pad(lm.getMonth()+1)}-01`,to:`${lme.getFullYear()}-${pad(lme.getMonth()+1)}-${pad(lme.getDate())}`};
+  }
+  if (period==='year')     return {from:`${yr}-01-01`,to:`${yr}-12-31`};
+  if (period==='lastyear') return {from:`${yr-1}-01-01`,to:`${yr-1}-12-31`};
+  return {from:null,to:null};
+}
+function _setPeriodBtns(prefix,period) {
+  document.querySelectorAll(`[id^="${prefix}-period-"]`).forEach(b=>b.classList.remove('active'));
+  el(`${prefix}-period-${period}`)?.classList.add('active');
+  const cw=el(`${prefix}-custom-dates`);
+  if(cw) cw.style.display=period==='custom'?'flex':'none';
+}
+
+// ══ ميزان المراجعة ══
+function showTrialBalance() {
   hideAllViews();
-  el('trialView').style.display = 'block';
-  el('topBarTitle').textContent = 'تريال بالانس';
+  el('trialView').style.display='block';
+  el('topBarTitle').textContent='⚖️ ميزان المراجعة';
+  el('topBarSub').textContent=`نظام ${state.system}`;
   navActive('nav-trial');
-  await loadTrialBalance();
+  setTrialPeriod(trialState.period||'all');
+}
+
+function setTrialPeriod(period) {
+  trialState.period=period;
+  _setPeriodBtns('tb',period);
+  if(period==='custom') return;
+  const {from,to}=_periodDates(period);
+  trialState.from=from; trialState.to=to;
+  if(el('tb-from')) el('tb-from').value=from||'';
+  if(el('tb-to'))   el('tb-to').value=to||'';
+  loadTrialBalance();
 }
 
 async function loadTrialBalance() {
-  el('trialTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري الحساب...</div>';
+  el('trialTable').innerHTML='<div class="loading"><div class="spinner"></div><br>جاري تحميل ميزان المراجعة...</div>';
+  const from=el('tb-from')?.value||trialState.from;
+  const to=el('tb-to')?.value||trialState.to;
+  const postF=el('tb-post-filter')?.value||'posted';
+  trialState.from=from; trialState.to=to;
   try {
-    const sys = state.system;
-
-    // ── مصدر واحد: journal_entries فقط ──
-    const [jeRows, contacts] = await Promise.all([
-      apiGetAll('journal_entries', {
-        select: 'account_code,account_name,dr_amount,cr_amount,post_status,entry_type',
-        system_type: `eq.${sys}`,
-      }),
-      Promise.all([
-        apiGet('contacts', { select:'id,name,type,opening_balance', system_type:`eq.${sys}` }),
-        apiGet('contacts', { select:'id,name,type,opening_balance', system_type:'is.null' }),
-      ]).then(([a,b]) => {
-        const seen = new Set(); const out = [];
-        [...(a||[]),...(b||[])].forEach(c => { if(!seen.has(c.id)){seen.add(c.id);out.push(c);} });
-        return out;
-      }),
-    ]);
-
-    // فلتر posted فقط
-    const posted = (jeRows||[]).filter(isPosted);
-
-    // تجميع Dr/Cr لكل account_name
-    const accMap = {};
-    posted.forEach(r => {
-      const key  = r.account_name || r.account_code || 'غير محدد';
-      const code = r.account_code || '';
-      if (!accMap[key]) accMap[key] = { name:key, code, dr:0, cr:0 };
-      accMap[key].dr += +r.dr_amount || 0;
-      accMap[key].cr += +r.cr_amount || 0;
+    const sys=state.system;
+    let url=`${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&select=account_code,account_name,dr_amount,cr_amount,post_status&limit=10000`;
+    if(from) url+=`&entry_date=gte.${encodeURIComponent(from)}`;
+    if(to)   url+=`&entry_date=lte.${encodeURIComponent(to+'T23:59:59')}`;
+    if(postF==='posted') url+=`&post_status=eq.posted`;
+    if(postF==='draft')  url+=`&post_status=eq.draft`;
+    const res=await fetch(url,{headers:headers()});
+    if(!res.ok) throw new Error(await res.text());
+    const rows=await res.json();
+    const coaData=await apiGetAll('chart_of_accounts',{select:'account_code,account_name,account_type',system_type:`eq.${sys}`,is_active:'eq.true'});
+    const coaMap={};
+    (coaData||[]).forEach(a=>{coaMap[a.account_code]=a;});
+    const accMap={};
+    (rows||[]).forEach(r=>{
+      const code=r.account_code||'XXX';
+      if(!accMap[code]){const coa=coaMap[code]||{};accMap[code]={code,name:coa.account_name||r.account_name||code,type:coa.account_type||getAccountType(code),dr:0,cr:0};}
+      accMap[code].dr+=(+r.dr_amount||0);
+      accMap[code].cr+=(+r.cr_amount||0);
     });
-
-    // تحديد نوع الحساب من اسمه أو كوده
-    const prefixType = (name, code) => {
-      if (name?.startsWith('عميل:'))  return 'customer';
-      if (name?.startsWith('مورد:'))  return 'supplier';
-      if (name?.startsWith('شريك:'))  return 'partner';
-      if (name?.startsWith('عهدة:'))  return 'custodian';
-      if (!code) return 'other';
-      if (code.startsWith('1')) return 'asset';
-      if (code.startsWith('2')) return 'liability';
-      if (code.startsWith('3')) return 'equity';
-      if (code.startsWith('4')) return 'revenue';
-      if (code.startsWith('5')) return 'cogs';
-      if (code.startsWith('6')) return 'expense';
-      return 'other';
-    };
-
-    // بناء map اسم جهة الاتصال → id
-    const contactMap = {};
-    (contacts||[]).forEach(c => { contactMap[c.name] = c; });
-
-    // إضافة الأرصدة الافتتاحية من جهات الاتصال
-    (contacts||[]).forEach(c => {
-      if (!+c.opening_balance) return;
-      const key = `${prefixType(null,null)==='customer'?'عميل':prefixType(c.type)?.[0]?.toUpperCase()||''}${c.name}`;
-      const prefMap = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
-      const accKey  = `${prefMap[c.type]||c.type}: ${c.name}`;
-      if (!accMap[accKey]) accMap[accKey] = { name:accKey, code:'', dr:0, cr:0 };
-      const ob = +c.opening_balance;
-      if (ob > 0) accMap[accKey].dr += ob;
-      else        accMap[accKey].cr += Math.abs(ob);
-    });
-
-    trialState.data = Object.values(accMap)
-      .filter(a => a.dr > 0 || a.cr > 0)
-      .map(a => {
-        const contactName = a.name.replace(/^(عميل|مورد|شريك|عهدة): /, '');
-        const contact = contactMap[contactName];
-        return {
-          id:          contact?.id || null,
-          name:        a.name,
-          type:        contact?.type || prefixType(a.name, a.code),
-          totalDebit:  a.dr,
-          totalCredit: a.cr,
-          balance:     a.dr - a.cr,
-        };
-      })
-      .sort((a,b) => (a.code||a.name).localeCompare(b.code||b.name, 'ar'));
-
-    filterTrial(trialState.typeFilter);
-  } catch(e) {
-    el('trialTable').innerHTML = errHTML('خطأ: ' + e.message);
-    console.error('loadTrialBalance:', e);
-  }
-}
-
-// تحديد نوع الحساب من الكود
-function getAccountType(code) {
-  if (!code) return 'other';
-  const c = String(code);
-  if (c.startsWith('1')) return 'asset';
-  if (c.startsWith('2')) return 'liability';
-  if (c.startsWith('3')) return 'equity';
-  if (c.startsWith('4')) return 'revenue';
-  if (c.startsWith('5')) return 'cogs';
-  if (c.startsWith('6')) return 'expense';
-  return 'other';
+    trialState.data=Object.values(accMap).filter(a=>a.dr>0||a.cr>0).sort((a,b)=>(a.code||'').localeCompare(b.code||''));
+    filterTrial(trialState.typeFilter||'all');
+  } catch(e){el('trialTable').innerHTML=errHTML('خطأ: '+e.message);console.error(e);}
 }
 
 function filterTrial(type) {
-  trialState.typeFilter = type;
-  document.querySelectorAll('[id^="ttype-"]').forEach(b => b.classList.remove('active'));
-  el('ttype-' + type)?.classList.add('active');
+  trialState.typeFilter=type;
+  document.querySelectorAll('[id^="ttype-"]').forEach(b=>b.classList.remove('active'));
+  el('ttype-'+type)?.classList.add('active');
   renderTrialBalance();
 }
 
 function renderTrialBalance() {
-  let list = trialState.data;
-  if (trialState.typeFilter && trialState.typeFilter !== 'all') {
-    list = list.filter(c => c.type === trialState.typeFilter);
-  }
-
-  const sumDebit  = list.reduce((s,c) => s + c.totalDebit, 0);
-  const sumCredit = list.reduce((s,c) => s + c.totalCredit, 0);
-  const sumBal    = list.reduce((s,c) => s + c.balance, 0);
-
-  el('trialKpis').innerHTML = `
-    <div class="j-kpi"><div class="j-kpi-label">إجمالي المدين</div><div class="j-kpi-val text-green">${fmt(sumDebit)}</div></div>
-    <div class="j-kpi"><div class="j-kpi-label">إجمالي الدائن</div><div class="j-kpi-val text-red">${fmt(sumCredit)}</div></div>
-    <div class="j-kpi"><div class="j-kpi-label">صافي المركز</div><div class="j-kpi-val" style="color:${sumBal>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(sumBal))} ${sumBal>=0?'↑':'↓'}</div></div>`;
-
-  if (!list.length) { el('trialTable').innerHTML = emptyHTML('⚖️','لا توجد بيانات'); return; }
-
-  const typeColors = {
-    asset:'var(--blue)', liability:'var(--red)', equity:'var(--purple)',
-    revenue:'var(--green)', cogs:'var(--accent)', expense:'var(--red)',
-    customer:'var(--blue)', supplier:'var(--accent)', partner:'var(--purple)',
-  };
-  const typeLabelsAcc = {
-    asset:'أصول', liability:'التزامات', equity:'حقوق ملكية',
-    revenue:'إيرادات', cogs:'تكلفة مبيعات', expense:'مصروفات', other:'أخرى',
-  };
-  const rows = list.map(c => `
-    <tr onclick="${c.id ? `showLedger(${c.id},'${c.name.replace(/'/g,"\\'")}','${c.type}')` : ''}"
-      style="cursor:${c.id?'pointer':'default'}">
-      <td>
-        <div style="font-weight:600">${c.name}</div>
-      </td>
-      <td><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--card2);color:${typeColors[c.type]||'var(--text2)'}">${typeLabels[c.type]||c.type||'—'}</span></td>
-      <td class="mono text-green">${fmt(c.totalDebit)}</td>
-      <td class="mono text-red">${fmt(c.totalCredit)}</td>
-      <td class="mono" style="font-weight:700;color:${c.balance>0?'var(--green)':c.balance<0?'var(--red)':'var(--text2)'}">
-        ${fmt(Math.abs(c.balance))} <span style="font-size:10px">${c.balance>0?'مدين':c.balance<0?'دائن':'صفر'}</span>
-      </td>
-    </tr>`).join('');
-
-  el('trialTable').innerHTML = `<table class="data-table">
-    <thead><tr>
-      <th>الاسم</th><th>النوع</th>
-      <th style="color:var(--green)">مدين</th>
-      <th style="color:var(--red)">دائن</th>
-      <th>الرصيد</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-    <tfoot style="background:var(--card2)"><tr>
-      <td colspan="2" style="font-weight:700;padding:10px 16px">الإجمالي (${list.length} جهة)</td>
-      <td class="mono text-green" style="padding:10px 16px;font-weight:700">${fmt(sumDebit)}</td>
-      <td class="mono text-red" style="padding:10px 16px;font-weight:700">${fmt(sumCredit)}</td>
-      <td class="mono" style="padding:10px 16px;font-weight:700;color:${sumBal>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(sumBal))}</td>
-    </tr></tfoot>
-  </table>`;
-}
-
-async function showAccountMovements(accountCode, accountName) {
-  // Open a quick modal showing all journal entries for this account
-  const entries = await apiGet('journal_entries', {
-    select: '*',
-    system_type: `eq.${state.system}`,
-    account_code: `eq.${accountCode}`,
-    post_status: 'eq.posted',
-    order: 'entry_date.asc,id.asc',
-  });
-
-  let running = 0;
-  const rows = (entries||[]).map(e => {
-    running += (+e.dr_amount||0) - (+e.cr_amount||0);
-    return `<tr>
-      <td class="mono">${e.entry_date||'—'}</td>
-      <td class="mono" style="font-size:11px;color:var(--text2)">${e.entry_no||'—'}</td>
-      <td>${e.description||'—'}</td>
-      <td>${e.file_no||'—'}</td>
-      <td class="mono text-green">${+e.dr_amount>0 ? fmt(e.dr_amount) : '—'}</td>
-      <td class="mono text-red">${+e.cr_amount>0 ? fmt(e.cr_amount) : '—'}</td>
-      <td class="mono" style="font-weight:700;color:${running>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(running))}</td>
+  let list=trialState.data;
+  if(trialState.typeFilter&&trialState.typeFilter!=='all') list=list.filter(c=>c.type===trialState.typeFilter);
+  const sumDr=list.reduce((s,c)=>s+c.dr,0), sumCr=list.reduce((s,c)=>s+c.cr,0), diff=Math.abs(sumDr-sumCr);
+  const TAL={asset:'أصول',liability:'التزامات',equity:'حقوق ملكية',revenue:'إيرادات',cogs:'تكلفة',expense:'مصروفات',other:'أخرى'};
+  const TC={asset:'var(--blue)',liability:'var(--red)',equity:'var(--purple)',revenue:'var(--green)',cogs:'var(--accent)',expense:'var(--red)',other:'var(--text2)'};
+  el('trialKpis').innerHTML=[
+    ['مجموع المدين',fmt(sumDr),'var(--green)'],
+    ['مجموع الدائن',fmt(sumCr),'var(--red)'],
+    ['الفرق',diff<0.01?'✅ متوازن':fmt(diff),diff<0.01?'var(--green)':'var(--red)'],
+    ['عدد الحسابات',list.length,'var(--blue)'],
+  ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c}">${v}</div></div>`).join('');
+  if(!list.length){el('trialTable').innerHTML=emptyHTML('⚖️','لا توجد بيانات');return;}
+  const rows=list.map(c=>{
+    const bal=c.dr-c.cr, bc=bal>0?'var(--green)':bal<0?'var(--red)':'var(--text2)';
+    return `<tr style="cursor:pointer" onclick="showAccountLedger('${c.code}','${c.name.replace(/'/g,"\\'")}','${c.type}')"
+      onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
+      <td class="mono" style="color:var(--accent);font-weight:700">${c.code}</td>
+      <td style="font-weight:600">${c.name}</td>
+      <td><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${TC[c.type]||'var(--card2)'}22;color:${TC[c.type]||'var(--text2)'}">${TAL[c.type]||c.type}</span></td>
+      <td class="mono text-green" style="text-align:left">${fmt(c.dr)}</td>
+      <td class="mono text-red"   style="text-align:left">${fmt(c.cr)}</td>
+      <td style="text-align:left"><span class="mono" style="font-weight:900;color:${bc}">${fmt(Math.abs(bal))}</span> <span style="font-size:10px;color:${bc}">${bal>0?'مدين':bal<0?'دائن':'صفر'}</span></td>
     </tr>`;
   }).join('');
+  el('trialTable').innerHTML=`<div style="font-size:11px;color:var(--text2);margin-bottom:6px">اضغط على أي حساب لعرض حركاته في دفتر الأستاذ</div>
+    <table class="data-table">
+    <thead><tr><th>الكود</th><th>اسم الحساب</th><th>النوع</th>
+    <th style="color:var(--green);text-align:left">مدين</th><th style="color:var(--red);text-align:left">دائن</th><th style="text-align:left">الرصيد</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot style="background:var(--card2)"><tr>
+      <td colspan="3" style="padding:10px 16px;font-weight:700">الإجمالي (${list.length})</td>
+      <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(sumDr)}</td>
+      <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:left">${fmt(sumCr)}</td>
+      <td style="padding:10px 16px;font-weight:900;color:${diff<0.01?'var(--green)':'var(--red)'};text-align:left">${diff<0.01?'✅ متوازن':fmt(diff)+' فرق'}</td>
+    </tr></tfoot></table>`;
+}
 
-  const totalDr = (entries||[]).reduce((s,e)=>s+(+e.dr_amount||0),0);
-  const totalCr = (entries||[]).reduce((s,e)=>s+(+e.cr_amount||0),0);
+// ══ دفتر الأستاذ (بالكود — من ميزان المراجعة) ══
+function setLedgerPeriod(period) {
+  ledgerState.period=period;
+  _setPeriodBtns('ldg',period);
+  if(period==='custom') return;
+  const {from,to}=_periodDates(period);
+  ledgerState.from=from; ledgerState.to=to;
+  if(el('ldg-from')) el('ldg-from').value=from||'';
+  if(el('ldg-to'))   el('ldg-to').value=to||'';
+  renderLedgerTable();
+}
 
-  const html = `
-    <div style="font-size:13px;font-weight:700;margin-bottom:12px">
-      حركات حساب: ${accountCode} — ${accountName}
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
-      <div class="j-kpi"><div class="j-kpi-label">إجمالي المدين</div><div class="j-kpi-val text-green">${fmt(totalDr)}</div></div>
-      <div class="j-kpi"><div class="j-kpi-label">إجمالي الدائن</div><div class="j-kpi-val text-red">${fmt(totalCr)}</div></div>
-      <div class="j-kpi"><div class="j-kpi-label">الرصيد</div><div class="j-kpi-val" style="color:${(totalDr-totalCr)>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(totalDr-totalCr))}</div></div>
-    </div>
-    ${entries?.length ? `<div style="overflow-x:auto"><table class="data-table">
-      <thead><tr>
-        <th>التاريخ</th><th>رقم القيد</th><th>البيان</th><th>الملف</th>
-        <th style="color:var(--green)">مدين</th>
-        <th style="color:var(--red)">دائن</th>
-        <th>الرصيد</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>` : emptyHTML('📒','لا توجد حركات لهذا الحساب')}`;
+async function showAccountLedger(accountCode, accountName, accountType) {
+  hideAllViews();
+  el('ledgerView').style.display='block';
+  el('topBarTitle').textContent='📖 دفتر الأستاذ';
+  el('topBarSub').textContent=`${accountCode} — ${accountName}`;
+  navActive('nav-trial');
+  ledgerState.accountCode=accountCode; ledgerState.accountName=accountName;
+  if(el('ledger-back-btn')) el('ledger-back-btn').onclick=()=>showTrialBalance();
+  el('ledger-contact-badge').innerHTML=`
+    <span style="color:var(--text2);font-size:12px">ميزان المراجعة /</span>
+    <span class="mono" style="color:var(--accent);font-weight:900;margin-right:8px">${accountCode}</span>
+    <span style="font-weight:700">${accountName}</span>`;
+  el('ledgerTable').innerHTML='<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const sys=state.system;
+    const url=`${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&account_code=eq.${encodeURIComponent(accountCode)}&select=*&order=entry_date.asc,id.asc&limit=5000`;
+    const res=await fetch(url,{headers:headers()});
+    const rows=res.ok?await res.json():[];
+    window._ledgerAllEntries=(rows||[]).map(r=>({
+      id:r.id,date:(r.entry_date||'').split('T')[0],type:r.ref_table||'manual',
+      desc:r.description||'—',ref:r.entry_no||'',debit:+r.dr_amount||0,
+      credit:+r.cr_amount||0,file_no:r.file_no||'',contact:r.contact_name||'',status:r.post_status||'posted',
+    }));
+    window._ledgerOpening=0;
+    const fileNos=[...new Set((rows||[]).map(r=>r.file_no).filter(Boolean))].sort();
+    const sel=el('ledger-file-filter');
+    if(sel) sel.innerHTML='<option value="">كل الصفقات</option>'+fileNos.map(f=>`<option value="${f}">${f}</option>`).join('');
+    el('ledgerView').dataset.contactName=accountName;
+    el('ledgerView').dataset.accountCode=accountCode;
+    _setPeriodBtns('ldg',ledgerState.period||'all');
+    renderLedgerTable();
+  } catch(e){el('ledgerTable').innerHTML=errHTML('خطأ: '+e.message);}
+}
 
-  // Show in a simple overlay
-  let overlay = el('accountMovementsOverlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'accountMovementsOverlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-    overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
-    document.body.appendChild(overlay);
-  }
-  overlay.innerHTML = `
-    <div style="background:var(--card);border-radius:var(--radius);padding:20px;max-width:800px;width:100%;max-height:80vh;overflow-y:auto">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <span style="font-weight:700">دفتر الأستاذ — ${accountCode}</span>
-        <button onclick="el('accountMovementsOverlay').remove()" style="background:none;border:1px solid var(--border);padding:4px 10px;border-radius:6px;cursor:pointer;font-family:'Cairo',sans-serif">✕ إغلاق</button>
+// دفتر الأستاذ من جهات الاتصال
+async function showLedger(contactId, contactName, contactType) {
+  hideAllViews();
+  el('ledgerView').style.display='block';
+  el('topBarTitle').textContent='📖 دفتر الأستاذ';
+  navActive('nav-contacts');
+  ledgerState.accountCode=null; ledgerState.accountName=contactName;
+  if(el('ledger-back-btn')) el('ledger-back-btn').onclick=()=>showContacts();
+  el('ledger-contact-badge').innerHTML=`
+    <span style="color:var(--text2);font-size:12px">جهات الاتصال /</span>
+    <span style="font-weight:900;margin-right:8px">${contactName}</span>
+    <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--blue-dim);color:var(--blue)">${typeLabels[contactType]||contactType}</span>`;
+  el('ledgerTable').innerHTML='<div class="loading"><div class="spinner"></div></div>';
+  window._ledgerContactId=contactId; window._ledgerContactName=contactName; window._ledgerContactType=contactType;
+  try {
+    const sys=state.system;
+    const contact=contactsState.all.find(c=>c.id===contactId);
+    window._ledgerOpening=contact?.opening_balance?+contact.opening_balance:0;
+    const prefixMap={customer:'عميل',supplier:'مورد',partner:'شريك',custodian:'عهدة'};
+    const prefix=prefixMap[contactType]||'';
+    const byContact=await apiGetAll('journal_entries',{select:'*',system_type:`eq.${sys}`,contact_name:`eq.${contactName}`,order:'entry_date.asc,id.asc'});
+    const byOld=prefix?await apiGetAll('journal_entries',{select:'*',system_type:`eq.${sys}`,account_name:`eq.${prefix}: ${contactName}`,order:'entry_date.asc,id.asc'}):[];
+    const seen=new Set(),raw=[];
+    [...(byContact||[]),...(byOld||[])].forEach(r=>{if(!seen.has(r.id)){seen.add(r.id);raw.push(r);}});
+    window._ledgerAllEntries=raw.filter(isPosted).sort((a,b)=>a.entry_date?.localeCompare(b.entry_date)||a.id-b.id).map(r=>({
+      id:r.id,date:(r.entry_date||'').split('T')[0],type:r.ref_table||'manual',
+      desc:r.description||'—',ref:r.entry_no||'',debit:+r.dr_amount||0,
+      credit:+r.cr_amount||0,file_no:r.file_no||'',contact:r.contact_name||'',status:r.post_status||'posted',
+    }));
+    const fileNos=[...new Set(raw.map(r=>r.file_no).filter(Boolean))].sort();
+    const sel=el('ledger-file-filter');
+    if(sel) sel.innerHTML='<option value="">كل الصفقات</option>'+fileNos.map(f=>`<option value="${f}">${f}</option>`).join('');
+    el('ledgerView').dataset.contactName=contactName;
+    _setPeriodBtns('ldg','all');
+    renderLedgerTable();
+  } catch(e){el('ledgerTable').innerHTML=errHTML('خطأ: '+e.message);}
+}
+
+function renderLedgerTable() {
+  const fileFilter=el('ledger-file-filter')?.value||'';
+  const postFilter=el('ledger-post-filter')?.value||'posted';
+  const from=el('ldg-from')?.value||null;
+  const to=el('ldg-to')?.value||null;
+  let list=window._ledgerAllEntries||[];
+  const opening=window._ledgerOpening||0;
+  if(fileFilter) list=list.filter(e=>e.file_no===fileFilter);
+  if(postFilter==='posted') list=list.filter(e=>e.status==='posted');
+  if(postFilter==='draft')  list=list.filter(e=>e.status==='draft');
+  if(from) list=list.filter(e=>e.date>=from);
+  if(to)   list=list.filter(e=>e.date<=to);
+  const totalDr=list.reduce((s,e)=>s+(+e.debit||0),0);
+  const totalCr=list.reduce((s,e)=>s+(+e.credit||0),0);
+  const finalBal=opening+totalDr-totalCr;
+  el('ledgerKpis').innerHTML=[
+    ['مجموع المدين',fmt(totalDr),'var(--green)'],
+    ['مجموع الدائن',fmt(totalCr),'var(--red)'],
+    ['الرصيد الختامي',fmt(Math.abs(finalBal))+' '+(finalBal>0?'مدين':finalBal<0?'دائن':'صفر'),finalBal>=0?'var(--green)':'var(--red)'],
+    ['عدد الحركات',list.length,'var(--blue)'],
+  ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c}">${v}</div></div>`).join('');
+  if(!list.length&&!opening){el('ledgerTable').innerHTML=emptyHTML('📖','لا توجد حركات');return;}
+  const SL={purchase_orders:'شراء',sales:'بيع',collections:'تحصيل',payments:'دفعة مورد',expenses:'مصروف',partner_payouts:'صرف شريك',operating_expenses:'مصروف تشغيلي',manual:'يدوي'};
+  const SC={purchase_orders:'var(--accent)',sales:'var(--green)',collections:'var(--blue)',payments:'var(--cyan)',expenses:'var(--red)',partner_payouts:'var(--purple)',operating_expenses:'var(--purple)',manual:'var(--text)'};
+  let running=opening, rows='';
+  if(opening&&!fileFilter) rows+=`<tr style="background:var(--card2)">
+    <td colspan="4" style="padding:8px 14px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
+    <td class="mono text-green" style="padding:8px 14px;text-align:left">${opening>0?fmt(opening):'—'}</td>
+    <td class="mono text-red"   style="padding:8px 14px;text-align:left">${opening<0?fmt(Math.abs(opening)):'—'}</td>
+    <td class="mono" style="padding:8px 14px;font-weight:700;text-align:left">${fmt(Math.abs(opening))}</td><td></td></tr>`;
+  rows+=list.map((e,i)=>{
+    running+=e.debit-e.credit;
+    const rc=running>=0?'var(--green)':'var(--red)';
+    const src=SL[e.type]||e.type||'قيد', sc=SC[e.type]||'var(--text2)';
+    const sb=e.status==='draft'?`<span style="font-size:9px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:6px;font-weight:700">مسودة</span>`:'';
+    return `<tr style="${i%2?'background:var(--card2)':''}"
+      onmouseover="this.style.background='var(--accent-dim)'" onmouseout="this.style.background='${i%2?'var(--card2)':''}'"
+      onclick="openJEDetail('${e.ref}')">
+      <td class="mono" style="padding:8px 12px;font-size:11px;color:var(--text2);white-space:nowrap;cursor:default">${e.date||'—'}</td>
+      <td style="padding:8px 12px;cursor:default">
+        <span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;background:${sc}22;color:${sc}">${src}</span> ${sb}
+      </td>
+      <td style="padding:8px 12px">
+        <div style="font-size:12px">${e.desc}</div>
+        ${e.file_no?`<div style="font-size:10px;color:var(--accent);font-family:monospace;cursor:pointer" onclick="event.stopPropagation();openViewer('${e.file_no}')">${e.file_no}</div>`:''}
+        ${e.contact?`<div style="font-size:10px;color:var(--text2)">${e.contact}</div>`:''}
+      </td>
+      <td class="mono" style="padding:8px 12px;font-size:11px;color:var(--text2)">${e.ref||'—'}</td>
+      <td class="mono text-green" style="padding:8px 12px;font-weight:700;text-align:left">${e.debit>0?fmt(e.debit):'—'}</td>
+      <td class="mono text-red"   style="padding:8px 12px;font-weight:700;text-align:left">${e.credit>0?fmt(e.credit):'—'}</td>
+      <td class="mono" style="padding:8px 12px;font-weight:900;color:${rc};text-align:left">${fmt(Math.abs(running))}</td>
+      <td style="padding:8px 12px;text-align:center"><button class="btn btn-sm" onclick="event.stopPropagation();openJEDetail('${e.ref}')" title="تفاصيل القيد" style="padding:2px 7px;font-size:11px">🔍</button></td>
+    </tr>`;
+  }).join('');
+  el('ledgerTable').innerHTML=`
+    <div style="font-size:11px;color:var(--text2);margin-bottom:6px">اضغط على أي حركة لعرض تفاصيل القيد والمرفقات</div>
+    <table class="data-table" style="min-width:700px">
+    <thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>رقم القيد</th>
+    <th style="color:var(--green);text-align:left">مدين</th>
+    <th style="color:var(--red);text-align:left">دائن</th>
+    <th style="text-align:left">الرصيد</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot style="background:var(--card2)"><tr>
+      <td colspan="4" style="padding:10px 16px;font-weight:700">الإجمالي</td>
+      <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalDr)}</td>
+      <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalCr)}</td>
+      <td style="padding:10px 16px;font-weight:900;color:${finalBal>=0?'var(--green)':'var(--red)'};text-align:left">${fmt(Math.abs(finalBal))} ${finalBal>0?'مدين':finalBal<0?'دائن':'✓'}</td>
+      <td></td>
+    </tr></tfoot></table>`;
+  el('ledgerView').dataset.entries=JSON.stringify(list);
+}
+
+// ══ تفاصيل القيد + المرفقات ══
+async function openJEDetail(entryNo) {
+  if(!entryNo) return;
+  el('je-detail-title').textContent=`قيد رقم: ${entryNo}`;
+  el('je-detail-info').innerHTML='<div class="loading"><div class="spinner"></div></div>';
+  el('je-detail-lines').innerHTML='';
+  el('je-detail-attachments').innerHTML='';
+  openModal('jeDetailModal');
+  try {
+    const sys=state.system;
+    const [lines,attachments]=await Promise.all([
+      apiGetAll('journal_entries',{select:'*',system_type:`eq.${sys}`,entry_no:`eq.${entryNo}`}),
+      apiGetAll('journal_attachments',{select:'*',system_type:`eq.${sys}`,entry_no:`eq.${entryNo}`}),
+    ]);
+    if(!lines?.length){el('je-detail-info').innerHTML=errHTML('لم يُعثر على القيد');return;}
+    const first=lines[0];
+    const totalDr=lines.reduce((s,l)=>s+(+l.dr_amount||0),0);
+    const totalCr=lines.reduce((s,l)=>s+(+l.cr_amount||0),0);
+    const balanced=Math.abs(totalDr-totalCr)<0.01;
+    const statusC=first.post_status==='posted'?'var(--green)':'var(--accent)';
+    const SL={purchase_orders:'شراء',sales:'بيع',collections:'تحصيل',payments:'دفعة مورد',expenses:'مصروف',partner_payouts:'صرف شريك',operating_expenses:'مصروف تشغيلي',manual:'يدوي'};
+    el('je-detail-info').innerHTML=`
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
+        <div class="j-kpi"><div class="j-kpi-label">التاريخ</div><div class="j-kpi-val" style="font-size:14px">${(first.entry_date||'').split('T')[0]}</div></div>
+        <div class="j-kpi"><div class="j-kpi-label">المصدر</div><div class="j-kpi-val" style="font-size:13px">${SL[first.ref_table]||first.ref_table||'يدوي'}</div></div>
+        <div class="j-kpi"><div class="j-kpi-label">الحالة</div><div class="j-kpi-val" style="font-size:13px;color:${statusC}">${first.post_status==='posted'?'✅ مرحّل':'⏳ مسودة'}</div></div>
       </div>
-      ${html}
-    </div>`;
-  overlay.style.display = 'flex';
+      <div style="background:var(--card2);border-radius:var(--radius-sm);padding:8px 12px;font-size:12px;margin-bottom:8px">
+        <strong>البيان:</strong> ${first.description||'—'}
+        ${first.file_no?`&nbsp;·&nbsp;<span style="color:var(--accent);cursor:pointer" onclick="closeModal('jeDetailModal');openViewer('${first.file_no}')">📂 ${first.file_no}</span>`:''}
+      </div>`;
+    const lineRows=lines.map(l=>`<tr>
+      <td class="mono" style="color:var(--accent)">${l.account_code||'—'}</td>
+      <td>${l.account_name||'—'}</td>
+      <td style="font-size:11px;color:var(--text2)">${l.contact_name||'—'}</td>
+      <td class="mono text-green" style="text-align:left">${+l.dr_amount>0?fmt(l.dr_amount):'—'}</td>
+      <td class="mono text-red"   style="text-align:left">${+l.cr_amount>0?fmt(l.cr_amount):'—'}</td>
+    </tr>`).join('');
+    el('je-detail-lines').innerHTML=`
+      <table class="data-table" style="margin-bottom:6px">
+        <thead><tr><th>الكود</th><th>الحساب</th><th>الطرف</th>
+        <th style="color:var(--green);text-align:left">مدين</th><th style="color:var(--red);text-align:left">دائن</th></tr></thead>
+        <tbody>${lineRows}</tbody>
+        <tfoot style="background:var(--card2)"><tr>
+          <td colspan="3" style="padding:7px 12px;font-weight:700">الإجمالي</td>
+          <td class="mono text-green" style="text-align:left;font-weight:900;padding:7px 12px">${fmt(totalDr)}</td>
+          <td class="mono text-red"   style="text-align:left;font-weight:900;padding:7px 12px">${fmt(totalCr)}</td>
+        </tr></tfoot>
+      </table>
+      <div style="font-size:11px;font-weight:700;color:${balanced?'var(--green)':'var(--red)'};padding:4px 0">${balanced?'✅ القيد متوازن':'❌ القيد غير متوازن!'}</div>`;
+    renderJEAttachments(attachments||[],entryNo);
+    window._currentJEEntryNo=entryNo;
+  } catch(e){el('je-detail-info').innerHTML=errHTML('خطأ: '+e.message);}
+}
+
+function renderJEAttachments(attachments,entryNo) {
+  const wrap=el('je-detail-attachments'); if(!wrap) return;
+  const DI={invoice:'🧾',receipt:'🧾',payment:'💳',contract:'📄',other:'📎'};
+  if(!attachments.length){wrap.innerHTML=`<div style="color:var(--text2);font-size:12px;padding:8px 0">لا توجد مرفقات بعد</div>`;return;}
+  wrap.innerHTML=attachments.map(a=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--card2);border-radius:var(--radius-sm);margin-bottom:5px;border:1px solid var(--border)">
+      <span style="font-size:18px">${DI[a.doc_type]||'📎'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700">${a.file_name||'—'}</div>
+        <div style="font-size:10px;color:var(--text2)">${a.doc_type||'—'} · ${(a.created_at||'').split('T')[0]}</div>
+        ${a.notes?`<div style="font-size:10px;color:var(--text2);font-style:italic">${a.notes}</div>`:''}
+      </div>
+      ${a.file_url?`<a href="${a.file_url}" target="_blank" class="btn btn-secondary btn-sm" style="font-size:11px;padding:3px 8px">🔗 فتح</a>`:''}
+      <button class="btn btn-sm" onclick="deleteJEAttachment(${a.id},'${entryNo}')" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red);padding:2px 7px;font-size:11px">🗑</button>
+    </div>`).join('');
+}
+
+async function addJEAttachment() {
+  const entryNo=window._currentJEEntryNo;
+  const name=el('je-att-name')?.value?.trim();
+  const url=el('je-att-url')?.value?.trim();
+  const type=el('je-att-type')?.value;
+  if(!name||!entryNo){toast('أدخل اسم المرفق','warn');return;}
+  try {
+    await apiPost('journal_attachments',{system_type:state.system,entry_no:entryNo,file_name:name,file_url:url||null,doc_type:type,created_by:state.user?.email||null});
+    if(el('je-att-name')) el('je-att-name').value='';
+    if(el('je-att-url'))  el('je-att-url').value='';
+    const updated=await apiGetAll('journal_attachments',{select:'*',system_type:`eq.${state.system}`,entry_no:`eq.${entryNo}`});
+    renderJEAttachments(updated||[],entryNo);
+    toast('✅ تم إضافة المرفق','ok');
+  } catch(e){toast('خطأ: '+e.message,'err');}
+}
+
+async function deleteJEAttachment(id,entryNo) {
+  try {
+    await apiDelete('journal_attachments',{id:`eq.${id}`});
+    const updated=await apiGetAll('journal_attachments',{select:'*',system_type:`eq.${state.system}`,entry_no:`eq.${entryNo}`});
+    renderJEAttachments(updated||[],entryNo);
+    toast('✅ تم حذف المرفق','ok');
+  } catch(e){toast('خطأ: '+e.message,'err');}
+}
+
+// ══ شجرة الحسابات ══
+const DEFAULT_ACCOUNTS=[
+  {code:'1000',name:'الأصول',type:'asset',parent:null},
+  {code:'1100',name:'الأصول المتداولة',type:'asset',parent:'1000'},
+  {code:'1110',name:'النقد',type:'asset',parent:'1100'},
+  {code:'1120',name:'البنك',type:'asset',parent:'1100'},
+  {code:'1200',name:'ذمم العملاء',type:'asset',parent:'1100'},
+  {code:'1300',name:'المخزون — سيارات',type:'asset',parent:'1100'},
+  {code:'1400',name:'مصاريف مدفوعة مقدماً',type:'asset',parent:'1100'},
+  {code:'2000',name:'الالتزامات',type:'liability',parent:null},
+  {code:'2100',name:'ذمم الموردين',type:'liability',parent:'2000'},
+  {code:'2200',name:'مصاريف مستحقة',type:'liability',parent:'2000'},
+  {code:'2400',name:'حسابات الشركاء',type:'liability',parent:'2000'},
+  {code:'3000',name:'حقوق الملكية',type:'equity',parent:null},
+  {code:'3100',name:'رأس المال',type:'equity',parent:'3000'},
+  {code:'3200',name:'الأرباح المبقاة',type:'equity',parent:'3000'},
+  {code:'4000',name:'الإيرادات',type:'revenue',parent:null},
+  {code:'4100',name:'إيرادات المبيعات',type:'revenue',parent:'4000'},
+  {code:'4200',name:'إيرادات أخرى',type:'revenue',parent:'4000'},
+  {code:'5000',name:'تكلفة المبيعات',type:'cogs',parent:null},
+  {code:'5100',name:'تكلفة المخزون المباع',type:'cogs',parent:'5000'},
+  {code:'6000',name:'المصروفات التشغيلية',type:'expense',parent:null},
+  {code:'6100',name:'مصروف رواتب',type:'expense',parent:'6000'},
+  {code:'6200',name:'مصروف إيجارات',type:'expense',parent:'6000'},
+  {code:'6300',name:'مصروف عمولات',type:'expense',parent:'6000'},
+  {code:'6400',name:'مصروف نظافة',type:'expense',parent:'6000'},
+  {code:'6500',name:'مصروف ضيافة',type:'expense',parent:'6000'},
+  {code:'6600',name:'مصروفات حكومية',type:'expense',parent:'6000'},
+  {code:'6700',name:'مصروفات أخرى',type:'expense',parent:'6000'},
+];
+
+function showChartOfAccounts() {
+  hideAllViews();
+  el('chartOfAccountsView').style.display='block';
+  el('topBarTitle').textContent='🗂️ شجرة الحسابات';
+  el('topBarSub').textContent=`نظام ${state.system}`;
+  navActive('nav-coa');
+  loadChartOfAccountsView();
+}
+
+async function loadChartOfAccountsView() {
+  const wrap=el('coa-tree'); if(!wrap) return;
+  wrap.innerHTML='<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const sys=state.system;
+    const data=await apiGetAll('chart_of_accounts',{select:'*',system_type:`eq.${sys}`,order:'account_code.asc'});
+    if(!data?.length){
+      wrap.innerHTML=`<div style="text-align:center;padding:48px 20px;color:var(--text2)">
+        <div style="font-size:48px;margin-bottom:12px">🗂️</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:8px">لا توجد حسابات بعد</div>
+        <button class="btn btn-primary" onclick="seedDefaultAccounts()">🌱 تحميل الحسابات الافتراضية</button>
+      </div>`;return;
+    }
+    const byParent={};
+    (data||[]).forEach(a=>{const p=a.parent_code||'root';if(!byParent[p])byParent[p]=[];byParent[p].push(a);});
+    const TAL={asset:'أصول',liability:'التزامات',equity:'حقوق ملكية',revenue:'إيرادات',cogs:'تكلفة',expense:'مصروفات'};
+    const TC={asset:'var(--blue)',liability:'var(--red)',equity:'var(--purple)',revenue:'var(--green)',cogs:'var(--accent)',expense:'var(--red)'};
+    function renderNode(code,depth=0){
+      const children=byParent[code]||[];
+      if(!children.length&&depth>0) return '';
+      return children.map(a=>{
+        const hasC=!!(byParent[a.account_code]?.length);
+        const tc=TC[a.account_type]||'var(--text2)',tl=TAL[a.account_type]||a.account_type||'—';
+        return `<div style="margin-right:${depth*20}px;margin-bottom:4px">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm)"
+            onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background='var(--card)'">
+            <span style="font-size:12px">${hasC?'📂':'📄'}</span>
+            <span class="mono" style="color:var(--accent);font-weight:700;font-size:12px">${a.account_code}</span>
+            <span style="font-weight:${hasC?700:600};flex:1;cursor:pointer" onclick="showAccountLedger('${a.account_code}','${a.account_name.replace(/'/g,"\\'")}','${a.account_type}')">${a.account_name}</span>
+            <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${tc}22;color:${tc}">${tl}</span>
+            <button class="btn btn-sm" onclick="showAccountLedger('${a.account_code}','${a.account_name.replace(/'/g,"\\'")}','${a.account_type}')" style="padding:2px 7px;font-size:10px;color:var(--blue)">📖</button>
+            <button class="btn btn-sm" onclick="openEditAccountModal(${a.id})" style="padding:2px 7px;font-size:10px">✏️</button>
+            <button class="btn btn-sm" onclick="deleteAccount(${a.id},'${a.account_code}')" style="padding:2px 7px;font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>
+          </div>
+          ${hasC?renderNode(a.account_code,depth+1):''}
+        </div>`;
+      }).join('');
+    }
+    wrap.innerHTML=`<div style="font-size:11px;color:var(--text2);margin-bottom:10px">اضغط على اسم الحساب أو 📖 لفتح دفتر الأستاذ</div>${renderNode('root')}`;
+  } catch(e){wrap.innerHTML=errHTML('خطأ: '+e.message);}
+}
+
+async function seedDefaultAccounts() {
+  const sys=state.system;
+  toast('⏳ جاري تحميل الحسابات...','ok');
+  try {
+    const existing=await apiGetAll('chart_of_accounts',{select:'account_code',system_type:`eq.${sys}`});
+    const existSet=new Set((existing||[]).map(a=>a.account_code));
+    const toInsert=DEFAULT_ACCOUNTS.filter(a=>!existSet.has(a.code)).map(a=>({system_type:sys,account_code:a.code,account_name:a.name,account_type:a.type,parent_code:a.parent||null,is_active:true}));
+    if(!toInsert.length){toast('✅ الحسابات موجودة','ok');loadChartOfAccountsView();return;}
+    const res=await fetch(`${SB_URL}/rest/v1/chart_of_accounts`,{method:'POST',headers:{...headers(),'Prefer':'return=minimal'},body:JSON.stringify(toInsert)});
+    if(!res.ok) throw new Error(await res.text());
+    toast(`✅ تم إضافة ${toInsert.length} حساب`,'ok');
+    loadChartOfAccountsView();
+  } catch(e){toast('خطأ: '+e.message,'err');}
+}
+
+function openNewAccountModal() {
+  el('acc-id').value='';el('acc-code').value='';el('acc-name').value='';el('acc-parent').value='';
+  el('acc-modal-title').textContent='حساب جديد';el('accError').style.display='none';
+  openModal('accountModal');
+}
+async function openEditAccountModal(id) {
+  const data=await apiGetAll('chart_of_accounts',{select:'*',id:`eq.${id}`});
+  const a=data?.[0];if(!a)return;
+  el('acc-id').value=a.id;el('acc-code').value=a.account_code||'';el('acc-name').value=a.account_name||'';
+  el('acc-type').value=a.account_type||'asset';el('acc-parent').value=a.parent_code||'';
+  el('acc-modal-title').textContent='تعديل حساب';el('accError').style.display='none';
+  openModal('accountModal');
+}
+async function submitAccount() {
+  const id=el('acc-id').value,code=el('acc-code').value.trim(),name=el('acc-name').value.trim();
+  const type=el('acc-type').value,parent=el('acc-parent').value.trim();
+  if(!code||!name){showFieldErr('accError','الكود والاسم مطلوبان');return;}
+  try {
+    const payload={system_type:state.system,account_code:code,account_name:name,account_type:type,parent_code:parent||null,is_active:true};
+    if(id) await apiPatch('chart_of_accounts',{id:`eq.${id}`},payload);
+    else   await apiPost('chart_of_accounts',payload);
+    closeModal('accountModal');toast(`✅ تم ${id?'تعديل':'إضافة'} الحساب ${code}`,'ok');
+    loadChartOfAccountsView();
+  } catch(e){showFieldErr('accError','خطأ: '+e.message);}
+}
+async function deleteAccount(id,code) {
+  showConfirm(`حذف حساب ${code}`,`هل تريد حذف الحساب ${code}؟ لن تُحذف القيود المرتبطة به.`,async()=>{
+    try {await apiDelete('chart_of_accounts',{id:`eq.${id}`});toast(`✅ تم حذف ${code}`,'ok');loadChartOfAccountsView();}
+    catch(e){toast('خطأ: '+e.message,'err');}
+  });
 }
 
 function exportTrialCSV() {
-  const rows = [['الاسم','النوع','مدين','دائن','الرصيد']];
-  trialState.data.forEach(c => rows.push([c.name, typeLabels[c.type]||c.type, c.totalDebit, c.totalCredit, c.balance]));
-  downloadCSV(rows, 'تريال_بالانس.csv');
+  const rows=[['الكود','اسم الحساب','النوع','مدين','دائن','الرصيد']];
+  trialState.data.forEach(c=>rows.push([c.code,c.name,c.type,c.dr,c.cr,c.dr-c.cr]));
+  downloadCSV(rows,'ميزان_المراجعة.csv');
 }
 
+function exportLedgerCSV() {
+  const name=el('ledgerView').dataset.contactName||'ledger';
+  const entries=JSON.parse(el('ledgerView').dataset.entries||'[]');
+  const rows=[['التاريخ','النوع','البيان','المرجع','الملف','مدين','دائن']];
+  entries.forEach(e=>rows.push([e.date||'',e.type||'',e.desc||'',e.ref||'',e.file_no||'',+e.debit||0,+e.credit||0]));
+  downloadCSV(rows,`دفتر_الأستاذ_${name}.csv`);
+}
+
+function getAccountType(code) {
+  if(!code) return 'other';
+  const c=String(code);
+  if(c.startsWith('1')) return 'asset';
+  if(c.startsWith('2')) return 'liability';
+  if(c.startsWith('3')) return 'equity';
+  if(c.startsWith('4')) return 'revenue';
+  if(c.startsWith('5')) return 'cogs';
+  if(c.startsWith('6')) return 'expense';
+  return 'other';
+}
 function downloadCSV(rows, filename) {
   const bom = '\uFEFF';
   const csv = bom + rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
@@ -6356,6 +6647,14 @@ function downloadCSV(rows, filename) {
   a.click();
 }
 
+// ════════════════════════════════════════
+// CONTACT MODAL (add/edit)
+// ════════════════════════════════════════
+function openContactModal(contact = null) {
+  el('contactModalTitle').textContent = contact ? 'تعديل جهة الاتصال' : 'جهة اتصال جديدة';
+  el('cm-name').value    = contact?.name    || '';
+  el('cm-type').value    = contact?.type    || 'customer';
+  el('cm-phone').value   = contact?.phone   || '';
 // ════════════════════════════════════════
 // CONTACT MODAL (add/edit)
 // ════════════════════════════════════════
@@ -6415,7 +6714,7 @@ async function deleteContact(id, name) {
 // hideAllViews helper
 // ════════════════════════════════════════
 function hideAllViews() {
-  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView','reviewView','jeManagerView','warehousesView','contactStatementView']
+  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView','reviewView','jeManagerView','warehousesView','contactStatementView','chartOfAccountsView']
     .forEach(id => {
       const e = el(id);
       if (e) {
@@ -14079,4 +14378,4 @@ async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
 // ربط تلقائي — يُغلّف الدوال الموجودة بدون تعديلها
 // يشتغل بعد ما الصفحة تكمل التحميل
 // ═══════════════════════════════════════════════════════
-
+}

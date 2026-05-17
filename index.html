@@ -184,6 +184,9 @@
           <span class="ns-arrow">▼</span>
         </div>
         <div class="nav-section-items">
+          <div class="nav-item" id="nav-coa" onclick="showChartOfAccounts()">
+            <span class="ni-icon">🗂️</span><span>شجرة الحسابات</span>
+          </div>
           <div class="nav-item" id="nav-contacts" onclick="showContacts('all')">
             <span class="ni-icon">📒</span><span>جهات الاتصال</span>
           </div>
@@ -199,7 +202,7 @@
           <div class="nav-item" onclick="showContactsByType('custodian')">
             <span class="ni-icon">🗝</span><span>العهد وأخرى</span>
           </div>
-          <div class="nav-item" id="nav-ledger" onclick="showContacts()">
+          <div class="nav-item" id="nav-ledger" onclick="showTrialBalance()">
             <span class="ni-icon">📖</span><span>دفتر الأستاذ</span>
           </div>
           <div class="nav-item" id="nav-je-manager" onclick="showJEManager()">
@@ -649,42 +652,106 @@
 
       <!-- ════ LEDGER ════ -->
       <div id="ledgerView" style="display:none">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" onclick="showContacts()">← رجوع</button>
-          <div id="ledger-contact-badge" style="font-size:14px;font-weight:700"></div>
-          <select id="ledger-file-filter" onchange="renderLedgerTable()"
-            style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 12px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
-            <option value="">كل الصفقات</option>
-          </select>
-          <button class="btn btn-secondary btn-sm" style="margin-right:auto" onclick="exportLedgerCSV()">📥 تصدير CSV</button>
-          <button class="btn btn-secondary btn-sm" onclick="printLedgerStatement()" style="color:var(--blue)">🖨️ طباعة PDF</button>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" id="ledger-back-btn" onclick="showTrialBalance()">◀ ميزان المراجعة</button>
+          <div id="ledger-contact-badge" style="font-size:14px;font-weight:700;flex:1"></div>
         </div>
-        <div id="ledgerKpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px"></div>
-        <div class="data-table-wrap">
-          <div id="ledgerTable"></div>
+        <!-- Period Filter -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:10px">
+          <div style="display:flex;gap:3px;flex-wrap:wrap">
+            <button class="dash-period-btn active" id="ldg-period-all"       onclick="setLedgerPeriod('all')">الكل</button>
+            <button class="dash-period-btn" id="ldg-period-month"     onclick="setLedgerPeriod('month')">هذا الشهر</button>
+            <button class="dash-period-btn" id="ldg-period-lastmonth" onclick="setLedgerPeriod('lastmonth')">الماضي</button>
+            <button class="dash-period-btn" id="ldg-period-year"      onclick="setLedgerPeriod('year')">هذا العام</button>
+            <button class="dash-period-btn" id="ldg-period-custom"    onclick="setLedgerPeriod('custom')">مخصص</button>
+          </div>
+          <div id="ldg-custom-dates" style="display:none;align-items:center;gap:6px">
+            <input type="date" id="ldg-from" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <span>—</span>
+            <input type="date" id="ldg-to"   style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <button class="btn btn-primary btn-sm" onclick="renderLedgerTable()">🔍</button>
+          </div>
+          <div style="display:flex;gap:4px;margin-right:auto">
+            <select id="ledger-post-filter" onchange="renderLedgerTable()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+              <option value="posted">مرحّل فقط</option>
+              <option value="all">كل الحركات</option>
+              <option value="draft">مسودة فقط</option>
+            </select>
+            <select id="ledger-file-filter" onchange="renderLedgerTable()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+              <option value="">كل الصفقات</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="exportLedgerCSV()">📥 CSV</button>
+            <button class="btn btn-secondary btn-sm" onclick="printLedgerStatement()">🖨️</button>
+          </div>
         </div>
+        <div id="ledgerKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px"></div>
+        <div class="data-table-wrap"><div id="ledgerTable"></div></div>
       </div><!-- /ledgerView -->
 
       <!-- ════ TRIAL BALANCE ════ -->
       <div id="trialView" style="display:none">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-          <div style="display:flex;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;gap:2px">
-            <button class="btn btn-sm journal-period-btn active" id="ttype-all" onclick="filterTrial('all')">الكل</button>
-            <button class="btn btn-sm journal-period-btn" id="ttype-customer" onclick="filterTrial('customer')">عملاء</button>
-            <button class="btn btn-sm journal-period-btn" id="ttype-supplier" onclick="filterTrial('supplier')">موردين</button>
-            <button class="btn btn-sm journal-period-btn" id="ttype-partner" onclick="filterTrial('partner')">شركاء</button>
-            <button class="btn btn-sm journal-period-btn" id="ttype-custodian" onclick="filterTrial('custodian')">عهد</button>
-          </div>
-          <div style="margin-right:auto;display:flex;gap:8px">
-            <button class="btn btn-secondary btn-sm" onclick="exportTrialCSV()">📥 تصدير CSV</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+          <div style="font-size:16px;font-weight:900">⚖️ ميزان المراجعة</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="exportTrialCSV()">📥 CSV</button>
             <button class="btn btn-secondary btn-sm" onclick="loadTrialBalance()">🔄 تحديث</button>
           </div>
         </div>
-        <div id="trialKpis" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px"></div>
-        <div class="data-table-wrap">
-          <div id="trialTable"></div>
+        <!-- Period Filter -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:10px">
+          <div style="display:flex;gap:3px;flex-wrap:wrap">
+            <button class="dash-period-btn active" id="tb-period-all"       onclick="setTrialPeriod('all')">الكل</button>
+            <button class="dash-period-btn" id="tb-period-month"     onclick="setTrialPeriod('month')">هذا الشهر</button>
+            <button class="dash-period-btn" id="tb-period-lastmonth" onclick="setTrialPeriod('lastmonth')">الماضي</button>
+            <button class="dash-period-btn" id="tb-period-year"      onclick="setTrialPeriod('year')">هذا العام</button>
+            <button class="dash-period-btn" id="tb-period-custom"    onclick="setTrialPeriod('custom')">مخصص</button>
+          </div>
+          <div id="tb-custom-dates" style="display:none;align-items:center;gap:6px">
+            <input type="date" id="tb-from" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <span>—</span>
+            <input type="date" id="tb-to"   style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <button class="btn btn-primary btn-sm" onclick="loadTrialBalance()">🔍</button>
+          </div>
+          <div style="display:flex;gap:4px;margin-right:auto;flex-wrap:wrap">
+            <select id="tb-post-filter" onchange="loadTrialBalance()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+              <option value="posted">مرحّل فقط</option>
+              <option value="all">كل القيود</option>
+              <option value="draft">مسودة فقط</option>
+            </select>
+            <div style="display:flex;background:var(--card2);border-radius:var(--radius-sm);padding:2px;gap:2px;border:1px solid var(--border)">
+              <button class="btn btn-sm journal-period-btn active" id="ttype-all"      onclick="filterTrial('all')">الكل</button>
+              <button class="btn btn-sm journal-period-btn" id="ttype-asset"     onclick="filterTrial('asset')">أصول</button>
+              <button class="btn btn-sm journal-period-btn" id="ttype-liability" onclick="filterTrial('liability')">التزامات</button>
+              <button class="btn btn-sm journal-period-btn" id="ttype-equity"    onclick="filterTrial('equity')">ملكية</button>
+              <button class="btn btn-sm journal-period-btn" id="ttype-revenue"   onclick="filterTrial('revenue')">إيرادات</button>
+              <button class="btn btn-sm journal-period-btn" id="ttype-expense"   onclick="filterTrial('expense')">مصروفات</button>
+            </div>
+          </div>
         </div>
+        <div id="trialKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px"></div>
+        <div class="data-table-wrap"><div id="trialTable"></div></div>
       </div><!-- /trialView -->
+
+      <!-- ════ CHART OF ACCOUNTS ════ -->
+      <div id="chartOfAccountsView" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <div>
+            <div style="font-size:16px;font-weight:900">🗂️ شجرة الحسابات</div>
+            <div id="coa-sub" style="font-size:12px;color:var(--text2);margin-top:2px">الهيكل المحاسبي للنظام</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="openNewAccountModal()">➕ حساب جديد</button>
+            <button class="btn btn-secondary btn-sm" onclick="seedDefaultAccounts()">🌱 تحميل الحسابات الافتراضية</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadChartOfAccountsView()">🔄 تحديث</button>
+          </div>
+        </div>
+        <div id="coa-tree"><div class="loading"><div class="spinner"></div></div></div>
+      </div><!-- /chartOfAccountsView -->
+
+
 
       <!-- ════ ALL SALES ════ -->
       <div id="allSalesView" style="display:none">
@@ -2857,6 +2924,86 @@
   </div>
 </div>
 
+
+<!-- JE DETAIL MODAL -->
+<div class="modal-overlay" id="jeDetailModal">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--blue-dim)">📋</div>
+      <h3 id="je-detail-title">تفاصيل القيد</h3>
+      <button class="modal-close" onclick="closeModal('jeDetailModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="je-detail-info" style="margin-bottom:12px"></div>
+      <div id="je-detail-lines" style="margin-bottom:14px"></div>
+      <!-- Attachments -->
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text2)">📎 المرفقات</div>
+      <div id="je-detail-attachments"></div>
+      <div style="margin-top:8px">
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">إضافة مرفق</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <select id="je-att-type" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <option value="invoice">فاتورة</option>
+            <option value="receipt">إيصال</option>
+            <option value="payment">سند دفع</option>
+            <option value="contract">عقد</option>
+            <option value="other">أخرى</option>
+          </select>
+          <input type="text" id="je-att-name" placeholder="اسم المستند..." style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <input type="text" id="je-att-url" placeholder="رابط (اختياري)..." style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="addJEAttachment()">➕ إضافة</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('jeDetailModal')">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- ACCOUNT MODAL (شجرة الحسابات) -->
+<div class="modal-overlay" id="accountModal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--blue-dim)">🗂️</div>
+      <h3 id="acc-modal-title">حساب جديد</h3>
+      <button class="modal-close" onclick="closeModal('accountModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="acc-id">
+      <div class="form-row">
+        <div class="field">
+          <label>كود الحساب *</label>
+          <input type="text" id="acc-code" placeholder="1110">
+        </div>
+        <div class="field">
+          <label>نوع الحساب *</label>
+          <select id="acc-type" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px;width:100%">
+            <option value="asset">أصول</option>
+            <option value="liability">التزامات</option>
+            <option value="equity">حقوق ملكية</option>
+            <option value="revenue">إيرادات</option>
+            <option value="cogs">تكلفة مبيعات</option>
+            <option value="expense">مصروفات</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>اسم الحساب *</label>
+        <input type="text" id="acc-name" placeholder="مثال: النقد والبنك">
+      </div>
+      <div class="field">
+        <label>الحساب الأب (parent_code)</label>
+        <input type="text" id="acc-parent" placeholder="مثال: 1100">
+      </div>
+      <div id="accError" class="alert alert-err" style="display:none"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('accountModal')">إلغاء</button>
+      <button class="btn btn-primary" onclick="submitAccount()">💾 حفظ</button>
+    </div>
+  </div>
+</div>
 
 <!-- STOCK TRANSFER MODAL -->
 <div class="modal-overlay" id="stockTransferModal">
