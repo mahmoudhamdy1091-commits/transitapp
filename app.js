@@ -541,10 +541,15 @@ function renderTxTable(rows, cfg, auditMap, type) {
     return;
   }
 
+  // ══ المبيعات: تجميع بالفاتورة ══
+  if (type === 'sales') {
+    renderSalesInvoices(rows, cfg, auditMap);
+    return;
+  }
+
   // Build columns based on type
   const cols = {
     deals:       [{k:'po_date',t:'التاريخ'},{k:'file_no',t:'رقم الملف'},{k:'supplier',t:'المورد'},{k:'vehicle_count',t:'سيارات'},{k:'total_purchase',t:'القيمة',mono:true},{k:'status',t:'الحالة'}],
-    sales:       [{k:'sale_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'inv_no',t:'الفاتورة'},{k:'customer',t:'العميل'},{k:'vin',t:'شاصي'},{k:'sale_price',t:'السعر',mono:true}],
     expenses:    [{k:'exp_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'ref_no',t:'المرجع'},{k:'description',t:'الوصف'},{k:'exp_type',t:'النوع'},{k:'amount',t:'المبلغ',mono:true}],
     collections: [{k:'due_date',t:'الاستحقاق'},{k:'paid_date',t:'تاريخ الدفع'},{k:'file_no',t:'الملف'},{k:'inv_no',t:'الفاتورة'},{k:'customer',t:'العميل'},{k:'amount',t:'المبلغ',mono:true}],
     payments:    [{k:'pay_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'ref_no',t:'المرجع'},{k:'payer',t:'الدافع'},{k:'pay_method',t:'الطريقة'},{k:'amount',t:'المبلغ',mono:true}],
@@ -552,7 +557,7 @@ function renderTxTable(rows, cfg, auditMap, type) {
     opex:        [{k:'exp_date',t:'التاريخ'},{k:'ref_no',t:'المرجع'},{k:'description',t:'الوصف'},{k:'category',t:'الفئة'},{k:'amount',t:'المبلغ',mono:true}],
   };
 
-  const typeCols = cols[type] || cols.sales;
+  const typeCols = cols[type] || [];
 
   const statusBadge = r => {
     if (!r.post_status || r.post_status==='posted') return '<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">✅ مرحَّل</span>';
@@ -566,23 +571,20 @@ function renderTxTable(rows, cfg, auditMap, type) {
       let v = r[col.k] ?? '—';
       if (col.k.includes('date')) v = v && v !== '—' ? fmtDate(v) : '—';
       if (col.mono) {
-        // لا تعرض fmt على قيمة فارغة أو '—'
         v = (v !== null && v !== undefined && v !== '—' && v !== '' && +v !== 0 || (+v === 0 && v === 0))
           ? `<span class="mono" style="color:${cfg.color};font-weight:700">${fmt(v)}</span>`
           : (r[col.k] > 0 ? `<span class="mono" style="color:${cfg.color};font-weight:700">${fmt(r[col.k])}</span>` : '—');
       }
       return `<td>${v}</td>`;
     }).join('');
-    const user = auditMap[String(r.id)] || '—';
+    const user      = auditMap[String(r.id)] || '—';
     const shortUser = user.split('@')[0];
-    const rowClick = type==='deals' ? `onclick="openViewer('${r.file_no}')" style="cursor:pointer"` : '';
-    // شارة الحالة للتحصيلات
-    let statusCell = statusBadge(r);
+    const rowClick  = type==='deals' ? `onclick="openViewer('${r.file_no}')" style="cursor:pointer"` : '';
+    let statusCell  = statusBadge(r);
     if (type === 'collections') {
-      const collStatus = r.paid_date
+      statusCell = r.paid_date
         ? '<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">✅ محصّل</span>'
         : '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">⏳ مستحق</span>';
-      statusCell = collStatus;
     }
     return `<tr ${rowClick}>${cells}<td style="font-size:11px;color:var(--text2)">${shortUser}</td><td>${statusCell}</td></tr>`;
   }).join('');
@@ -596,6 +598,220 @@ function renderTxTable(rows, cfg, auditMap, type) {
       <tbody id="tx-tbody">${tbody}</tbody>
       <tfoot>${tfoot}</tfoot>
     </table>`;
+}
+
+// ══ عرض الفواتير مجمّعة بـ inv_no ══
+function renderSalesInvoices(rows, cfg, auditMap) {
+  // تجميع بالفاتورة
+  const invMap = {};
+  rows.forEach(r => {
+    const key = r.inv_no || `no-inv-${r.id}`;
+    if (!invMap[key]) invMap[key] = {
+      inv_no:    r.inv_no   || '—',
+      file_no:   r.file_no  || '—',
+      customer:  r.customer || '—',
+      sale_date: r.sale_date,
+      vehicles:  [],
+      total:     0,
+      post_status: r.post_status,
+    };
+    invMap[key].vehicles.push(r);
+    invMap[key].total += +r.sale_price || 0;
+  });
+
+  const invoices   = Object.values(invMap).sort((a,b) => (b.sale_date||'').localeCompare(a.sale_date||''));
+  const grandTotal = invoices.reduce((s,inv)=>s+inv.total, 0);
+
+  // KPIs
+  el('tx-kpis').innerHTML = `
+    <div class="j-kpi" style="border-right:3px solid ${cfg.color}">
+      <div class="j-kpi-label">💹 إجمالي المبيعات</div>
+      <div class="j-kpi-val" style="color:${cfg.color};font-size:18px;font-weight:900">${fmt(grandTotal)}</div>
+    </div>
+    <div class="j-kpi">
+      <div class="j-kpi-label">🧾 عدد الفواتير</div>
+      <div class="j-kpi-val">${invoices.length}</div>
+    </div>
+    <div class="j-kpi">
+      <div class="j-kpi-label">🚗 إجمالي السيارات</div>
+      <div class="j-kpi-val">${rows.length}</div>
+    </div>`;
+
+  const tbody = invoices.map(inv => `
+    <tr onclick="openInvoiceModal(${JSON.stringify(inv.inv_no).replace(/"/g,'&quot;')})" style="cursor:pointer"
+      onmouseover="this.style.background='var(--accent-dim)'" onmouseout="this.style.background=''">
+      <td class="mono text-muted" style="font-size:11px;white-space:nowrap">${fmtDate(inv.sale_date)}</td>
+      <td class="mono text-amber" style="font-weight:700">${inv.file_no}</td>
+      <td><span style="font-weight:700;color:var(--green);font-family:monospace">${inv.inv_no}</span></td>
+      <td style="font-weight:600">${inv.customer}</td>
+      <td style="text-align:center">
+        <span style="background:var(--blue-dim);color:var(--blue);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${inv.vehicles.length} سيارة</span>
+      </td>
+      <td><span class="mono" style="color:var(--green);font-weight:900;font-size:14px">${fmt(inv.total)}</span></td>
+      <td>
+        <span style="background:${(inv.post_status==='posted'||!inv.post_status)?'var(--green-dim)':'#fef3c7'};color:${(inv.post_status==='posted'||!inv.post_status)?'var(--green)':'#92400e'};padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">
+          ${(inv.post_status==='posted'||!inv.post_status)?'✅ مرحّلة':'⏳ معلقة'}
+        </span>
+      </td>
+      <td>
+        <button class="btn btn-sm" onclick="event.stopPropagation();openInvoiceModal('${inv.inv_no}')" style="font-size:11px;padding:3px 8px">🖨️ فتح</button>
+      </td>
+    </tr>`).join('');
+
+  const tfoot = `<tr style="background:var(--card2);font-weight:700">
+    <td colspan="5" style="padding:10px 16px">الإجمالي (${invoices.length} فاتورة · ${rows.length} سيارة)</td>
+    <td class="mono text-green" style="padding:10px 16px;font-size:15px;font-weight:900">${fmt(grandTotal)}</td>
+    <td colspan="2"></td>
+  </tr>`;
+
+  el('tx-table').innerHTML = `
+    <div style="font-size:11px;color:var(--text2);margin-bottom:6px">اضغط على أي فاتورة لعرض تفاصيلها وطباعتها</div>
+    <table class="data-table" id="tx-data-table">
+      <thead><tr>
+        <th>التاريخ</th><th>الملف</th><th>رقم الفاتورة</th>
+        <th>العميل</th><th style="text-align:center">السيارات</th>
+        <th>الإجمالي</th><th>الحالة</th><th></th>
+      </tr></thead>
+      <tbody id="tx-tbody">${tbody}</tbody>
+      <tfoot>${tfoot}</tfoot>
+    </table>`;
+
+  // حفظ البيانات للبحث
+  window._txInvoices = invMap;
+  window._txRawRows  = rows;
+}
+
+// ══ موديل الفاتورة الكاملة ══
+async function openInvoiceModal(invNo) {
+  // جلب كل سطور الفاتورة
+  const allRows = window._txRawRows || [];
+  let vehicles  = allRows.filter(r => r.inv_no === invNo);
+
+  // لو مش موجود في الـ cache — اجلب من DB
+  if (!vehicles.length) {
+    try {
+      vehicles = await apiGetAll('sales', {
+        select:'*', system_type:`eq.${state.system}`, inv_no:`eq.${invNo}`
+      });
+    } catch(e) { toast('خطأ في جلب الفاتورة: '+e.message,'err'); return; }
+  }
+
+  if (!vehicles.length) { toast('الفاتورة غير موجودة','err'); return; }
+
+  const first    = vehicles[0];
+  const total    = vehicles.reduce((s,v)=>s+(+v.sale_price||0),0);
+  const invDate  = fmtDate(first.sale_date);
+  const customer = first.customer || '—';
+  const fileNo   = first.file_no  || '—';
+  const sysName  = state.system === 'BOX' ? 'BOX System' : 'TM System';
+
+  // محتوى الفاتورة
+  const itemRows = vehicles.map((v,i) => `
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${i+1}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;direction:ltr;font-family:monospace">${v.vin||'—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${v.model||'—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${v.year||'—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${v.color||'—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:left;font-family:monospace;font-weight:700">${(+v.sale_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+    </tr>`).join('');
+
+  const invoiceHTML = `
+    <div id="invoice-print-area" style="font-family:'Cairo',Arial,sans-serif;direction:rtl;max-width:800px;margin:0 auto;background:#fff;color:#111;padding:32px">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #1a1a2e">
+        <div>
+          <div style="font-size:26px;font-weight:900;color:#1a1a2e">🚗 Transit Cars</div>
+          <div style="font-size:13px;color:#666;margin-top:4px">${sysName} — نظام إدارة صفقات السيارات</div>
+        </div>
+        <div style="text-align:left">
+          <div style="font-size:22px;font-weight:900;color:#1a1a2e">فاتورة بيع</div>
+          <div style="font-size:14px;color:#666;margin-top:2px">رقم: <strong>${invNo}</strong></div>
+        </div>
+      </div>
+
+      <!-- Info -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+        <div style="background:#f8fafc;border-radius:8px;padding:14px 16px">
+          <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:700">بيانات العميل</div>
+          <div style="font-size:16px;font-weight:800">${customer}</div>
+        </div>
+        <div style="background:#f8fafc;border-radius:8px;padding:14px 16px">
+          <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:700">بيانات الفاتورة</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
+            <span style="color:#666">رقم الملف</span><strong>${fileNo}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px">
+            <span style="color:#666">تاريخ الإصدار</span><strong>${invDate}</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Items Table -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+        <thead>
+          <tr style="background:#1a1a2e;color:#fff">
+            <th style="padding:10px 12px;text-align:center;font-size:12px">#</th>
+            <th style="padding:10px 12px;font-size:12px">رقم الشاصي VIN</th>
+            <th style="padding:10px 12px;font-size:12px">الموديل</th>
+            <th style="padding:10px 12px;font-size:12px">السنة</th>
+            <th style="padding:10px 12px;font-size:12px">اللون</th>
+            <th style="padding:10px 12px;text-align:left;font-size:12px">السعر</th>
+          </tr>
+        </thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+
+      <!-- Total -->
+      <div style="display:flex;justify-content:flex-end;margin-bottom:32px">
+        <div style="background:#1a1a2e;color:#fff;border-radius:10px;padding:14px 24px;min-width:220px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span>عدد السيارات</span><strong>${vehicles.length}</strong>
+          </div>
+          <div style="border-top:1px solid rgba(255,255,255,0.2);margin:8px 0"></div>
+          <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:900">
+            <span>الإجمالي</span>
+            <span style="direction:ltr">${total.toLocaleString('en-US',{minimumFractionDigits:2})}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Signatures -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;border-top:2px solid #e5e7eb;padding-top:24px">
+        <div style="text-align:center">
+          <div style="height:50px;border-bottom:1px solid #666;margin-bottom:8px"></div>
+          <div style="font-size:12px;color:#666">توقيع المورد / البائع</div>
+        </div>
+        <div style="text-align:center">
+          <div style="height:50px;border-bottom:1px solid #666;margin-bottom:8px"></div>
+          <div style="font-size:12px;color:#666">توقيع العميل / المشتري</div>
+        </div>
+      </div>
+    </div>`;
+
+  // عرض في موديل
+  el('invoice-modal-content').innerHTML = invoiceHTML;
+  el('invoice-modal-title').textContent = `فاتورة ${invNo}`;
+  openModal('invoiceModal');
+}
+
+function printInvoice() {
+  const content = el('invoice-print-area')?.innerHTML;
+  if (!content) return;
+  const win = window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html dir="rtl"><head>
+    <meta charset="utf-8">
+    <title>فاتورة</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>body{margin:0;font-family:'Cairo',sans-serif}@media print{button{display:none!important}}</style>
+  </head><body>${content}</body></html>`);
+  win.document.close();
+  setTimeout(()=>{ win.print(); },600);
+}
+
+async function downloadInvoicePDF() {
+  printInvoice();
+  toast('💡 اختر "حفظ كـ PDF" في نافذة الطباعة','ok');
 }
 
 function filterTxTable() {

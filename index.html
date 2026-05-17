@@ -2925,6 +2925,25 @@
 </div>
 
 
+<!-- INVOICE MODAL -->
+<div class="modal-overlay" id="invoiceModal">
+  <div class="modal" style="max-width:860px;width:96%">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--green-dim)">🧾</div>
+      <h3 id="invoice-modal-title">فاتورة</h3>
+      <button class="modal-close" onclick="closeModal('invoiceModal')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:0;max-height:75vh;overflow-y:auto">
+      <div id="invoice-modal-content"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('invoiceModal')">إغلاق</button>
+      <button class="btn btn-secondary" onclick="downloadInvoicePDF()">📥 تحميل PDF</button>
+      <button class="btn btn-primary" onclick="printInvoice()">🖨️ طباعة</button>
+    </div>
+  </div>
+</div>
+
 <!-- JE DETAIL MODAL -->
 <div class="modal-overlay" id="jeDetailModal">
   <div class="modal" style="max-width:640px">
