@@ -6655,14 +6655,6 @@ function openContactModal(contact = null) {
   el('cm-name').value    = contact?.name    || '';
   el('cm-type').value    = contact?.type    || 'customer';
   el('cm-phone').value   = contact?.phone   || '';
-// ════════════════════════════════════════
-// CONTACT MODAL (add/edit)
-// ════════════════════════════════════════
-function openContactModal(contact = null) {
-  el('contactModalTitle').textContent = contact ? 'تعديل جهة الاتصال' : 'جهة اتصال جديدة';
-  el('cm-name').value    = contact?.name    || '';
-  el('cm-type').value    = contact?.type    || 'customer';
-  el('cm-phone').value   = contact?.phone   || '';
   el('cm-email').value   = contact?.email   || '';
   el('cm-opening').value = contact?.opening_balance || '';
   el('cm-notes').value   = contact?.notes   || '';
@@ -14372,10 +14364,4 @@ async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
     {acc:eAcc,    name:`مصروف تشغيلي — ${expType||'أخرى'}`, dr:amount, cr:0,     contact:null},
     {acc:cashAcc, name:cashNm,                               dr:0,      cr:amount, contact:null},
   ]});
-}
-
-// ═══════════════════════════════════════════════════════
-// ربط تلقائي — يُغلّف الدوال الموجودة بدون تعديلها
-// يشتغل بعد ما الصفحة تكمل التحميل
-// ═══════════════════════════════════════════════════════
 }
