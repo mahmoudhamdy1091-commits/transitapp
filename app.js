@@ -6951,7 +6951,7 @@ async function deleteContact(id, name) {
 // hideAllViews helper
 // ════════════════════════════════════════
 function hideAllViews() {
-  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView','reviewView','jeManagerView','warehousesView','contactStatementView','chartOfAccountsView']
+  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView','reviewView','jeManagerView','warehousesView','contactStatementView','chartOfAccountsView','importWizardView']
     .forEach(id => {
       const e = el(id);
       if (e) {
@@ -14476,7 +14476,388 @@ function showPartnerStatement(name) {
   showContactStatement(name, 'partner');
 }
 
-let _pwaInstallPrompt = null;
+// ════════════════════════════════════════════════════════
+// IMPORT WIZARD — استيراد بيانات تاريخية من Excel
+// ════════════════════════════════════════════════════════
+
+const IMPORT_SCHEMAS = {
+  deals: {
+    label: 'الصفقات', table: 'purchase_orders',
+    cols: [
+      { key:'file_no',        label:'رقم الملف *',       req:true,  example:'BOX-001'     },
+      { key:'po_date',        label:'تاريخ الصفقة *',    req:true,  example:'2024-01-15'  },
+      { key:'supplier',       label:'المورد *',           req:true,  example:'شركة المعادن'},
+      { key:'total_purchase', label:'إجمالي الشراء *',   req:true,  example:'100000'      },
+      { key:'po_no',          label:'رقم أمر الشراء',    req:false, example:'PO-2024-001' },
+      { key:'status',         label:'الحالة',            req:false, example:'OPEN'        },
+      { key:'notes',          label:'ملاحظات',           req:false, example:''            },
+    ],
+    fixed: { post_status:'posted' },
+  },
+  vehicles: {
+    label: 'السيارات', table: 'vehicles',
+    cols: [
+      { key:'file_no',        label:'رقم الملف *',       req:true,  example:'BOX-001'     },
+      { key:'vin',            label:'رقم الشاصي VIN *',  req:true,  example:'1HGBH41JX'   },
+      { key:'model',          label:'الموديل *',         req:true,  example:'Toyota Camry'},
+      { key:'year',           label:'سنة الصنع',         req:false, example:'2022'        },
+      { key:'color',          label:'اللون',             req:false, example:'أبيض'        },
+      { key:'vehicle_type',   label:'نوع المركبة',       req:false, example:'سيدان'       },
+      { key:'purchase_price', label:'سعر الشراء',        req:false, example:'20000'       },
+      { key:'engine_size',    label:'حجم المحرك',        req:false, example:'2000'        },
+      { key:'plate',          label:'رقم اللوحة',        req:false, example:''            },
+    ],
+    fixed: {},
+  },
+  payments: {
+    label: 'الدفعات', table: 'payments',
+    cols: [
+      { key:'file_no',    label:'رقم الملف *',   req:true,  example:'BOX-001'        },
+      { key:'payer',      label:'الدافع *',       req:true,  example:'الصندوق'        },
+      { key:'amount',     label:'المبلغ *',       req:true,  example:'50000'          },
+      { key:'pay_date',   label:'تاريخ الدفع *', req:true,  example:'2024-01-20'     },
+      { key:'pay_method', label:'طريقة الدفع',   req:false, example:'تحويل بنكي'     },
+      { key:'document',   label:'رقم المستند',   req:false, example:'CHQ-001'        },
+      { key:'notes',      label:'ملاحظات',       req:false, example:''               },
+    ],
+    fixed: { post_status:'posted' },
+  },
+  sales: {
+    label: 'المبيعات', table: 'sales',
+    cols: [
+      { key:'file_no',    label:'رقم الملف *',     req:true,  example:'BOX-001'        },
+      { key:'inv_no',     label:'رقم الفاتورة *',  req:true,  example:'INV-BOX-001-001'},
+      { key:'sale_date',  label:'تاريخ البيع *',   req:true,  example:'2024-02-10'     },
+      { key:'customer',   label:'العميل *',         req:true,  example:'أحمد محمد'     },
+      { key:'vin',        label:'رقم الشاصي',      req:false, example:'1HGBH41JX'      },
+      { key:'model',      label:'الموديل',         req:false, example:'Toyota Camry'   },
+      { key:'sale_price', label:'سعر البيع *',      req:true,  example:'25000'         },
+      { key:'pay_method', label:'طريقة الدفع',     req:false, example:'آجل'            },
+    ],
+    fixed: { post_status:'posted' },
+  },
+  expenses: {
+    label: 'المصاريف', table: 'expenses',
+    cols: [
+      { key:'file_no',     label:'رقم الملف *',    req:true,  example:'BOX-001'       },
+      { key:'exp_date',    label:'تاريخ المصروف *',req:true,  example:'2024-01-25'    },
+      { key:'description', label:'البيان *',        req:true,  example:'شحن ونقل'     },
+      { key:'amount',      label:'المبلغ *',        req:true,  example:'500'           },
+      { key:'exp_type',    label:'نوع المصروف',    req:false, example:'شحن'           },
+      { key:'vendor',      label:'المورد',          req:false, example:'شركة الشحن'   },
+      { key:'pay_method',  label:'طريقة الدفع',    req:false, example:'نقد'           },
+    ],
+    fixed: { post_status:'posted' },
+  },
+  collections: {
+    label: 'التحصيلات', table: 'collections',
+    cols: [
+      { key:'file_no',    label:'رقم الملف *',       req:true,  example:'BOX-001'        },
+      { key:'inv_no',     label:'رقم الفاتورة *',    req:true,  example:'INV-BOX-001-001'},
+      { key:'customer',   label:'العميل *',           req:true,  example:'أحمد محمد'     },
+      { key:'amount',     label:'المبلغ *',           req:true,  example:'25000'          },
+      { key:'due_date',   label:'تاريخ الاستحقاق',   req:false, example:'2024-03-01'     },
+      { key:'paid_date',  label:'تاريخ الدفع الفعلي',req:false, example:'2024-03-05'     },
+      { key:'pay_method', label:'طريقة الدفع',       req:false, example:'تحويل بنكي'    },
+    ],
+    fixed: { post_status:'posted' },
+  },
+};
+
+const importState = { type: null, step: 1, parsedRows: [], file: null };
+
+function showImportWizard() {
+  hideAllViews();
+  el('importWizardView').style.display = 'block';
+  el('topBarTitle').textContent = '📥 استيراد بيانات';
+  el('topBarSub').textContent   = `نظام ${state.system}`;
+  navActive('nav-import');
+  setImportStep(1);
+}
+
+function setImportStep(n) {
+  importState.step = n;
+  for (let i=1; i<=4; i++) {
+    const panel = el(`imp-panel-${i}`);
+    if (panel) panel.style.display = i===n ? 'block' : 'none';
+    const step  = el(`imp-step-${i}`);
+    if (step) {
+      step.classList.remove('active','done');
+      if (i===n) step.classList.add('active');
+      else if (i<n) step.classList.add('done');
+    }
+  }
+}
+
+function selectImportType(type) {
+  importState.type = type;
+  const schema = IMPORT_SCHEMAS[type];
+  document.querySelectorAll('.imp-type-card').forEach(c => c.classList.remove('active'));
+  el(`itype-${type}`)?.classList.add('active');
+  const btn = el('imp-next-1');
+  if (btn) { btn.disabled=false; btn.textContent=`التالي ← Template ${schema.label}`; }
+
+  // تحضير Step 2
+  if (el('imp-template-title')) el('imp-template-title').textContent = `Template ${schema.label}`;
+  if (el('imp-cols-list')) {
+    el('imp-cols-list').innerHTML = schema.cols.map(c =>
+      `<div style="padding:2px 0"><span style="color:${c.req?'var(--red)':'var(--text2)'};font-weight:700;font-family:monospace;margin-left:8px">${c.key}</span>
+       <span>${c.label}</span>
+       ${c.req?'<span style="color:var(--red);font-size:10px"> (مطلوب)</span>':''}
+       <span style="color:var(--text2);font-size:10px"> — مثال: ${c.example}</span>
+      </div>`
+    ).join('');
+  }
+}
+
+function downloadImportTemplate() {
+  const type = importState.type;
+  if (!type) return;
+  const schema = IMPORT_SCHEMAS[type];
+
+  // بناء CSV template
+  const headers = schema.cols.map(c => c.key).join(',');
+  const example = schema.cols.map(c => `"${c.example}"`).join(',');
+  const csv = '\uFEFF' + headers + '\n' + example + '\n';
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+  a.download = `template_${type}_${state.system}.csv`;
+  a.click();
+  toast(`✅ تم تنزيل template_${type}.csv`,'ok');
+}
+
+function handleImportDrop(event) {
+  event.preventDefault();
+  el('imp-drop-zone').style.borderColor = 'var(--border)';
+  const file = event.dataTransfer.files[0];
+  if (file) processImportFile(file);
+}
+
+function handleImportFile(input) {
+  const file = input.files[0];
+  if (file) processImportFile(file);
+}
+
+function processImportFile(file) {
+  importState.file = file;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['xlsx','xls','csv'].includes(ext)) {
+    el('imp-file-status').innerHTML = `<span style="color:var(--red)">❌ نوع الملف غير مدعوم — استخدم xlsx أو csv</span>`;
+    return;
+  }
+  el('imp-file-status').innerHTML = `<span style="color:var(--green)">✅ ${file.name} (${(file.size/1024).toFixed(1)} KB)</span>`;
+  const btn = el('imp-parse-btn');
+  if (btn) btn.disabled = false;
+}
+
+async function parseImportFile() {
+  const file = importState.file;
+  const type = importState.type;
+  if (!file || !type) return;
+
+  const schema = IMPORT_SCHEMAS[type];
+  const btn    = el('imp-parse-btn');
+  btn.disabled = true; btn.textContent = '⏳ جاري التحليل...';
+
+  try {
+    const rows = await readFileAsRows(file);
+    if (!rows || rows.length < 2) throw new Error('الملف فارغ أو لا يحتوي على بيانات');
+
+    const headerRow   = rows[0].map(h => String(h||'').trim());
+    const dataRows    = rows.slice(1).filter(r => r.some(v => v !== null && v !== ''));
+    const schemaKeys  = schema.cols.map(c => c.key);
+
+    // تحقق الأعمدة المطلوبة
+    const missingReq  = schema.cols.filter(c => c.req && !headerRow.includes(c.key));
+    if (missingReq.length) throw new Error(`أعمدة مطلوبة غير موجودة: ${missingReq.map(c=>c.key).join(', ')}`);
+
+    // تحويل الصفوف لـ objects
+    const parsed = dataRows.map((row, i) => {
+      const obj = { system_type: state.system, ...schema.fixed };
+      headerRow.forEach((h, idx) => {
+        if (schemaKeys.includes(h)) {
+          let val = row[idx];
+          if (val === null || val === undefined || val === '') val = null;
+          else val = String(val).trim();
+          obj[h] = val;
+        }
+      });
+      return obj;
+    });
+
+    // تحقق الأعمدة المطلوبة في البيانات
+    const errors = [];
+    parsed.forEach((row, i) => {
+      schema.cols.filter(c=>c.req).forEach(c => {
+        if (!row[c.key]) errors.push(`سطر ${i+2}: ${c.key} فارغ`);
+      });
+    });
+
+    importState.parsedRows = parsed;
+    setImportStep(4);
+    renderImportPreview(parsed, errors, schema);
+  } catch(e) {
+    el('imp-file-status').innerHTML = `<span style="color:var(--red)">❌ خطأ: ${e.message}</span>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'التالي ← مراجعة البيانات';
+  }
+}
+
+async function readFileAsRows(file) {
+  return new Promise((resolve, reject) => {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const reader = new FileReader();
+
+    if (ext === 'csv') {
+      reader.onload = e => {
+        const text = e.target.result;
+        const rows = text.split('\n').filter(l=>l.trim()).map(line => {
+          // parse CSV with quotes
+          const result=[], re=/("([^"]*)"|[^,]+|(?<=,)(?=,)|(?<=,)$|^(?=,))/g;
+          let m;
+          const simple = line.split(',');
+          return simple.map(v => v.replace(/^"|"$/g,'').trim() || null);
+        });
+        resolve(rows);
+      };
+      reader.readAsText(file, 'utf-8');
+    } else {
+      reader.onload = e => {
+        try {
+          const XLSX = window.XLSX;
+          if (!XLSX) { reject(new Error('مكتبة XLSX غير محملة — استخدم CSV')); return; }
+          const wb   = XLSX.read(e.target.result, {type:'array'});
+          const ws   = wb.Sheets[wb.SheetNames[0]];
+          const data = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+          resolve(data);
+        } catch(err) { reject(err); }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+    reader.onerror = reject;
+  });
+}
+
+function renderImportPreview(parsed, errors, schema) {
+  const wrap = el('imp-preview-wrap');
+  if (!wrap) return;
+
+  const validRows = errors.length === 0 ? parsed : parsed.filter((_,i) => {
+    return !errors.some(e => e.startsWith(`سطر ${i+2}:`));
+  });
+
+  const errHtml = errors.length ? `
+    <div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:12px;max-height:150px;overflow-y:auto">
+      <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:6px">⚠️ ${errors.length} خطأ في البيانات:</div>
+      ${errors.slice(0,20).map(e=>`<div style="font-size:11px;color:var(--red)">${e}</div>`).join('')}
+      ${errors.length>20?`<div style="font-size:11px;color:var(--text2)">... و ${errors.length-20} خطأ آخر</div>`:''}
+    </div>` : '';
+
+  const previewCols = schema.cols.slice(0,6);
+  const tableRows   = parsed.slice(0,10).map(row => `<tr>${previewCols.map(c=>`<td style="padding:6px 10px;font-size:11px;border-bottom:1px solid var(--border)">${row[c.key]||'—'}</td>`).join('')}</tr>`).join('');
+
+  wrap.innerHTML = `
+    ${errHtml}
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px">
+        📊 معاينة البيانات — ${parsed.length} صف
+        ${errors.length?`<span style="color:var(--red);font-size:11px"> (${errors.length} سطر فيه أخطاء)</span>`:'<span style="color:var(--green);font-size:11px"> ✅ كل البيانات صحيحة</span>'}
+      </div>
+      <div style="overflow-x:auto;max-height:240px;overflow-y:auto;margin-bottom:12px">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--card2)">${previewCols.map(c=>`<th style="padding:6px 10px;font-size:11px;text-align:right">${c.label}</th>`).join('')}</tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+        ${parsed.length>10?`<div style="font-size:11px;color:var(--text2);padding:6px 10px">... و ${parsed.length-10} صف آخر</div>`:''}
+      </div>
+    </div>
+
+    <div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px;font-size:12px">
+      ⚠️ سيتم إدراج <strong>${validRows.length} صف</strong> في جدول <strong>${schema.table}</strong> لنظام <strong>${state.system}</strong>
+      — العملية لا يمكن التراجع عنها بسهولة
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="setImportStep(3)">← رجوع</button>
+      <button class="btn btn-primary" onclick="runImport()" style="background:var(--accent);border-color:var(--accent)">
+        ⚡ استيراد ${validRows.length} سجل
+      </button>
+    </div>
+    <div id="imp-run-progress" style="margin-top:12px"></div>`;
+}
+
+async function runImport() {
+  const type   = importState.type;
+  const schema = IMPORT_SCHEMAS[type];
+  const rows   = importState.parsedRows;
+  const sys    = state.system;
+
+  const prog  = el('imp-run-progress');
+  const btn   = el('imp-preview-wrap')?.querySelector('.btn-primary');
+  if (btn) { btn.disabled=true; btn.textContent='⏳ جاري الاستيراد...'; }
+
+  let inserted=0, failed=0;
+  const BATCH = 50;
+
+  prog.innerHTML = `<div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px 14px">
+    <div style="height:8px;background:var(--border);border-radius:6px;overflow:hidden;margin-bottom:6px">
+      <div id="imp-prog-bar" style="height:100%;background:var(--accent);border-radius:6px;transition:width .3s;width:0%"></div>
+    </div>
+    <div id="imp-prog-label" style="font-size:11px;color:var(--text2)">0 / ${rows.length}</div>
+  </div>`;
+
+  for (let i=0; i<rows.length; i+=BATCH) {
+    const batch = rows.slice(i, i+BATCH);
+    try {
+      const res = await fetch(`${SB_URL}/rest/v1/${schema.table}`, {
+        method: 'POST',
+        headers: { ...headers(), 'Prefer':'return=minimal' },
+        body: JSON.stringify(batch),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        console.warn(`Batch ${i}-${i+BATCH} failed:`, err);
+        failed += batch.length;
+      } else {
+        inserted += batch.length;
+      }
+    } catch(e) { failed += batch.length; }
+
+    const pct = Math.round((i+BATCH)/rows.length*100);
+    if (el('imp-prog-bar')) el('imp-prog-bar').style.width = Math.min(pct,100)+'%';
+    if (el('imp-prog-label')) el('imp-prog-label').textContent = `${Math.min(i+BATCH,rows.length)} / ${rows.length} · نجح: ${inserted}${failed?` · فشل: ${failed}`:''}`;
+  }
+
+  // النتيجة
+  const ok = failed===0;
+  prog.innerHTML += `
+    <div style="background:${ok?'var(--green-dim)':'var(--accent-dim)'};border:1px solid ${ok?'var(--green)':'var(--accent)'};border-radius:var(--radius-sm);padding:12px 14px;margin-top:10px">
+      <div style="font-size:13px;font-weight:700;color:${ok?'var(--green)':'var(--accent)'}">
+        ${ok?'✅ اكتمل الاستيراد بنجاح':'⚠️ اكتمل مع أخطاء'}
+      </div>
+      <div style="font-size:12px;margin-top:4px">
+        ✅ تم إدراج: <strong>${inserted}</strong>
+        ${failed?` · ❌ فشل: <strong>${failed}</strong>`:''}
+      </div>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="runPostImportMigration()">⚡ توليد القيود المحاسبية</button>
+      <button class="btn btn-secondary" onclick="selectImportType('${type}');setImportStep(3)">📥 استيراد ملف آخر</button>
+      <button class="btn btn-secondary" onclick="showDashboard()">🏠 الداشبورد</button>
+    </div>`;
+
+  invalidateCache();
+  await logAudit('IMPORT', schema.table, null, null, { type, inserted, failed, system:sys });
+}
+
+async function runPostImportMigration() {
+  toast('⏳ جاري توليد القيود للبيانات المستوردة...','ok');
+  openMigrationModal();
+  setTimeout(() => {
+    if (el('mig-confirm-input')) el('mig-confirm-input').value = 'MIGRATE';
+  }, 400);
+}
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   _pwaInstallPrompt = e;
@@ -14644,3 +15025,4 @@ async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
     {acc:cashAcc, name:cashNm,                               dr:0,      cr:amount, contact:null},
   ]});
 }
+let _pwaInstallPrompt = null;
