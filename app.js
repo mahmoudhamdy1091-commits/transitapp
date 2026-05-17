@@ -6411,7 +6411,7 @@ async function deleteContact(id, name) {
 // hideAllViews helper
 // ════════════════════════════════════════
 function hideAllViews() {
-  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView','reviewView','jeManagerView']
+  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView','reviewView','jeManagerView','warehousesView']
     .forEach(id => {
       const e = el(id);
       if (e) {
@@ -13295,6 +13295,439 @@ async function runMigration() {
     if (el('mig-footer')) el('mig-footer').style.display = 'flex';
     console.error('Migration error:', e);
   }
+}
+
+// ════════════════════════════════════════════════════════
+// WAREHOUSES MODULE — المخازن والتحويلات المخزنية
+// ════════════════════════════════════════════════════════
+
+const whState = {
+  warehouses:  [],   // قائمة المخازن (أسماء فريدة)
+  transfers:   [],   // كل التحويلات
+  allTransfers:[],   // نسخة كاملة للفلترة
+};
+
+// ── العرض الرئيسي ──
+function showWarehouses() {
+  hideAllViews();
+  el('warehousesView').style.display = 'block';
+  el('topBarTitle').textContent      = '🏪 المخازن';
+  el('topBarSub').textContent        = `نظام ${state.system}`;
+  navActive('nav-warehouses');
+  sessionStorage.setItem('tm_last_view','warehouses');
+  loadWarehouses();
+}
+
+async function loadWarehouses() {
+  const sys = state.system;
+  try {
+    // جلب كل التحويلات
+    const transfers = await apiGetAll('stock_locations', {
+      select:'*', system_type:`eq.${sys}`, order:'transfer_date.desc,id.desc'
+    });
+    whState.transfers    = transfers || [];
+    whState.allTransfers = transfers || [];
+
+    // جلب أسماء المخازن الفريدة
+    whState.warehouses = [...new Set((transfers||[]).map(t=>t.location_name).filter(Boolean))];
+
+    // جلب المبيعات والسيارات للحالة
+    await ensureCache();
+    const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
+
+    renderWhKpis(transfers, soldVins);
+    renderWhCards(transfers, soldVins);
+    renderWhTransfersTable(transfers, soldVins);
+  } catch(e) {
+    if(el('wh-cards')) el('wh-cards').innerHTML = errHTML('خطأ: '+e.message);
+  }
+}
+
+function renderWhKpis(transfers, soldVins) {
+  const total    = transfers.length;
+  const sold     = transfers.filter(t => soldVins.has(t.vin)).length;
+  const inStock  = total - sold;
+  const whs      = new Set(transfers.map(t=>t.location_name).filter(Boolean)).size;
+  if (el('wh-kpis')) el('wh-kpis').innerHTML = [
+    ['🏪 المخازن',    whs,     'var(--purple)'],
+    ['🚗 إجمالي محوّل', total, 'var(--blue)'],
+    ['📦 في المخزن',  inStock, 'var(--accent)'],
+    ['✅ مباع',       sold,    'var(--green)'],
+  ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c};font-size:20px;font-weight:900">${v}</div></div>`).join('');
+}
+
+function renderWhCards(transfers, soldVins) {
+  const wrap = el('wh-cards');
+  if (!wrap) return;
+  if (!transfers.length) {
+    wrap.innerHTML = emptyHTML('🏪','لا توجد مخازن أو تحويلات بعد');
+    return;
+  }
+
+  // تجميع بالمخزن
+  const byWh = {};
+  transfers.forEach(t => {
+    const wh = t.location_name || 'غير محدد';
+    if (!byWh[wh]) byWh[wh] = [];
+    byWh[wh].push(t);
+  });
+
+  wrap.innerHTML = Object.entries(byWh).map(([wh, vins]) => {
+    const total   = vins.length;
+    const sold    = vins.filter(t => soldVins.has(t.vin)).length;
+    const inStock = total - sold;
+    const pct     = total > 0 ? Math.round(sold/total*100) : 0;
+
+    const rows = vins.map(t => {
+      const isSold = soldVins.has(t.vin);
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);gap:8px">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0">
+          <span style="font-size:16px">${isSold?'✅':'🚗'}</span>
+          <div style="min-width:0">
+            <div style="font-size:11px;font-family:monospace;color:var(--text);direction:ltr;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.vin||'—'}</div>
+            <div style="font-size:10px;color:var(--text2)">${t.model||''} · ملف: ${t.file_no||'—'}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'مباع':'في المخزن'}</span>
+          <button class="btn btn-sm" onclick="openViewer('${t.file_no}')" title="فتح الصفقة" style="padding:2px 7px;font-size:10px">📂</button>
+          <button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" title="حذف التحويل" style="padding:2px 7px;font-size:10px;background:var(--red-dim);color:var(--red)">🗑</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:14px;font-weight:900">🏪 ${wh}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">${total} سيارة · ${inStock} في المخزن · ${sold} مباع</div>
+        </div>
+        <div style="text-align:left">
+          <div style="font-size:18px;font-weight:900;color:${inStock>0?'var(--accent)':'var(--green)'}">${inStock}</div>
+          <div style="font-size:10px;color:var(--text2)">متاح</div>
+        </div>
+      </div>
+      <div style="padding:4px 0;height:6px;background:var(--card2)">
+        <div style="height:100%;width:${pct}%;background:var(--green);transition:width .4s"></div>
+      </div>
+      <div style="padding:8px 14px;max-height:280px;overflow-y:auto">${rows}</div>
+      <div style="padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:6px">
+        <button class="btn btn-secondary btn-sm" onclick="openNewTransferModal('${wh}')">➕ إضافة سيارات</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportWhCard('${wh}')">📥 تصدير</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderWhTransfersTable(transfers, soldVins) {
+  const wrap = el('wh-transfers-table');
+  if (!wrap) return;
+  if (!transfers.length) { wrap.innerHTML = emptyHTML('📋','لا توجد تحويلات'); return; }
+
+  const rows = transfers.map(t => {
+    const isSold = soldVins.has(t.vin);
+    return `<tr>
+      <td class="mono text-muted" style="font-size:11px">${t.transfer_date||'—'}</td>
+      <td><span style="font-weight:700;color:var(--purple)">${t.location_name||'—'}</span></td>
+      <td class="mono text-amber" style="cursor:pointer;font-weight:700" onclick="openViewer('${t.file_no}')">${t.file_no||'—'}</td>
+      <td class="mono" style="direction:ltr;font-size:11px">${t.vin||'—'}</td>
+      <td>${t.model||'—'}</td>
+      <td class="mono text-muted" style="font-size:11px">${t.transfer_ref||'—'}</td>
+      <td><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'✅ مباع':'📦 في المخزن'}</span></td>
+      <td style="font-size:11px;color:var(--text2)">${t.notes||'—'}</td>
+      <td>
+        <button class="btn btn-sm" onclick="openViewer('${t.file_no}')" style="padding:2px 8px;font-size:10px">📂</button>
+        <button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" style="padding:2px 8px;font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<div style="overflow-x:auto">
+    <table class="data-table">
+      <thead><tr>
+        <th>التاريخ</th><th>المخزن</th><th>الملف</th><th>VIN</th>
+        <th>الموديل</th><th>المستند</th><th>الحالة</th><th>ملاحظات</th><th></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function filterWhTransfers() {
+  const q = (el('wh-search')?.value||'').toLowerCase().trim();
+  const filtered = q
+    ? whState.allTransfers.filter(t =>
+        (t.vin||'').toLowerCase().includes(q) ||
+        (t.location_name||'').toLowerCase().includes(q) ||
+        (t.file_no||'').toLowerCase().includes(q) ||
+        (t.model||'').toLowerCase().includes(q)
+      )
+    : whState.allTransfers;
+  const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
+  renderWhTransfersTable(filtered, soldVins);
+}
+
+// ── إدارة المخازن ──
+async function openManageWarehousesModal() {
+  await refreshWhList();
+  openModal('manageWarehousesModal');
+}
+
+async function refreshWhList() {
+  const sys    = state.system;
+  const data   = await apiGetAll('stock_locations', { select:'location_name', system_type:`eq.${sys}` });
+  const names  = [...new Set((data||[]).map(t=>t.location_name).filter(Boolean))];
+  whState.warehouses = names;
+  const wrap = el('wh-list-manage');
+  if (!wrap) return;
+  if (!names.length) { wrap.innerHTML = `<div style="color:var(--text2);font-size:12px;text-align:center;padding:16px">لا توجد مخازن بعد</div>`; return; }
+  wrap.innerHTML = names.map(n => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;background:var(--card2)">
+      <span style="font-weight:600">🏪 ${n}</span>
+      <button class="btn btn-sm" onclick="deleteWarehouse('${n.replace(/'/g,"\\'")}',this)" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red);padding:2px 8px;font-size:11px">🗑 حذف</button>
+    </div>`).join('');
+  // تحديث قائمة select في موديل التحويل
+  refreshWhSelect();
+}
+
+function refreshWhSelect() {
+  const sel = el('st-location');
+  if (!sel) return;
+  sel.innerHTML = `<option value="">اختر المخزن...</option>` +
+    whState.warehouses.map(n=>`<option value="${n}">${n}</option>`).join('');
+}
+
+async function addWarehouse() {
+  const name = el('new-wh-name')?.value?.trim();
+  if (!name) { if(el('whManageError')){el('whManageError').style.display='block';el('whManageError').textContent='أدخل اسم المخزن';} return; }
+  if (whState.warehouses.includes(name)) { if(el('whManageError')){el('whManageError').style.display='block';el('whManageError').textContent='المخزن موجود بالفعل';} return; }
+  whState.warehouses.push(name);
+  if (el('new-wh-name')) el('new-wh-name').value = '';
+  if (el('whManageError')) el('whManageError').style.display='none';
+  // حفظ المخزن في localStorage كاسم محجوز
+  const key = `wh_names_${state.system}`;
+  const saved = JSON.parse(localStorage.getItem(key)||'[]');
+  if (!saved.includes(name)) { saved.push(name); localStorage.setItem(key, JSON.stringify(saved)); }
+  refreshWhList();
+  toast(`✅ تم إضافة مخزن "${name}"`,'ok');
+}
+
+async function deleteWarehouse(name) {
+  // تحقق إن مفيش سيارات في المخزن
+  const inWh = whState.allTransfers.filter(t=>t.location_name===name);
+  if (inWh.length>0) { toast(`⚠️ المخزن فيه ${inWh.length} سيارة — احذفها أولاً`,'warn'); return; }
+  whState.warehouses = whState.warehouses.filter(n=>n!==name);
+  const key = `wh_names_${state.system}`;
+  const saved = JSON.parse(localStorage.getItem(key)||'[]');
+  localStorage.setItem(key, JSON.stringify(saved.filter(n=>n!==name)));
+  refreshWhList();
+  toast(`✅ تم حذف مخزن "${name}"`,'ok');
+}
+
+// ── تحويل مخزني جديد ──
+let _stSelectedVins = new Set();
+
+async function openNewTransferModal(prefillWh='') {
+  // تحديث قائمة المخازن — دمج DB + localStorage
+  const sys  = state.system;
+  const key  = `wh_names_${state.system}`;
+  const dbWh = whState.warehouses;
+  const lsWh = JSON.parse(localStorage.getItem(key)||'[]');
+  whState.warehouses = [...new Set([...dbWh,...lsWh])];
+  refreshWhSelect();
+
+  if (el('st-location') && prefillWh) el('st-location').value = prefillWh;
+  if (el('st-date'))    el('st-date').value    = today();
+  if (el('st-file-no')) el('st-file-no').value = '';
+  if (el('st-ref'))     el('st-ref').value     = '';
+  if (el('st-notes'))   el('st-notes').value   = '';
+  if (el('st-vehicles-list')) el('st-vehicles-list').innerHTML = `<div style="color:var(--text2);font-size:12px;text-align:center;padding:10px">أدخل رقم الصفقة أولاً</div>`;
+  if (el('stError'))    el('stError').style.display = 'none';
+  _stSelectedVins = new Set();
+  updateSelectedCount();
+  openModal('stockTransferModal');
+}
+
+async function loadVehiclesForTransfer(fileNo) {
+  const fn = fileNo.trim().toUpperCase();
+  if (fn.length < 3) return;
+  const wrap = el('st-vehicles-list');
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="text-align:center;padding:10px;font-size:12px;color:var(--text2)">جاري التحميل...</div>';
+  try {
+    const [vehicles, sales, existing] = await Promise.all([
+      apiGetAll('vehicles',       { select:'*',          system_type:`eq.${state.system}`, file_no:`eq.${fn}` }),
+      apiGetAll('sales',          { select:'vin',        system_type:`eq.${state.system}`, file_no:`eq.${fn}` }),
+      apiGetAll('stock_locations',{ select:'vin,location_name', system_type:`eq.${state.system}`, file_no:`eq.${fn}` }),
+    ]);
+    const soldVins    = new Set((sales||[]).map(s=>s.vin).filter(Boolean));
+    const transferMap = {};
+    (existing||[]).forEach(t => { transferMap[t.vin] = t.location_name; });
+    if (!vehicles?.length) { wrap.innerHTML = `<div style="color:var(--red);font-size:12px;text-align:center;padding:10px">لم يُعثر على سيارات في هذه الصفقة</div>`; return; }
+    _stSelectedVins = new Set();
+    wrap.innerHTML = (vehicles||[]).map(v => {
+      const isSold     = soldVins.has(v.vin);
+      const inWh       = transferMap[v.vin];
+      const disabled   = isSold ? 'opacity:0.4;pointer-events:none' : '';
+      const badge      = isSold
+        ? `<span style="font-size:10px;color:var(--green);font-weight:700">✅ مباع</span>`
+        : inWh
+          ? `<span style="font-size:10px;color:var(--purple);font-weight:700">🏪 ${inWh}</span>`
+          : `<span style="font-size:10px;color:var(--text2)">المخزن الرئيسي</span>`;
+      return `<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;cursor:pointer;border-bottom:1px solid var(--border);${disabled}">
+        <input type="checkbox" value="${v.vin}" ${isSold?'disabled':''} onchange="toggleVinSelect(this)"
+          style="width:16px;height:16px;accent-color:var(--purple);flex-shrink:0">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;font-family:monospace;direction:ltr;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.vin||'—'}</div>
+          <div style="font-size:10px;color:var(--text2)">${v.model||''} ${v.year||''} ${v.color||''}</div>
+        </div>
+        ${badge}
+      </label>`;
+    }).join('');
+  } catch(e) {
+    wrap.innerHTML = errHTML('خطأ: '+e.message);
+  }
+}
+
+function toggleVinSelect(chk) {
+  if (chk.checked) _stSelectedVins.add(chk.value);
+  else             _stSelectedVins.delete(chk.value);
+  updateSelectedCount();
+}
+
+function selectAllVehicles(select) {
+  el('st-vehicles-list')?.querySelectorAll('input[type="checkbox"]:not([disabled])').forEach(c => {
+    c.checked = select;
+    if (select) _stSelectedVins.add(c.value);
+    else        _stSelectedVins.delete(c.value);
+  });
+  updateSelectedCount();
+}
+
+function updateSelectedCount() {
+  if (el('st-selected-count')) el('st-selected-count').textContent = `${_stSelectedVins.size} سيارة محددة`;
+}
+
+async function submitStockTransfer() {
+  const location = el('st-location')?.value?.trim();
+  const date     = el('st-date')?.value;
+  const fileNo   = el('st-file-no')?.value?.trim().toUpperCase();
+  const ref      = el('st-ref')?.value?.trim();
+  const notes    = el('st-notes')?.value?.trim();
+  if (!location) { showFieldErr('stError','اختر المخزن'); return; }
+  if (!date)     { showFieldErr('stError','أدخل تاريخ التحويل'); return; }
+  if (!fileNo)   { showFieldErr('stError','أدخل رقم الصفقة'); return; }
+  if (_stSelectedVins.size === 0) { showFieldErr('stError','اختر سيارة واحدة على الأقل'); return; }
+
+  const btn = document.querySelector('#stockTransferModal .btn-primary');
+  if (btn) { btn.disabled=true; btn.textContent='⏳ جاري الحفظ...'; }
+
+  try {
+    // جلب بيانات السيارات المحددة
+    const vehicles = await apiGetAll('vehicles', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
+    const vinMap   = {};
+    (vehicles||[]).forEach(v => { if(v.vin) vinMap[v.vin]=v; });
+
+    const inserts = [..._stSelectedVins].map(vin => ({
+      system_type:    state.system,
+      location_name:  location,
+      vin:            vin,
+      file_no:        fileNo,
+      model:          vinMap[vin]?.model || null,
+      transfer_date:  date,
+      transfer_ref:   ref || null,
+      notes:          notes || null,
+      transferred_by: state.user?.email || null,
+    }));
+
+    // batch insert
+    const res = await fetch(`${SB_URL}/rest/v1/stock_locations`, {
+      method:'POST',
+      headers:{ ...headers(), 'Prefer':'return=minimal' },
+      body: JSON.stringify(inserts),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    await logAudit('INSERT','stock_locations', fileNo, null, { location, vins:[..._stSelectedVins], date });
+    toast(`✅ تم تحويل ${_stSelectedVins.size} سيارة إلى ${location}`,'ok');
+    closeModal('stockTransferModal');
+    await loadWarehouses();
+    // تحديث تبويب السيارات لو مفتوح
+    if (state.currentFileNo === fileNo && state.currentTab === 1) loadVehiclesTab(fileNo, state.system);
+  } catch(e) {
+    showFieldErr('stError','خطأ: '+e.message);
+    if (btn) { btn.disabled=false; btn.textContent='🚛 تأكيد التحويل'; }
+  }
+}
+
+async function deleteTransfer(id, vin) {
+  showConfirm(`حذف تحويل`, `هل تريد حذف تحويل السيارة ${vin}؟\nسيُعاد احتسابها في المخزن الرئيسي.`, async () => {
+    try {
+      await apiDelete('stock_locations', { id:`eq.${id}` });
+      toast('✅ تم حذف التحويل','ok');
+      await loadWarehouses();
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+  });
+}
+
+async function exportWhCard(whName) {
+  const rows = whState.allTransfers.filter(t=>t.location_name===whName);
+  const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
+  const csvRows = rows.map(t=>[t.vin||'—',t.model||'—',t.file_no||'—',t.transfer_date||'—',t.transfer_ref||'—',soldVins.has(t.vin)?'مباع':'في المخزن',t.notes||'']);
+  exportCSV(['VIN','الموديل','الملف','تاريخ التحويل','المستند','الحالة','ملاحظات'],csvRows,`مخزن_${whName}`);
+}
+
+// ── إضافة عمود المخزن في تبويب السيارات ──
+const _origLoadVehiclesTab = loadVehiclesTab;
+async function loadVehiclesTab(fn, sys) {
+  try {
+    const [data, locations] = await Promise.all([
+      apiGetAll('vehicles',       { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('stock_locations',{ select:'vin,location_name', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+    ]);
+    state.currentVehicles = data || [];
+    const soldVins   = new Set((state.currentSales||[]).map(s=>s.vin));
+    const locMap     = {};
+    (locations||[]).forEach(t => { locMap[t.vin] = t.location_name; });
+
+    if (!data?.length) { el('vehiclesTable').innerHTML = emptyHTML('🚗','لا توجد سيارات'); return; }
+    el('vehiclesTable').innerHTML = `
+      <table class="data-table">
+        <thead><tr>
+          <th>الكود</th><th>VIN</th><th>النوع</th><th>الموديل</th>
+          <th>السنة</th><th>اللوحة</th><th>اللون</th><th>الحجم</th>
+          <th>سعر الشراء</th><th>انتهاء الرخصة</th><th>الموقع</th><th>الحالة</th><th></th>
+        </tr></thead>
+        <tbody>${(data||[]).map((v,i)=>{
+          const code    = `${fn}-V${String(i+1).padStart(2,'0')}`;
+          const expired = v.license_expiry && new Date(v.license_expiry) < new Date();
+          const isSold  = soldVins.has(v.vin);
+          const loc     = locMap[v.vin];
+          const locBadge = loc
+            ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--purple-dim);color:var(--purple);cursor:pointer" onclick="showWarehouses()" title="في مخزن ${loc}">🏪 ${loc}</span>`
+            : `<span style="font-size:10px;color:var(--text2)">المخزن الرئيسي</span>`;
+          return `<tr>
+            <td><span class="mono text-amber" style="font-size:11px">${code}</span></td>
+            <td><span class="mono" style="direction:ltr;font-size:11px">${v.vin||'—'}</span></td>
+            <td>${v.vehicle_type||'—'}</td>
+            <td>${v.model||'—'}</td>
+            <td>${v.year||'—'}</td>
+            <td><span class="mono" style="direction:ltr">${v.plate||'—'}</span></td>
+            <td>${v.color||'—'}</td>
+            <td>${v.engine_size||'—'}</td>
+            <td class="mono text-blue">${fmt(v.purchase_price)}</td>
+            <td class="${expired?'text-red':'text-muted'}">${v.license_expiry||'—'}</td>
+            <td>${locBadge}</td>
+            <td><span class="badge ${isSold?'badge-closed':'badge-open'}">${isSold?'مباع':'في المخزن'}</span></td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-secondary btn-sm" onclick="openEditVehicleModal(${v.id})">✏️</button>
+              <button class="btn btn-sm" onclick="openNewTransferModal();setTimeout(()=>{if(el('st-file-no')){el('st-file-no').value='${fn}';loadVehiclesForTransfer('${fn}');}},300)" title="تحويل لمخزن" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);padding:3px 7px;font-size:11px">🚛</button>
+            </td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) { el('vehiclesTable').innerHTML = errHTML(e.message); }
 }
 
 let _pwaInstallPrompt = null;

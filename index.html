@@ -140,6 +140,9 @@
           <div class="nav-item" onclick="showTransactions('opex')">
             <span class="ni-icon">💼</span><span>مصروفات عامة</span>
           </div>
+          <div class="nav-item" id="nav-warehouses" onclick="showWarehouses()">
+            <span class="ni-icon">🏪</span><span>المخازن</span>
+          </div>
         </div>
       </div>
 
@@ -1292,6 +1295,40 @@
         </div>
 
       </div><!-- /reviewView -->
+
+      <!-- ════ WAREHOUSES VIEW ════ -->
+      <div id="warehousesView" style="display:none">
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <div>
+            <div style="font-size:16px;font-weight:900">🏪 المخازن</div>
+            <div id="wh-sub" style="font-size:12px;color:var(--text2);margin-top:2px">إدارة مخازن السيارات والتحويلات</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="openNewTransferModal()">➕ تحويل مخزني جديد</button>
+            <button class="btn btn-secondary btn-sm" onclick="openManageWarehousesModal()">⚙️ إدارة المخازن</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadWarehouses()">🔄 تحديث</button>
+          </div>
+        </div>
+
+        <!-- KPIs -->
+        <div id="wh-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:14px"></div>
+
+        <!-- Warehouse Cards -->
+        <div id="wh-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-bottom:16px">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+
+        <!-- Transfers Table -->
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <span style="font-size:13px;font-weight:700">📋 سجل التحويلات</span>
+            <input type="text" id="wh-search" placeholder="🔍 بحث بـ VIN أو مخزن أو ملف..." oninput="filterWhTransfers()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:220px">
+          </div>
+          <div id="wh-transfers-table"><div class="loading"><div class="spinner"></div></div></div>
+        </div>
+      </div><!-- /warehousesView -->
 
       <!-- ════ JOURNAL ENTRIES MANAGER ════ -->
       <div id="jeManagerView" style="display:none">
@@ -2801,6 +2838,89 @@
   </div>
 </div>
 
+
+<!-- STOCK TRANSFER MODAL -->
+<div class="modal-overlay" id="stockTransferModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--purple-dim)">🚛</div>
+      <h3>تحويل مخزني</h3>
+      <button class="modal-close" onclick="closeModal('stockTransferModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="field">
+          <label>المخزن المستلِم *</label>
+          <div style="display:flex;gap:6px">
+            <select id="st-location" style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px">
+              <option value="">اختر المخزن...</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="openManageWarehousesModal()" title="إضافة مخزن جديد" style="padding:8px 10px;flex-shrink:0">➕</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>تاريخ التحويل *</label>
+          <input type="date" id="st-date">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>رقم الصفقة *</label>
+          <input type="text" id="st-file-no" placeholder="مثال: BOX-001" oninput="loadVehiclesForTransfer(this.value)">
+        </div>
+        <div class="field">
+          <label>رقم مستند التحويل</label>
+          <input type="text" id="st-ref" placeholder="TRF-001">
+        </div>
+      </div>
+
+      <!-- اختيار السيارات -->
+      <div class="field" style="margin-bottom:10px">
+        <label>اختر السيارات للتحويل *</label>
+        <div id="st-vehicles-list" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;min-height:60px;max-height:220px;overflow-y:auto">
+          <div style="color:var(--text2);font-size:12px;text-align:center;padding:10px">أدخل رقم الصفقة أولاً</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button class="btn btn-secondary btn-sm" onclick="selectAllVehicles(true)">تحديد الكل</button>
+          <button class="btn btn-secondary btn-sm" onclick="selectAllVehicles(false)">إلغاء الكل</button>
+          <span id="st-selected-count" style="font-size:11px;color:var(--text2);line-height:28px">0 سيارة محددة</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>ملاحظات</label>
+        <textarea id="st-notes" rows="2" placeholder="سبب التحويل..." style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;width:100%;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;resize:vertical"></textarea>
+      </div>
+      <div id="stError" class="alert alert-err" style="display:none"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('stockTransferModal')">إلغاء</button>
+      <button class="btn btn-primary" onclick="submitStockTransfer()">🚛 تأكيد التحويل</button>
+    </div>
+  </div>
+</div>
+
+<!-- MANAGE WAREHOUSES MODAL -->
+<div class="modal-overlay" id="manageWarehousesModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--purple-dim)">🏪</div>
+      <h3>إدارة المخازن</h3>
+      <button class="modal-close" onclick="closeModal('manageWarehousesModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input type="text" id="new-wh-name" placeholder="اسم المخزن الجديد..." style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px">
+        <button class="btn btn-primary btn-sm" onclick="addWarehouse()">➕ إضافة</button>
+      </div>
+      <div id="wh-list-manage" style="max-height:300px;overflow-y:auto"></div>
+      <div id="whManageError" class="alert alert-err" style="display:none;margin-top:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="closeModal('manageWarehousesModal');loadWarehouses()">✅ حفظ وإغلاق</button>
+    </div>
+  </div>
+</div>
 
 <!-- MIGRATION MODAL -->
 <div class="modal-overlay" id="migrationModal">
