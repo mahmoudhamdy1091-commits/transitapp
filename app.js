@@ -858,6 +858,13 @@ function initApp() {
   document.getElementById('userName').textContent = name;
   document.getElementById('userEmailDisplay').textContent = email;
 
+  // تجديد الـ token تلقائياً كل 50 دقيقة
+  if (window._tokenRefreshTimer) clearInterval(window._tokenRefreshTimer);
+  window._tokenRefreshTimer = setInterval(async () => {
+    const ok = await refreshAccessToken();
+    if (!ok) console.warn('Auto-refresh failed — session expired');
+  }, 50 * 60 * 1000);
+
   loadChartOfAccounts();
   loadDashboard().then(() => {
     // Restore last view after refresh
@@ -5316,7 +5323,14 @@ async function loadJournal() {
 
     // ── مصدر واحد: journal_entries فقط ──
     const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&order=entry_date.desc,entry_no.desc&select=*&limit=5000`;
-    const res  = await fetch(url, { headers: headers() });
+
+    let res = await fetch(url, { headers: headers() });
+    // إعادة المحاولة تلقائياً لو JWT انتهت
+    if (res.status === 401) {
+      const ok = await refreshAccessToken();
+      if (!ok) { el('journalTimeline').innerHTML = errHTML('انتهت الجلسة — يرجى تسجيل الدخول مجدداً'); return; }
+      res = await fetch(url, { headers: headers() });
+    }
     if (!res.ok) throw new Error(await res.text());
     const jeRows = await res.json();
 
@@ -6384,7 +6398,8 @@ async function loadTrialBalance() {
     if(to)   url+=`&entry_date=lte.${encodeURIComponent(to+'T23:59:59')}`;
     if(postF==='posted') url+=`&post_status=eq.posted`;
     if(postF==='draft')  url+=`&post_status=eq.draft`;
-    const res=await fetch(url,{headers:headers()});
+    let res=await fetch(url,{headers:headers()});
+    if(res.status===401){const ok=await refreshAccessToken();if(!ok){el('trialTable').innerHTML=errHTML('انتهت الجلسة');return;}res=await fetch(url,{headers:headers()});}
     if(!res.ok) throw new Error(await res.text());
     const rows=await res.json();
     const coaData=await apiGetAll('chart_of_accounts',{select:'account_code,account_name,account_type',system_type:`eq.${sys}`,is_active:'eq.true'});
@@ -6475,7 +6490,8 @@ async function showAccountLedger(accountCode, accountName, accountType) {
   try {
     const sys=state.system;
     const url=`${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&account_code=eq.${encodeURIComponent(accountCode)}&select=*&order=entry_date.asc,id.asc&limit=5000`;
-    const res=await fetch(url,{headers:headers()});
+    let res=await fetch(url,{headers:headers()});
+    if(res.status===401){const ok=await refreshAccessToken();if(!ok){el('ledgerTable').innerHTML=errHTML('انتهت الجلسة');return;}res=await fetch(url,{headers:headers()});}
     const rows=res.ok?await res.json():[];
     window._ledgerAllEntries=(rows||[]).map(r=>({
       id:r.id,date:(r.entry_date||'').split('T')[0],type:r.ref_table||'manual',
@@ -13100,7 +13116,12 @@ async function loadJEManager() {
     if (from) url += `&entry_date=gte.${encodeURIComponent(from)}`;
     if (to)   url += `&entry_date=lte.${encodeURIComponent(to+'T23:59:59')}`;
     url += `&limit=2000`;
-    const res  = await fetch(url, { headers: headers() });
+    let res  = await fetch(url, { headers: headers() });
+    if (res.status === 401) {
+      const ok = await refreshAccessToken();
+      if (!ok) { wrap.innerHTML = errHTML('انتهت الجلسة — يرجى تسجيل الدخول مجدداً'); return; }
+      res = await fetch(url, { headers: headers() });
+    }
     if (!res.ok) throw new Error(await res.text());
     const rows = await res.json();
     jeMgrState.allEntries = rows || [];
