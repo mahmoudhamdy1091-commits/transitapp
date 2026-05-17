@@ -12571,9 +12571,12 @@ async function runAllReviewChecks() {
     for (const pName of partnerNames) {
       const capPaid   = (allPayments||[]).filter(p=>isPosted(p)&&p.payer===pName).reduce((s,p)=>s+(+p.amount||0),0);
       const withdrawn = (allPayouts||[]).filter(p=>isPosted(p)&&p.partner===pName).reduce((s,p)=>s+(+p.amount||0),0);
-      let profitDue=0;
+      let profitDue   = 0;
       (allPartners||[]).filter(p=>p.partner===pName).forEach(pd=>{
         const deal=deals.find(d=>d.file_no===pd.file_no); if(!deal) return;
+        // الربح يُحسب فقط على الصفقات المغلقة CLOSED
+        // الصفقات المفتوحة فيها سيارات لم تُبَع بعد → لا خسارة حقيقية
+        if (deal.status !== 'CLOSED') return;
         const dSales=sales.filter(s=>isPosted(s)&&s.file_no===pd.file_no).reduce((s,x)=>s+(+x.sale_price||0),0);
         const dExp  =expenses.filter(e=>isPosted(e)&&e.file_no===pd.file_no).reduce((s,x)=>s+(+x.amount||0),0);
         profitDue  +=(dSales-(+deal.total_purchase||0)-dExp)*(+pd.share_percent||0)/100;
@@ -12582,12 +12585,12 @@ async function runAllReviewChecks() {
       if (balance<-0.01) partnerBadList.push({ name:pName, capPaid, profitDue, withdrawn, balance });
     }
     checks.push({ cat:'G', icon:'👥', catLabel:'حسابات الشركاء',
-      id:'G1', label:'شركاء بحساب سالب (سحبوا أكثر من المستحق)',
+      id:'G1', label:'شركاء بحساب سالب (الصفقات المغلقة فقط)',
       status: partnerBadList.length===0?'pass':'fail',
       value:  partnerBadList.length===0?'✓ كل الحسابات سليمة':partnerBadList.length,
-      detail: partnerBadList.length===0?'كل حسابات الشركاء إيجابية ✓':`${partnerBadList.length} شريك: ${partnerBadList.map(p=>p.name).join(', ')}`,
+      detail: partnerBadList.length===0?'كل حسابات الشركاء إيجابية ✓ (محسوبة على الصفقات المغلقة)':`${partnerBadList.length} شريك: ${partnerBadList.map(p=>p.name).join(', ')}`,
       rows:   partnerBadList.map(p=>({
-        cols: [p.name, `رأس مال: ${fmt(p.capPaid)}`, `أرباح: ${fmt(p.profitDue)}`, `مسحوب: ${fmt(p.withdrawn)}`, `رصيد: ${fmt(p.balance)}`],
+        cols: [p.name, `رأس مال: ${fmt(p.capPaid)}`, `أرباح (مغلق): ${fmt(p.profitDue)}`, `مسحوب: ${fmt(p.withdrawn)}`, `رصيد: ${fmt(p.balance)}`],
         action: `showPartnerStatement('${p.name.replace(/'/g,"\\'")}')`,
         actionLabel: '📋 كشف الحساب',
       })) });
@@ -12864,9 +12867,17 @@ async function loadReconciliations() {
     const partnerRows=partnerNames.map(pName=>{
       const capPaid=(allPayments||[]).filter(p=>isPosted(p)&&p.payer===pName).reduce((s,p)=>s+(+p.amount||0),0);
       const withdrawn=(allPayouts||[]).filter(p=>isPosted(p)&&p.partner===pName).reduce((s,p)=>s+(+p.amount||0),0);
-      let profitDue=0;
-      (allPartners||[]).filter(p=>p.partner===pName).forEach(pd=>{ const deal=deals.find(d=>d.file_no===pd.file_no); if(!deal) return; const dS=sales.filter(s=>isPosted(s)&&s.file_no===pd.file_no).reduce((s,x)=>s+(+x.sale_price||0),0); const dE=expenses.filter(e=>isPosted(e)&&e.file_no===pd.file_no).reduce((s,x)=>s+(+x.amount||0),0); profitDue+=(dS-(+deal.total_purchase||0)-dE)*(+pd.share_percent||0)/100; });
-      return { name:pName,capPaid,profitDue,withdrawn,balance:capPaid+profitDue-withdrawn };
+      let profitDue=0, profitPending=0;
+      (allPartners||[]).filter(p=>p.partner===pName).forEach(pd=>{
+        const deal=deals.find(d=>d.file_no===pd.file_no); if(!deal) return;
+        const dS=sales.filter(s=>isPosted(s)&&s.file_no===pd.file_no).reduce((s,x)=>s+(+x.sale_price||0),0);
+        const dE=expenses.filter(e=>isPosted(e)&&e.file_no===pd.file_no).reduce((s,x)=>s+(+x.amount||0),0);
+        const contrib=(dS-(+deal.total_purchase||0)-dE)*(+pd.share_percent||0)/100;
+        // الصفقات المغلقة → ربح محقق · المفتوحة → ربح متوقع
+        if (deal.status==='CLOSED') profitDue+=contrib;
+        else profitPending+=contrib;
+      });
+      return { name:pName, capPaid, profitDue, profitPending, withdrawn, balance:capPaid+profitDue-withdrawn };
     });
 
     const tblStyle='width:100%;border-collapse:collapse';
@@ -12918,12 +12929,30 @@ async function loadReconciliations() {
 
       <!-- 3. تسوية الشركاء -->
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-        <div style="padding:12px 16px;border-bottom:2px solid var(--border);font-size:13px;font-weight:700">👥 تسوية حسابات الشركاء</div>
+        <div style="padding:12px 16px;border-bottom:2px solid var(--border);font-size:13px;font-weight:700">👥 تسوية حسابات الشركاء
+          <span style="font-size:11px;font-weight:400;color:var(--text2);margin-right:8px">— الأرباح المحققة من الصفقات المغلقة فقط</span>
+        </div>
         <div style="overflow-x:auto">
           <table style="${tblStyle}">
-            <thead><tr><th style="${thStyle}">الشريك</th><th style="${thStyle}">رأس المال المدفوع</th><th style="${thStyle}">الأرباح المستحقة</th><th style="${thStyle}">إجمالي المسحوب</th><th style="${thStyle}">الرصيد الصافي</th><th style="${thStyle}">الحالة</th></tr></thead>
+            <thead><tr>
+              <th style="${thStyle}">الشريك</th>
+              <th style="${thStyle}">رأس المال المدفوع</th>
+              <th style="${thStyle}">أرباح محققة (مغلق)</th>
+              <th style="${thStyle}">أرباح متوقعة (مفتوح)</th>
+              <th style="${thStyle}">إجمالي المسحوب</th>
+              <th style="${thStyle}">الرصيد الصافي</th>
+              <th style="${thStyle}">الحالة</th>
+            </tr></thead>
             <tbody>${partnerRows.map(r=>{ const sc=r.balance>=0?'var(--green)':'var(--red)'; const si=r.balance>=0?'✅ سليم':'🔴 سالب!';
-              return `<tr><td style="${tdStyle}" style="font-weight:700">${r.name}</td><td style="${tdStyle}" class="mono text-blue">${fmt(r.capPaid)}</td><td style="${tdStyle}" class="mono" style="color:${r.profitDue>=0?'var(--green)':'var(--red)'}">${fmt(r.profitDue)}</td><td style="${tdStyle}" class="mono text-amber">${fmt(r.withdrawn)}</td><td style="${tdStyle}" class="mono" style="font-weight:900;color:${sc}">${fmt(r.balance)}</td><td style="${tdStyle}"><span style="font-size:10px;color:${sc};font-weight:700">${si}</span></td></tr>`;
+              return `<tr>
+                <td style="${tdStyle}" style="font-weight:700">${r.name}</td>
+                <td style="${tdStyle}" class="mono text-blue">${fmt(r.capPaid)}</td>
+                <td style="${tdStyle}" class="mono" style="color:${r.profitDue>=0?'var(--green)':'var(--red)'}">${fmt(r.profitDue)}</td>
+                <td style="${tdStyle}" class="mono text-muted" style="font-size:11px">${fmt(r.profitPending||0)} <span style="font-size:9px;color:var(--text2)">(تقديري)</span></td>
+                <td style="${tdStyle}" class="mono text-amber">${fmt(r.withdrawn)}</td>
+                <td style="${tdStyle}" class="mono" style="font-weight:900;color:${sc}">${fmt(r.balance)}</td>
+                <td style="${tdStyle}"><span style="font-size:10px;color:${sc};font-weight:700">${si}</span></td>
+              </tr>`;
             }).join('')}</tbody>
           </table>
         </div>
