@@ -2,42 +2,42 @@
 // ║           TABLE OF CONTENTS — Transit Management         ║
 // ╚══════════════════════════════════════════════════════════╝
 //
-// L.3233   CONFIG — Supabase URL & Keys
-// L.3239   STATE — App state object
-// L.3281   API HELPERS — headers, apiGet, apiPost, apiPatch, apiDelete
-// L.3481   DASHBOARD — dashState, setDashPeriod
-// L.3518   DASHBOARD — loadDashboard
-// L.3742   DASHBOARD — render helpers (alerts, collections, chart)
-// L.6620   DASHBOARD — showDashboard
-// L.11039  DASHBOARD — Drill-down panel & renderDrillDown
-// L.3892   VIEWER — openViewer, switchTab, renderDealsTable
-// L.3961   VIEWER TABS — Summary
-// L.4130   VIEWER TABS — Vehicles
-// L.4167   VIEWER TABS — Payments
-// L.4205   VIEWER TABS — Expenses
-// L.4243   VIEWER TABS — Sales
-// L.4510   VIEWER TABS — Collections
-// L.4549   VIEWER TABS — Payouts (Partner Payouts)
-// L.4887   NEW FILE MODAL — Purchase Order (openNewFileModal, submitNewFile)
-// L.5545   PAYMENT MODAL — openPaymentModal, submitPayment
-// L.5567   EXPENSE MODAL — openExpenseModal, submitExpense
-// L.5754   SALE MODAL — openSaleModal, submitSale
-// L.6021   COLLECTION MODAL — openCollectionModal, submitCollection
-// L.6080   PAYOUT MODAL — openPayoutModal, submitPayout
-// L.6671   UTILS — fmt, fmtDate, el, today, statusClass
-// L.6728   UTILS — animateCount, switchView
-// L.6757   UTILS — setLoading, skeleton, emptyHTML, errHTML
-// L.7223   CONTACTS — showContacts, loadContacts, ledger
-// L.7981   EXPORT — exportToExcel, print helpers, PDF
-// L.8945   PARTNER STATEMENT — showPartnerStatement, printPartnerStatement
-// L.9534   REPORTS — showReport, setReportType, runReport
-// L.9907   ROLES — ROLES config, can()
-// L.9945   ROLES — applyRoleRestrictions
-// L.10165  SETTINGS — showSettings, switchSettTab, loadUserRoles
-// L.10583  EDIT MODALS — Payment, Expense, Collection (edit)
-// L.10718  OPERATING EXPENSES — showOpex, loadOpex, submitOpex
-// L.11295  PWA — installPWA
+// L.47     CONFIG — Supabase URL & Keys
+// L.52     STATE — App state object (cacheStale, ensureCache, invalidateCache)
+// L.140    CORE RULES — isPosted, isDraft
+// L.148    TOKEN REFRESH — refreshAccessToken
+// L.168    API HELPERS — headers, apiGet, apiPost, apiPatch, apiDelete
+// L.368    TRANSACTIONS VIEW — showTransactions, loadTransactions
+// L.994    DASHBOARD — loadDashboard, setDashPeriod, dashState
+// L.2610   NEW FILE MODAL — openNewFileModal, submitNewFile (Purchase Order)
+// L.3278   PAYMENT MODAL — openPaymentModal, submitPayment
+// L.3367   EXPENSE MODAL — openExpenseModal, submitExpense
+// L.3549   SALE MODAL — openSaleModal, submitSale
+// L.3945   COLLECTION MODAL — openCollectionModal, submitCollection
+// L.4112   PAYOUT MODAL — openPayoutModal, submitPayout
+// L.4347   VIEWER — openViewer, switchTab, renderDealsTable
+// L.5034   DASHBOARD — showDashboard
+// L.5131   UTILS — el, fmt, fmtDate, today, statusClass
+// L.5230   UTILS — switchView, animateCount, emptyHTML, errHTML
+// L.5271   JOURNAL — showJournal, loadJournal, renderJournalEntries
+// L.5893   CONTACTS — showContacts, loadContacts, showContactsByType
+// L.6303   TRIAL BALANCE — showTrialBalance, loadTrialBalance
+// L.6485   LEDGER — showLedger, renderLedgerTable, exportLedgerCSV
+// L.6685   CHART OF ACCOUNTS — showChartOfAccounts, loadChartOfAccountsView
+// L.8761   REPORTS — showReport, setReportType, runReport
+// L.9595   ACTIVITY LOG — showActivityLog, loadActivityLog
+// L.9814   SETTINGS — showSettings, switchSettTab, loadUserRoles
+// L.10526  OPERATING EXPENSES — showOpex, loadOpex, submitOpex
+// L.11332  APPROVAL QUEUE — showApprovalQueue, loadApprovalQueue
+// L.11785  PARTNER ACCOUNT — loadPartnerAccountLedger, exportPartnerAccountPDF
+// L.12312  REVIEW — showReview, runAllReviewChecks
+// L.13023  JE MANAGER — showJEManager, loadJEManager, openNewJEModal
+// L.13700  MIGRATION — openMigrationModal, runMigration
+// L.13835  WAREHOUSES — showWarehouses, loadWarehouses
+// L.14519  IMPORT WIZARD — showImportWizard, parseImportFile
+// L.14818  PWA — installPWA
 //
+// آخر تحديث للـ TOC: تم التصحيح بعد إزالة الدوال المكررة
 // ════════════════════════════════════════════════════════════
 
 
@@ -77,9 +77,26 @@ function cacheStale() {
   return state._cacheSystem !== state.system || (Date.now() - state._cacheTime) > 60000;
 }
 
+// حماية من الـ race condition — منع طلبين متزامنين للـ cache
+let _cacheLoadingPromise = null;
+
 // جيب البيانات من الـ cache أو حمّلها
 async function ensureCache() {
   if (!cacheStale()) return;
+  // لو في تحميل شغال بالفعل — انتظره بدل ما تبدأ تاني
+  if (_cacheLoadingPromise) {
+    await _cacheLoadingPromise;
+    return;
+  }
+  _cacheLoadingPromise = _doLoadCache();
+  try {
+    await _cacheLoadingPromise;
+  } finally {
+    _cacheLoadingPromise = null;
+  }
+}
+
+async function _doLoadCache() {
   const sys = state.system;
   // apiGetAll يجلب system_type المطابق + null (بيانات قديمة بدون system_type)
   const [deals, vehicles, sales, expenses, collections] = await Promise.all([
@@ -126,6 +143,7 @@ async function ensureCache() {
 // إبطال الـ cache عند أي تغيير
 function invalidateCache() {
   state._cacheTime = 0;
+  _cacheLoadingPromise = null; // إعادة تعيين أي تحميل معلّق
 }
 
 // ════════════════════════════════════════
@@ -159,7 +177,7 @@ async function refreshAccessToken() {
       localStorage.setItem('tm_refresh', data.refresh_token || rt);
       return true;
     }
-  } catch(e) {}
+  } catch(e) { console.error('refreshAccessToken:', e); }
   logout();
   return false;
 }
@@ -173,8 +191,13 @@ function headers(extra = {}) {
     'Content-Type': 'application/json',
     ...extra
   };
-  if (state.token) h['Authorization'] = `Bearer ${state.token}`;
-  else h['Authorization'] = `Bearer ${SB_KEY}`;
+  if (state.token) {
+    h['Authorization'] = `Bearer ${state.token}`;
+  } else {
+    // fallback للـ anon key — يعمل فقط لو RLS مضبوط على Supabase
+    h['Authorization'] = `Bearer ${SB_KEY}`;
+    console.warn('headers(): لا يوجد access token — يُستخدم anon key');
+  }
   return h;
 }
 
@@ -495,7 +518,7 @@ async function loadTransactions() {
         limit: '500'
       });
       (audits||[]).forEach(a => { if(a.ref_id) auditMap[String(a.ref_id)] = (a.user_email||'').split('@')[0]; });
-    } catch(e) {}
+    } catch(e) { console.warn('audit map load:', e.message); }
 
     // KPIs
     const total       = rows.reduce((s,r)=>s+(+r[cfg.amountField]||0), 0);
@@ -902,7 +925,7 @@ async function loadChartOfAccounts() {
         parent_code: r.parent_code,
       };
     });
-  } catch(e) { console.warn('loadChartOfAccounts:', e.message); }
+  } catch(e) { console.warn('loadChartOfAccounts:', e.message); state.chartOfAccounts = {}; }
 }
 
 // جيب اسم الحساب من الـ cache
@@ -1109,7 +1132,7 @@ async function loadDashboard() {
               </div>`).join('') + (duelist.length > 3 ? `<div style="font-size:10px;color:var(--text2);margin-top:4px">+ ${duelist.length-3} صفقة أخرى</div>` : '')
           : '<div style="color:var(--green);font-size:11px">✓ لا توجد مستحقات</div>';
       }
-    } catch(e) {}
+    } catch(e) { console.warn('supplier due list:', e.message); }
 
     // ── تحصيلات متأخرة — فقط التي لم تُدفع بعد ──
     const overdueItems = (collections||[]).filter(c =>
@@ -1727,7 +1750,7 @@ async function loadSummaryTab(fn, sys) {
     el('sum-vehicles').innerHTML = '';
     el('sum-payments').innerHTML = '';
 
-  } catch(e) { console.error('Summary error:', e); }
+  } catch(e) { console.error('Summary error:', e); el('sum-financial').innerHTML = errHTML('خطأ في تحميل الملخص: ' + e.message); }
 }
 
 function summRow(label, cls, val, bold=false) {
@@ -1950,7 +1973,7 @@ async function deleteSaleInvoice(invNo, fileNo) {
     async () => {
       try {
         await apiDelete('sales', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
-        try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` }); } catch(e) {}
+        try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` }); } catch(e) { console.warn('deleteSale cleanup collections:', e.message); }
         // تحديث حالة الصفقة
         try {
           const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
@@ -1962,7 +1985,7 @@ async function deleteSaleInvoice(invNo, fileNo) {
             { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` },
             { status: !hasAnySales ? 'OPEN' : (allSold ? 'CLOSED' : 'IN PROGRESS') }
           );
-        } catch(e) {}
+        } catch(e) { console.warn('updateDealStatus after delete:', e.message); }
         invalidateCache();
         toast(`✅ تم حذف فاتورة ${invNo}`, 'ok');
         await loadSalesTab(fileNo, state.system);
@@ -2342,7 +2365,7 @@ async function printPayoutVoucher(payoutId) {
     const deal  = poArr?.[0];
     // Get full deal balance for this partner
     let dealSummary = null;
-    try { dealSummary = await getPartnerDealBalance(p.file_no, p.partner, state.system); } catch(e) {}
+    try { dealSummary = await getPartnerDealBalance(p.file_no, p.partner, state.system); } catch(e) { console.warn('getPartnerDealBalance:', e.message); }
     const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
     const typeColor = { 'استرداد رأس مال':'#2563eb', 'توزيع أرباح':'#16a34a', 'رأس مال + أرباح':'#7c3aed', 'سلفة':'#e6930a' };
     const color = typeColor[p.payout_type] || '#1a1a1a';
@@ -3232,7 +3255,7 @@ async function submitEditFileFull() {
         // حذف الدفعة الأولية المسجّلة عند إنشاء الصفقة فقط (بالـ pay_id الأولي)
         // لا نحذف الدفعات الإضافية اللي أُضيفت لاحقاً من موديل الدفعات
         const initialPmtId = `PMT-${oldFileNo}-P${p.name.slice(0,3)}`;
-        try { await apiDelete('payments', { system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}`, pay_id:`eq.${initialPmtId}` }); } catch(e) {}
+        try { await apiDelete('payments', { system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}`, pay_id:`eq.${initialPmtId}` }); } catch(e) { console.warn('deleteInitialPayment on rename:', e.message); }
         const newPmtId = `PMT-${newFileNo}-P${p.name.slice(0,3)}`;
         await apiPost('payments', {
           system_type:state.system, file_no:newFileNo,
@@ -3353,7 +3376,7 @@ async function _loadPaymentModalData(fn, sys) {
     el('pay-payer').innerHTML = '<option value="">— اختر الدافع —</option>' + payerOptions;
     // حفظ fn في الـ modal
     el('pay-payer').dataset.fileNo = fn;
-  } catch(e) { console.error('_loadPaymentModalData:', e.message); }
+  } catch(e) { console.error('_loadPaymentModalData:', e.message); toast('خطأ في تحميل بيانات الدفعة: ' + e.message, 'err'); }
 }
 
 // ════════════════════════════════════════
@@ -3559,7 +3582,7 @@ async function openSaleModal(fileNoOverride = null) {
       sel.appendChild(o);
     });
     if (fn) sel.value = fn;
-  } catch(e) {}
+  } catch(e) { console.warn('openSaleModal files:', e.message); }
 
   // Reset
   el('sale-date').value  = today();
@@ -3579,7 +3602,7 @@ async function openSaleModal(fileNoOverride = null) {
     } else {
       el('sale-invNo').value = `INV-${sys}-001`;
     }
-  } catch(e) {}
+  } catch(e) { console.warn('regenInvNo:', e.message); }
 
   // السيارات
   el('saleVehiclesContainer').innerHTML = '';
@@ -3598,7 +3621,7 @@ async function onSaleFileChange(fn) {
       const max  = Math.max(0, ...(prev||[]).map(s=>{ const m=(s.inv_no||'').match(/(\d+)$/); return m?+m[1]:0; }));
       el('sale-invNo').value = `INV-${fn}-${String(max+1).padStart(3,'0')}`;
     }
-  } catch(e) {}
+  } catch(e) { console.warn('onSaleFileChange invNo:', e.message); }
   await renderSaleVehiclePicker(fn, state.system);
 }
 
@@ -3844,7 +3867,7 @@ async function submitSale() {
       showFieldErr('saleError', `⚠️ رقم الفاتورة "${invNo}" مسجّل مسبقاً — غيّر الرقم أو استخدم 🔄 لتوليد رقم جديد`);
       return;
     }
-  } catch(e) {}
+  } catch(e) { console.warn('duplicate invoice check:', e.message); }
 
   const totalPrice = saleItems.reduce((s,i)=>s+i.price,0);
   const grandTotal = totalPrice + extraTotal; // إجمالي شامل المصاريف الإضافية
@@ -3915,7 +3938,7 @@ async function submitSale() {
           await je_collection({ sys:state.system, date:payDate, amount:collAmt, fileNo:fn, customer, invNo, method:payMethod });
         } catch(jeErr) { toast(`⚠️ فشل قيد التحصيل: ${jeErr.message}`,'warn'); }
       }
-    } catch(e) { console.warn('collection create error:', e.message); }
+    } catch(e) { console.error('collection create error:', e.message); toast('⚠️ تم حفظ البيع لكن فشل إنشاء التحصيل: ' + e.message, 'warn'); }
 
     invalidateCache();
     toast(`✅ تم تسجيل فاتورة ${invNo} — ${saleItems.length} سيارة${extraCharges.length?' + '+extraCharges.length+' مصروف إضافي':''}`, 'ok');
@@ -4319,7 +4342,7 @@ async function submitPayout() {
       const lastNums = (existing||[]).map(p=>{ const m=(p.pay_id||'').match(/(\d+)$/); return m?parseInt(m[1]):0; });
       const nextNum  = (lastNums.length ? Math.max(...lastNums) : 0) + 1;
       pay_id = `PAY-${fn}-${String(nextNum).padStart(3,'0')}`;
-    } catch(e) {}
+    } catch(e) { console.warn('payoutId generator:', e.message); }
     const data = {
       system_type: state.system, file_no: fn, partner,
       pay_id, payout_type: type, amount,
@@ -4404,7 +4427,7 @@ async function populateFileDropdown(selectId) {
     // Pre-select current file if open
     if (state.currentFileNo) sel.value = state.currentFileNo;
     else if (currentVal) sel.value = currentVal;
-  } catch(e) {}
+  } catch(e) { console.warn('populateFileSelector:', e.message); }
 }
 
 // ════════════════════════════════════════
@@ -4491,7 +4514,7 @@ async function loadQuickVins(fileNo) {
       el('qs-vin').innerHTML = unsold.length
         ? unsold.map(v=>`<option value="${v.vin}" title="${v.model||v.vehicle_type||''}">${v.vin}</option>`).join('')
         : '<option value="">— لا توجد سيارات متاحة في هذا الملف —</option>';
-    } catch(e) {}
+    } catch(e) { console.warn('loadQuickVins:', e.message); }
   }, 500);
 }
 
@@ -4624,7 +4647,7 @@ async function loadQuickPartners(fileNo) {
       el('qpo-partner').innerHTML = (partners&&partners.length)
         ? partners.map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('')
         : '<option value="">— لا يوجد شركاء في هذا الملف —</option>';
-    } catch(e) {}
+    } catch(e) { console.warn('loadQuickPartners:', e.message); }
   }, 500);
 }
 
@@ -4772,7 +4795,7 @@ async function loadPaymentPOCard(fileNo) {
     el('qp-form-fields').style.display = 'block';
     el('qp-submit-btn').style.display  = '';
 
-  } catch(e) { console.error('loadPaymentPOCard:', e.message); }
+  } catch(e) { console.error('loadPaymentPOCard:', e.message); toast('خطأ في تحميل بيانات الصفقة', 'err'); }
 }
 
 async function submitQuickPayment() {
@@ -4835,7 +4858,7 @@ async function submitQuickPayout() {
       const lastNums = (existing||[]).map(p=>{ const m=(p.pay_id||'').match(/(\d+)$/); return m?parseInt(m[1]):0; });
       const nextNum  = (lastNums.length ? Math.max(...lastNums) : 0) + 1;
       pay_id = `PAY-${fileNo}-${String(nextNum).padStart(3,'0')}`;
-    } catch(e) {}
+    } catch(e) { console.warn('quickPayoutId generator:', e.message); }
     const data = { system_type:state.system, file_no:fileNo, partner,
       pay_id, payout_type:type, amount, pay_method:method, document:doc||null,
       pay_date: date, notes:notes||null, post_status:entryStatus() };
@@ -6122,89 +6145,6 @@ async function showLedger(contactId, contactName, contactType) {
   }
 }
 
-function renderLedgerTable() {
-  const fileFilter = el('ledger-file-filter')?.value || '';
-  const allEntries = window._ledgerAllEntries || [];
-  const opening    = window._ledgerOpening || 0;
-
-  let list = fileFilter ? allEntries.filter(e => e.file_no === fileFilter) : allEntries;
-  let running = opening;
-
-  const totalDebit  = list.reduce((s,e) => s + (+e.debit||0), 0);
-  const totalCredit = list.reduce((s,e) => s + (+e.credit||0), 0);
-  const finalBal    = opening + totalDebit - totalCredit;
-
-  el('ledgerKpis').innerHTML = `
-    <div class="j-kpi"><div class="j-kpi-label">مجموع المدين</div><div class="j-kpi-val text-green">${fmt(totalDebit)}</div></div>
-    <div class="j-kpi"><div class="j-kpi-label">مجموع الدائن</div><div class="j-kpi-val text-red">${fmt(totalCredit)}</div></div>
-    <div class="j-kpi"><div class="j-kpi-label">الرصيد الحالي</div><div class="j-kpi-val" style="color:${finalBal>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(finalBal))} ${finalBal>0?'مدين':finalBal<0?'دائن':'متعادل'}</div></div>
-    <div class="j-kpi"><div class="j-kpi-label">عدد الحركات</div><div class="j-kpi-val">${list.length}</div></div>`;
-
-  if (!list.length && !opening) {
-    el('ledgerTable').innerHTML = emptyHTML('📋', 'لا توجد حركات مسجلة لهذا الحساب');
-    return;
-  }
-
-  // صف الرصيد الافتتاحي
-  let rows = '';
-  if (opening && !fileFilter) {
-    rows += `<tr style="background:var(--card2)">
-      <td colspan="3" style="padding:8px 12px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
-      <td class="mono text-green" style="padding:8px 12px">${opening > 0 ? fmt(opening) : '—'}</td>
-      <td class="mono text-red"   style="padding:8px 12px">${opening < 0 ? fmt(Math.abs(opening)) : '—'}</td>
-      <td class="mono" style="padding:8px 12px;font-weight:700">${fmt(Math.abs(opening))}</td>
-    </tr>`;
-    running = opening;
-  }
-
-  rows += list.map((e,i) => {
-    running += (+e.debit||0) - (+e.credit||0);
-    const runColor = running >= 0 ? 'var(--green)' : 'var(--red)';
-    return `<tr style="${i%2===0?'':'background:var(--card2)'}">
-      <td style="padding:8px 12px;font-family:monospace;font-size:12px;color:var(--text2);white-space:nowrap">${e.date||'—'}</td>
-      <td style="padding:8px 12px">
-        <div style="font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;display:inline-block;background:var(--card2);color:var(--text2);margin-bottom:2px">${e.type}</div>
-        <div style="font-size:12px">${e.desc||'—'}</div>
-        ${e.file_no?`<div style="font-size:10px;color:var(--accent);font-family:monospace">${e.file_no}</div>`:''}
-      </td>
-      <td style="padding:8px 12px;font-family:monospace;font-size:11px;color:var(--text2)">${e.ref||'—'}</td>
-      <td class="mono text-green" style="padding:8px 12px;font-weight:700">${+e.debit>0 ? fmt(e.debit) : '—'}</td>
-      <td class="mono text-red"   style="padding:8px 12px;font-weight:700">${+e.credit>0 ? fmt(e.credit) : '—'}</td>
-      <td class="mono" style="padding:8px 12px;font-weight:700;color:${runColor}">${fmt(Math.abs(running))}</td>
-    </tr>`;
-  }).join('');
-
-  const tfootColor = finalBal >= 0 ? 'var(--green)' : 'var(--red)';
-  el('ledgerTable').innerHTML = `
-    <table class="data-table">
-      <thead><tr>
-        <th>التاريخ</th>
-        <th>البيان</th>
-        <th>المرجع</th>
-        <th style="color:var(--green)">مدين</th>
-        <th style="color:var(--red)">دائن</th>
-        <th>الرصيد</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot style="background:var(--card2)"><tr>
-        <td colspan="3" style="padding:10px 14px;font-weight:700">الإجمالي</td>
-        <td class="mono text-green" style="padding:10px 14px;font-weight:900">${fmt(totalDebit)}</td>
-        <td class="mono text-red"   style="padding:10px 14px;font-weight:900">${fmt(totalCredit)}</td>
-        <td class="mono" style="padding:10px 14px;font-weight:900;color:${tfootColor}">${fmt(Math.abs(finalBal))} ${finalBal>0?'مدين':finalBal<0?'دائن':'✓'}</td>
-      </tr></tfoot>
-    </table>`;
-
-  // حفظ للتصدير
-  el('ledgerView').dataset.entries = JSON.stringify(list);
-}
-
-function exportLedgerCSV() {
-  const name    = el('ledgerView').dataset.contactName || 'ledger';
-  const entries = JSON.parse(el('ledgerView').dataset.entries || '[]');
-  const rows    = [['التاريخ','النوع','البيان','المرجع','الملف','مدين','دائن']];
-  entries.forEach(e => rows.push([e.date||'', e.type||'', e.desc||'', e.ref||'', e.file_no||'', +e.debit||0, +e.credit||0]));
-  downloadCSV(rows, `كشف_${name}.csv`);
-}
 
 function printLedgerStatement() {
   const contactName = window._ledgerContactName || '—';
@@ -7132,7 +7072,7 @@ const apiDelete = async function(table, matchParams) {
   try {
     const fileNo = matchParams?.file_no?.replace('eq.','') || matchParams?.id?.replace('eq.','') || null;
     logAudit('DELETE', table, fileNo, null, matchParams, `حذف من جدول ${table}`);
-  } catch(e) {}
+  } catch(e) { console.warn('logAudit DELETE:', e.message); }
 
   let url = `${SB_URL}/rest/v1/${table}?`;
   for (const [k,v] of Object.entries(matchParams)) url += `${k}=${encodeURIComponent(v)}&`;
@@ -7723,7 +7663,7 @@ async function postEntry(journalId) {
       post_status: 'posted',
       posted_at: new Date().toISOString()
     });
-  } catch(e) { console.warn('postEntry error:', e.message); }
+  } catch(e) { console.error('postEntry error:', e.message); toast('⚠️ فشل ترحيل القيد: ' + e.message, 'warn'); }
 }
 
 // Load drafts for journal
@@ -8096,7 +8036,7 @@ async function loadViewerKpis(fn, sys) {
         <div class="vkpi-val" style="color:${supplierLeft>0?'var(--red)':'var(--green)'}">${fmt(supplierLeft)}</div>
       </div>
     `;
-  } catch(e) { console.warn('KPI strip error:', e.message); }
+  } catch(e) { console.warn('KPI strip error:', e.message); if(el('viewer-kpis')) el('viewer-kpis').innerHTML=''; }
 }
 
 // ════════════════════════════════════════
@@ -9472,9 +9412,9 @@ async function confirmDeleteDealFromModal() {
       try {
         const sys = state.system;
         const tables = ['vehicles','payments','expenses','sales','collections','partner_payouts','partners_master','ledger_entries','journal_entries','opex_entries','account_ledger'];
-        for (const t of tables) { try { await apiDelete(t, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) {} }
+        for (const t of tables) { try { await apiDelete(t, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) { console.warn(`deleteDeal table ${t}:`, e.message); } }
         await logAudit('DELETE','purchase_orders', fn, {file_no:fn}, null, 'حذف صفقة كاملة');
-        try { await apiDelete('audit_log', { file_no:`eq.${fn}` }); } catch(e) {}
+        try { await apiDelete('audit_log', { file_no:`eq.${fn}` }); } catch(e) { console.warn('deleteDeal audit_log:', e.message); }
         await apiDelete('purchase_orders', { system_type:`eq.${sys}`, file_no:`eq.${fn}` });
         closeModal('newFileModal');
         toast(`✅ تم حذف الصفقة ${fn}`,'ok');
@@ -9583,7 +9523,7 @@ async function checkVinDuplicate(vin, excludeFileNo='') {
     const deals = await apiGetAll('purchase_orders', { select:'file_no', system_type:`eq.${state.system}`, file_no:`eq.${found[0].file_no}` });
     if (!deals || !deals.length) {
       // VIN exists but deal is deleted — clean up orphan silently
-      try { await apiDelete('vehicles', { system_type:`eq.${state.system}`, vin:`eq.${vin}`, file_no:`eq.${found[0].file_no}` }); } catch(e) {}
+      try { await apiDelete('vehicles', { system_type:`eq.${state.system}`, vin:`eq.${vin}`, file_no:`eq.${found[0].file_no}` }); } catch(e) { console.warn('deleteVehicle:', e.message); }
       return null;
     }
     return found[0];
@@ -10039,7 +9979,7 @@ async function loadUserRoleFromDB() {
       localStorage.setItem('tm_role', _currentRole);
       applyRoleRestrictions();
     }
-  } catch(e) {}
+  } catch(e) { console.warn('loadUserRole:', e.message); }
 }
 
 
@@ -11441,7 +11381,7 @@ async function loadApprovalQueue() {
     try {
       const audits = await apiGet('audit_log',{ select:'ref_id,user_email', action:'eq.INSERT', limit:'500' });
       (audits||[]).forEach(a=>{ if(a.ref_id) _auditUsers[String(a.ref_id)] = (a.user_email||'').split('@')[0]; });
-    } catch(e) {}
+    } catch(e) { console.warn('approvalQueue auditUsers:', e.message); }
     approvalState.auditUsers = _auditUsers;
 
     approvalState.all = [
@@ -11686,7 +11626,7 @@ async function openEditSaleApproval(saleId, fileNo, invNo) {
               inv_no:      `eq.${invNo}`,
               paid_date:   'is.null'
             });
-          } catch(e) {}
+          } catch(e) { console.warn('editSale delete pending collections:', e.message); }
         } catch(e) { console.warn('edit sale cleanup:', e.message); }
         // إعادة تعيين الـ onclick للأصل وبعدين submit
         submitBtn.onclick = () => submitSale();
@@ -11782,13 +11722,13 @@ async function rejectItem(type, id) {
         const fn  = item.file_no;
         const cascadeTables = ['vehicles','payments','expenses','sales','collections','partner_payouts','partners_master','journal_entries'];
         for (const t of cascadeTables) {
-          try { await apiDelete(t, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) {}
+          try { await apiDelete(t, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) { console.warn(`migration delete ${t}:`, e.message); }
         }
         await apiDelete('purchase_orders', { id:`eq.${id}` });
       } else {
         await apiDelete(cfg.table, { id:`eq.${id}` });
         if (type === 'sale' && item?.inv_no) {
-          try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, paid_date:'is.null' }); } catch(e) {}
+          try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, paid_date:'is.null' }); } catch(e) { console.warn('migration delete pending collections:', e.message); }
         }
       }
 
@@ -11849,7 +11789,7 @@ async function updateApprovalBadge() {
     const total = (s?.length||0)+(e?.length||0)+(c?.length||0)+(p?.length||0)+(po?.length||0);
     const badge = el('approval-badge');
     if (badge) { badge.textContent = total||''; badge.style.display = total?'':'none'; }
-  } catch(e) {}
+  } catch(e) { console.warn('updateApprovalBadge:', e.message); }
 }
 
 // ════════════════════════════════════════
@@ -11902,7 +11842,7 @@ async function loadPartnerAccountLedger() {
             _sign: +1
           });
         }
-      } catch(e) {}
+      } catch(e) { console.warn('postProfitCredit:', e.message); }
     }
 
     // صرف على صفقات
@@ -12023,6 +11963,34 @@ function renderPartnerAccountLedger() {
     </table>`;
 }
 
+// ══ تصدير كشف الشريك PDF ══
+function exportPartnerAccountPDF() {
+  const partnerName = el('pa-partner-name')?.textContent || '—';
+  const kpisEl      = el('pa-summary-kpis');
+  const tableEl     = el('pa-ledger-table');
+  if (!tableEl) { toast('لا توجد بيانات للتصدير', 'warn'); return; }
+
+  const html = `
+    <div class="page">
+      <div class="print-header">
+        <div class="logo-area">
+          <div class="company">Transit Management</div>
+          <div style="font-size:12px;color:#666">نظام ${state.system}</div>
+        </div>
+        <div>
+          <div class="doc-title">كشف حساب شريك</div>
+          <div style="font-size:13px;font-weight:700;margin-top:4px">${partnerName}</div>
+          <div style="font-size:11px;color:#666">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-KW')}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+        ${kpisEl ? kpisEl.innerHTML : ''}
+      </div>
+      ${tableEl.innerHTML}
+    </div>`;
+  openPrintOverlay(html, `كشف حساب — ${partnerName}`);
+}
+
 function openGeneralWithdrawModal() {
   el('gw-amount').value  = '';
   el('gw-date').value    = today();
@@ -12107,7 +12075,7 @@ async function loadPartnerAccountBalance() {
         const share = (+pm.share_percent||0)/100;
         const profit = ((sales||[]).reduce((s,r)=>s+(+r.sale_price||0),0) - (+po?.[0]?.total_purchase||0) - (exp||[]).reduce((s,e)=>s+(+e.amount||0),0)) * share;
         totalProfits += profit;
-      } catch(e) {}
+      } catch(e) { console.warn('partnerProfitCalc:', e.message); }
     }
 
     const totalPayouts = (allPayouts||[]).reduce((s,p)=>s+(+p.amount||0),0);
@@ -12117,7 +12085,7 @@ async function loadPartnerAccountBalance() {
     if(el('pacc-profits'))   el('pacc-profits').textContent   = fmt(totalProfits);
     if(el('pacc-withdrawn')) el('pacc-withdrawn').textContent = fmt(totalPayouts + generalWithdrawn);
     if(el('pacc-balance'))   { el('pacc-balance').textContent = fmt(balance); el('pacc-balance').style.color = balance>=0?'var(--purple)':'var(--red)'; }
-  } catch(e) {}
+  } catch(e) { console.error('onPayoutPartnerChange balance:', e.message); toast('خطأ في حساب رصيد الشريك','err'); }
 }
 
 // ════════════════════════════════════════════════════════
@@ -13010,7 +12978,7 @@ async function loadReviewHistory() {
     wrap.innerHTML = `
       <div style="font-size:12px;color:var(--text2);margin-bottom:12px">${reviews.length} مراجعة محفوظة — آخر تحديث ${fmtDate(reviews[0]?.created_at?.split('T')[0])}</div>
       ${reviews.map(r => {
-        let data={}; try { data=JSON.parse(r.new_value||'{}'); } catch(e) {}
+        let data={}; try { data=JSON.parse(r.new_value||'{}'); } catch(e) { data={}; }
         const passed=data.checks_passed||0,warned=data.checks_warned||0,failed=data.checks_failed||0;
         const total=passed+warned+failed;
         const score=total>0?Math.round((passed/total)*100):0;

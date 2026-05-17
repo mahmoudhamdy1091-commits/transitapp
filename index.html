@@ -251,7 +251,7 @@
     </div>
 
         <div class="sidebar-footer">
-      <button id="pwa-install-btn" onclick="installPWA()" style="display:none;width:100%;margin-bottom:8px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:8px;padding:8px 12px;color:var(--accent);font-family:Cairo,sans-serif;font-size:12px;font-weight:700;cursor:pointer;align-items:center;justify-content:center;gap:6px">
+      <button id="pwa-install-btn" class="pwa-install-btn" onclick="installPWA()" style="display:none;width:100%;margin-bottom:8px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:8px;padding:8px 12px;color:var(--accent);font-family:Cairo,sans-serif;font-size:12px;font-weight:700;cursor:pointer;align-items:center;justify-content:center;gap:6px">
         📲 تنزيل التطبيق
       </button>
       <div class="user-info">
@@ -1885,8 +1885,6 @@
     <div class="modal-header">
       <div class="modal-icon" style="background:var(--red-dim)">💸</div>
       <h3>إدخال مصاريف</h3>
-      <button onclick="toggleModalSize('expenseModal')" title="تكبير/تصغير"
-        style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--text2);margin-left:8px">⛶</button>
       <button class="modal-expand-btn" onclick="toggleModalSize('expenseModal')" title="تكبير/تصغير">⛶</button>
       <button class="modal-close" onclick="closeModal('expenseModal')">✕</button>
     </div>
@@ -2778,10 +2776,6 @@
 
 
 
-
-<button class="pwa-fab pwa-install-btn" onclick="installPWA()">
-  📲 تثبيت التطبيق
-</button>
 
 <!-- OPEX MODAL -->
 <div class="modal-overlay" id="opexModal">
