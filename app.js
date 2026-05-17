@@ -5756,8 +5756,12 @@ function renderContactsList() {
         <div style="font-size:10px;color:${balColor}">${balLabel}</div>
       </td>
       <td style="padding:11px 14px;text-align:center;white-space:nowrap">
+        <button onclick="showContactStatement('${safeName}','${c.type}')" title="كشف حساب"
+          style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:Cairo,sans-serif;margin-left:4px">📋</button>
+        <button onclick="showLedger(${c.id},'${safeName}','${c.type}')" title="دفتر الأستاذ"
+          style="background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:Cairo,sans-serif;margin-left:4px">📖</button>
         <button onclick="openContactModal(contactsState.all.find(x=>x.id===${c.id}))" title="تعديل"
-          style="background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:Cairo,sans-serif;margin-left:4px">✏️</button>
+          style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:Cairo,sans-serif;margin-left:4px">✏️</button>
         <button onclick="deleteContact(${c.id},'${safeName}')" title="حذف"
           style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:Cairo,sans-serif">🗑</button>
       </td>
@@ -6411,7 +6415,7 @@ async function deleteContact(id, name) {
 // hideAllViews helper
 // ════════════════════════════════════════
 function hideAllViews() {
-  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView','reviewView','jeManagerView','warehousesView']
+  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView','allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView','settingsView','opexView','approvalView','transactionsView','reviewView','jeManagerView','warehousesView','contactStatementView']
     .forEach(id => {
       const e = el(id);
       if (e) {
@@ -13730,6 +13734,178 @@ async function loadVehiclesTab(fn, sys) {
   } catch(e) { el('vehiclesTable').innerHTML = errHTML(e.message); }
 }
 
+// ════════════════════════════════════════════════════════
+// CONTACT STATEMENT — كشف حساب من القيود المحاسبية
+// ════════════════════════════════════════════════════════
+
+const csState = { contactName:'', contactType:'', entries:[] };
+
+// تُستدعى من قائمة جهات الاتصال أو أي مكان آخر
+async function showContactStatement(contactName, contactType) {
+  hideAllViews();
+  el('contactStatementView').style.display = 'block';
+  navActive('nav-contacts');
+  csState.contactName = contactName;
+  csState.contactType = contactType || '';
+
+  const typeLabel = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
+  const icon      = { customer:'👤', supplier:'🏭', partner:'🤲', custodian:'🗝' };
+  el('topBarTitle').textContent = `📋 كشف حساب`;
+  el('topBarSub').textContent   = `${icon[contactType]||'👤'} ${contactName} · نظام ${state.system}`;
+  el('cs-title').textContent    = `📋 كشف حساب — ${contactName}`;
+  el('cs-sub').textContent      = `${typeLabel[contactType]||''} · نظام ${state.system} · من القيود المحاسبية`;
+
+  await loadContactStatement();
+}
+
+async function loadContactStatement() {
+  const wrap = el('cs-table');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل كشف الحساب...</div>';
+  if (el('cs-kpis')) el('cs-kpis').innerHTML = '';
+
+  const sys  = state.system;
+  const name = csState.contactName;
+  if (!name) return;
+
+  try {
+    // جلب كل القيود التي تحمل contact_name = اسم الطرف
+    const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&contact_name=eq.${encodeURIComponent(name)}&post_status=eq.posted&order=entry_date.asc,entry_no.asc&select=*&limit=5000`;
+    const res  = await fetch(url, { headers: headers() });
+    if (!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    csState.entries = rows || [];
+
+    if (!rows?.length) {
+      // محاولة بحث بـ account_name (للبيانات القديمة قبل الـ migration)
+      const url2 = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&account_name=like.*${encodeURIComponent(name)}*&post_status=eq.posted&order=entry_date.asc,entry_no.asc&select=*&limit=5000`;
+      const res2  = await fetch(url2, { headers: headers() });
+      const rows2 = res2.ok ? await res2.json() : [];
+      csState.entries = rows2 || [];
+      if (!rows2?.length) {
+        wrap.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text2)">
+          <div style="font-size:36px;margin-bottom:10px">📋</div>
+          <div style="font-size:14px;font-weight:700;margin-bottom:6px">لا توجد قيود باسم "${name}"</div>
+          <div style="font-size:12px">شغّل الترحيل التاريخي من دفتر القيود لتحديث البيانات</div>
+          <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="showJEManager();setTimeout(openMigrationModal,300)">⚡ ترحيل البيانات</button>
+        </div>`;
+        return;
+      }
+    }
+
+    const entries = csState.entries;
+
+    // حساب الأرصدة — المدين يزيد الرصيد، الدائن ينقصه
+    let running = 0;
+    let totalDr = 0, totalCr = 0;
+
+    const tableRows = entries.map(r => {
+      const dr = +r.dr_amount || 0;
+      const cr = +r.cr_amount || 0;
+      running += dr - cr;
+      totalDr += dr;
+      totalCr += cr;
+
+      const srcLabels = {
+        purchase_orders:'شراء', sales:'بيع', collections:'تحصيل',
+        payments:'دفعة مورد', expenses:'مصروف',
+        partner_payouts:'صرف شريك', operating_expenses:'مصروف تشغيلي', manual:'يدوي',
+      };
+      const srcColors = {
+        purchase_orders:'var(--accent)', sales:'var(--green)',
+        collections:'var(--blue)', payments:'var(--cyan)',
+        expenses:'var(--red)', partner_payouts:'var(--purple)',
+        operating_expenses:'var(--purple)', manual:'var(--text)',
+      };
+      const src      = r.ref_table || 'manual';
+      const srcLabel = srcLabels[src] || src;
+      const srcColor = srcColors[src] || 'var(--text2)';
+      const balColor = running > 0 ? 'var(--green)' : running < 0 ? 'var(--red)' : 'var(--text2)';
+      const balLabel = running > 0 ? 'مدين' : running < 0 ? 'دائن' : 'تسوية';
+
+      return `<tr>
+        <td class="mono text-muted" style="font-size:11px;white-space:nowrap">${(r.entry_date||'').split('T')[0]}</td>
+        <td><span style="font-size:11px;font-weight:700;font-family:monospace;color:var(--accent)">${r.entry_no||'—'}</span></td>
+        <td><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${srcColor}22;color:${srcColor}">${srcLabel}</span></td>
+        <td style="font-size:11px;max-width:220px">${r.description||'—'}</td>
+        <td class="mono text-muted" style="font-size:11px">${r.file_no||'—'}</td>
+        <td class="mono text-green" style="text-align:left;font-weight:700">${dr>0?fmt(dr):'—'}</td>
+        <td class="mono text-red"   style="text-align:left;font-weight:700">${cr>0?fmt(cr):'—'}</td>
+        <td style="text-align:left;white-space:nowrap">
+          <span class="mono" style="font-weight:900;color:${balColor}">${fmt(Math.abs(running))}</span>
+          <span style="font-size:10px;color:${balColor};margin-right:4px">${balLabel}</span>
+        </td>
+      </tr>`;
+    }).join('');
+
+    const balance    = totalDr - totalCr;
+    const balColor   = balance > 0 ? 'var(--green)' : balance < 0 ? 'var(--red)' : 'var(--text2)';
+    const balLabel   = balance > 0 ? 'مدين' : balance < 0 ? 'دائن' : 'متوازن';
+
+    // KPIs
+    if (el('cs-kpis')) el('cs-kpis').innerHTML = [
+      ['إجمالي مدين',   fmt(totalDr),         'var(--green)'],
+      ['إجمالي دائن',   fmt(totalCr),         'var(--red)'],
+      ['الرصيد الختامي', fmt(Math.abs(balance))+'  '+balLabel, balColor],
+      ['عدد القيود',    entries.length,        'var(--blue)'],
+    ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c};font-size:18px;font-weight:900">${v}</div></div>`).join('');
+
+    wrap.innerHTML = `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <div style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <span>📋 كشف حساب: <strong style="color:var(--text)">${name}</strong> · ${entries.length} حركة</span>
+          <span style="font-weight:700;color:${balColor}">الرصيد: ${fmt(Math.abs(balance))} ${balLabel}</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table" style="min-width:700px">
+            <thead><tr>
+              <th>التاريخ</th><th>رقم القيد</th><th>النوع</th><th>البيان</th><th>الملف</th>
+              <th style="color:var(--green);text-align:left">مدين</th>
+              <th style="color:var(--red);text-align:left">دائن</th>
+              <th style="text-align:left">الرصيد</th>
+            </tr></thead>
+            <tbody>${tableRows}</tbody>
+            <tfoot style="background:var(--card2)">
+              <tr>
+                <td colspan="5" style="padding:10px 16px;font-weight:700">الإجمالي</td>
+                <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalDr)}</td>
+                <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalCr)}</td>
+                <td style="padding:10px 16px;font-weight:900;color:${balColor};text-align:left">
+                  ${fmt(Math.abs(balance))} <span style="font-size:11px">${balLabel}</span>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>`;
+
+  } catch(e) {
+    wrap.innerHTML = errHTML('خطأ: '+e.message);
+    console.error(e);
+  }
+}
+
+function printContactStatement() {
+  const name    = csState.contactName;
+  const content = el('cs-table')?.innerHTML || '';
+  const kpis    = el('cs-kpis')?.innerHTML  || '';
+  printSection(`كشف حساب — ${name}`, `نظام ${state.system}`, kpis + content);
+}
+
+function exportContactStatementCSV() {
+  const rows = csState.entries.map(r => [
+    (r.entry_date||'').split('T')[0], r.entry_no||'—',
+    r.ref_table||'—', r.description||'—', r.file_no||'—',
+    +r.dr_amount||0, +r.cr_amount||0,
+  ]);
+  exportCSV(['التاريخ','رقم القيد','النوع','البيان','الملف','مدين','دائن'], rows, `كشف_${csState.contactName}`);
+}
+
+// تُستدعى من صفحة جهات الاتصال عند الضغط على الطرف
+function showPartnerStatement(name) {
+  showContactStatement(name, 'partner');
+}
+
 let _pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
@@ -13781,8 +13957,9 @@ async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}
     system_type:  sys,
     entry_no:     no,
     entry_date:   date || today(),
-    account_code: l.acc  || null,
-    account_name: l.name || null,
+    account_code: l.acc     || null,
+    account_name: l.name    || null,
+    contact_name: l.contact || null,
     dr_amount:    +l.dr  || 0,
     cr_amount:    +l.cr  || 0,
     description:  l.desc || desc,
@@ -13815,23 +13992,23 @@ async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}
 async function je_purchase({sys,date,amount,fileNo,supplier}) {
   if(!amount||amount<=0) return;
   await postDoubleEntry({sys,date,fileNo,refTable:'purchase_orders',desc:`شراء — ملف ${fileNo} — ${supplier}`,lines:[
-    {acc:'1300',name:getAccountName('1300'),   dr:amount, cr:0     },
-    {acc:'2100',name:`مورد: ${supplier}`,       dr:0,      cr:amount},
+    {acc:'1300', name:getAccountName('1300'),  dr:amount, cr:0,      contact:null     },
+    {acc:'2100', name:`ذمم الموردين`,           dr:0,      cr:amount, contact:supplier },
   ]});
 }
 
-// بيع: عميل Dr / إيراد Cr + COGS Dr / مخزون Cr
+// بيع: عميل Dr / إيراد Cr
 async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
   if(!amount||amount<=0) return;
   const lines = [
-    {acc:'1200',name:`عميل: ${customer}`,     dr:amount, cr:0    , desc:`فاتورة ${invNo}`},
-    {acc:'4100',name:getAccountName('4100'),   dr:0,      cr:amount, desc:`فاتورة ${invNo}`},
+    {acc:'1200', name:`ذمم العملاء`,        dr:amount, cr:0,     contact:customer, desc:`فاتورة ${invNo}`},
+    {acc:'4100', name:getAccountName('4100'), dr:0,    cr:amount, contact:null,     desc:`فاتورة ${invNo}`},
   ];
   if (cost>0) {
-    lines.push({acc:'5100',name:'تكلفة المخزون المباع', dr:cost, cr:0   });
-    lines.push({acc:'1300',name:'المخزون — سيارات',      dr:0,    cr:cost});
+    lines.push({acc:'5100', name:'تكلفة المخزون المباع', dr:cost, cr:0,    contact:null});
+    lines.push({acc:'1300', name:'المخزون — سيارات',     dr:0,    cr:cost, contact:null});
   }
-  await postDoubleEntry({sys,date,fileNo,refTable:'sales',desc:`بيع فاتورة ${invNo} — ملف ${fileNo}`,lines});
+  await postDoubleEntry({sys,date,fileNo,refTable:'sales',desc:`بيع فاتورة ${invNo} — ${customer} — ملف ${fileNo}`,lines});
 }
 
 // تحصيل: نقد Dr / عميل Cr
@@ -13839,9 +14016,9 @@ async function je_collection({sys,date,amount,fileNo,customer,invNo,method}) {
   if(!amount||amount<=0) return;
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
-  await postDoubleEntry({sys,date,fileNo,refTable:'collections',desc:`تحصيل ${invNo} — ملف ${fileNo}`,lines:[
-    {acc:cashAcc, name:cashNm,                  dr:amount, cr:0     },
-    {acc:'1200',  name:`عميل: ${customer}`,     dr:0,      cr:amount},
+  await postDoubleEntry({sys,date,fileNo,refTable:'collections',desc:`تحصيل ${invNo} — ${customer} — ملف ${fileNo}`,lines:[
+    {acc:cashAcc, name:cashNm,           dr:amount, cr:0,     contact:null     },
+    {acc:'1200',  name:`ذمم العملاء`,    dr:0,      cr:amount, contact:customer },
   ]});
 }
 
@@ -13850,23 +14027,23 @@ async function je_payment({sys,date,amount,fileNo,supplier,supplierName,payer,pa
   if(!amount||amount<=0) return;
   const sup      = supplier || supplierName || 'مورد';
   const payerStr = payer || payerName || sup;
-  const cashAcc = method==='نقد'?'1110':'1120';
-  const cashNm  = method==='نقد'?'النقد':'البنك';
+  const cashAcc  = method==='نقد'?'1110':'1120';
+  const cashNm   = method==='نقد'?'النقد':'البنك';
   await postDoubleEntry({sys,date,fileNo,refTable:'payments',desc:`دفعة للمورد ${sup} بواسطة ${payerStr} — ملف ${fileNo}`,lines:[
-    {acc:'2100',  name:`مورد: ${sup}`,          dr:amount, cr:0     },
-    {acc:cashAcc, name:cashNm,                  dr:0,      cr:amount},
+    {acc:'2100',  name:`ذمم الموردين`, dr:amount, cr:0,     contact:sup  },
+    {acc:cashAcc, name:cashNm,         dr:0,      cr:amount, contact:null },
   ]});
 }
 
 // مصروف: مصروف Dr / نقد Cr
 async function je_expense({sys,date,amount,fileNo,desc,expType,method}) {
   if(!amount||amount<=0) return;
-  const eAcc  = EXPENSE_ACCOUNT_MAP[expType]||'6500';
-  const cashAcc = method==='نقد'?'1110':'1120';
-  const cashNm  = method==='نقد'?'النقد':'البنك';
+  const eAcc     = EXPENSE_ACCOUNT_MAP[expType]||'6500';
+  const cashAcc  = method==='نقد'?'1110':'1120';
+  const cashNm   = method==='نقد'?'النقد':'البنك';
   await postDoubleEntry({sys,date,fileNo,refTable:'expenses',desc:`${desc} — ملف ${fileNo||'عام'}`,lines:[
-    {acc:eAcc,    name:expType||'مصروف', dr:amount, cr:0     },
-    {acc:cashAcc, name:cashNm,           dr:0,      cr:amount},
+    {acc:eAcc,    name:expType||'مصروف', dr:amount, cr:0,     contact:null},
+    {acc:cashAcc, name:cashNm,           dr:0,      cr:amount, contact:null},
   ]});
 }
 
@@ -13876,8 +14053,8 @@ async function je_payout({sys,date,amount,fileNo,partner,method}) {
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
   await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
-    {acc:'2400',  name:`شريك: ${partner}`, dr:amount, cr:0     },
-    {acc:cashAcc, name:cashNm,             dr:0,      cr:amount},
+    {acc:'2400',  name:`حسابات الشركاء`, dr:amount, cr:0,     contact:partner },
+    {acc:cashAcc, name:cashNm,           dr:0,      cr:amount, contact:null    },
   ]});
 }
 
@@ -13885,16 +14062,16 @@ async function je_payout({sys,date,amount,fileNo,partner,method}) {
 async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
   if(!amount||amount<=0) return;
   const OPEX_ACC_MAP = {
-    'رواتب':'6100', 'إيجارات':'6200', 'عمولات':'6300',
-    'نظافة':'6400', 'ضيافة':'6500',   'مصروفات حكومية':'6600', 'أخرى':'6700',
+    'رواتب':'6100','إيجارات':'6200','عمولات':'6300',
+    'نظافة':'6400','ضيافة':'6500','مصروفات حكومية':'6600','أخرى':'6700',
   };
   const eAcc    = OPEX_ACC_MAP[expType] || '6700';
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
   await postDoubleEntry({sys,date,fileNo:null,refTable:'operating_expenses',refId:refNo||null,
     desc:`مصروف تشغيلي: ${desc||expType}`,lines:[
-    {acc:eAcc,    name:`مصروف تشغيلي — ${expType||'أخرى'}`, dr:amount, cr:0     },
-    {acc:cashAcc, name:cashNm,                               dr:0,      cr:amount},
+    {acc:eAcc,    name:`مصروف تشغيلي — ${expType||'أخرى'}`, dr:amount, cr:0,     contact:null},
+    {acc:cashAcc, name:cashNm,                               dr:0,      cr:amount, contact:null},
   ]});
 }
 

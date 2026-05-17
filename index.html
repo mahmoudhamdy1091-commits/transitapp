@@ -1296,6 +1296,25 @@
 
       </div><!-- /reviewView -->
 
+      <!-- ════ CONTACT STATEMENT VIEW ════ -->
+      <div id="contactStatementView" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <div>
+            <div style="font-size:16px;font-weight:900" id="cs-title">📋 كشف حساب</div>
+            <div id="cs-sub" style="font-size:12px;color:var(--text2);margin-top:2px"></div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="printContactStatement()">🖨️ طباعة</button>
+            <button class="btn btn-secondary btn-sm" onclick="exportContactStatementCSV()">📥 Excel</button>
+            <button class="btn btn-secondary btn-sm" onclick="showContacts()">◀ رجوع</button>
+          </div>
+        </div>
+        <!-- KPIs -->
+        <div id="cs-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px"></div>
+        <!-- Table -->
+        <div id="cs-table"><div class="loading"><div class="spinner"></div></div></div>
+      </div>
+
       <!-- ════ WAREHOUSES VIEW ════ -->
       <div id="warehousesView" style="display:none">
         <!-- Header -->
