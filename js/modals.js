@@ -1336,25 +1336,52 @@ async function submitSale() {
 
     // ── تحصيل واحد للفاتورة كلها (شامل المصاريف الإضافية) ──
     try {
-      await apiPost('collections', {
-        system_type: state.system,
-        file_no:     fn,
-        inv_no:      invNo,
-        customer,
-        vin:         allVins,
-        amount:      grandTotal,
-        pay_method:  payMethod,
-        document:    payDoc,
-        due_date:    date,
-        paid_date:   isPaid ? payDate : null,
-        notes:       payNotes,
-        post_status: entryStatus(),
-        ref_no:      `COL-${invNo}`,
-      });
-      if (isPaid && entryStatus()==='posted') {
-        try {
-          await je_collection({ sys:state.system, date:payDate, amount:collAmt, fileNo:fn, customer, invNo, method:payMethod });
-        } catch(jeErr) { toast(`⚠️ فشل قيد التحصيل: ${jeErr.message}`,'warn'); }
+      const colRefNo = (await genSeqRef('COL', state.system, fn, 'collections')) || `COL-${invNo}-${Date.now()}`;
+      const isPartial = isPaid && payAmtInput > 0 && payAmtInput < grandTotal;
+
+      if (isPartial) {
+        // دفع مقدم: سجّل التحصيل المدفوع + الباقي كمستحق
+        const colRefNo2 = `${colRefNo}-R`;
+        const col1 = {
+          system_type: state.system, file_no: fn, inv_no: invNo, customer,
+          vin: allVins, amount: payAmtInput, pay_method: payMethod,
+          document: payDoc, due_date: date, paid_date: payDate,
+          notes: payNotes, post_status: entryStatus(),
+          ref_no: colRefNo, pay_id: colRefNo,
+        };
+        const col2 = {
+          system_type: state.system, file_no: fn, inv_no: invNo, customer,
+          vin: allVins, amount: grandTotal - payAmtInput, pay_method: payMethod,
+          document: null, due_date: date, paid_date: null,
+          notes: `باقي الفاتورة ${invNo}`, post_status: entryStatus(),
+          ref_no: colRefNo2, pay_id: colRefNo2,
+        };
+        await apiPost('collections', col1);
+        await apiPost('collections', col2);
+        await logAudit('INSERT','collections',fn,null,col1);
+        if (customer) await ensureContact(customer, 'customer');
+        if (entryStatus()==='posted') {
+          try {
+            await je_collection({ sys:state.system, date:payDate, amount:payAmtInput, fileNo:fn, customer, invNo, method:payMethod });
+          } catch(jeErr) { toast(`⚠️ فشل قيد التحصيل: ${jeErr.message}`,'warn'); }
+        }
+      } else {
+        // دفع كامل أو بدون دفع الآن
+        const colData = {
+          system_type: state.system, file_no: fn, inv_no: invNo, customer,
+          vin: allVins, amount: grandTotal, pay_method: payMethod,
+          document: payDoc, due_date: date, paid_date: isPaid ? payDate : null,
+          notes: payNotes, post_status: entryStatus(),
+          ref_no: colRefNo, pay_id: colRefNo,
+        };
+        await apiPost('collections', colData);
+        await logAudit('INSERT','collections',fn,null,colData);
+        if (customer) await ensureContact(customer, 'customer');
+        if (isPaid && entryStatus()==='posted') {
+          try {
+            await je_collection({ sys:state.system, date:payDate, amount:grandTotal, fileNo:fn, customer, invNo, method:payMethod });
+          } catch(jeErr) { toast(`⚠️ فشل قيد التحصيل: ${jeErr.message}`,'warn'); }
+        }
       }
     } catch(e) { console.error('collection create error:', e.message); toast('⚠️ تم حفظ البيع لكن فشل إنشاء التحصيل: ' + e.message, 'warn'); }
 
