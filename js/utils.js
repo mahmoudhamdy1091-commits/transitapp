@@ -260,3 +260,16 @@ function switchView(showId, title, sub='') {
   if(title) el('topBarTitle').textContent = title;
   if(sub)   el('topBarSub').textContent   = sub;
 }
+
+// ════════════════════════════════════════
+// ROLES & PERMISSIONS
+// ════════════════════════════════════════
+const ROLES = {
+  admin:    { label:'👑 مدير كامل',  edit:true,  delete:true,  transactions:true,  roles:true  },
+  employee: { label:'👤 موظف',       edit:true,  delete:false, transactions:true,  roles:false },
+  readonly: { label:'👁 مشاهدة',     edit:false, delete:false, transactions:false, roles:false },
+};
+
+let _currentRole = localStorage.getItem('tm_role') || 'admin';
+
+function can(action) { return ROLES[_currentRole]?.[action] !== false; }
