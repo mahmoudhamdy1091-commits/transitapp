@@ -25,8 +25,6 @@ function _getPeriodDates(period) {
   if (period==='lastyear') return {from:`${yr-1}-01-01`,to:`${yr-1}-12-31`};
   return {from:null,to:null};
 }
-// alias — accounting.js تستخدم _periodDates وهي نفس _getPeriodDates
-const _periodDates = _getPeriodDates;
 function _setPeriodBtns(prefix,period) {
   document.querySelectorAll(`[id^="${prefix}-period-"]`).forEach(b=>b.classList.remove('active'));
   el(`${prefix}-period-${period}`)?.classList.add('active');
@@ -48,7 +46,7 @@ function setTrialPeriod(period) {
   trialState.period=period;
   _setPeriodBtns('tb',period);
   if(period==='custom') return;
-  const {from,to}=_periodDates(period);
+  const {from,to}=_getPeriodDates(period);
   trialState.from=from; trialState.to=to;
   if(el('tb-from')) el('tb-from').value=from||'';
   if(el('tb-to'))   el('tb-to').value=to||'';
@@ -196,7 +194,7 @@ function setLedgerPeriod(period) {
   ledgerState.period=period;
   _setPeriodBtns('ldg',period);
   if(period==='custom') return;
-  const {from,to}=_periodDates(period);
+  const {from,to}=_getPeriodDates(period);
   ledgerState.from=from; ledgerState.to=to;
   if(el('ldg-from')) el('ldg-from').value=from||'';
   if(el('ldg-to'))   el('ldg-to').value=to||'';

@@ -733,48 +733,6 @@ document.querySelector('[onclick="openModal(\'collectionModal\')"]')?.setAttribu
 // saleModal button already calls openSaleModal() directly
 document.querySelector('[onclick="openModal(\'payoutModal\')"]')?.setAttribute('onclick','openPayoutModal()');
 
-// ════════════════════════════════════════
-// INIT
-// ════════════════════════════════════════
-(function init() {
-  const savedToken   = localStorage.getItem('tm_token');
-  const savedRefresh = localStorage.getItem('tm_refresh');
-  const savedUser    = localStorage.getItem('tm_user');
-  if (savedToken) {
-    state.token        = savedToken;
-    state.refreshToken = savedRefresh || null;
-    state.user         = savedUser ? JSON.parse(savedUser) : { email: 'user@tm.com' };
-    initApp();
-  }
-
-  // Prefill saved credentials
-  const remember    = localStorage.getItem('tm_remember');
-  const savedEmail  = localStorage.getItem('tm_saved_email');
-  const savedPass   = localStorage.getItem('tm_saved_pass');
-  // ── تذكرني: email فقط — كلمة المرور لا تُحفظ ──
-  if (remember && savedEmail) {
-    document.getElementById('loginEmail').value   = savedEmail;
-    document.getElementById('rememberMe').checked = true;
-    document.getElementById('savedBadge').style.display    = 'inline-block';
-    document.getElementById('clearSavedBtn').style.display = 'block';
-  }
-  // مسح أي كلمة مرور قديمة محفوظة من نسخ سابقة
-  localStorage.removeItem('tm_saved_pass');
-
-  // Set today as default dates
-  const dateInputs = document.querySelectorAll('input[type="date"]');
-  dateInputs.forEach(inp => { if (!inp.value) inp.value = today(); });
-})();
-
-// ════════════════════════════════════════
-// PWA — unregister any old SW to prevent caching
-// ════════════════════════════════════════
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(reg => reg.unregister());
-  });
-}
-
 
 // ════════════════════════════════════════
 // FEATURE 1 — CONFIRM DELETE MODAL
