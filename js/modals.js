@@ -3,24 +3,6 @@
 // ║           Collection · Payout Modals                    ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-    }
-    sels[0].value = partnerName;
-  }
-
-  // Share percent
-  if (inputs[0]) inputs[0].value = partner.share_percent || '';
-
-  // Payment data
-  if (payment) {
-    if (inputs[1]) inputs[1].value = payment.amount     || '';
-    if (inputs[2]) inputs[2].value = payment.pay_date   || '';
-    if (sels[1])   sels[1].value   = payment.pay_method || 'تحويل بنكي';
-    if (inputs[3]) inputs[3].value = payment.document   || '';
-  }
-
-  updatePartnerSummary();
-}
-
 async function openNewFileModal(editFileNo = null) {
   // ── set mode FIRST ──
   _nfEditMode   = !!editFileNo;
@@ -1791,3 +1773,21 @@ async function submitPayout() {
       pay_id = `PAY-${fn}-${String(nextNum).padStart(3,'0')}`;
     } catch(e) { console.warn('payoutId generator:', e.message); }
     const data = {
+      system_type: state.system, file_no: fn, partner,
+      pay_id, payout_type: type, amount,
+      capital_amount: capitalAmt, profit_amount: profitAmt, advance_amount: advanceAmt,
+      pay_method: method, document: doc||null, pay_date: date, notes: notes||null,
+      post_status: entryStatus()
+    };
+    await apiPost('partner_payouts', data);
+    await logAudit('INSERT','partner_payouts',fn,null,data);
+    if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo:fn,partner,method});
+    markSaving('payoutModal'); closeModal('payoutModal');
+    toast(`✅ تم تسجيل ${type} للشريك ${partner}`,'ok');
+    invalidateCache();
+    if (state.currentTab === 6) loadPayoutsTab(fn, state.system);
+    if (state.currentTab === 0) loadSummaryTab(fn, state.system);
+  } catch(e) { showFieldErr('poutError','خطأ: '+e.message); }
+}
+
+// Add vehicle to existing deal

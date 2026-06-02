@@ -2,24 +2,6 @@
 // ║  dashboard.js — Dashboard · KPIs · Charts · Drill-down  ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-    if (customDates) customDates.style.display = 'none';
-    dashState.days = days;
-    const fromDate = new Date(Date.now() - days * 864e5);
-    dashState.from = fromDate.toISOString().split('T')[0];
-    dashState.to   = now.toISOString().split('T')[0];
-  }
-
-  // Update period label
-  const labels = {7:'آخر 7 أيام', 30:'آخر 30 يوم', 60:'آخر 60 يوم', 90:'آخر 90 يوم', year:`سنة ${yr}`, lastyear:`سنة ${yr-1}`};
-  if (el('dash-period-label')) {
-    el('dash-period-label').textContent = days === 'custom'
-      ? `${dashState.from} — ${dashState.to}`
-      : labels[days] || '';
-  }
-
-  loadDashboard();
-}
-
 async function loadDashboard() {
   setLoading('dealsTableBody');
   const sys  = state.system;
@@ -1723,3 +1705,21 @@ async function addPartnerRowWithData(partner, payment) {
       opt = document.createElement('option');
       opt.value = partnerName; opt.textContent = partnerName;
       sels[0].insertBefore(opt, sels[0].lastElementChild);
+    }
+    sels[0].value = partnerName;
+  }
+
+  // Share percent
+  if (inputs[0]) inputs[0].value = partner.share_percent || '';
+
+  // Payment data
+  if (payment) {
+    if (inputs[1]) inputs[1].value = payment.amount     || '';
+    if (inputs[2]) inputs[2].value = payment.pay_date   || '';
+    if (sels[1])   sels[1].value   = payment.pay_method || 'تحويل بنكي';
+    if (inputs[3]) inputs[3].value = payment.document   || '';
+  }
+
+  updatePartnerSummary();
+}
+

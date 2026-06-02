@@ -2,18 +2,6 @@
 // ║  settings.js — Settings · Roles · Users · Activity Log  ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-  _currentRole = localStorage.getItem('tm_role') || 'admin';
-  _pendingRole = _currentRole;
-
-  // Top bar shadow on scroll
-  const contentArea = document.querySelector('.content-area');
-  const topBar = document.querySelector('.top-bar');
-  if (contentArea && topBar) {
-    contentArea.addEventListener('scroll', () => {
-      topBar.classList.toggle('scrolled', contentArea.scrollTop > 10);
-    });
-  }
-});
 
 // ════════════════════════════════════════
 // ACTIVITY LOG

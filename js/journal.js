@@ -2,17 +2,6 @@
 // ║  journal.js — Journal Page · Filters · Render           ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-    setTimeout(() => {
-      next.style.transition = '';
-      next.style.opacity = '';
-      next.style.transform = '';
-    }, 300);
-  }
-  if(title) el('topBarTitle').textContent = title;
-  if(sub)   el('topBarSub').textContent   = sub;
-}
-
-// ════════════════════════════════════════
 // JOURNAL (صفحة اليومية)
 // ════════════════════════════════════════
 const journalState = {
@@ -624,3 +613,7 @@ function printSection(title, subtitle, tableHtml, summaryHtml='') {
   </div>
   ${summaryHtml}
   ${tableHtml}
+  <div class="footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('en-GB')} · Transit Cars System</div>
+</div></body></html>`;
+  openPrintOverlay(html, title);
+}

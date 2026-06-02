@@ -2,24 +2,6 @@
 // ║  reports.js — Reports · Filters · Export                ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-    let url = `${SB_URL}/rest/v1/${table}?${sysParam}&${baseParams}`;
-    if (extraStr) url += '&' + extraStr;
-    return url;
-  };
-  const [r1, r2] = await Promise.all([
-    fetch(makeUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: headers() }),
-    fetch(makeUrl('system_type=is.null'), { headers: headers() }),
-  ]);
-  if (r1.status === 401) { await refreshAccessToken(); return apiGetDateRange(table, dateCol, from, to, extra); }
-  const [d1, d2] = await Promise.all([r1.ok ? r1.json() : [], r2.ok ? r2.json() : []]);
-  const seen = new Set(); const out = [];
-  [...(d1||[]), ...(d2||[])].forEach(r => {
-    const key = r.id ?? JSON.stringify(r);
-    if (!seen.has(key)) { seen.add(key); out.push(r); }
-  });
-  return out;
-}
-
 function showReport(type) {
   sessionStorage.setItem('tm_last_view','report:'+type);
   hideAllViews();
@@ -1008,3 +990,15 @@ function showDashboard_withFab() {
 
 // Init roles on load
 document.addEventListener('DOMContentLoaded', () => {
+  _currentRole = localStorage.getItem('tm_role') || 'admin';
+  _pendingRole = _currentRole;
+
+  // Top bar shadow on scroll
+  const contentArea = document.querySelector('.content-area');
+  const topBar = document.querySelector('.top-bar');
+  if (contentArea && topBar) {
+    contentArea.addEventListener('scroll', () => {
+      topBar.classList.toggle('scrolled', contentArea.scrollTop > 10);
+    });
+  }
+});

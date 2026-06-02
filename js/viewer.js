@@ -3,24 +3,6 @@
 // ║           Payments · Expenses · Sales · Collections     ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-      system_type: state.system, file_no: fn, partner,
-      pay_id, payout_type: type, amount,
-      capital_amount: capitalAmt, profit_amount: profitAmt, advance_amount: advanceAmt,
-      pay_method: method, document: doc||null, pay_date: date, notes: notes||null,
-      post_status: entryStatus()
-    };
-    await apiPost('partner_payouts', data);
-    await logAudit('INSERT','partner_payouts',fn,null,data);
-    if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo:fn,partner,method});
-    markSaving('payoutModal'); closeModal('payoutModal');
-    toast(`✅ تم تسجيل ${type} للشريك ${partner}`,'ok');
-    invalidateCache();
-    if (state.currentTab === 6) loadPayoutsTab(fn, state.system);
-    if (state.currentTab === 0) loadSummaryTab(fn, state.system);
-  } catch(e) { showFieldErr('poutError','خطأ: '+e.message); }
-}
-
-// Add vehicle to existing deal
 function openAddVehicleModal() {
   el('av-vin').value=''; el('av-type').value=''; el('av-model').value='';
   el('av-plate').value=''; el('av-color').value=''; el('av-price').value='';
@@ -698,3 +680,17 @@ async function searchVin(q) {
           <!-- Actions -->
           <div style="display:flex;gap:8px">
             <button onclick="document.getElementById('vin-card-overlay').remove();openViewer('${v.file_no}')"
+              style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:12px;font-weight:700;font-family:'Cairo',sans-serif;flex:1">
+              🔍 فتح الملف
+            </button>
+            <button onclick="document.getElementById('vin-card-overlay').remove()"
+              style="background:var(--card2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 16px;cursor:pointer;font-size:12px;font-family:'Cairo',sans-serif">
+              إغلاق
+            </button>
+          </div>
+        </div>
+      </div>`;
+
+    document.body.appendChild(card);
+  } catch(e) { console.error('searchVin:', e); }
+}

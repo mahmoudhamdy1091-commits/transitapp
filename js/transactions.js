@@ -2,13 +2,6 @@
 // ║  transactions.js — TX View · Invoice Modal · Export     ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-  document.getElementById('appScreen').style.display   = 'none';
-  document.getElementById('loginPass').value = '';
-}
-
-// ════════════════════════════════════════
-// TRANSACTIONS VIEW
-// ════════════════════════════════════════
 const TX_CONFIG = {
   sales:       { title:'المبيعات',         icon:'🧾', color:'var(--green)',  table:'sales',           amountField:'sale_price',     dateField:'sale_date', labelField:'customer' },
   expenses:    { title:'المصاريف',         icon:'💸', color:'var(--red)',    table:'expenses',        amountField:'amount',         dateField:'exp_date',  labelField:'description' },
@@ -692,3 +685,21 @@ function setDashPeriod(days) {
     dashState.from = `${yr-1}-01-01`;
     dashState.to   = `${yr-1}-12-31`;
   } else {
+    if (customDates) customDates.style.display = 'none';
+    dashState.days = days;
+    const fromDate = new Date(Date.now() - days * 864e5);
+    dashState.from = fromDate.toISOString().split('T')[0];
+    dashState.to   = now.toISOString().split('T')[0];
+  }
+
+  // Update period label
+  const labels = {7:'آخر 7 أيام', 30:'آخر 30 يوم', 60:'آخر 60 يوم', 90:'آخر 90 يوم', year:`سنة ${yr}`, lastyear:`سنة ${yr-1}`};
+  if (el('dash-period-label')) {
+    el('dash-period-label').textContent = days === 'custom'
+      ? `${dashState.from} — ${dashState.to}`
+      : labels[days] || '';
+  }
+
+  loadDashboard();
+}
+

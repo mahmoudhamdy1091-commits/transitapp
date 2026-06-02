@@ -2,11 +2,6 @@
 // ║  contacts.js — Contacts · Autocomplete · Statements     ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-  <div class="footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('en-GB')} · Transit Cars System</div>
-</div></body></html>`;
-  openPrintOverlay(html, title);
-}
-
 function exportBtns(csvFn, printFn) {
   return `<div style="display:flex;gap:6px;margin-bottom:10px;justify-content:flex-end">
     <button class="btn btn-sm btn-secondary" onclick="${csvFn}" style="color:var(--green)">⬇️ Excel</button>
@@ -502,3 +497,12 @@ function showAcList(input, items, type) {
   });
 
   wrap.appendChild(list);
+
+function removeAcList(input) {
+  const existing = document.getElementById('ac-list-' + input.id);
+  if (existing) existing.remove();
+}
+
+}
+}
+}
