@@ -271,7 +271,32 @@ function filterJournalByType(filterVal, key) {
       <table class="data-table" style="font-size:12px">
         <thead><tr>${colHeaders}</tr></thead>
         <tbody>
-          ${entries.map(e => {
+          ${(isSale ? (() => {
+            // تجميع بـ inv_no عشان كل فاتورة تظهر مرة واحدة
+            const invMap = {};
+            entries.forEach(e => {
+              const m = (e.title||'').match(/فاتورة\s+(\S+)/);
+              const invNo = m ? m[1] : e.entryNo;
+              if (!invMap[invNo]) {
+                const cm = (e.title||'').match(/—\s*(.+?)\s*—\s*ملف/);
+                invMap[invNo] = { invNo, date:e.date, fileNo:e.fileNo||'—', cust:cm?cm[1]:'—', amount:0 };
+              }
+              // نحسب إيرادات المبيعات فقط (account 4100) — نتجنب COGS
+              const lines = e.raw?.lines || [];
+              const revLine = lines.find(l => (l.account_code||'').startsWith('4'));
+              invMap[invNo].amount += revLine ? (+revLine.cr_amount||0) : (+e.amount||0);
+            });
+            return Object.values(invMap).map(inv => {
+              const invClick = inv.invNo !== '—' ? `onclick="openInvoiceModal('${inv.invNo}')" style="cursor:pointer"` : '';
+              return `<tr ${invClick}>
+                <td class="mono">\${fmtDate(inv.date)}</td>
+                <td class="mono text-green" style="font-weight:700">\${inv.invNo}</td>
+                <td class="mono text-amber">\${inv.fileNo}</td>
+                <td>\${inv.cust}</td>
+                <td class="mono" style="font-weight:700;color:var(--green)">\${fmt(inv.amount)}</td>
+              </tr>`;
+            }).join('');
+          })() : entries.map(e => {
             const r = e.raw || {};
             const fileNo = e.fileNo||r.file_no||'—';
             const clickAttr = fileNo!=='—' ? `onclick="openViewer('${fileNo}')" style="cursor:pointer"` : '';
@@ -307,7 +332,7 @@ function filterJournalByType(filterVal, key) {
               <td>${method}</td>
               <td class="mono" style="font-weight:700;color:${cfg.color}">${fmt(e.amount)}</td>
             </tr>`;
-          }).join('')}
+          })).join('')}
         </tbody>
         <tfoot>
           <tr style="background:var(--card2);font-weight:700">
