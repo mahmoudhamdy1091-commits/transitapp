@@ -24,6 +24,22 @@ async function voidTransaction(type, record) {
 
   if (!amount || amount <= 0) throw new Error('المبلغ صفر — لا يوجد قيد لعكسه');
 
+  // ── إذا كان النظام على draft mode → أرسل للمراجعة بدل تنفيذ فوري ──
+  if (typeof entryStatus === 'function' && entryStatus() === 'draft') {
+    const tableMap = { payment:'payments', expense:'expenses', collection:'collections', payout:'partner_payouts' };
+    const tbl = tableMap[type];
+    if (tbl) {
+      await apiPatch(tbl, { id:`eq.${record.id}` }, {
+        post_status: 'pending_void',
+        notes: `${record.notes||''} | طلب إلغاء بتاريخ ${today_}`.trim(),
+      });
+      await logAudit('VOID_REQUEST', tbl, record.file_no, record, null, `طلب إلغاء ${type} — ${record.ref_no||record.id}`);
+      if (typeof loadApprovalQueue === 'function') await loadApprovalQueue();
+      toast('🔄 تم إرسال طلب الإلغاء للمراجعة', 'ok');
+      return;
+    }
+  }
+
   // ── بناء أسطر القيد العكسي حسب نوع العملية ──
   let reversalLines = [];
   let reversalDesc  = '';

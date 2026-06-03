@@ -499,10 +499,11 @@ function _ctxDraft(btn) {
 
 // المبيعات (dashboard)
 function _ctxSale(btn) {
-  const invNo = btn.dataset.inv, fn = btn.dataset.fn;
+  const invNo = btn.dataset.inv, fn = btn.dataset.fn, saleId = btn.dataset.id;
   showCtxMenu(btn, [
+    {icon:'✏️', label:'تعديل الفاتورة', action:()=>openEditSaleApproval(saleId, fn, invNo)},
     {icon:'🖨️', label:'طباعة الفاتورة', action:()=>reprintInvoice(invNo, fn)},
     'divider',
-    {icon:'🗑', label:'حذف الفاتورة', danger:true, action:()=>confirmAction('حذف فاتورة بيع',`سيتم حذف الفاتورة ${invNo} نهائياً — هل أنت متأكد؟`,()=>deleteSaleInvoice(invNo, fn))}
+    {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>voidSaleInvoice(invNo, fn)}
   ]);
 }

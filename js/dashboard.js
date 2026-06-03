@@ -1046,7 +1046,7 @@ async function loadSalesTab(fn, sys) {
         <td style="text-align:center">${inv.items.length}</td>
         <td class="mono text-green" style="font-weight:700">${fmt(invTotal)}</td>
         <td style="text-align:center">
-          <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxSale(this)" data-inv="${inv.inv_no}" data-fn="${fn}" title="إجراءات">⋮</button>
+          <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxSale(this)" data-inv="${inv.inv_no}" data-fn="${fn}" data-id="${inv.items[0]?.id||''}" title="إجراءات">⋮</button>
         </td>
       </tr>`;
     }).join('');
@@ -1102,6 +1102,43 @@ async function reprintInvoice(invNo, fn) {
       items, total: items.reduce((t,i)=>t+i.price,0)
     });
   } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
+// إلغاء فاتورة بيع بقيد عكسي
+async function voidSaleInvoice(invNo, fileNo) {
+  confirmAction(
+    `إلغاء فاتورة ${invNo}`,
+    `سيتم إلغاء الفاتورة بقيد عكسي محاسبي — هل أنت متأكد؟`,
+    async () => {
+      try {
+        const sys = state.system;
+        // جيب كل سطور الفاتورة
+        const saleItems = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
+        if (!saleItems?.length) { toast('لم يُعثر على بيانات الفاتورة', 'err'); return; }
+        const first = saleItems[0];
+        const totalSale = saleItems.reduce((s,r)=>s+(+r.sale_price||0),0);
+        // قيد عكسي للمبيعات
+        if (totalSale > 0) {
+          await postDoubleEntry({ sys, date:today(), fileNo,
+            refTable:'reversal', desc:`عكس بيع فاتورة ${invNo} — ${first.customer||''}`,
+            lines:[
+              {acc:'4100', name:'إيرادات المبيعات', dr:totalSale, cr:0, contact:null},
+              {acc:'1200', name:'ذمم العملاء',       dr:0, cr:totalSale, contact:first.customer||null},
+            ]
+          });
+        }
+        // void السجلات
+        await apiPatch('sales', { system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` }, { post_status:'voided' });
+        try { await apiPatch('collections', { system_type:`eq.${sys}`, inv_no:`eq.${invNo}` }, { post_status:'voided' }); } catch(e) {}
+        await logAudit('VOID','sales', fileNo, {inv_no:invNo}, {voided_at:today()}, `إلغاء فاتورة بقيد عكسي`);
+        invalidateCache();
+        toast(`✅ تم إلغاء فاتورة ${invNo} بقيد عكسي`, 'ok');
+        await loadSalesTab(fileNo, sys);
+        if (state.currentTab === 5) loadCollectionsTab(fileNo, sys);
+        if (state.currentTab === 0) loadSummaryTab(fileNo, sys);
+      } catch(e) { toast('خطأ: ' + e.message, 'err'); console.error(e); }
+    }
+  );
 }
 
 async function deleteSaleInvoice(invNo, fileNo) {

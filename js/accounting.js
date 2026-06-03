@@ -636,9 +636,16 @@ const _origSubmitContact = typeof submitContact !== 'undefined' ? submitContact 
 // ════════════════════════════════════════
 let _editVehicleId = null;
 
-function openEditVehicleModal(vehicleId) {
-  const v = state.currentVehicles?.find(v=>v.id==vehicleId);
-  if (!v) return;
+async function openEditVehicleModal(vehicleId) {
+  let v = state.currentVehicles?.find(v=>String(v.id)===String(vehicleId));
+  if (!v) {
+    // fallback: جيب من Supabase مباشرة
+    try {
+      const rows = await apiGetAll('vehicles', { select:'*', id:`eq.${vehicleId}` });
+      v = rows?.[0];
+    } catch(e) {}
+  }
+  if (!v) { toast('لم يُعثر على بيانات السيارة', 'err'); return; }
   _editVehicleId = vehicleId;
   el('ev-type').value   = v.vehicle_type   || '';
   el('ev-model').value  = v.model           || '';

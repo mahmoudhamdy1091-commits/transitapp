@@ -867,12 +867,13 @@ async function regenInvNo() {
 // approvalState moved to top
 
 const APPROVAL_CONFIG = {
-  purchase: { icon:'📋', label:'سند شراء', color:'var(--accent)', table:'purchase_orders', amountField:'total_purchase', dateField:'po_date', descFields:['file_no','supplier'] },
-  sale:       { icon:'🧾', label:'بيع',         color:'var(--green)',  table:'sales',           amountField:'sale_price',   dateField:'sale_date',  descFields:['inv_no','customer','vin'] },
-  expense:    { icon:'💸', label:'مصروف',       color:'var(--red)',    table:'expenses',         amountField:'amount',       dateField:'exp_date',   descFields:['description','exp_type','file_no'] },
-  collection: { icon:'💰', label:'تحصيل',       color:'var(--blue)',   table:'collections',      amountField:'amount',       dateField:'paid_date',  descFields:['inv_no','customer','file_no'] },
-  payment:    { icon:'💳', label:'دفعة مورد',   color:'var(--cyan)',   table:'payments',         amountField:'amount',       dateField:'pay_date',   descFields:['payer','file_no','pay_method'] },
-  payout:     { icon:'👥', label:'صرف شريك',   color:'var(--purple)', table:'partner_payouts',  amountField:'amount',       dateField:'pay_date',   descFields:['partner','payout_type','file_no'] },
+  purchase:  { icon:'📋', label:'سند شراء',    color:'var(--accent)', table:'purchase_orders', amountField:'total_purchase', dateField:'po_date',    descFields:['file_no','supplier'] },
+  sale:      { icon:'🧾', label:'بيع',          color:'var(--green)',  table:'sales',           amountField:'sale_price',     dateField:'sale_date',  descFields:['inv_no','customer','vin'] },
+  expense:   { icon:'💸', label:'مصروف',        color:'var(--red)',    table:'expenses',         amountField:'amount',         dateField:'exp_date',   descFields:['description','exp_type','file_no'] },
+  collection:{ icon:'💰', label:'تحصيل',        color:'var(--blue)',   table:'collections',      amountField:'amount',         dateField:'paid_date',  descFields:['inv_no','customer','file_no'] },
+  payment:   { icon:'💳', label:'دفعة مورد',    color:'var(--cyan)',   table:'payments',         amountField:'amount',         dateField:'pay_date',   descFields:['payer','file_no','pay_method'] },
+  payout:    { icon:'👥', label:'صرف شريك',    color:'var(--purple)', table:'partner_payouts',  amountField:'amount',         dateField:'pay_date',   descFields:['partner','payout_type','file_no'] },
+  reversal:  { icon:'🔄', label:'طلب إلغاء',   color:'var(--orange,#f97316)', table:null, amountField:'amount', dateField:'created_at', descFields:['ref_type','ref_desc','file_no'] },
 };
 
 async function showApprovalQueue() {
@@ -893,13 +894,18 @@ async function loadApprovalQueue() {
     const sys = state.system;
 
     // جيب كل البنود المعلقة من كل الجداول بالتوازي
-    const [purchases, sales, expenses, collections, payments, payouts] = await Promise.all([
-      apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
-      apiGetAll('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
-      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
-      apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
-      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
-      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`, order:'created_at.desc' }),
+    const [purchases, sales, expenses, collections, payments, payouts,
+           voidPay, voidExp, voidCol, voidPayout] = await Promise.all([
+      apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
+      apiGetAll('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
+      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
+      apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
+      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_void`, order:'created_at.desc' }),
+      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_void`, order:'created_at.desc' }),
+      apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_void`, order:'created_at.desc' }),
+      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_void`, order:'created_at.desc' }),
     ]);
 
     // دمج كل البنود مع نوعها
@@ -912,6 +918,20 @@ async function loadApprovalQueue() {
     } catch(e) { console.warn('approvalQueue auditUsers:', e.message); }
     approvalState.auditUsers = _auditUsers;
 
+    // بناء reversal items من pending_void records
+    const buildRevItem = (r, srcType, descFn) => ({
+      ...r, _type:'reversal', _srcType:srcType,
+      _amount:+r.amount||0, _date:r.created_at,
+      _desc:`إلغاء ${srcType==='payment'?'دفعة':srcType==='expense'?'مصروف':srcType==='collection'?'تحصيل':'صرف شريك'} — ${descFn(r)}`,
+      _file:r.file_no,
+    });
+    const reversalItems = [
+      ...(voidPay   ||[]).map(r => buildRevItem(r,'payment',   r=>`${r.payer||'—'} · ${r.file_no||'—'}`)),
+      ...(voidExp   ||[]).map(r => buildRevItem(r,'expense',   r=>`${r.description||'—'} · ${r.file_no||'—'}`)),
+      ...(voidCol   ||[]).map(r => buildRevItem(r,'collection',r=>`${r.inv_no||'—'} · ${r.customer||'—'}`)),
+      ...(voidPayout||[]).map(r => buildRevItem(r,'payout',    r=>`${r.partner||'—'} · ${r.file_no||'—'}`)),
+    ];
+
     approvalState.all = [
       ...(purchases||[]).map(r    => ({...r, _type:'purchase',   _amount:+r.total_purchase||0, _date:r.po_date,    _desc:`${r.file_no||'—'} · ${r.supplier||'—'} · ${r.vehicle_count||0} سيارة`, _file:r.file_no })),
       ...(sales||[]).map(r        => ({...r, _type:'sale',       _amount:+r.sale_price||0,     _date:r.sale_date,  _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.vin||'—'}`,               _file:r.file_no })),
@@ -919,6 +939,7 @@ async function loadApprovalQueue() {
       ...(collections||[]).map(r  => ({...r, _type:'collection', _amount:+r.amount||0,         _date:r.paid_date||r.due_date,    _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.file_no||'—'}`,      _file:r.file_no })),
       ...(payments||[]).map(r     => ({...r, _type:'payment',    _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.payer||'—'} · ${r.file_no||'—'} · ${r.pay_method||'—'}`,          _file:r.file_no })),
       ...(payouts||[]).map(r      => ({...r, _type:'payout',     _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.partner||'—'} · ${r.payout_type||'—'} · ${r.file_no||'—'}`,       _file:r.file_no })),
+      ...reversalItems,
     ].sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
 
     // تحديث الـ badge في الـ sidebar
@@ -934,6 +955,14 @@ async function loadApprovalQueue() {
       const cnt = el(`af-count-${type}`);
       if (cnt) cnt.textContent = approvalState.all.filter(r=>r._type===type).length || '';
     });
+    // reversal badge
+    const revBtn = el('af-reversal');
+    if (revBtn) {
+      const revCount = reversalItems.length;
+      const revCnt = el('af-count-reversal');
+      if (revCnt) revCnt.textContent = revCount || '';
+      revBtn.style.display = revCount ? '' : '';
+    }
     const cntAll = el('af-count-all');
     if (cntAll) cntAll.textContent = total || '';
 
@@ -970,11 +999,20 @@ function renderApprovalList() {
 
   wrap.innerHTML = items.map(r => {
     const cfg = APPROVAL_CONFIG[r._type];
+    const isReversal = r._type === 'reversal';
+    const color = isReversal ? '#f97316' : cfg.color;
+    const approveLabel = isReversal ? '✓ تنفيذ الإلغاء' : '✓ موافقة';
+    const approveMsg   = isReversal
+      ? 'سيتم تنفيذ القيد العكسي وإلغاء العملية نهائياً — هل أنت متأكد؟'
+      : 'هل تريد الموافقة على هذه العملية وترحيلها؟';
+    const rejectLabel  = isReversal ? '↩ استرداد' : null;
     return `
-    <div class="approval-row" onclick="openApprovalDetail('${r._type}','${r.id}')">
-      <div class="approval-row-icon" style="background:${cfg.color}22;color:${cfg.color}">${cfg.icon}</div>
+    <div class="approval-row" onclick="openApprovalDetail('${r._type}','${r.id}')" style="${isReversal?'border-right:3px solid #f97316':''}">
+      <div class="approval-row-icon" style="background:${color}22;color:${color}">${cfg.icon}</div>
       <div class="approval-row-body">
-        <div class="approval-row-title">${cfg.label} — ${r._desc}</div>
+        <div class="approval-row-title" style="${isReversal?'color:#f97316':''}">
+          ${isReversal ? '🔄 طلب إلغاء — ' : ''}${r._desc}
+        </div>
         <div class="approval-row-meta">
           ${fmtDate(r._date)}
           ${r._file ? `· <span style="color:var(--accent);font-family:monospace">${r._file}</span>` : ''}
@@ -982,11 +1020,15 @@ function renderApprovalList() {
           ${approvalState.auditUsers?.[String(r.id)] ? `· <span style="color:var(--blue);font-size:10px;font-weight:600">👤 ${approvalState.auditUsers[String(r.id)]}</span>` : ''}
         </div>
       </div>
-      <div class="approval-row-amount" style="color:${cfg.color}">${fmt(r._amount)}</div>
+      <div class="approval-row-amount" style="color:${color}">${fmt(r._amount)}</div>
       <div class="approval-row-actions" onclick="event.stopPropagation()" style="display:flex;gap:6px;align-items:center">
-        <button class="btn btn-sm" onclick="confirmAction('موافقة على العملية','هل تريد الموافقة على هذه العملية وترحيلها؟',()=>approveItem('${r._type}','${r.id}'),false)"
-          style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);padding:4px 10px;font-weight:700" title="موافقة">✓ موافقة</button>
-        <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxApproval(this)" data-type="${r._type}" data-id="${r.id}" title="المزيد">⋮</button>
+        <button class="btn btn-sm" onclick="confirmAction('${isReversal?'تنفيذ الإلغاء':'موافقة على العملية'}','${approveMsg}',()=>approveItem('${r._type}','${r.id}'),${isReversal})"
+          style="background:${isReversal?'rgba(249,115,22,.15)':'var(--green-dim)'};border:1px solid ${isReversal?'#f97316':'var(--green)'};color:${isReversal?'#f97316':'var(--green)'};padding:4px 10px;font-weight:700">${approveLabel}</button>
+        ${isReversal
+          ? `<button class="btn btn-sm" onclick="event.stopPropagation();confirmAction('استرداد العملية','سيتم إلغاء طلب الإلغاء وإعادة العملية لحالتها السابقة',()=>rejectItem('${r._type}','${r.id}'),false)"
+              style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);padding:4px 10px;font-weight:700">↩ استرداد</button>`
+          : `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxApproval(this)" data-type="${r._type}" data-id="${r.id}" title="المزيد">⋮</button>`
+        }
       </div>
     </div>`;
   }).join('');
@@ -1233,6 +1275,18 @@ async function approveItem(type, id) {
   try {
     const cfg = APPROVAL_CONFIG[type];
     if (!cfg) { toast('نوع غير معروف','err'); return; }
+
+    // ── معالجة طلبات الإلغاء ──
+    if (type === 'reversal') {
+      const item = approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
+      if (!item) { toast('لم يُعثر على طلب الإلغاء','err'); return; }
+      await voidTransaction(item._srcType, item);
+      invalidateCache();
+      toast('✅ تم تنفيذ الإلغاء بقيد عكسي','ok');
+      await loadApprovalQueue();
+      return;
+    }
+
     await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'posted' });
     // لو شراء — نولّد قيد محاسبي
     if (type === 'purchase') {
@@ -1320,6 +1374,23 @@ async function approveItem(type, id) {
 async function rejectItem(type, id) {
   const cfg = APPROVAL_CONFIG[type];
   if (!cfg) return;
+
+  // ── استرداد طلب الإلغاء (reversal) — يرجع للحالة posted ──
+  if (type === 'reversal') {
+    const item = approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
+    if (!item) return;
+    const tableMap = { payment:'payments', expense:'expenses', collection:'collections', payout:'partner_payouts' };
+    const tbl = tableMap[item._srcType];
+    if (tbl) {
+      try {
+        await apiPatch(tbl, { id:`eq.${item.id}` }, { post_status:'posted', notes:`${item.notes||''} | استُرد طلب الإلغاء بتاريخ ${today()}`.trim() });
+        invalidateCache();
+        toast('↩ تم استرداد العملية — رجعت لحالة مرحّلة','ok');
+        await loadApprovalQueue();
+      } catch(e) { toast('خطأ: '+e.message,'err'); }
+    }
+    return;
+  }
 
   // تأكيد الرفض — مع توضيح أن السجل هيتعلّم "مرفوض" وليس محذوفاً نهائياً
   showConfirm(
