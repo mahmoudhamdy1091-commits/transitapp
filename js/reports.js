@@ -119,8 +119,10 @@ async function runReport() {
           ts += cr;
           if (fn) { ensure(fn); byFile[fn].sales += cr; }
         }
-        // 5100 مدين = تكلفة مخزون مباع (COGS — بعد إصلاح A01)
-        if (acc === '5100' && dr > 0) {
+        // 5xxx مدين = تكلفة مخزون مباع (5100) + مصاريف شحن/نقل (5200)
+        // يستخدم startsWith('5') بما يتوافق مع getAccountType() في accounting.js
+        // ref !== 'operating_expenses' حماية من أي قيد 5xxx غير صفقة
+        if (acc.startsWith('5') && dr > 0 && ref !== 'operating_expenses') {
           tCOGS += dr;
           if (fn) { ensure(fn); byFile[fn].cogs += dr; }
         }

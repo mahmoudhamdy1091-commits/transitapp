@@ -1385,38 +1385,66 @@ async function loadPartnerAccountLedger() {
   if (!partner) return;
 
   try {
-    // جيب كل الصفقات اللي فيها الشريك
+    // ── المصدر الموحد: journal_entries + partners_master للنسبة فقط ──
+    // أولاً: جلب بيانات الشريك والصفقات
     const [allDeals, allPayouts, accountEntries] = await Promise.all([
-      apiGetAll('partners_master',   { select:'file_no,share_percent', system_type:`eq.${sys}`, partner:`eq.${partner}` }),
-      apiGetAll('partner_payouts',   { select:'*', system_type:`eq.${sys}`, partner:`eq.${partner}`, order:'pay_date.desc' }),
-      apiGet('partner_accounts',  { select:'*', system_type:`eq.${sys}`, partner:`eq.${partner}`, order:'entry_date.desc' }),
+      apiGetAll('partners_master', { select:'file_no,share_percent', system_type:`eq.${sys}`, partner:`eq.${partner}` }),
+      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, partner:`eq.${partner}`, order:'pay_date.desc' }),
+      apiGet('partner_accounts',   { select:'*', system_type:`eq.${sys}`, partner:`eq.${partner}`, order:'entry_date.desc' }),
     ]);
 
-    // احسب الأرباح من كل الصفقات
+    // ثانياً: جلب القيود بعد معرفة الملفات (بدون استدعاء partners_master مرتين)
+    const _fileNosForJE = (allDeals||[]).map(p=>p.file_no).filter(Boolean);
+    const jeRows = _fileNosForJE.length
+      ? (await Promise.all(_fileNosForJE.map(fn =>
+          apiGet('journal_entries', {
+            select: 'account_code,dr_amount,cr_amount,file_no,entry_date,ref_table',
+            system_type: `eq.${sys}`,
+            file_no: `eq.${fn}`,
+            post_status: 'eq.posted',
+          })
+        ))).flat()
+      : [];
+
+    // احسب الأرباح لكل صفقة من journal_entries (SSOT)
     let totalProfits = 0;
     const dealEntries = [];
-    for (const pm of (allDeals||[])) {
-      try {
-        const [po, sales, expenses] = await Promise.all([
-          apiGetAll('purchase_orders', { select:'total_purchase', system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
-          apiGetAll('sales', { select:'sale_price',     system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
-          apiGetAll('expenses', { select:'amount',         system_type:`eq.${sys}`, file_no:`eq.${pm.file_no}` }),
-        ]);
-        const share      = (+pm.share_percent||0)/100;
-        const totalPurch = +po?.[0]?.total_purchase||0;
-        const totalSale  = (sales||[]).filter(isPosted).reduce((s,r)=>s+(+r.sale_price||0),0);
-        const totalExp   = (expenses||[]).filter(isPosted).reduce((s,r)=>s+(+r.amount||0),0);
-        const profit     = (totalSale - totalPurch - totalExp) * share;
-        if (Math.abs(profit) > 0.001) {
-          totalProfits += profit;
-          dealEntries.push({
-            type:'profit_credit', file_no:pm.file_no,
-            amount:profit, entry_date:'—',
-            description:`ربح صفقة ${pm.file_no} (${pm.share_percent}%)`,
-            _sign: +1
-          });
-        }
-      } catch(e) { console.warn('postProfitCredit:', e.message); }
+    const shareMap = {};
+    (allDeals||[]).forEach(pm => { shareMap[pm.file_no] = (+pm.share_percent||0)/100; });
+
+    // تجميع P&L بالملف من القيود
+    const byFile = {};
+    (jeRows||[]).forEach(r => {
+      const fn  = r.file_no;
+      const acc = r.account_code || '';
+      const dr  = +r.dr_amount  || 0;
+      const cr  = +r.cr_amount  || 0;
+      const ref = r.ref_table   || '';
+      if (!fn) return;
+      if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, expenses:0, purchase:0 };
+      if (acc.startsWith('4') && cr > 0)                                              byFile[fn].sales    += cr;
+      // 5xxx = COGS (5100) + شحن/نقل (5200) — يتوافق مع getAccountType() في accounting.js
+      if (acc.startsWith('5') && dr > 0 && ref !== 'operating_expenses')             byFile[fn].cogs     += dr;
+      if (acc.startsWith('6') && dr > 0 && ref==='expenses')                         byFile[fn].expenses += dr;
+      if (acc === '1300'  && dr > 0 && ref==='purchase_orders')                      byFile[fn].purchase += dr;
+    });
+
+    for (const fn of Object.keys(shareMap)) {
+      const share     = shareMap[fn];
+      const d         = byFile[fn] || { sales:0, cogs:0, expenses:0, purchase:0 };
+      // الصيغة الموحدة: إيراد - COGS(5100) - مصاريف_الصفقة(6xxx,ref=expenses)
+      // لا نطرح purchase(1300) لأن COGS يمثل تكلفة المباعة فعلاً — طرح كليهما = double counting
+      const dealProfit = (d.sales - d.cogs - d.expenses) * share;
+      if (Math.abs(dealProfit) > 0.001) {
+        totalProfits += dealProfit;
+        const pct = Math.round(share * 100);
+        dealEntries.push({
+          type:'profit_credit', file_no: fn,
+          amount: dealProfit, entry_date: '—',
+          description: `ربح صفقة ${fn} (${pct}%)`,
+          _sign: +1
+        });
+      }
     }
 
     // صرف على صفقات
@@ -1632,34 +1660,60 @@ async function loadPartnerAccountBalance() {
   const partner = el('pout-partner')?.value;
   if (!partner) return;
   try {
-    const [allDeals, allPayouts, accountEntries] = await Promise.all([
-      apiGetAll('partners_master',  { select:'file_no,share_percent', system_type:`eq.${state.system}`, partner:`eq.${partner}` }),
-      apiGetAll('partner_payouts',  { select:'amount', system_type:`eq.${state.system}`, partner:`eq.${partner}` }),
-      apiGet('partner_accounts', { select:'amount,entry_type', system_type:`eq.${state.system}`, partner:`eq.${partner}` }),
+    const sys = state.system;
+    // ── المصدر الموحد: journal_entries + partners_master للنسبة ──
+    const [dealList, accountEntries] = await Promise.all([
+      apiGetAll('partners_master', { select:'file_no,share_percent', system_type:`eq.${sys}`, partner:`eq.${partner}` }),
+      apiGet('partner_accounts', { select:'amount,entry_type', system_type:`eq.${sys}`, partner:`eq.${partner}` }),
     ]);
 
-    let totalProfits = 0;
-    for (const pm of (allDeals||[])) {
-      try {
-        const [po, sales, exp] = await Promise.all([
-          apiGetAll('purchase_orders', {select:'total_purchase',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
-          apiGetAll('sales', {select:'sale_price',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
-          apiGetAll('expenses', {select:'amount',system_type:`eq.${state.system}`,file_no:`eq.${pm.file_no}`}),
-        ]);
-        const share = (+pm.share_percent||0)/100;
-        const profit = ((sales||[]).reduce((s,r)=>s+(+r.sale_price||0),0) - (+po?.[0]?.total_purchase||0) - (exp||[]).reduce((s,e)=>s+(+e.amount||0),0)) * share;
-        totalProfits += profit;
-      } catch(e) { console.warn('partnerProfitCalc:', e.message); }
+    const fileNos = (dealList||[]).map(p => p.file_no).filter(Boolean);
+    const shareMap = {};
+    (dealList||[]).forEach(p => { shareMap[p.file_no] = (+p.share_percent||0)/100; });
+
+    // جلب قيود جميع الصفقات دفعة واحدة
+    let jeRows = [];
+    if (fileNos.length) {
+      const batches = await Promise.all(fileNos.map(fn =>
+        apiGet('journal_entries', {
+          select: 'account_code,dr_amount,cr_amount,file_no,ref_table',
+          system_type: `eq.${sys}`, file_no: `eq.${fn}`, post_status: 'eq.posted',
+        })
+      ));
+      jeRows = batches.flat();
     }
 
-    const totalPayouts = (allPayouts||[]).reduce((s,p)=>s+(+p.amount||0),0);
+    // تجميع P&L بالملف من القيود
+    const byFile = {};
+    (jeRows||[]).forEach(r => {
+      const fn  = r.file_no; const acc = r.account_code||'';
+      const dr  = +r.dr_amount||0; const cr = +r.cr_amount||0; const ref = r.ref_table||'';
+      if (!fn) return;
+      if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, expenses:0, purchase:0 };
+      if (acc.startsWith('4') && cr > 0)                                             byFile[fn].sales    += cr;
+      // 5xxx = COGS (5100) + شحن/نقل (5200) — يتوافق مع getAccountType()
+      if (acc.startsWith('5') && dr > 0 && ref !== 'operating_expenses')            byFile[fn].cogs     += dr;
+      if (acc.startsWith('6') && dr > 0 && ref==='expenses')                        byFile[fn].expenses += dr;
+      if (acc === '1300'  && dr > 0 && ref==='purchase_orders')                     byFile[fn].purchase += dr;
+    });
+
+    let totalProfits = 0;
+    for (const fn of fileNos) {
+      const share = shareMap[fn] || 0;
+      const d = byFile[fn] || { sales:0, cogs:0, expenses:0, purchase:0 };
+      // الصيغة الموحدة: إيراد - COGS(5100) - مصاريف_الصفقة(6xxx,ref=expenses)
+      totalProfits += (d.sales - d.cogs - d.expenses) * share;
+    }
+
+    const allPayouts = await apiGetAll('partner_payouts', { select:'amount', system_type:`eq.${sys}`, partner:`eq.${partner}` });
+    const totalPayouts = (allPayouts||[]).filter(isPosted).reduce((s,p)=>s+(+p.amount||0),0);
     const generalWithdrawn = (accountEntries||[]).filter(e=>e.entry_type==='general_withdraw'||e.entry_type==='advance').reduce((s,e)=>s+(+e.amount||0),0);
     const balance = totalProfits - totalPayouts - generalWithdrawn;
 
     if(el('pacc-profits'))   el('pacc-profits').textContent   = fmt(totalProfits);
     if(el('pacc-withdrawn')) el('pacc-withdrawn').textContent = fmt(totalPayouts + generalWithdrawn);
     if(el('pacc-balance'))   { el('pacc-balance').textContent = fmt(balance); el('pacc-balance').style.color = balance>=0?'var(--purple)':'var(--red)'; }
-  } catch(e) { console.error('onPayoutPartnerChange balance:', e.message); toast('خطأ في حساب رصيد الشريك','err'); }
+  } catch(e) { console.error('loadPartnerAccountBalance:', e.message); toast('خطأ في حساب رصيد الشريك','err'); }
 }
 
 // ════════════════════════════════════════════════════════

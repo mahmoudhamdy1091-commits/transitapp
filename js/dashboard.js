@@ -27,19 +27,76 @@ async function loadDashboard() {
     // ── Enrich deals — من الـ cache ──
     // ensureCache() بنت allDealsEnriched بالفعل
 
-    // ── حسابات الفترة ──
-    // ✅ totSales: سيُحسب من periodCollections بعد تعبئة _ddState.data
-    // نحسب مؤقتاً من sales ونصحح بعد الـ periodCollections
-    const totSalesRaw = periodSales.reduce((s,r)=>s+(+r.sale_price||0),0);
-    const totExp      = periodExp.reduce((s,e)=>s+(+e.amount||0),0);
+    // ── حسابات الفترة — المصدر الموحد: journal_entries ──
+    // يشمل: النظام الحالي + صفوف system_type=null (بيانات قديمة)
+    const toEOD = to + 'T23:59:59';
+    const _buildJeKpiUrl = (sysParam) =>
+      `${SB_URL}/rest/v1/journal_entries` +
+      `?${sysParam}` +
+      `&entry_date=gte.${encodeURIComponent(from)}` +
+      `&entry_date=lte.${encodeURIComponent(toEOD)}` +
+      `&post_status=eq.posted` +
+      `&select=account_code,dr_amount,cr_amount,ref_table,file_no` +
+      `&limit=49999`;
+
+    // دالة مساعدة: fetch مع معالجة 401
+    const _fetchJeKpi = async (url) => {
+      const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
+      let res = await fetch(url, { headers: h });
+      if (res.status === 401) {
+        const ok = await refreshAccessToken();
+        if (!ok) throw new Error('انتهت الجلسة');
+        res = await fetch(url, { headers: headers({ 'Range': '0-49999', 'Range-Unit': 'items' }) });
+      }
+      return res.ok ? res.json() : [];
+    };
+
+    // جلب صفوف النظام + صفوف system_type=null معاً
+    const [_jeKpi1, _jeKpi2] = await Promise.all([
+      _fetchJeKpi(_buildJeKpiUrl(`system_type=eq.${encodeURIComponent(sys)}`)),
+      _fetchJeKpi(_buildJeKpiUrl('system_type=is.null')),
+    ]);
+    const _seenJeKpi = new Set();
+    const jeKpiRows = [];
+    [...(_jeKpi1||[]), ...(_jeKpi2||[])].forEach(r => {
+      const k = r.id ?? JSON.stringify(r);
+      if (!_seenJeKpi.has(k)) { _seenJeKpi.add(k); jeKpiRows.push(r); }
+    });
+
+    // تجميع الأرقام من القيود المحاسبية
+    // totExp  = مصاريف الصفقات فقط (ref=expenses) — الـ opex يُعرض منفصلاً
+    let totSales = 0, totDealExp = 0, totOpex = 0, totPurchase = 0;
+    (jeKpiRows || []).forEach(r => {
+      const acc = r.account_code || '';
+      const dr  = +r.dr_amount  || 0;
+      const cr  = +r.cr_amount  || 0;
+      const ref = r.ref_table   || '';
+      // إيرادات المبيعات — حساب 4xxx دائن
+      if (acc.startsWith('4') && cr > 0) totSales += cr;
+      // مصاريف الصفقات — 6xxx مدين + ref=expenses فقط
+      if (acc.startsWith('6') && dr > 0 && ref === 'expenses') totDealExp += dr;
+      // المصاريف التشغيلية — 6xxx مدين + ref=operating_expenses
+      if (acc.startsWith('6') && dr > 0 && ref === 'operating_expenses') totOpex += dr;
+      // تكلفة الشراء — حساب 1300 مدين من أوامر شراء
+      if (acc === '1300' && dr > 0 && ref === 'purchase_orders') totPurchase += dr;
+    });
+    // totExp = مجموع مصاريف الصفقات + التشغيلية (للـ KPI الإجمالي)
+    const totExp = totDealExp + totOpex;
+
+    // totSalesRaw للـ drill-down فقط (قائمة الفواتير)
+    const totSalesRaw = (state.allSales||[]).filter(s => isPosted(s) && (s.sale_date||'') >= from && (s.sale_date||'') <= to)
+      .reduce((s,r)=>s+(+r.sale_price||0),0);
+    const periodSalesForDD = (state.allSales||[]).filter(s => isPosted(s) && (s.sale_date||'') >= from && (s.sale_date||'') <= to);
+    const periodExpForDD   = (state.allExpenses||[]).filter(e => isPosted(e) && ((e.exp_date||e.expense_date||'') >= from) && ((e.exp_date||e.expense_date||'') <= to));
+
     const allDealsEnriched = state.allDealsEnriched || [];
 
-    // المشتريات: مفلترة بـ po_date في الفترة المختارة
+    // المشتريات للـ drill-down: من الـ cache
     const periodPurchaseDeals = allDealsEnriched.filter(d => {
       const dt = d.po_date || d.created_at?.split('T')[0] || '';
       return dt >= from && dt <= to;
     });
-    const totPurchase = periodPurchaseDeals.reduce((s,d)=>s+(+d._totalCost||+d.total_purchase||0),0);
+
     const soldVinsAll   = new Set((allSales||[]).filter(isPosted).map(s=>s.vin));
     const stockVehicles = (vehicles||[]).filter(v => !soldVinsAll.has(v.vin));
     const overdueList   = (collections||[]).filter(c => isPosted(c) && !c.paid_date && c.due_date && c.due_date <= todayStr);
@@ -49,7 +106,7 @@ async function loadDashboard() {
 
     // ── حفظ البيانات للـ drill-down ──
     _ddState.data = {
-      periodSales, periodExp,
+      periodSales: periodSalesForDD, periodExp: periodExpForDD,
       periodDeals: allDealsEnriched,
       periodPurchaseDeals,
       // periodCollections: يشمل أي تحصيل له due_date أو paid_date أو created_at في الفترة
@@ -68,13 +125,8 @@ async function loadDashboard() {
       stockVehicles, todayStr, from, to,
     };
 
-    // ── KPIs ──
-    // ✅ totSales: من periodCollections (SSOT — يشمل extra charges)
-    // لو لا توجد collections نسقط على sale_price
-    const _pColPosted = (_ddState.data.periodCollections||[]).filter(c=>isPosted(c)&&c.post_status!=='voided');
-    const totSales = _pColPosted.length > 0
-      ? _pColPosted.reduce((s,c)=>s+(+c.amount||0),0)
-      : totSalesRaw;
+    // ── KPIs — من journal_entries (SSOT) ──
+    // نشاط الفترة: إيراد - شراء - (مصاريف صفقات + تشغيلية)
     const profit      = totSales - totPurchase - totExp;
     const margin      = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
     // فلتر التحصيلات: فقط المقبوض فعلاً (paid_date موجود)
@@ -93,7 +145,7 @@ async function loadDashboard() {
     setKpi('kpi-stock',       stockVehicles.length, stockVehicles.length>0?'var(--purple)':'var(--green)');
 
     if(el('kpi-purchase-sub'))  el('kpi-purchase-sub').textContent  = `${periodPurchaseDeals.length} صفقة`;
-    if(el('kpi-sales-sub'))     el('kpi-sales-sub').textContent     = `${periodSales.length} فاتورة`;
+    if(el('kpi-sales-sub'))     el('kpi-sales-sub').textContent     = `${periodSalesForDD.length} فاتورة`;
 
     // ── كارد التحصيلات المقبوضة ──
     if (el('dash-collected-amt')) el('dash-collected-amt').textContent = fmt(totCollections);
@@ -118,8 +170,8 @@ async function loadDashboard() {
         pendEl.style.display = 'none';
       }
     }
-    if(el('kpi-month-exp-sub'))   el('kpi-month-exp-sub').textContent   = `${periodExp.length} بند`;
-    if(el('kpi-fullcost-sub'))    el('kpi-fullcost-sub').textContent    = `شراء ${fmt(totPurchase)} + مصاريف ${fmt(totExp)}`;
+    if(el('kpi-month-exp-sub'))   el('kpi-month-exp-sub').textContent   = `${periodExpForDD.length} بند`;
+    if(el('kpi-fullcost-sub'))    el('kpi-fullcost-sub').textContent    = `شراء ${fmt(totPurchase)} + مصاريف ${fmt(totDealExp)} + تشغيلي ${fmt(totOpex)}`;
     if(el('kpi-profit-sub'))      el('kpi-profit-sub').textContent      = `هامش ${margin}% · نشاط الفترة`;
     if(el('kpi-stock-sub'))       el('kpi-stock-sub').textContent       = stockVehicles.filter(v=>daysSince(v.created_at)>60).length>0 ? `${stockVehicles.filter(v=>daysSince(v.created_at)>60).length} أكثر من 60 يوم` : 'لم تُباع بعد';
 
@@ -183,7 +235,7 @@ async function loadDashboard() {
     // Chart removed — drill-down replaces it
 
     // ── Expenses breakdown ──
-    renderDashExpBreakdown(periodExp);
+    renderDashExpBreakdown(periodExpForDD); // visual breakdown — operational data للعرض فقط
 
     // ── Collections list ──
     renderDashCollections(overdueList, upcomingList, todayStr);

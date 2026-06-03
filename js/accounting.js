@@ -426,6 +426,7 @@ const DEFAULT_ACCOUNTS=[
   {code:'4200',name:'إيرادات أخرى',type:'revenue',parent:'4000'},
   {code:'5000',name:'تكلفة المبيعات',type:'cogs',parent:null},
   {code:'5100',name:'تكلفة المخزون المباع',type:'cogs',parent:'5000'},
+  {code:'5200',name:'مصاريف شحن ونقل',type:'cogs',parent:'5000'},
   {code:'6000',name:'المصروفات التشغيلية',type:'expense',parent:null},
   {code:'6100',name:'مصروف رواتب',type:'expense',parent:'6000'},
   {code:'6200',name:'مصروف إيجارات',type:'expense',parent:'6000'},
