@@ -1525,8 +1525,14 @@
 
         <!-- فلتر المخزن — ديناميكي يُبنى من JS -->
         <div id="wh-filter-bar" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-          <span style="font-size:12px;color:var(--text2);font-weight:600">عرض:</span>
+          <span style="font-size:12px;color:var(--text2);font-weight:600">المخزن:</span>
           <button class="btn btn-sm journal-period-btn active" id="whf-all" onclick="filterWhByLocation('all')">🏪 الجميع</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:12px;color:var(--text2);font-weight:600">الحالة:</span>
+          <button class="btn btn-sm journal-period-btn active" id="whfs-all"     onclick="filterWhByStatus('all')">الكل</button>
+          <button class="btn btn-sm journal-period-btn"        id="whfs-stock"   onclick="filterWhByStatus('stock')">📦 في المخزن</button>
+          <button class="btn btn-sm journal-period-btn"        id="whfs-sold"    onclick="filterWhByStatus('sold')">✅ مباع</button>
         </div>
 
         <!-- جدول المخزن الموحد -->
@@ -19609,13 +19615,25 @@ function showWarehouses() {
 
 // فلتر المخزن بالموقع (الكويت / سوريا / الجميع)
 function filterWhByLocation(loc) {
-  document.querySelectorAll('[id^="whf-"]').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('[id^="whf-"]:not([id^="whfs-"])').forEach(b => b.classList.remove('active'));
   el('whf-' + loc)?.classList.add('active');
   whState.locationFilter = loc === 'all' ? '' : loc;
+  applyWhFilters();
+}
+
+function filterWhByStatus(status) {
+  document.querySelectorAll('[id^="whfs-"]').forEach(b => b.classList.remove('active'));
+  el('whfs-' + status)?.classList.add('active');
+  whState.statusFilter = status === 'all' ? '' : status;
+  applyWhFilters();
+}
+
+function applyWhFilters() {
   const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
-  const filtered = loc === 'all'
-    ? whState.allTransfers
-    : (whState.allTransfers||[]).filter(t => t.location_name === loc);
+  let filtered = whState.allTransfers || [];
+  if (whState.locationFilter) filtered = filtered.filter(t => t.location_name === whState.locationFilter);
+  if (whState.statusFilter === 'stock') filtered = filtered.filter(t => !soldVins.has(t.vin));
+  if (whState.statusFilter === 'sold')  filtered = filtered.filter(t =>  soldVins.has(t.vin));
   renderWhTable(filtered, soldVins);
 }
 
@@ -19706,17 +19724,18 @@ function renderWhTable(transfers, soldVins) {
 }
 
 function filterWhSearch() {
-  const q   = (el('wh-search')?.value||'').toLowerCase().trim();
-  const loc = whState.locationFilter || '';
+  const q = (el('wh-search')?.value||'').toLowerCase().trim();
+  const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
   let filtered = whState.allTransfers || [];
-  if (loc) filtered = filtered.filter(t => t.location_name === loc);
-  if (q)   filtered = filtered.filter(t =>
+  if (whState.locationFilter) filtered = filtered.filter(t => t.location_name === whState.locationFilter);
+  if (whState.statusFilter === 'stock') filtered = filtered.filter(t => !soldVins.has(t.vin));
+  if (whState.statusFilter === 'sold')  filtered = filtered.filter(t =>  soldVins.has(t.vin));
+  if (q) filtered = filtered.filter(t =>
     (t.vin||'').toLowerCase().includes(q) ||
     (t.location_name||'').toLowerCase().includes(q) ||
     (t.file_no||'').toLowerCase().includes(q) ||
     (t.model||'').toLowerCase().includes(q)
   );
-  const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
   renderWhTable(filtered, soldVins);
 }
 
