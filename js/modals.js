@@ -1032,6 +1032,13 @@ async function onSaleFileChange(fn) {
       el('sale-invNo').value = `INV-${fn}-${String(max+1).padStart(3,'0')}`;
     }
   } catch(e) { console.warn('onSaleFileChange invNo:', e.message); }
+  // Reset VIN search on file change
+  const vinSearchInp = el('sale-vin-search');
+  if (vinSearchInp) vinSearchInp.value = '';
+  const clearBtn = el('sale-vin-search-clear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  const countSpan = el('sale-vin-match-count');
+  if (countSpan) countSpan.style.display = 'none';
   await renderSaleVehiclePicker(fn, state.system);
 }
 
@@ -1080,8 +1087,8 @@ async function renderSaleVehiclePicker(fn, sys) {
             style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">
         </td>
         <td style="padding:6px 8px">
-          <div style="font-weight:600;font-size:12px">${v.model||v.vehicle_type||'—'} ${v.year||''}</div>
-          <div style="font-family:monospace;font-size:11px;color:var(--accent);direction:ltr">${v.vin||'—'}</div>
+          <div style="font-weight:600;font-size:13px">${v.model||v.vehicle_type||'—'} ${v.year||''}</div>
+          <div class="sale-vin-text" style="font-family:monospace;font-size:13px;font-weight:700;color:var(--blue);direction:ltr;letter-spacing:.8px;margin:2px 0">${v.vin||'—'}</div>
           <div style="font-size:11px;color:var(--text2)">${v.color||''}${v.plate?' · '+v.plate:''}</div>
         </td>
         <td style="padding:6px 8px;text-align:center">
@@ -1101,6 +1108,54 @@ async function renderSaleVehiclePicker(fn, sys) {
   } catch(e) {
     container.innerHTML = `<tr><td colspan="5" style="padding:12px;color:var(--red);font-size:12px">خطأ: ${e.message}</td></tr>`;
   }
+}
+
+function filterSaleVehiclesByVin(query) {
+  const clearBtn  = el('sale-vin-search-clear');
+  const countSpan = el('sale-vin-match-count');
+  const rows      = document.querySelectorAll('#saleVehiclesContainer .sale-v-row');
+  const q         = (query || '').trim().toLowerCase();
+
+  if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+
+  let visible = 0;
+  rows.forEach(row => {
+    const vin = (row.dataset.vin || '').toLowerCase();
+    const model = (row.dataset.model || '').toLowerCase();
+    const matches = !q || vin.includes(q) || model.includes(q);
+    row.style.display = matches ? '' : 'none';
+    if (matches) visible++;
+
+    // Highlight matching VIN text
+    const vinEl = row.querySelector('.sale-vin-text');
+    if (vinEl && q && vin.includes(q)) {
+      const original = row.dataset.vin || '—';
+      const idx = original.toLowerCase().indexOf(q);
+      if (idx >= 0) {
+        vinEl.innerHTML =
+          original.slice(0, idx) +
+          `<mark style="background:var(--yellow,#ffe066);color:#000;border-radius:2px;padding:0 1px">${original.slice(idx, idx + q.length)}</mark>` +
+          original.slice(idx + q.length);
+      }
+    } else if (vinEl) {
+      vinEl.textContent = row.dataset.vin || '—';
+    }
+  });
+
+  if (countSpan) {
+    if (q && rows.length > 0) {
+      countSpan.textContent = `${visible} / ${rows.length}`;
+      countSpan.style.display = 'block';
+    } else {
+      countSpan.style.display = 'none';
+    }
+  }
+}
+
+function clearSaleVinSearch() {
+  const inp = el('sale-vin-search');
+  if (inp) { inp.value = ''; inp.focus(); }
+  filterSaleVehiclesByVin('');
 }
 
 function onSaleVehicleCheck(checkbox) {
