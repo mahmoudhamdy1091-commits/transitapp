@@ -564,7 +564,7 @@ async function exportTxExcel() {
 }
 
 
-function initApp() {
+async function initApp() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appScreen').style.display = 'block';
 
@@ -574,6 +574,9 @@ function initApp() {
   document.getElementById('userAvatar').textContent = name[0].toUpperCase();
   document.getElementById('userName').textContent = name;
   document.getElementById('userEmailDisplay').textContent = email;
+
+  // ── تجديد الـ token فور بدء التطبيق لحل مشكلة الـ 401 عند أول load ──
+  await refreshAccessToken().catch(() => console.warn('initApp: token refresh failed'));
 
   // تجديد الـ token تلقائياً كل 50 دقيقة
   if (window._tokenRefreshTimer) clearInterval(window._tokenRefreshTimer);

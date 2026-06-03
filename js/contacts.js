@@ -393,27 +393,6 @@ function printLedgerStatement() {
 }
 
 // ════════════════════════════════════════
-// TRIAL BALANCE
-// ════════════════════════════════════════
-// ════════════════════════════════════════════════════════
-// ACCOUNTING SYSTEM — ميزان المراجعة + دفتر الأستاذ + شجرة الحسابات
-// ════════════════════════════════════════════════════════
-
-const trialState  = { data:[], typeFilter:'all', from:null, to:null, period:'all' };
-const ledgerState = { accountCode:null, accountName:null, from:null, to:null, period:'all' };
-
-// ── Period helper ──
-function _periodDates(period) {
-  const pad=n=>String(n).padStart(2,'0'), now=new Date(), yr=now.getFullYear();
-  if (period==='month') {
-    const last=new Date(yr,now.getMonth()+1,0);
-
-// ════════════════════════════════════════
-// CONTACT AUTOCOMPLETE (من داخل chart-of-accounts block)
-// ════════════════════════════════════════
-
-// ════════════════════════════════════════
-// ════════════════════════════════════════
 // CONTACT AUTOCOMPLETE
 // ════════════════════════════════════════
 let _acTimer;
@@ -497,12 +476,9 @@ function showAcList(input, items, type) {
   });
 
   wrap.appendChild(list);
+}
 
 function removeAcList(input) {
   const existing = document.getElementById('ac-list-' + input.id);
   if (existing) existing.remove();
-}
-
-}
-}
 }
