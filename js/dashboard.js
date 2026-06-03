@@ -1680,12 +1680,10 @@ async function printPayoutVoucher(payoutId) {
 }
 
 async function openEditPayoutModal(payoutId) {
-  // Load payout data and reopen payout modal in edit mode
   try {
     const data = await apiGetAll('partner_payouts', { select:'*', id:`eq.${payoutId}` });
     const p = data?.[0];
     if (!p) return;
-    // Set modal values
     const partners = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
     el('poutModalTitle').textContent = `تعديل صرف — ${p.partner}`;
     el('pout-partner').innerHTML = (partners||[]).map(pm=>`<option value="${pm.partner}" ${pm.partner===p.partner?'selected':''}>${pm.partner}</option>`).join('');
@@ -1702,11 +1700,21 @@ async function openEditPayoutModal(payoutId) {
     } else {
       el('pout-amount').value = p.amount || '';
     }
-    // Override submit to edit mode
+    // Override submit — Void القديم + Draft جديد للمراجعة (لو posted)
     el('poutSubmitBtn').onclick = async () => {
-      await deletePayoutEntry(payoutId, p.file_no, true);
-      el('poutSubmitBtn').onclick = () => submitPayout();
-      await submitPayout();
+      if (p.post_status === 'posted') {
+        // Void القديم بقيد عكسي
+        await voidTransaction('payout', p);
+        // submit كـ draft جديد
+        el('poutSubmitBtn').onclick = () => submitPayout();
+        await submitPayout();
+        toast('📋 تم إرسال التعديل للمراجعة', 'ok');
+      } else {
+        // draft: مسح وإعادة إنشاء مباشرة
+        await deletePayoutEntry(payoutId, p.file_no, true);
+        el('poutSubmitBtn').onclick = () => submitPayout();
+        await submitPayout();
+      }
     };
     el('pout-balance-card').style.display = 'none';
     openModal('payoutModal');

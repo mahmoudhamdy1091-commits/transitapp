@@ -1137,27 +1137,66 @@ async function openEditSaleApproval(saleId, fileNo, invNo) {
       }
       updateSaleTotal();
 
-      // Override زرار الحفظ — يمسح الـ draft القديم ويحفظ الجديد
+      // Override زرار الحفظ — يعكس القيود القديمة ويحفظ الجديد كـ Draft
       const submitBtn = el('saleSubmitBtn');
       submitBtn._editMode = true;
       submitBtn._editInvNo = invNo;
       submitBtn._editFileNo = fileNo;
       submitBtn.onclick = async () => {
         try {
-          // امسح الـ sale records القديمة
-          await apiDelete('sales', {
-            system_type: `eq.${state.system}`,
-            file_no:     `eq.${fileNo}`,
-            inv_no:      `eq.${invNo}`
+          const sys = state.system;
+          // ── 1. عكس القيود المحاسبية للفاتورة القديمة (لو كانت posted) ──
+          const oldSales = await apiGetAll('sales', {
+            select: '*',
+            system_type: `eq.${sys}`,
+            file_no: `eq.${fileNo}`,
+            inv_no: `eq.${invNo}`,
           });
-          // امسح الـ collections المرتبطة (غير مدفوعة)
+          const wasPosted = (oldSales||[]).some(s => s.post_status === 'posted');
+          if (wasPosted) {
+            // عكس قيد البيع عن طريق قيد عكسي في journal_entries
+            const totalOld = (oldSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
+            if (totalOld > 0) {
+              try {
+                const _vRows = await apiGetAll('vehicles', { select:'vin,purchase_price', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+                const _vCost = {}; (_vRows||[]).forEach(v=>{ if(v.vin) _vCost[v.vin]=+v.purchase_price||0; });
+                const totalOldCOGS = (oldSales||[]).reduce((s,r)=>s+(_vCost[r.vin]||0),0);
+                const firstSale = oldSales[0];
+                // قيد عكسي يدوي للبيع
+                await postDoubleEntry({
+                  sys,
+                  date: today(),
+                  fileNo,
+                  refTable: 'reversal',
+                  refId: firstSale?.id || null,
+                  desc: `عكس فاتورة ${invNo} — تعديل`,
+                  lines: [
+                    { acc:'4100', name:'إيراد المبيعات',       dr: totalOld,     cr: 0,            contact: null },
+                    { acc:'1200', name:'ذمم العملاء',          dr: 0,            cr: totalOld,     contact: firstSale?.customer||null },
+                    ...(totalOldCOGS > 0 ? [
+                      { acc:'1300', name:'المخزون — سيارات',    dr: totalOldCOGS, cr: 0,            contact: null },
+                      { acc:'5100', name:'تكلفة المخزون المباع',dr: 0,            cr: totalOldCOGS, contact: null },
+                    ] : []),
+                  ],
+                });
+              } catch(jeErr) { console.warn('editSale reversal JE:', jeErr.message); }
+            }
+          }
+
+          // ── 2. Soft cancel السجلات القديمة (بدل Hard Delete) ──
+          for (const s of (oldSales||[])) {
+            try { await apiPatch('sales', { id:`eq.${s.id}` }, { post_status:'cancelled', notes:`${s.notes||''} | مُستبدل بتعديل ${today()}`.trim() }); } catch(e) {}
+          }
+          // إلغاء الـ collections غير المدفوعة
           try {
-            await apiDelete('collections', {
-              system_type: `eq.${state.system}`,
-              inv_no:      `eq.${invNo}`,
-              paid_date:   'is.null'
+            const pendingCols = await apiGetAll('collections', {
+              select:'id', system_type:`eq.${sys}`, inv_no:`eq.${invNo}`, paid_date:'is.null'
             });
-          } catch(e) { console.warn('editSale delete pending collections:', e.message); }
+            for (const c of (pendingCols||[])) {
+              await apiPatch('collections', { id:`eq.${c.id}` }, { post_status:'cancelled' });
+            }
+          } catch(e) { console.warn('editSale cancel pending collections:', e.message); }
+
         } catch(e) { console.warn('edit sale cleanup:', e.message); }
         // إعادة تعيين الـ onclick للأصل وبعدين submit
         submitBtn.onclick = () => submitSale();
@@ -1289,31 +1328,47 @@ async function approveItem(type, id) {
 async function rejectItem(type, id) {
   const cfg = APPROVAL_CONFIG[type];
   if (!cfg) return;
-  showConfirm('مسح نهائي', '⚠️ هل تريد مسح هذه العملية نهائياً؟ لا يمكن التراجع.', async () => {
-    try {
-      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
 
-      if (type === 'purchase' && item?.file_no) {
-        // cascade delete لأمر الشراء — امسح كل البيانات المرتبطة
-        const sys = state.system;
-        const fn  = item.file_no;
-        const cascadeTables = ['vehicles','payments','expenses','sales','collections','partner_payouts','partners_master','journal_entries'];
-        for (const t of cascadeTables) {
-          try { await apiDelete(t, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) { console.warn(`migration delete ${t}:`, e.message); }
-        }
-        await apiDelete('purchase_orders', { id:`eq.${id}` });
-      } else {
-        await apiDelete(cfg.table, { id:`eq.${id}` });
-        if (type === 'sale' && item?.inv_no) {
-          try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, paid_date:'is.null' }); } catch(e) { console.warn('migration delete pending collections:', e.message); }
-        }
-      }
+  // تأكيد الرفض — مع توضيح أن السجل هيتعلّم "مرفوض" وليس محذوفاً نهائياً
+  showConfirm(
+    '🗑 رفض العملية',
+    `سيتم وضع العملية كـ "مرفوضة" (cancelled).\nيمكن للمدير مراجعتها لاحقاً من سجل المراجعة.\n\nالمسح النهائي يحتاج موافقة مدير.`,
+    async () => {
+      try {
+        const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
 
-      invalidateCache();
-      toast('🗑 تم المسح النهائي','ok');
-      await loadApprovalQueue();
-    } catch(e) { toast('خطأ: '+e.message,'err'); }
-  });
+        if (type === 'purchase' && item?.file_no) {
+          // أمر شراء draft: soft cancel — لا نمسح cascade
+          const fn  = item.file_no;
+          const sys = state.system;
+          await apiPatch('purchase_orders', { id:`eq.${id}` }, {
+            post_status: 'cancelled',
+            notes: `${item.notes||''} | مرفوض بتاريخ ${today()}`.trim(),
+          });
+          // باقي الجداول المرتبطة تتعلّم cancelled أيضاً بدل ما تتمسح
+          for (const t of ['payments','expenses','sales','collections','partner_payouts']) {
+            try {
+              const rows = await apiGetAll(t, { select:'id,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}`, post_status:'eq.draft' });
+              for (const r of (rows||[])) {
+                await apiPatch(t, { id:`eq.${r.id}` }, { post_status:'cancelled' });
+              }
+            } catch(e) { console.warn(`cancelCascade ${t}:`, e.message); }
+          }
+          await logAudit('REJECT','purchase_orders', fn, item, null, `رفض أمر شراء draft ملف ${fn}`);
+        } else {
+          await apiPatch(cfg.table, { id:`eq.${id}` }, {
+            post_status: 'cancelled',
+            notes: `${item?.notes||''} | مرفوض بتاريخ ${today()}`.trim(),
+          });
+          await logAudit('REJECT', cfg.table, item?.file_no||null, item, null, `رفض ${cfg.label} #${id}`);
+        }
+
+        invalidateCache();
+        toast('⊘ تم رفض العملية — وضعت كـ "مرفوضة"', 'ok');
+        await loadApprovalQueue();
+      } catch(e) { toast('خطأ: '+e.message,'err'); }
+    }
+  );
 }
 
 

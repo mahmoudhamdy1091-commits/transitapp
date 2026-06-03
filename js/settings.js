@@ -816,9 +816,42 @@ async function submitEditPayment() {
   const notes  = el('ep-notes').value.trim();
   if (!payer || !amount || !date) { showFieldErr('epError','يرجى ملء الحقول المطلوبة'); return; }
   try {
-    await apiPatch('payments', { id:`eq.${id}` }, { payer, amount, pay_method:method, pay_date:date, document:doc||null, notes:notes||null });
-    markSaving('editPaymentModal'); closeModal('editPaymentModal');
-    toast('✅ تم تعديل الدفعة','ok');
+    // جلب السجل الحالي لمعرفة حالته
+    const oldData = await apiGetAll('payments', { select:'*', id:`eq.${id}` });
+    const old = oldData?.[0];
+    if (!old) { showFieldErr('epError','لم يُعثر على السجل'); return; }
+
+    if (old.post_status === 'posted') {
+      // ── السجل مرحّل: Void القديم + إنشاء Draft جديد يذهب للمراجعة ──
+      // 1. قيد عكسي للقديم
+      await voidTransaction('payment', old);
+      // 2. إنشاء سجل جديد كـ draft
+      const newRec = {
+        system_type: old.system_type,
+        file_no:     old.file_no,
+        payer,
+        amount,
+        pay_method:  method,
+        pay_date:    date,
+        document:    doc || null,
+        notes:       `تعديل على ${old.ref_no||'#'+id}${notes?' — '+notes:''}`,
+        ref_no:      old.ref_no ? old.ref_no + '-E' : null,
+        post_status: 'draft',
+        supplier:    old.supplier || null,
+        po_no:       old.po_no || null,
+      };
+      await apiPost('payments', newRec);
+      await logAudit('EDIT_REQUEST','payments', old.file_no, old, newRec, `طلب تعديل دفعة ${old.ref_no||id} — تم إرسالها للمراجعة`);
+      await updateApprovalBadge();
+      markSaving('editPaymentModal'); closeModal('editPaymentModal');
+      toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
+    } else {
+      // ── السجل draft: تعديل مباشر ──
+      await apiPatch('payments', { id:`eq.${id}` }, { payer, amount, pay_method:method, pay_date:date, document:doc||null, notes:notes||null });
+      markSaving('editPaymentModal'); closeModal('editPaymentModal');
+      toast('✅ تم تعديل الدفعة', 'ok');
+    }
+    invalidateCache();
     if (state.currentTab === 2) loadPaymentsTab(state.currentFileNo, state.system);
     if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);
   } catch(e) { showFieldErr('epError','خطأ: '+e.message); }
@@ -958,9 +991,37 @@ async function submitEditExpense() {
   const notes  = el('ee-notes').value.trim();
   if (!desc || !amount || !date) { showFieldErr('eeError','يرجى ملء الحقول المطلوبة'); return; }
   try {
-    await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null });
-    markSaving('editExpenseModal'); closeModal('editExpenseModal');
-    toast('✅ تم تعديل المصروف','ok');
+    const oldData = await apiGetAll('expenses', { select:'*', id:`eq.${id}` });
+    const old = oldData?.[0];
+    if (!old) { showFieldErr('eeError','لم يُعثر على السجل'); return; }
+
+    if (old.post_status === 'posted') {
+      // Void القديم + Draft جديد للمراجعة
+      await voidTransaction('expense', old);
+      const newRec = {
+        system_type: old.system_type,
+        file_no:     old.file_no,
+        description: desc,
+        exp_type:    type,
+        amount,
+        exp_date:    date,
+        pay_method:  method,
+        document:    doc || null,
+        notes:       `تعديل على ${old.ref_no||'#'+id}${notes?' — '+notes:''}`,
+        ref_no:      old.ref_no ? old.ref_no + '-E' : null,
+        post_status: 'draft',
+      };
+      await apiPost('expenses', newRec);
+      await logAudit('EDIT_REQUEST','expenses', old.file_no, old, newRec, `طلب تعديل مصروف ${old.ref_no||id} — تم إرسالها للمراجعة`);
+      await updateApprovalBadge();
+      markSaving('editExpenseModal'); closeModal('editExpenseModal');
+      toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
+    } else {
+      await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null });
+      markSaving('editExpenseModal'); closeModal('editExpenseModal');
+      toast('✅ تم تعديل المصروف','ok');
+    }
+    invalidateCache();
     if (state.currentTab === 3) loadExpensesTab(state.currentFileNo, state.system);
     if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);
   } catch(e) { showFieldErr('eeError','خطأ: '+e.message); }
@@ -998,12 +1059,40 @@ async function submitEditCollection() {
   const notes  = el('ec-notes').value.trim();
   if (!amount) { showFieldErr('ecError','يرجى إدخال المبلغ'); return; }
   try {
-    // اجلب البيانات القديمة قبل التعديل — لنعرف هل paid_date جديد
-    const oldData = await apiGetAll('collections', { select:'paid_date,file_no,customer,inv_no,pay_method,post_status', id:`eq.${id}` });
+    const oldData = await apiGetAll('collections', { select:'*', id:`eq.${id}` });
     const old = oldData?.[0] || {};
+
+    if (old.post_status === 'posted' && old.paid_date) {
+      // ── تحصيل مرحّل ومدفوع: Void القديم + Draft جديد للمراجعة ──
+      await voidTransaction('collection', old);
+      const newRec = {
+        system_type: old.system_type,
+        file_no:     old.file_no,
+        inv_no:      old.inv_no,
+        customer:    old.customer,
+        amount,
+        pay_method:  method,
+        due_date:    due || null,
+        paid_date:   paid || null,
+        document:    doc || null,
+        notes:       `تعديل على ${old.ref_no||'#'+id}${notes?' — '+notes:''}`,
+        ref_no:      old.ref_no ? old.ref_no + '-E' : null,
+        post_status: 'draft',
+      };
+      await apiPost('collections', newRec);
+      await logAudit('EDIT_REQUEST','collections', old.file_no, old, newRec, `طلب تعديل تحصيل ${old.ref_no||id} — تم إرسالها للمراجعة`);
+      await updateApprovalBadge();
+      markSaving('editCollectionModal'); closeModal('editCollectionModal');
+      toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
+      invalidateCache();
+      if (state.currentTab === 5) loadCollectionsTab(state.currentFileNo, state.system);
+      if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);
+      return;
+    }
+
+    // ── draft أو غير مدفوع: تعديل مباشر ──
     const wasUnpaid = !old.paid_date;
     const nowPaid   = !!paid;
-    // FIX: paid_date لا يُحفظ في حالة Draft — يُحفظ فقط إذا كان السجل posted
     const isPostedRecord = old.post_status !== 'draft';
     const effectivePaidDate = (paid && isPostedRecord) ? paid : null;
 

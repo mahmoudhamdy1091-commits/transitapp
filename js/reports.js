@@ -796,14 +796,48 @@ async function confirmDeleteVehicle() {
 }
 
 async function deletePayoutEntry(payoutId, fileNo, silent=false) {
-  if (silent) {
-    try { await apiDelete('partner_payouts', { id:`eq.${payoutId}` }); await loadPayoutsTab(fileNo, state.system); } catch(e) { toast('خطأ: '+e.message,'err'); }
-    return;
-  }
-  showConfirm('حذف الدفعة', 'هل تريد حذف هذه الدفعة نهائياً؟', async () => {
-    try { await apiDelete('partner_payouts', { id:`eq.${payoutId}` }); await loadPayoutsTab(fileNo, state.system); toast('✅ تم الحذف','ok'); }
-    catch(e) { toast('خطأ: '+e.message,'err'); }
-  });
+  try {
+    const data = await apiGetAll('partner_payouts', { select:'*', id:`eq.${payoutId}` });
+    const p = data?.[0];
+    if (!p) { if (!silent) toast('لم يُعثر على السجل','err'); return; }
+
+    if (silent) {
+      // تعديل من modal — Void القديم بدل Hard Delete
+      if (p.post_status === 'posted') {
+        await voidTransaction('payout', p);
+      } else {
+        // draft فقط: مسح مباشر مقبول
+        await apiDelete('partner_payouts', { id:`eq.${payoutId}` });
+      }
+      await loadPayoutsTab(fileNo, state.system);
+      return;
+    }
+
+    if (p.post_status === 'posted') {
+      // مرحّل: إلغاء بقيد عكسي
+      showConfirm(
+        `🔄 إلغاء صرف شريك — ${p.partner||''}`,
+        `سيتم إلغاء هذا الصرف بقيد عكسي محاسبي.\nالسجل لن يُحذف — سيُعلَّم "ملغى".\n\nالشريك: ${p.partner||'—'}\nالمبلغ: ${fmt(p.amount)}\nالتاريخ: ${p.pay_date||'—'}`,
+        async () => {
+          try {
+            await voidTransaction('payout', p);
+            toast(`✅ تم إلغاء الصرف ${p.pay_id||''} بقيد عكسي`, 'ok');
+            await loadPayoutsTab(fileNo||p.file_no, state.system);
+          } catch(e) { toast('خطأ: '+e.message,'err'); }
+        }
+      );
+    } else {
+      // draft: مسح نهائي مقبول (لم يُرحَّل بعد)
+      showConfirm('مسح صرف شريك', 'هل تريد مسح هذا الصرف؟ (لم يُرحَّل — لا يوجد قيد)', async () => {
+        try {
+          await apiDelete('partner_payouts', { id:`eq.${payoutId}` });
+          await logAudit('DELETE','partner_payouts', fileNo||p.file_no, p, null, `مسح صرف شريك draft ${p.pay_id||payoutId}`);
+          await loadPayoutsTab(fileNo||p.file_no, state.system);
+          toast('✅ تم المسح','ok');
+        } catch(e) { toast('خطأ: '+e.message,'err'); }
+      });
+    }
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
 
