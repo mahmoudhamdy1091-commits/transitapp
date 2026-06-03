@@ -946,11 +946,7 @@ async function loadPaymentsTab(fn, sys) {
               <td class="mono">${fmtDate(p.pay_date)}</td>
               <td class="text-muted" style="font-size:11px">${p.notes||''}</td>
               <td style="text-align:center">
-                ${!isVoided ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
-                  {icon:'✏️',label:'تعديل',action:()=>openEditPaymentModal(${p.id})},
-                  'divider',
-                  {icon:'🔄',label:'إلغاء بقيد عكسي',danger:true,action:()=>confirmAction('إلغاء دفعة','سيتم إلغاء الدفعة بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePaymentEntry(${p.id},'${fn}'))}
-                ])" title="إجراءات">⋮</button>` : ''}
+                ${!isVoided ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxPayment(this)" data-id="${p.id}" data-fn="${fn}" title="إجراءات">⋮</button>` : ''}
               </td>
             </tr>`;
           }).join('')}
@@ -1006,11 +1002,7 @@ async function loadExpensesTab(fn, sys) {
               <td class="mono">${e.document||'—'}</td>
               <td class="mono">${fmtDate(e.exp_date)}</td>
               <td style="text-align:center">
-                ${!isVoidedE ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
-                  {icon:'✏️',label:'تعديل',action:()=>openEditExpenseModal(${e.id})},
-                  'divider',
-                  {icon:'🔄',label:'إلغاء بقيد عكسي',danger:true,action:()=>confirmAction('إلغاء مصروف','سيتم إلغاء المصروف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deleteExpenseEntry(${e.id},'${fn}'))}
-                ])" title="إجراءات">⋮</button>` : ''}
+                ${!isVoidedE ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxExpense(this)" data-id="${e.id}" data-fn="${fn}" title="إجراءات">⋮</button>` : ''}
               </td>
             </tr>`;
           }).join('')}
@@ -1424,12 +1416,7 @@ async function loadCollectionsTab(fn, sys) {
             <td class="mono">${c.paid_date ? fmtDate(c.paid_date) : '—'}</td>
             <td>${isVoidedC ? '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">ملغى</span>' : statusBadge(c)}</td>
             <td style="text-align:center">
-              ${!isVoidedC ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
-                ${!c.paid_date ? `{icon:'✅',label:'تسجيل دفع',action:()=>markCollectionPaid(${c.id},'${fn}')},` : ''}
-                {icon:'✏️',label:'تعديل',action:()=>openEditCollectionModal(${c.id})},
-                'divider',
-                {icon:'🔄',label:'إلغاء بقيد عكسي',danger:true,action:()=>confirmAction('إلغاء تحصيل','سيتم إلغاء التحصيل بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deleteCollectionEntry(${c.id},'${fn}'))}
-              ])" title="إجراءات">⋮</button>` : ''}
+              ${!isVoidedC ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxCollection(this)" data-id="${c.id}" data-fn="${fn}" data-paid="${c.paid_date?'1':'0'}" title="إجراءات">⋮</button>` : ''}
             </td>
           </tr>`;}).join('')}
           <tr style="background:var(--card2);font-weight:700">
@@ -1481,12 +1468,7 @@ async function loadPayoutsTab(fn, sys) {
         <td class="mono text-muted">${p.document||'—'}</td>
         <td class="mono text-muted">${fmtDate(p.pay_date)}</td>
         <td style="text-align:center">
-          <button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
-            {icon:'🖨️',label:'طباعة سند',action:()=>printPayoutVoucher(${p.id})},
-            {icon:'✏️',label:'تعديل',action:()=>openEditPayoutModal(${p.id})},
-            'divider',
-            ${can('delete') ? `{icon:'🔄',label:'إلغاء بقيد عكسي',danger:true,action:()=>confirmAction('إلغاء صرف شريك','سيتم إلغاء الصرف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePayoutEntry(${p.id},'${fn}'))},` : ''}
-          ])" title="إجراءات">⋮</button>
+          <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxPayout(this)" data-id="${p.id}" data-fn="${fn}" title="إجراءات">⋮</button>
         </td>
       </tr>`;
     }).join('');

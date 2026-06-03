@@ -382,3 +382,117 @@ function showCtxMenuById(btnEl, regKey) {
   if (!items) return;
   showCtxMenu(btnEl, items);
 }
+
+// ════════════════════════════════════════
+// CTX REGISTRY v2 — حل مشكلة > في onclick attributes
+// بدل كتابة arrow functions في HTML، نخزّن الـ items هنا ونستدعيها بـ key
+// ════════════════════════════════════════
+window._ctxStore = {};
+let _ctxStoreIdx = 0;
+
+/** تسجيل items وإرجاع key فريد */
+function _regCtx(items) {
+  const key = 'c' + (++_ctxStoreIdx);
+  window._ctxStore[key] = items;
+  return key;
+}
+
+/** استدعاء من onclick="event.stopPropagation();_execCtx(this,'KEY')" */
+function _execCtx(btnEl, key) {
+  const items = window._ctxStore[key];
+  if (items) showCtxMenu(btnEl, items);
+}
+
+// ════════════════════════════════════════
+// CTX BUTTON HANDLERS — data-attribute approach
+// كل زر يحمل data attributes بدل JS inline
+// ════════════════════════════════════════
+
+// دفعات المورد (dashboard)
+function _ctxPayment(btn) {
+  const id = +btn.dataset.id, fn = btn.dataset.fn;
+  showCtxMenu(btn, [
+    {icon:'✏️', label:'تعديل', action:()=>openEditPaymentModal(id)},
+    'divider',
+    {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء دفعة','سيتم إلغاء الدفعة بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePaymentEntry(id,fn))}
+  ]);
+}
+
+// المصاريف (dashboard)
+function _ctxExpense(btn) {
+  const id = +btn.dataset.id, fn = btn.dataset.fn;
+  showCtxMenu(btn, [
+    {icon:'✏️', label:'تعديل', action:()=>openEditExpenseModal(id)},
+    'divider',
+    {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء مصروف','سيتم إلغاء المصروف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deleteExpenseEntry(id,fn))}
+  ]);
+}
+
+// التحصيلات (dashboard)
+function _ctxCollection(btn) {
+  const id = +btn.dataset.id, fn = btn.dataset.fn, paid = btn.dataset.paid === '1';
+  const items = [];
+  if (!paid) items.push({icon:'✅', label:'تسجيل دفع', action:()=>markCollectionPaid(id,fn)});
+  items.push({icon:'✏️', label:'تعديل', action:()=>openEditCollectionModal(id)});
+  items.push('divider');
+  items.push({icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء تحصيل','سيتم إلغاء التحصيل بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deleteCollectionEntry(id,fn))});
+  showCtxMenu(btn, items);
+}
+
+// صرف الشركاء (dashboard)
+function _ctxPayout(btn) {
+  const id = +btn.dataset.id, fn = btn.dataset.fn;
+  const items = [
+    {icon:'🖨️', label:'طباعة سند', action:()=>printPayoutVoucher(id)},
+    {icon:'✏️', label:'تعديل', action:()=>openEditPayoutModal(id)},
+    'divider',
+  ];
+  if (can('delete')) items.push({icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء صرف شريك','سيتم إلغاء الصرف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePayoutEntry(id,fn))});
+  showCtxMenu(btn, items);
+}
+
+// مصاريف تشغيلية (operations)
+function _ctxOpex(btn) {
+  const id = +btn.dataset.id;
+  const items = [{icon:'✏️', label:'تعديل', action:()=>openEditOpexModal(id)}, 'divider'];
+  if (can('delete')) items.push({icon:'🗑', label:'حذف', danger:true, action:()=>confirmAction('حذف مصروف تشغيلي','هل أنت متأكد من حذف هذا المصروف؟',()=>deleteOpex(id))});
+  showCtxMenu(btn, items);
+}
+
+// قيد يومية (operations)
+function _ctxJE(btn) {
+  const no = btn.dataset.no, isManual = btn.dataset.manual === '1';
+  const items = [];
+  if (isManual) items.push({icon:'✏️', label:'تعديل', action:()=>openEditJEModal(no)});
+  items.push('divider');
+  items.push({icon:'🗑', label:'حذف القيد', danger:true, action:()=>confirmAction('حذف قيد محاسبي','⚠️ سيتم حذف هذا القيد نهائياً — هل أنت متأكد؟',()=>deleteJEEntry(no))});
+  showCtxMenu(btn, items);
+}
+
+// سيارة (operations)
+function _ctxVehicle(btn) {
+  const id = +btn.dataset.id, fn = btn.dataset.fn;
+  showCtxMenu(btn, [
+    {icon:'✏️', label:'تعديل بيانات السيارة', action:()=>openEditVehicleModal(id)},
+    {icon:'🚛', label:'تحويل لمخزن', action:()=>{openNewTransferModal();setTimeout(()=>{if(el('st-file-no')){el('st-file-no').value=fn;loadVehiclesForTransfer(fn);}},300);}},
+  ]);
+}
+
+// طلب موافقة (operations)
+function _ctxApproval(btn) {
+  const type = btn.dataset.type, id = btn.dataset.id;
+  showCtxMenu(btn, [
+    {icon:'✏️', label:'تعديل', action:()=>editApprovalRow(type,id)},
+    {icon:'⊘', label:'إلغاء', action:()=>confirmAction('إلغاء العملية','سيتم وضع العملية كـ ملغية — هل أنت متأكد؟',()=>cancelApprovalRow(type,id))},
+    'divider',
+    {icon:'🗑', label:'رفض نهائي', danger:true, action:()=>rejectItem(type,id)}
+  ]);
+}
+
+// مسودة قيد (accounting)
+function _ctxDraft(btn) {
+  const id = +btn.dataset.id;
+  showCtxMenu(btn, [
+    {icon:'🗑', label:'حذف المسودة', danger:true, action:()=>confirmAction('حذف مسودة قيد','هل تريد حذف هذه المسودة نهائياً؟',()=>deleteDraftEntry(id))}
+  ]);
+}

@@ -82,11 +82,7 @@ async function loadOpex() {
             <td class="mono">${fmtDate(r.exp_date)}</td>
             <td style="color:var(--text2);font-size:12px">${r.notes||''}</td>
             <td style="text-align:center">
-              <button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
-                {icon:'✏️',label:'تعديل',action:()=>openEditOpexModal(${r.id})},
-                'divider',
-                ${can('delete') ? `{icon:'🗑',label:'حذف',danger:true,action:()=>confirmAction('حذف مصروف تشغيلي','هل أنت متأكد من حذف هذا المصروف؟',()=>deleteOpex(${r.id}))},` : ''}
-              ])" title="إجراءات">⋮</button>
+              <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxOpex(this)" data-id="${r.id}" title="إجراءات">⋮</button>
             </td>
           </tr>`).join('')}
         </tbody>
@@ -990,12 +986,7 @@ function renderApprovalList() {
       <div class="approval-row-actions" onclick="event.stopPropagation()" style="display:flex;gap:6px;align-items:center">
         <button class="btn btn-sm" onclick="confirmAction('موافقة على العملية','هل تريد الموافقة على هذه العملية وترحيلها؟',()=>approveItem('${r._type}','${r.id}'),false)"
           style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);padding:4px 10px;font-weight:700" title="موافقة">✓ موافقة</button>
-        <button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
-          {icon:'✏️',label:'تعديل',action:()=>editApprovalRow('${r._type}','${r.id}')},
-          {icon:'⊘',label:'إلغاء',action:()=>confirmAction('إلغاء العملية','سيتم وضع العملية كـ ملغية — هل أنت متأكد؟',()=>cancelApprovalRow('${r._type}','${r.id}'))},
-          'divider',
-          {icon:'🗑',label:'رفض نهائي',danger:true,action:()=>rejectItem('${r._type}','${r.id}')}
-        ])" title="المزيد">⋮</button>
+        <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxApproval(this)" data-type="${r._type}" data-id="${r.id}" title="المزيد">⋮</button>
       </div>
     </div>`;
   }).join('');
@@ -3062,11 +3053,7 @@ function renderJEManagerTable() {
       </tr>`).join('');
 
     const ctxBtn = isAdmin
-      ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
-          ${g.isManual ? `{icon:'✏️',label:'تعديل',action:()=>openEditJEModal('${g.no}')},` : ''}
-          'divider',
-          {icon:'🗑',label:'حذف القيد',danger:true,action:()=>confirmAction('حذف قيد محاسبي','⚠️ سيتم حذف هذا القيد نهائياً — هل أنت متأكد؟',()=>deleteJEEntry('${g.no}'))}
-        ])" title="إجراءات">⋮</button>`
+      ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxJE(this)" data-no="${g.no}" data-manual="${g.isManual?'1':'0'}" title="إجراءات">⋮</button>`
       : '';
 
     return `
@@ -4167,10 +4154,7 @@ async function loadVehiclesTab(fn, sys) {
             <td>${locBadge}</td>
             <td><span class="badge ${isSold?'badge-closed':'badge-open'}">${isSold?'مباع':'في المخزن'}</span></td>
             <td style="text-align:center">
-              <button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
-                {icon:'✏️',label:'تعديل بيانات السيارة',action:()=>openEditVehicleModal(${v.id})},
-                {icon:'🚛',label:'تحويل لمخزن',action:()=>{openNewTransferModal();setTimeout(()=>{if(el('st-file-no')){el('st-file-no').value='${fn}';loadVehiclesForTransfer('${fn}');}},300);}},
-              ])" title="إجراءات">⋮</button>
+              <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxVehicle(this)" data-id="${v.id}" data-fn="${fn}" title="إجراءات">⋮</button>
             </td>
           </tr>`;
         }).join('')}

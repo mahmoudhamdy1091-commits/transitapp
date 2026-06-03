@@ -3,7 +3,7 @@
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
 
-// ── State objects (كانوا في contacts.js — نُقلوا هنا) ──
+// ── State objects ──
 const trialState  = { data:[], typeFilter:'all', from:null, to:null, period:'all' };
 const ledgerState = { accountCode:null, accountName:null, from:null, to:null, period:'all' };
 
@@ -1343,9 +1343,7 @@ async function loadJournalDrafts() {
         <span class="draft-badge">مسودة</span>
         <button class="btn btn-sm" onclick="postDraftEntry(${d.id},'${d.entry_type}','${d.file_no||''}')"
           style="background:var(--green-dim);border:1px solid var(--green);color:var(--green)">✓ Post</button>
-        <button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
-          {icon:'🗑',label:'حذف المسودة',danger:true,action:()=>confirmAction('حذف مسودة قيد','هل تريد حذف هذه المسودة نهائياً؟',()=>deleteDraftEntry(${d.id}))}
-        ])" title="إجراءات">⋮</button>
+        <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxDraft(this)" data-id="${d.id}" title="إجراءات">⋮</button>
       </div>`;
     }).join('');
   } catch(e) { console.warn('loadJournalDrafts error:', e.message); }
