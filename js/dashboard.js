@@ -778,11 +778,18 @@ async function loadSummaryTab(fn, sys) {
 
     const partnersHtml = (partners||[]).map((p,i) => {
       const share     = +p.share_percent || 0;
-      const pAmt      = profit * (share/100);
-      const capitalIn = (payments||[]).filter(px=>px.payer===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
-      const pPayouts  = (payouts||[]).filter(px=>px.partner===p.partner);
+      const pAmt      = profit * (share/100);   // حصته في الربح/الخسارة
+      // ما دفعه للمورد في هذه الصفقة (posted فقط)
+      const capitalIn = (payments||[]).filter(px=>isPosted(px)&&px.payer===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
+      // حصته في تكلفة الشراء (ما عليه)
+      const liability = totalPurchase * (share/100);
+      // المديونية المتبقية = ما عليه - ما دفعه (لو صفر أو أقل = سوّى)
+      const remainingLiab = Math.max(liability - capitalIn, 0);
+      // ما استرده من أرباح
+      const pPayouts  = (payouts||[]).filter(px=>isPosted(px)&&px.partner===p.partner);
       const totalOut  = pPayouts.reduce((s,px)=>s+(+px.amount||0),0);
-      const netDue    = capitalIn + pAmt - totalOut;
+      // الرصيد الصافي = حصة ربح - مديونية متبقية - ما استرد
+      const netDue    = pAmt - remainingLiab - totalOut;
       const c         = partnerColors[i % partnerColors.length];
       return `
         <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer"
@@ -797,15 +804,17 @@ async function loadSummaryTab(fn, sys) {
               <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:${c.bg};color:${c.color};margin-right:4px">${share}%</span>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--card2);color:var(--text2)">دفع: <strong style="color:var(--blue)">${fmt(capitalIn)}</strong></span>
+              <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--card2);color:var(--text2)">حصة التكلفة: <strong style="color:var(--blue)">${fmt(liability)}</strong></span>
+              <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--card2);color:var(--text2)">دفع: <strong style="color:var(--accent)">${fmt(capitalIn)}</strong></span>
+              ${remainingLiab > 0.01 ? `<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#fef3c7;color:#92400e">⚠️ عليه: <strong>${fmt(remainingLiab)}</strong></span>` : `<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--green-dim);color:var(--green)">✅ سوّى</span>`}
               <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--card2);color:var(--text2)">ربح: <strong style="color:${pAmt>=0?'var(--green)':'var(--red)'}">${fmt(pAmt)}</strong></span>
-              <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--card2);color:var(--text2)">سُحب: <strong style="color:var(--amber)">${fmt(totalOut)}</strong></span>
+              ${totalOut > 0 ? `<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--card2);color:var(--text2)">سُحب: <strong style="color:var(--amber)">${fmt(totalOut)}</strong></span>` : ''}
             </div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
             <div style="text-align:left">
               <div style="font-size:15px;font-weight:700;color:${netDue>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(netDue))}</div>
-              <div style="font-size:10px;color:var(--text2)">${netDue>=0?'متبقي له':'تجاوز'}</div>
+              <div style="font-size:10px;color:var(--text2)">${netDue>=0?'مستحق له':'مدين عليه'}</div>
             </div>
             <div style="display:flex;gap:4px">
               <button onclick="event.stopPropagation();showPartnerStatement('${p.partner}','${fn}')"
