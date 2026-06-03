@@ -1523,16 +1523,14 @@
         <!-- KPIs -->
         <div id="wh-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:14px"></div>
 
-        <!-- فلتر المخزن -->
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <!-- فلتر المخزن — ديناميكي يُبنى من JS -->
+        <div id="wh-filter-bar" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
           <span style="font-size:12px;color:var(--text2);font-weight:600">عرض:</span>
-          <button class="btn btn-sm journal-period-btn active" id="whf-all"    onclick="filterWhByLocation('all')">🏪 الجميع</button>
-          <button class="btn btn-sm journal-period-btn" id="whf-Kuwait"  onclick="filterWhByLocation('Kuwait')">🇰🇼 الكويت</button>
-          <button class="btn btn-sm journal-period-btn" id="whf-Syria"   onclick="filterWhByLocation('Syria')">🇸🇾 سوريا</button>
+          <button class="btn btn-sm journal-period-btn active" id="whf-all" onclick="filterWhByLocation('all')">🏪 الجميع</button>
         </div>
 
         <!-- Warehouse Cards -->
-        <div id="wh-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-bottom:16px">
+        <div id="wh-cards" style="margin-bottom:16px">
           <div class="loading"><div class="spinner"></div></div>
         </div>
 
