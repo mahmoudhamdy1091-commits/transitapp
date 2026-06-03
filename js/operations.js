@@ -3870,7 +3870,9 @@ async function loadWarehouses() {
     // ✅ المخزن الافتراضي: كل سيارة ليس لها تحويل = الكويت
     const DEFAULT_WH = 'الكويت';
     const transferredVins = new Set((transfers||[]).map(t=>t.vin).filter(Boolean));
+    console.log('[WH-DEBUG] allVehicles count:', (state.allVehicles||[]).length, '| transferredVins:', transferredVins.size);
     const kuwaitVehicles = (state.allVehicles||[]).filter(v => v.vin && !transferredVins.has(v.vin));
+    console.log('[WH-DEBUG] kuwaitVehicles count:', kuwaitVehicles.length);
     const kuwaitEntries = kuwaitVehicles.map(v => ({
       id: null, vin: v.vin,
       model: v.model || v.vehicle_type || '',
