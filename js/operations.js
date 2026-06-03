@@ -1230,6 +1230,33 @@ async function approveItem(type, id) {
             await je_sale({ sys:state.system, date:item.sale_date||today(), amount:totalInvAmount, cost:totalCOGS, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'' });
           }
         } catch(e) { console.warn('approveItem sale je_sale:', e.message); }
+
+        // OPTION B: ابحث عن collections مرتبطة بهذه الفاتورة كانت draft + paid_date محفوظ
+        // وافق عليها تلقائياً وأنشئ قيودها — بدون أي تدخل من المستخدم
+        try {
+          const linkedCols = await apiGetAll('collections', {
+            select: '*',
+            system_type: `eq.${state.system}`,
+            file_no:     `eq.${item.file_no}`,
+            inv_no:      `eq.${item.inv_no}`,
+            post_status: `eq.draft`,
+          });
+          for (const col of (linkedCols||[])) {
+            if (!col.paid_date) continue; // مستحق فقط — لا قيد الآن
+            // رحّل التحصيل
+            await apiPatch('collections', { id:`eq.${col.id}` }, { post_status:'posted' });
+            // أنشئ قيد التحصيل
+            await je_collection({
+              sys:      state.system,
+              date:     col.paid_date,
+              amount:   +col.amount,
+              fileNo:   col.file_no,
+              customer: col.customer || item.customer || '',
+              invNo:    col.inv_no   || item.inv_no   || '',
+              method:   col.pay_method || 'تحويل بنكي',
+            });
+          }
+        } catch(e) { console.warn('approveItem sale auto-approve collections:', e.message); }
       }
     }
     if (type === 'collection') {
@@ -1332,6 +1359,18 @@ async function approveAll() {
             const _vCost = {}; (_vRows||[]).forEach(v=>{ if(v.vin) _vCost[v.vin]=+v.purchase_price||0; });
             const cogs = (allInvSales||[]).reduce((s,x)=>s+(_vCost[x.vin]||0),0);
             if (totalAmt > 0) await je_sale({ sys:state.system, date:r.sale_date||today(), amount:totalAmt, cost:cogs, fileNo:r.file_no, customer:r.customer||'', invNo:r.inv_no||'' });
+            // OPTION B: وافق تلقائياً على collections مرتبطة بهذه الفاتورة draft + paid_date
+            try {
+              const linkedCols = await apiGetAll('collections', {
+                select:'*', system_type:`eq.${state.system}`,
+                file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}`, post_status:`eq.draft`,
+              });
+              for (const col of (linkedCols||[])) {
+                if (!col.paid_date) continue;
+                await apiPatch('collections', { id:`eq.${col.id}` }, { post_status:'posted' });
+                await je_collection({ sys:state.system, date:col.paid_date, amount:+col.amount, fileNo:col.file_no, customer:col.customer||r.customer||'', invNo:col.inv_no||r.inv_no||'', method:col.pay_method||'تحويل بنكي' });
+              }
+            } catch(e) { console.warn(`approveAll auto-approve collections for ${r.inv_no}:`, e.message); }
           } else if (r._type === 'collection' && r.paid_date) {
             // FIX: القيد يُنشأ فقط إذا كان paid_date موجوداً (مدفوع فعلاً)
             await je_collection({ sys:state.system, date:r.paid_date, amount:+r.amount||0, fileNo:r.file_no, customer:r.customer||'', invNo:r.inv_no||'', method:r.pay_method||'تحويل بنكي' });

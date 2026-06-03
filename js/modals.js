@@ -1335,9 +1335,10 @@ async function submitSale() {
     invalidateCache();
 
     // ── تحصيل واحد للفاتورة كلها (شامل المصاريف الإضافية) ──
-    // FIX: القاعدة — paid_date لا يُحفظ إلا إذا كان السجل posted.
-    //      في حالة Draft مع isPaid=true: يُحفظ التحصيل كـ draft بدون paid_date
-    //      ليُنشأ القيد الصحيح عند الموافقة من approveItem().
+    // OPTION B: إذا كان posted → paid_date + قيد فوراً
+    //           إذا كان draft + isPaid=true → paid_date يُحفظ في draft
+    //             لتُعالَج تلقائياً عند الموافقة على البيع من approveItem('sale')
+    //           إذا كان draft + isPaid=false → paid_date=null (مستحق)
     const isPostedNow = entryStatus() === 'posted';
     const isPartial   = isPaid && payAmtInput > 0 && payAmtInput < grandTotal;
 
@@ -1345,14 +1346,14 @@ async function submitSale() {
       const colRefNo = (await genSeqRef('COL', state.system, fn, 'collections')) || `COL-${invNo}-${Date.now()}`;
 
       if (isPartial) {
-        // دفع مقدم: سجّل التحصيل المدفوع + الباقي كمستحق
+        // دفع جزئي: سجّل المدفوع + الباقي كمستحق
         const colRefNo2 = `${colRefNo}-R`;
         const col1 = {
           system_type: state.system, file_no: fn, inv_no: invNo, customer,
           vin: allVins, amount: payAmtInput, pay_method: payMethod,
           document: payDoc, due_date: date,
-          // FIX: paid_date يُحفظ فقط إذا كان السجل سيُرحَّل الآن
-          paid_date: isPostedNow ? payDate : null,
+          // draft+isPaid → نحفظ paid_date ليُعالَج تلقائياً عند الموافقة
+          paid_date: isPaid ? payDate : null,
           notes: payNotes, post_status: entryStatus(),
           ref_no: colRefNo, pay_id: colRefNo,
         };
@@ -1378,8 +1379,8 @@ async function submitSale() {
           system_type: state.system, file_no: fn, inv_no: invNo, customer,
           vin: allVins, amount: grandTotal, pay_method: payMethod,
           document: payDoc, due_date: date,
-          // FIX: paid_date يُحفظ فقط إذا كان isPaid=true AND السجل posted
-          paid_date: (isPaid && isPostedNow) ? payDate : null,
+          // draft+isPaid → نحفظ paid_date ليُعالَج تلقائياً عند الموافقة
+          paid_date: isPaid ? payDate : null,
           notes: payNotes, post_status: entryStatus(),
           ref_no: colRefNo, pay_id: colRefNo,
         };
