@@ -481,10 +481,17 @@ async function runInventoryReport(sys) {
     });
 
     // آخر موقع لكل VIN (الترتيب desc يضمن أول سجل = الأحدث)
+    const DEFAULT_WAREHOUSE = 'الكويت'; // المخزن الافتراضي لكل سيارة لم تُحوَّل
     const vinLocationMap = {};
     (locations || []).forEach(t => {
       if (t.vin && !vinLocationMap[t.vin]) {
-        vinLocationMap[t.vin] = t.location_name || 'غير محدد';
+        vinLocationMap[t.vin] = t.location_name || DEFAULT_WAREHOUSE;
+      }
+    });
+    // كل سيارة غير موجودة في stock_locations → الكويت (المخزن الافتراضي)
+    vehicles.forEach(v => {
+      if (v.vin && !vinLocationMap[v.vin]) {
+        vinLocationMap[v.vin] = DEFAULT_WAREHOUSE;
       }
     });
 
@@ -517,7 +524,7 @@ async function runInventoryReport(sys) {
     const soldProfit  = soldRevenue - soldCost - soldExpenses;
 
     // عدد السيارات الموزّعة على المخازن
-    const inWarehouse = inStock.filter(v => vinLocationMap[v.vin]).length;
+    const inWarehouse = inStock.filter(v => vinLocationMap[v.vin] && vinLocationMap[v.vin] !== DEFAULT_WAREHOUSE).length;
 
     // ── KPIs ──
     el('reportKpis').innerHTML = `
