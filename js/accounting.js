@@ -1339,8 +1339,9 @@ async function loadJournalDrafts() {
         <span class="draft-badge">مسودة</span>
         <button class="btn btn-sm" onclick="postDraftEntry(${d.id},'${d.entry_type}','${d.file_no||''}')"
           style="background:var(--green-dim);border:1px solid var(--green);color:var(--green)">✓ Post</button>
-        <button class="btn btn-sm" onclick="deleteDraftEntry(${d.id})"
-          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red)">🗑</button>
+        <button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
+          {icon:'🗑',label:'حذف المسودة',danger:true,action:()=>confirmAction('حذف مسودة قيد','هل تريد حذف هذه المسودة نهائياً؟',()=>deleteDraftEntry(${d.id}))}
+        ])" title="إجراءات">⋮</button>
       </div>`;
     }).join('');
   } catch(e) { console.warn('loadJournalDrafts error:', e.message); }

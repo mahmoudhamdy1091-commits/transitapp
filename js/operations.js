@@ -81,11 +81,12 @@ async function loadOpex() {
             <td class="mono">${r.document||'—'}</td>
             <td class="mono">${fmtDate(r.exp_date)}</td>
             <td style="color:var(--text2);font-size:12px">${r.notes||''}</td>
-            <td>
-              <div style="display:flex;gap:4px">
-                <button class="btn btn-secondary btn-sm" onclick="openEditOpexModal(${r.id})">✏️</button>
-                ${can('delete') ? `<button class="btn btn-secondary btn-sm" onclick="deleteOpex(${r.id})" style="color:var(--red)">🗑</button>` : ''}
-              </div>
+            <td style="text-align:center">
+              <button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
+                {icon:'✏️',label:'تعديل',action:()=>openEditOpexModal(${r.id})},
+                'divider',
+                ${can('delete') ? `{icon:'🗑',label:'حذف',danger:true,action:()=>confirmAction('حذف مصروف تشغيلي','هل أنت متأكد من حذف هذا المصروف؟',()=>deleteOpex(${r.id}))},` : ''}
+              ])" title="إجراءات">⋮</button>
             </td>
           </tr>`).join('')}
         </tbody>
@@ -986,15 +987,15 @@ function renderApprovalList() {
         </div>
       </div>
       <div class="approval-row-amount" style="color:${cfg.color}">${fmt(r._amount)}</div>
-      <div class="approval-row-actions" onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">
-        <button class="btn btn-sm" onclick="approveItem('${r._type}','${r.id}')"
-          style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);padding:4px 8px" title="موافقة">✓</button>
-        <button class="btn btn-sm" onclick="editApprovalRow('${r._type}','${r.id}')"
-          style="background:var(--card2);border:1px solid var(--blue);color:var(--blue);padding:4px 8px" title="تعديل">✏️</button>
-        <button class="btn btn-sm" onclick="cancelApprovalRow('${r._type}','${r.id}')"
-          style="background:var(--card2);border:1px solid var(--border);color:var(--text2);padding:4px 8px" title="إلغاء">⊘</button>
-        <button class="btn btn-sm" onclick="rejectItem('${r._type}','${r.id}')"
-          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);padding:4px 8px" title="مسح نهائي">🗑</button>
+      <div class="approval-row-actions" onclick="event.stopPropagation()" style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-sm" onclick="confirmAction('موافقة على العملية','هل تريد الموافقة على هذه العملية وترحيلها؟',()=>approveItem('${r._type}','${r.id}'),false)"
+          style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);padding:4px 10px;font-weight:700" title="موافقة">✓ موافقة</button>
+        <button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
+          {icon:'✏️',label:'تعديل',action:()=>editApprovalRow('${r._type}','${r.id}')},
+          {icon:'⊘',label:'إلغاء',action:()=>confirmAction('إلغاء العملية','سيتم وضع العملية كـ ملغية — هل أنت متأكد؟',()=>cancelApprovalRow('${r._type}','${r.id}'))},
+          'divider',
+          {icon:'🗑',label:'رفض نهائي',danger:true,action:()=>rejectItem('${r._type}','${r.id}')}
+        ])" title="المزيد">⋮</button>
       </div>
     </div>`;
   }).join('');
@@ -1385,14 +1386,12 @@ async function editApprovalRow(type, id) {
 async function cancelApprovalRow(type, id) {
   const cfg = APPROVAL_CONFIG[type];
   if (!cfg) return;
-  showConfirm('إلغاء العملية', 'سيتم وضع العملية كـ "ملغية" مع إمكانية الإرجاع لاحقاً.', async () => {
-    try {
-      await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'cancelled' });
-      invalidateCache();
-      toast('⊘ تم إلغاء العملية','ok');
-      await loadApprovalQueue();
-    } catch(e) { toast('خطأ: '+e.message,'err'); }
-  });
+  try {
+    await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'cancelled' });
+    invalidateCache();
+    toast('⊘ تم إلغاء العملية','ok');
+    await loadApprovalQueue();
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
 async function approveAll() {
@@ -3062,11 +3061,12 @@ function renderJEManagerTable() {
         <td></td>
       </tr>`).join('');
 
-    const editBtn = (g.isManual && isAdmin)
-      ? `<button class="btn btn-secondary btn-sm" onclick="openEditJEModal('${g.no}')" title="تعديل">✏️</button>`
-      : '';
-    const delBtn  = isAdmin
-      ? `<button class="btn btn-sm" onclick="deleteJEEntry('${g.no}')" title="حذف" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>`
+    const ctxBtn = isAdmin
+      ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
+          ${g.isManual ? `{icon:'✏️',label:'تعديل',action:()=>openEditJEModal('${g.no}')},` : ''}
+          'divider',
+          {icon:'🗑',label:'حذف القيد',danger:true,action:()=>confirmAction('حذف قيد محاسبي','⚠️ سيتم حذف هذا القيد نهائياً — هل أنت متأكد؟',()=>deleteJEEntry('${g.no}'))}
+        ])" title="إجراءات">⋮</button>`
       : '';
 
     return `
@@ -3085,7 +3085,7 @@ function renderJEManagerTable() {
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green)">${fmt(g.totalDr)}</td>
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--red)">${fmt(g.totalCr)}</td>
         <td style="padding:10px 12px;text-align:center">${balIcon}</td>
-        <td style="padding:10px 12px;white-space:nowrap;display:flex;gap:4px">${editBtn}${delBtn}</td>
+        <td style="padding:10px 12px;text-align:center">${ctxBtn}</td>
       </tr>
       <tr class="je-lines-row" style="display:none">
         <td colspan="7" style="padding:0;background:var(--card2)">
@@ -4166,9 +4166,11 @@ async function loadVehiclesTab(fn, sys) {
             <td class="${expired?'text-red':'text-muted'}">${v.license_expiry||'—'}</td>
             <td>${locBadge}</td>
             <td><span class="badge ${isSold?'badge-closed':'badge-open'}">${isSold?'مباع':'في المخزن'}</span></td>
-            <td style="display:flex;gap:4px">
-              <button class="btn btn-secondary btn-sm" onclick="openEditVehicleModal(${v.id})">✏️</button>
-              <button class="btn btn-sm" onclick="openNewTransferModal();setTimeout(()=>{if(el('st-file-no')){el('st-file-no').value='${fn}';loadVehiclesForTransfer('${fn}');}},300)" title="تحويل لمخزن" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);padding:3px 7px;font-size:11px">🚛</button>
+            <td style="text-align:center">
+              <button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
+                {icon:'✏️',label:'تعديل بيانات السيارة',action:()=>openEditVehicleModal(${v.id})},
+                {icon:'🚛',label:'تحويل لمخزن',action:()=>{openNewTransferModal();setTimeout(()=>{if(el('st-file-no')){el('st-file-no').value='${fn}';loadVehiclesForTransfer('${fn}');}},300);}},
+              ])" title="إجراءات">⋮</button>
             </td>
           </tr>`;
         }).join('')}

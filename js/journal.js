@@ -372,10 +372,18 @@ function renderJournalEntries() {
             <div class="j-entry-amount" style="color:${cfg.amountColor}">
               ${amountSign}${fmt(e.amount)}
             </div>
-            <button onclick="event.stopPropagation();printJournalVoucher('${e.entryNo||''}','${e.type}','${e.fileNo||''}',${e.amount},'${e.date||''}','${(e.title||'').replace(/'/g,'\\\'')}')"
-              style="background:var(--card2);border:1px solid var(--border);cursor:pointer;color:var(--text2);font-size:12px;padding:3px 8px;border-radius:6px" title="طباعة سند القيد">🖨️</button>
-            <button onclick="event.stopPropagation();editJournalEntry('${e.type}',null,'${e.fileNo||''}')"
-              style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:13px;padding:2px 4px" title="تعديل">✏️</button>
+            <span class="j-entry-actions"
+              data-eno="${e.entryNo||''}"
+              data-etype="${e.type}"
+              data-fno="${e.fileNo||''}"
+              data-amt="${e.amount}"
+              data-date="${e.date||''}"
+              data-etitle="${(e.title||'')}">
+              <button onclick="event.stopPropagation();_jPrint(this)" 
+                style="background:var(--card2);border:1px solid var(--border);cursor:pointer;color:var(--text2);font-size:12px;padding:3px 8px;border-radius:6px" title="طباعة سند القيد">🖨️</button>
+              <button onclick="event.stopPropagation();_jEdit(this)"
+                style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:13px;padding:2px 4px" title="تعديل">✏️</button>
+            </span>
           </div>
         </div>`;
     });
@@ -616,4 +624,21 @@ function printSection(title, subtitle, tableHtml, summaryHtml='') {
   <div class="footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('en-GB')} · Transit Cars System</div>
 </div></body></html>`;
   openPrintOverlay(html, title);
+}
+
+// ── Journal entry action helpers (avoid quote-escaping issues in templates) ──
+function _jPrint(btn) {
+  const p = btn.closest('.j-entry-actions') || btn.parentElement;
+  printJournalVoucher(
+    p.dataset.eno   || '',
+    p.dataset.etype || '',
+    p.dataset.fno   || '',
+    parseFloat(p.dataset.amt) || 0,
+    p.dataset.date  || '',
+    p.dataset.etitle|| ''
+  );
+}
+function _jEdit(btn) {
+  const p = btn.closest('.j-entry-actions') || btn.parentElement;
+  editJournalEntry(p.dataset.etype || '', null, p.dataset.fno || '');
 }
