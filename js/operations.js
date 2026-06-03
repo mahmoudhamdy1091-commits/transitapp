@@ -1549,7 +1549,16 @@ async function loadPartnerAccountLedger() {
       return da.localeCompare(db);
     });
 
-    partnerAccountState.entries = allEntries;
+    partnerAccountState.entries  = allEntries;
+    partnerAccountState.fileNos  = fileNos; // حفظ قائمة الصفقات للفلتر
+
+    // ── ملء قائمة الصفقات في الفلتر ──
+    const fileSelect = el('pa-filter-file');
+    if (fileSelect) {
+      const currentFile = fileSelect.value;
+      fileSelect.innerHTML = '<option value="">كل الصفقات</option>' +
+        fileNos.map(fn => `<option value="${fn}"${fn===currentFile?'selected':''}>${fn}</option>`).join('');
+    }
 
     // ── حساب الأرصدة ──
     const netLiability = totalLiability - totalPaid;   // المديونية المتبقية (ما عليه - ما دفع)
@@ -1597,8 +1606,54 @@ async function loadPartnerAccountLedger() {
 
 function renderPartnerAccountLedger() {
   const filterType = el('pa-filter-type')?.value || '';
-  let entries = partnerAccountState.entries;
+  const filterFile = el('pa-filter-file')?.value || '';
+  let entries = partnerAccountState.entries || [];
+
+  // تطبيق فلتر الصفقة
+  if (filterFile) entries = entries.filter(e => e.file_no === filterFile);
+  // تطبيق فلتر النوع
   if (filterType) entries = entries.filter(e => (e.type||e.entry_type) === filterType);
+
+  // ── إعادة حساب KPIs بناءً على الفلتر الحالي ──
+  // نستخدم الـ entries المفلترة بالصفقة فقط (بدون فلتر النوع) للـ KPIs
+  const entriesForKpi = filterFile
+    ? (partnerAccountState.entries||[]).filter(e => e.file_no === filterFile)
+    : (partnerAccountState.entries||[]);
+
+  const kpiLiability = entriesForKpi.filter(e=>e.type==='liability').reduce((s,e)=>s+(+e.amount||0),0);
+  const kpiPaid      = entriesForKpi.filter(e=>e.type==='partner_payment').reduce((s,e)=>s+(+e.amount||0),0);
+  const kpiProfit    = entriesForKpi.filter(e=>e.type==='profit_credit').reduce((s,e)=>s+(+e.amount||0),0)
+                     - entriesForKpi.filter(e=>e.type==='loss_debit').reduce((s,e)=>s+(+e.amount||0),0);
+  const kpiPayout    = entriesForKpi.filter(e=>e.type==='deal_payout'||e.type==='general_withdraw'||e.type==='advance').reduce((s,e)=>s+(+e.amount||0),0);
+  const kpiNetLiab   = kpiLiability - kpiPaid;
+  const kpiBalance   = kpiProfit - kpiPayout - Math.max(kpiNetLiab, 0);
+  const liabColor    = kpiNetLiab > 0.01 ? 'var(--red)' : 'var(--green)';
+  const balColor     = kpiBalance > 0.01 ? 'var(--green)' : kpiBalance < -0.01 ? 'var(--red)' : 'var(--text2)';
+  const filterLabel  = filterFile ? ` — ${filterFile}` : ' — كل الصفقات';
+
+  if (el('pa-summary-kpis')) el('pa-summary-kpis').innerHTML = `
+    <div class="j-kpi" style="border-right:3px solid var(--blue)">
+      <div class="j-kpi-label">حصص التكلفة${filterLabel}</div>
+      <div class="j-kpi-val text-blue">${fmt(kpiLiability)}</div>
+      <div style="font-size:10px;color:${liabColor};font-weight:700">
+        ${kpiNetLiab > 0.01 ? `⚠️ متبقي عليه ${fmt(kpiNetLiab)}` : '✅ سوّى كامل'}
+      </div>
+    </div>
+    <div class="j-kpi" style="border-right:3px solid var(--accent)">
+      <div class="j-kpi-label">ما دفع للمورد</div>
+      <div class="j-kpi-val" style="color:var(--accent)">${fmt(kpiPaid)}</div>
+    </div>
+    <div class="j-kpi" style="border-right:3px solid var(--green)">
+      <div class="j-kpi-label">حصته في الأرباح</div>
+      <div class="j-kpi-val" style="color:${kpiProfit>=0?'var(--green)':'var(--red)'}">${fmt(kpiProfit)}</div>
+    </div>
+    <div class="j-kpi" style="border-right:3px solid var(--purple);background:var(--purple-dim)">
+      <div class="j-kpi-label">الرصيد الصافي</div>
+      <div class="j-kpi-val" style="color:${balColor};font-size:20px;font-weight:900">${fmt(Math.abs(kpiBalance))}</div>
+      <div style="font-size:10px;color:${balColor};font-weight:700">
+        ${kpiBalance > 0.01 ? '← مستحق له' : kpiBalance < -0.01 ? '← مدين عليه' : '← متوازن'}
+      </div>
+    </div>`;
 
   const typeLabels = {
     profit_credit:   'حصة ربح',

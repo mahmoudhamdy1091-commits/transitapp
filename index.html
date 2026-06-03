@@ -1,3 +1,5 @@
+error: index file .git/objects/pack/pack-6300913140b71068a1a378199d6c4c547e04ee03.idx is too small
+error: index file .git/objects/pack/pack-6300913140b71068a1a378199d6c4c547e04ee03.idx is too small
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -2864,16 +2866,23 @@
       <!-- رصيد ملخص -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px" id="pa-summary-kpis"></div>
 
-      <!-- فلتر النوع -->
+      <!-- فلتر الصفقة + النوع -->
       <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <select id="pa-filter-file" onchange="renderPartnerAccountLedger()"
+          style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;min-width:160px">
+          <option value="">كل الصفقات</option>
+        </select>
         <select id="pa-filter-type" onchange="renderPartnerAccountLedger()"
           style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
           <option value="">كل الحركات</option>
-          <option value="profit_credit">أرباح مرصودة</option>
-          <option value="capital_credit">رأس مال مرصود</option>
+          <option value="liability">حصة في التكلفة</option>
+          <option value="partner_payment">دفعات للمورد</option>
+          <option value="profit_credit">حصة ربح</option>
+          <option value="loss_debit">حصة خسارة</option>
+          <option value="deal_payout">صرف أرباح</option>
           <option value="general_withdraw">سحب عام</option>
           <option value="advance">سلفة</option>
-          <option value="deal_payout">صرف صفقة</option>
+          <option value="capital_credit">رأس مال</option>
         </select>
         <button class="btn btn-secondary btn-sm" onclick="loadPartnerAccountLedger()">🔄 تحديث</button>
         <button class="btn btn-primary btn-sm" onclick="openGeneralWithdrawModal()" style="margin-right:auto">➕ سحب عام</button>
