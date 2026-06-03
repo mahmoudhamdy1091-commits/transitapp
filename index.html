@@ -7862,9 +7862,15 @@ async function openSaleModal(fileNoOverride = null) {
   // مسح المصاريف الإضافية
   if (el('extraChargesContainer')) el('extraChargesContainer').innerHTML = '';
   updateSaleTotal();
-  state._saleAvailableVehicles = fileNo ? await loadAvailableVehicles(fileNo, sys) : [];
-  addSaleVehicleRow();
   openModal('saleModal');
+  // تحميل السيارات بعد فتح الـ modal
+  if (fileNo) {
+    state._saleAvailableVehicles = await loadAvailableVehicles(fileNo, sys);
+    await renderSaleVehiclePicker(fileNo, sys);
+  } else {
+    state._saleAvailableVehicles = [];
+    addSaleVehicleRow();
+  }
 }
 
 async function onSaleFileChange(fn) {
