@@ -945,10 +945,12 @@ async function loadPaymentsTab(fn, sys) {
               <td class="mono">${p.document||'—'}</td>
               <td class="mono">${fmtDate(p.pay_date)}</td>
               <td class="text-muted" style="font-size:11px">${p.notes||''}</td>
-              <td style="white-space:nowrap;display:flex;gap:4px">
-                ${!isVoided ? `<button class="btn btn-secondary btn-sm" onclick="openEditPaymentModal(${p.id})" title="تعديل">✏️</button>` : ''}
-                ${!isVoided ? `<button class="btn btn-sm" onclick="deletePaymentEntry(${p.id},'${fn}')"
-                  style="background:var(--red-dim);color:var(--red);border:1px solid var(--red)" title="إلغاء بقيد عكسي">🔄 إلغاء</button>` : ''}
+              <td style="text-align:center">
+                ${!isVoided ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
+                  {icon:'✏️',label:'تعديل',action:()=>openEditPaymentModal(${p.id})},
+                  'divider',
+                  {icon:'🔄',label:'إلغاء بقيد عكسي',danger:true,action:()=>confirmAction('إلغاء دفعة','سيتم إلغاء الدفعة بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePaymentEntry(${p.id},'${fn}'))}
+                ])" title="إجراءات">⋮</button>` : ''}
               </td>
             </tr>`;
           }).join('')}
@@ -1003,10 +1005,12 @@ async function loadExpensesTab(fn, sys) {
               <td>${e.pay_method||'—'}</td>
               <td class="mono">${e.document||'—'}</td>
               <td class="mono">${fmtDate(e.exp_date)}</td>
-              <td style="white-space:nowrap;display:flex;gap:4px">
-                ${!isVoidedE ? `<button class="btn btn-secondary btn-sm" onclick="openEditExpenseModal(${e.id})" title="تعديل">✏️</button>` : ''}
-                ${!isVoidedE ? `<button class="btn btn-sm" onclick="deleteExpenseEntry(${e.id},'${fn}')"
-                  style="background:var(--red-dim);color:var(--red);border:1px solid var(--red)" title="إلغاء بقيد عكسي">🔄 إلغاء</button>` : ''}
+              <td style="text-align:center">
+                ${!isVoidedE ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
+                  {icon:'✏️',label:'تعديل',action:()=>openEditExpenseModal(${e.id})},
+                  'divider',
+                  {icon:'🔄',label:'إلغاء بقيد عكسي',danger:true,action:()=>confirmAction('إلغاء مصروف','سيتم إلغاء المصروف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deleteExpenseEntry(${e.id},'${fn}'))}
+                ])" title="إجراءات">⋮</button>` : ''}
               </td>
             </tr>`;
           }).join('')}
@@ -1419,12 +1423,13 @@ async function loadCollectionsTab(fn, sys) {
             <td class="mono">${fmtDate(c.due_date)}</td>
             <td class="mono">${c.paid_date ? fmtDate(c.paid_date) : '—'}</td>
             <td>${isVoidedC ? '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">ملغى</span>' : statusBadge(c)}</td>
-            <td style="white-space:nowrap;display:flex;gap:4px">
-              ${!isVoidedC && !c.paid_date ? `<button class="btn btn-sm" onclick="markCollectionPaid(${c.id},'${fn}')"
-                style="background:var(--green-dim);color:var(--green);border:1px solid var(--green);font-weight:700" title="تسجيل دفع">✅ دفع</button>` : ''}
-              ${!isVoidedC ? `<button class="btn btn-secondary btn-sm" onclick="openEditCollectionModal(${c.id})" title="تعديل">✏️</button>` : ''}
-              ${!isVoidedC ? `<button class="btn btn-sm" onclick="deleteCollectionEntry(${c.id},'${fn}')"
-                style="background:var(--red-dim);color:var(--red);border:1px solid var(--red)" title="إلغاء بقيد عكسي">🔄 إلغاء</button>` : ''}
+            <td style="text-align:center">
+              ${!isVoidedC ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
+                ${!c.paid_date ? `{icon:'✅',label:'تسجيل دفع',action:()=>markCollectionPaid(${c.id},'${fn}')},` : ''}
+                {icon:'✏️',label:'تعديل',action:()=>openEditCollectionModal(${c.id})},
+                'divider',
+                {icon:'🔄',label:'إلغاء بقيد عكسي',danger:true,action:()=>confirmAction('إلغاء تحصيل','سيتم إلغاء التحصيل بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deleteCollectionEntry(${c.id},'${fn}'))}
+              ])" title="إجراءات">⋮</button>` : ''}
             </td>
           </tr>`;}).join('')}
           <tr style="background:var(--card2);font-weight:700">
@@ -1475,12 +1480,13 @@ async function loadPayoutsTab(fn, sys) {
         <td>${p.pay_method||'—'}</td>
         <td class="mono text-muted">${p.document||'—'}</td>
         <td class="mono text-muted">${fmtDate(p.pay_date)}</td>
-        <td>
-          <div style="display:flex;gap:4px">
-            <button class="btn btn-secondary btn-sm" onclick="printPayoutVoucher(${p.id})" title="طباعة سند" style="color:var(--purple)">🖨️</button>
-            <button class="btn btn-secondary btn-sm" onclick="openEditPayoutModal(${p.id})" title="تعديل">✏️</button>
-            ${can('delete') ? `<button class="btn btn-secondary btn-sm" onclick="deletePayoutEntry(${p.id},'${fn}')" title="حذف" style="color:var(--red)">🗑</button>` : ''}
-          </div>
+        <td style="text-align:center">
+          <button class="btn-ctx-menu" onclick="event.stopPropagation();showCtxMenu(this,[
+            {icon:'🖨️',label:'طباعة سند',action:()=>printPayoutVoucher(${p.id})},
+            {icon:'✏️',label:'تعديل',action:()=>openEditPayoutModal(${p.id})},
+            'divider',
+            ${can('delete') ? `{icon:'🔄',label:'إلغاء بقيد عكسي',danger:true,action:()=>confirmAction('إلغاء صرف شريك','سيتم إلغاء الصرف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePayoutEntry(${p.id},'${fn}'))},` : ''}
+          ])" title="إجراءات">⋮</button>
         </td>
       </tr>`;
     }).join('');

@@ -273,3 +273,91 @@ const ROLES = {
 let _currentRole = localStorage.getItem('tm_role') || 'admin';
 
 function can(action) { return ROLES[_currentRole]?.[action] !== false; }
+
+// ════════════════════════════════════════
+// ⋮ CONTEXT MENU — قائمة الإجراءات
+// ════════════════════════════════════════
+let _ctxMenuActive = null;
+
+function showCtxMenu(btnEl, items) {
+  // أغلق أي قايمة مفتوحة
+  closeCtxMenu();
+
+  const menu = document.createElement('div');
+  menu.id = '_ctxMenu';
+  menu.style.cssText = `
+    position:fixed;z-index:99999;
+    background:var(--card);border:1px solid var(--border);
+    border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);
+    padding:4px 0;min-width:160px;
+    animation:ctxFadeIn .12s ease;
+  `;
+
+  items.forEach(item => {
+    if (item === 'divider') {
+      const d = document.createElement('div');
+      d.style.cssText = 'height:1px;background:var(--border);margin:3px 0';
+      menu.appendChild(d);
+      return;
+    }
+    const row = document.createElement('div');
+    row.style.cssText = `
+      padding:9px 16px;cursor:pointer;font-size:13px;
+      display:flex;align-items:center;gap:10px;
+      color:${item.danger ? 'var(--red)' : 'var(--text)'};
+      transition:background .1s;
+    `;
+    row.innerHTML = `<span style="font-size:15px">${item.icon}</span><span>${item.label}</span>`;
+    row.onmouseenter = () => row.style.background = 'var(--card2)';
+    row.onmouseleave = () => row.style.background = '';
+    row.onclick = (e) => {
+      e.stopPropagation();
+      closeCtxMenu();
+      item.action();
+    };
+    menu.appendChild(row);
+  });
+
+  document.body.appendChild(menu);
+  _ctxMenuActive = menu;
+
+  // تحديد الموضع
+  const rect = btnEl.getBoundingClientRect();
+  const mw = 170, mh = items.length * 38 + 8;
+  let top  = rect.bottom + 4;
+  let left = rect.right - mw;
+  if (top + mh > window.innerHeight) top = rect.top - mh - 4;
+  if (left < 4) left = 4;
+  menu.style.top  = top  + 'px';
+  menu.style.left = left + 'px';
+
+  // أغلق عند الضغط خارجه
+  setTimeout(() => document.addEventListener('click', closeCtxMenu, { once: true }), 0);
+}
+
+function closeCtxMenu() {
+  if (_ctxMenuActive) { _ctxMenuActive.remove(); _ctxMenuActive = null; }
+}
+
+// ── CSS animation ──
+(function() {
+  const s = document.createElement('style');
+  s.textContent = `@keyframes ctxFadeIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}`;
+  document.head.appendChild(s);
+})();
+
+// ════════════════════════════════════════
+// CONFIRM DIALOG — تأكيد الإجراء
+// ════════════════════════════════════════
+function confirmAction(title, msg, onConfirm, danger = true) {
+  // استخدم الـ modal الموجود
+  if (typeof showConfirm === 'function') {
+    showConfirm(title, msg, onConfirm);
+    // غيّر لون الزرار حسب خطورة العملية
+    const btn = document.getElementById('confirmDeleteOkBtn');
+    if (btn) {
+      btn.textContent = danger ? '⚠️ تأكيد' : '✅ تأكيد';
+      btn.style.background = danger ? 'var(--red)' : 'var(--green)';
+    }
+  }
+}
