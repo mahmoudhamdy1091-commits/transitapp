@@ -1294,3 +1294,28 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   .pwa-fab { bottom: 24px; }
 }
 
+
+/* ── ⋮ Context Menu Button ── */
+.btn-ctx-menu {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text2);
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  letter-spacing: -1px;
+  transition: background .15s, color .15s, border-color .15s;
+  padding: 0;
+}
+.btn-ctx-menu:hover {
+  background: var(--card2);
+  color: var(--text);
+  border-color: var(--accent);
+}
