@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>اختبار التسوية — قبل وبعد 5200</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',Tahoma,sans-serif;background:#0f172a;color:#e2e8f0;padding:20px;direction:rtl}
+  h1{color:#f59e0b;margin-bottom:4px;font-size:18px}
+  .sub{color:#64748b;font-size:12px;margin-bottom:20px}
+  .card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:14px}
+  .card h2{font-size:13px;color:#94a3b8;margin-bottom:12px;letter-spacing:.5px;text-transform:uppercase}
+  .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+  .kpi{background:#0f172a;border-radius:8px;padding:12px;border-right:3px solid #334155}
+  .kpi-val{font-size:18px;font-weight:700;font-family:monospace}
+  .kpi-lbl{font-size:10px;color:#64748b;margin-top:3px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{background:#0f172a;padding:7px 10px;text-align:right;color:#94a3b8;border-bottom:2px solid #334155}
+  td{padding:6px 10px;border-bottom:1px solid #1e293b}
+  .mono{font-family:monospace;direction:ltr;text-align:left}
+  .green{color:#6ee7b7} .red{color:#fca5a5} .amber{color:#f59e0b} .blue{color:#93c5fd}
+  .btn{background:#f59e0b;color:#0f172a;border:none;border-radius:6px;padding:9px 18px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;margin-left:8px}
+  .btn:hover{background:#d97706}
+  .btn-sec{background:#1e293b;color:#e2e8f0;border:1px solid #334155}
+  .alert-ok{background:#064e3b;border:1px solid #065f46;color:#6ee7b7;padding:10px 14px;border-radius:8px;font-weight:700;margin-bottom:14px}
+  .alert-warn{background:#78350f;border:1px solid #92400e;color:#fde68a;padding:10px 14px;border-radius:8px;font-weight:700;margin-bottom:14px}
+  .diff-pos{color:#6ee7b7;font-weight:700} .diff-neg{color:#fca5a5;font-weight:700} .diff-zero{color:#64748b}
+  select,input{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:7px 10px;color:#e2e8f0;font-family:'Segoe UI',sans-serif;font-size:12px}
+  .prog{background:#334155;border-radius:4px;height:4px;margin-top:6px;width:100%}
+  .prog-bar{height:100%;background:#f59e0b;border-radius:4px;transition:width .3s}
+  details summary{cursor:pointer;color:#f59e0b;font-size:12px;font-weight:600;padding:6px 0}
+</style>
+</head>
+<body>
+<h1>🔬 اختبار التسوية — أثر إصلاح 5200</h1>
+<p class="sub">يقارن الحسابات قبل وبعد تضمين 5200 في فلتر COGS</p>
+
+<div class="card">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+    <select id="sys-sel"><option value="BOX">BOX</option><option value="TRANSIT">TRANSIT</option></select>
+    <input type="date" id="from-date" style="width:130px">
+    <input type="date" id="to-date" style="width:130px">
+    <button class="btn" onclick="runTest()">▶ تشغيل الاختبار</button>
+    <button class="btn btn-sec" onclick="loadAllTime()">🔍 كل السجلات</button>
+  </div>
+  <div class="prog"><div class="prog-bar" id="prog" style="width:0%"></div></div>
+  <div id="status" style="font-size:11px;color:#64748b;margin-top:4px">جاهز</div>
+</div>
+
+<div id="results"></div>
+
+<script>
+const SB_URL = 'https://tepaonhqszocyjsdcyoz.supabase.co';
+const SB_KEY = 'sb_publishable_l24VhFauUbUD7GfAyEnyhQ_9F_PKHH3';
+
+// Init dates
+const today = new Date().toISOString().split('T')[0];
+const y = today.slice(0,4);
+document.getElementById('from-date').value = `${y}-01-01`;
+document.getElementById('to-date').value   = today;
+
+function loadAllTime() {
+  document.getElementById('from-date').value = '2020-01-01';
+  document.getElementById('to-date').value   = today;
+  runTest();
+}
+
+function setStatus(msg, pct) {
+  document.getElementById('status').textContent = msg;
+  document.getElementById('prog').style.width = pct + '%';
+}
+
+const fmt = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3});
+const fmtDiff = n => {
+  if (Math.abs(n) < 0.001) return '<span class="diff-zero">0.000</span>';
+  return n > 0
+    ? `<span class="diff-pos">+${fmt(n)}</span>`
+    : `<span class="diff-neg">${fmt(n)}</span>`;
+};
+
+async function fetchJE(sys, from, to) {
+  const h = {'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Range':'0-49999','Range-Unit':'items'};
+  const toEOD = to + 'T23:59:59';
+  const [r1, r2] = await Promise.all([
+    fetch(`${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&select=account_code,dr_amount,cr_amount,ref_table,file_no,entry_date,description&limit=49999`, {headers:h}),
+    fetch(`${SB_URL}/rest/v1/journal_entries?system_type=is.null&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&select=account_code,dr_amount,cr_amount,ref_table,file_no,entry_date,description&limit=49999`, {headers:h}),
+  ]);
+  const [d1, d2] = await Promise.all([r1.ok?r1.json():[], r2.ok?r2.json():[]]);
+  const seen=new Set(), out=[];
+  [...(d1||[]),...(d2||[])].forEach(r=>{ const k=JSON.stringify(r); if(!seen.has(k)){seen.add(k);out.push(r);} });
+  return out;
+}
+
+function calcOLD(rows) {
+  // OLD: acc === '5100' for COGS only
+  let sales=0,cogs=0,dealExp=0,opex=0;
+  const byFile={};
+  rows.forEach(r=>{
+    const acc=r.account_code||'', dr=+r.dr_amount||0, cr=+r.cr_amount||0;
+    const ref=r.ref_table||'', fn=r.file_no||null;
+    if(acc.startsWith('4')&&cr>0){ sales+=cr; if(fn){byFile[fn]=byFile[fn]||{s:0,c:0,e:0};byFile[fn].s+=cr;} }
+    if(acc==='5100'&&dr>0){        cogs+=dr;  if(fn){byFile[fn]=byFile[fn]||{s:0,c:0,e:0};byFile[fn].c+=dr;} }
+    if(acc.startsWith('6')&&dr>0&&ref==='expenses'){ dealExp+=dr; if(fn){byFile[fn]=byFile[fn]||{s:0,c:0,e:0};byFile[fn].e+=dr;} }
+    if(acc.startsWith('6')&&dr>0&&ref==='operating_expenses') opex+=dr;
+  });
+  const dealProfit=sales-cogs-dealExp, netProfit=dealProfit-opex;
+  return {sales,cogs,dealExp,opex,dealProfit,netProfit,byFile};
+}
+
+function calcNEW(rows) {
+  // NEW: acc.startsWith('5') && ref !== 'operating_expenses'
+  let sales=0,cogs=0,dealExp=0,opex=0;
+  const byFile={};
+  rows.forEach(r=>{
+    const acc=r.account_code||'', dr=+r.dr_amount||0, cr=+r.cr_amount||0;
+    const ref=r.ref_table||'', fn=r.file_no||null;
+    if(acc.startsWith('4')&&cr>0){ sales+=cr; if(fn){byFile[fn]=byFile[fn]||{s:0,c:0,e:0};byFile[fn].s+=cr;} }
+    if(acc.startsWith('5')&&dr>0&&ref!=='operating_expenses'){ cogs+=dr; if(fn){byFile[fn]=byFile[fn]||{s:0,c:0,e:0};byFile[fn].c+=dr;} }
+    if(acc.startsWith('6')&&dr>0&&ref==='expenses'){ dealExp+=dr; if(fn){byFile[fn]=byFile[fn]||{s:0,c:0,e:0};byFile[fn].e+=dr;} }
+    if(acc.startsWith('6')&&dr>0&&ref==='operating_expenses') opex+=dr;
+  });
+  const dealProfit=sales-cogs-dealExp, netProfit=dealProfit-opex;
+  return {sales,cogs,dealExp,opex,dealProfit,netProfit,byFile};
+}
+
+function calcTrialBalance(rows) {
+  // Trial Balance: acc.startsWith('5') → type=cogs, unchanged
+  const accMap={};
+  rows.forEach(r=>{
+    const code=r.account_code||'XXX';
+    if(!accMap[code]) accMap[code]={code,dr:0,cr:0};
+    accMap[code].dr+=+r.dr_amount||0;
+    accMap[code].cr+=+r.cr_amount||0;
+  });
+  return Object.values(accMap).filter(a=>a.dr>0||a.cr>0).sort((a,b)=>a.code.localeCompare(b.code));
+}
+
+async function runTest() {
+  const sys  = document.getElementById('sys-sel').value;
+  const from = document.getElementById('from-date').value;
+  const to   = document.getElementById('to-date').value;
+
+  setStatus('جلب القيود...', 15);
+  let rows;
+  try { rows = await fetchJE(sys, from, to); }
+  catch(e) { document.getElementById('results').innerHTML=`<div class="alert-warn">❌ ${e.message}</div>`; return; }
+
+  setStatus(`حساب... (${rows.length} قيد)`, 60);
+  const old_ = calcOLD(rows);
+  const new_ = calcNEW(rows);
+  const tb   = calcTrialBalance(rows);
+
+  // 5200 rows only
+  const rows5200 = rows.filter(r=>r.account_code==='5200'&&+r.dr_amount>0);
+  const total5200 = rows5200.reduce((s,r)=>s+(+r.dr_amount||0),0);
+
+  setStatus('بناء التقرير...', 90);
+  renderResults(old_, new_, tb, rows5200, total5200, rows.length, from, to, sys);
+  setStatus(`اكتمل — ${rows.length} قيد`, 100);
+}
+
+function renderResults(old_, new_, tb, rows5200, total5200, total, from, to, sys) {
+  const profDiff    = new_.dealProfit - old_.dealProfit;
+  const netDiff     = new_.netProfit  - old_.netProfit;
+  const changed     = Math.abs(profDiff) > 0.001;
+
+  let html = '';
+
+  // Summary verdict
+  if (!changed) {
+    html += `<div class="alert-ok">✅ لا يوجد فرق — لا توجد قيود 5200 في هذه الفترة (${from} → ${to})</div>`;
+  } else {
+    html += `<div class="alert-warn">📊 تأثير الإصلاح: ربح الصفقات تغيّر بمقدار ${fmt(Math.abs(profDiff))} KWD — هذا صحيح (كان مبالغاً فيه)</div>`;
+  }
+
+  // Main KPI comparison
+  html += `<div class="card"><h2>📊 مقارنة P&L — قبل وبعد الإصلاح</h2>
+  <table><tr><th>المؤشر</th><th>قبل (5100 فقط)</th><th>بعد (5xxx)</th><th>الفرق</th></tr>
+  <tr><td>إجمالي المبيعات</td><td class="mono green">${fmt(old_.sales)}</td><td class="mono green">${fmt(new_.sales)}</td><td class="mono">${fmtDiff(new_.sales-old_.sales)}</td></tr>
+  <tr><td>تكلفة المخزون (COGS)</td><td class="mono red">${fmt(old_.cogs)}</td><td class="mono red">${fmt(new_.cogs)}</td><td class="mono">${fmtDiff(new_.cogs-old_.cogs)}</td></tr>
+  <tr><td>&nbsp;&nbsp;منها 5100 (ثمن السيارة)</td><td class="mono" style="font-size:11px">${fmt(old_.cogs)}</td><td class="mono" style="font-size:11px">${fmt(old_.cogs)}</td><td class="mono diff-zero">—</td></tr>
+  <tr style="background:#f59e0b11"><td>&nbsp;&nbsp;منها 5200 (شحن/نقل) ✨</td><td class="mono diff-zero">0.000</td><td class="mono amber">${fmt(total5200)}</td><td class="mono amber">+${fmt(total5200)}</td></tr>
+  <tr><td>مصاريف الصفقات (6xxx)</td><td class="mono red">${fmt(old_.dealExp)}</td><td class="mono red">${fmt(new_.dealExp)}</td><td class="mono">${fmtDiff(new_.dealExp-old_.dealExp)}</td></tr>
+  <tr style="background:${profDiff<=0?'#064e3b22':'#7f1d1d22'}"><td><strong>ربح الصفقات</strong></td><td class="mono ${old_.dealProfit>=0?'green':'red'}">${fmt(old_.dealProfit)}</td><td class="mono ${new_.dealProfit>=0?'green':'red'}">${fmt(new_.dealProfit)}</td><td class="mono">${fmtDiff(profDiff)}</td></tr>
+  <tr><td>المصاريف التشغيلية</td><td class="mono red">${fmt(old_.opex)}</td><td class="mono red">${fmt(new_.opex)}</td><td class="mono diff-zero">—</td></tr>
+  <tr style="border-top:2px solid #f59e0b"><td><strong>صافي ربح الشركة</strong></td><td class="mono ${old_.netProfit>=0?'green':'red'}" style="font-size:15px;font-weight:900">${fmt(old_.netProfit)}</td><td class="mono ${new_.netProfit>=0?'green':'red'}" style="font-size:15px;font-weight:900">${fmt(new_.netProfit)}</td><td class="mono">${fmtDiff(netDiff)}</td></tr>
+  </table></div>`;
+
+  // 5200 entries
+  if (rows5200.length === 0) {
+    html += `<div class="card"><h2>🔍 قيود 5200 في الفترة</h2><p style="color:#64748b;font-size:12px">لا توجد قيود 5200 في هذه الفترة</p></div>`;
+  } else {
+    html += `<div class="card"><h2>🔍 قيود 5200 المؤثرة (${rows5200.length} قيد — ${fmt(total5200)} KWD)</h2>
+    <table><tr><th>التاريخ</th><th>الملف</th><th>ref_table</th><th>البيان</th><th>مدين</th></tr>`;
+    rows5200.forEach(r=>{
+      html+=`<tr><td class="mono">${(r.entry_date||'').split('T')[0]}</td>
+        <td class="mono amber">${r.file_no||'—'}</td>
+        <td style="font-size:10px;color:#64748b">${r.ref_table||'—'}</td>
+        <td style="font-size:11px">${r.description||'—'}</td>
+        <td class="mono red">${fmt(r.dr_amount)}</td></tr>`;
+    });
+    html += `</table></div>`;
+  }
+
+  // Per-deal comparison (top 20 affected deals)
+  const allFns = new Set([...Object.keys(old_.byFile), ...Object.keys(new_.byFile)]);
+  const dealRows = [...allFns].map(fn=>{
+    const o=old_.byFile[fn]||{s:0,c:0,e:0};
+    const n=new_.byFile[fn]||{s:0,c:0,e:0};
+    const oldP = o.s - o.c - o.e;
+    const newP = n.s - n.c - n.e;
+    return {fn, oldP, newP, diff:newP-oldP, sales:n.s, cogs5100:o.c, cogs5200:n.c-o.c, dealExp:n.e};
+  }).filter(r=>Math.abs(r.diff)>0.001).sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+
+  if (dealRows.length > 0) {
+    html += `<div class="card"><h2>📂 صفقات تأثر ربحها (${dealRows.length} صفقة)</h2>
+    <table><tr><th>الملف</th><th>إيراد</th><th>5100 COGS</th><th>5200 شحن ✨</th><th>مصاريف</th><th>ربح قديم</th><th>ربح جديد</th><th>الفرق</th></tr>`;
+    dealRows.slice(0,30).forEach(r=>{
+      html+=`<tr ${Math.abs(r.diff)>0.001?'style="background:#f59e0b08"':''}>
+        <td class="mono amber">${r.fn}</td>
+        <td class="mono green">${fmt(r.sales)}</td>
+        <td class="mono red">${fmt(r.cogs5100)}</td>
+        <td class="mono amber">${r.cogs5200>0?fmt(r.cogs5200):'—'}</td>
+        <td class="mono red">${fmt(r.dealExp)}</td>
+        <td class="mono ${r.oldP>=0?'green':'red'}">${fmt(r.oldP)}</td>
+        <td class="mono ${r.newP>=0?'green':'red'}">${fmt(r.newP)}</td>
+        <td class="mono">${fmtDiff(r.diff)}</td></tr>`;
+    });
+    html += `</table></div>`;
+  }
+
+  // Trial Balance verification
+  const tb5100 = tb.find(a=>a.code==='5100');
+  const tb5200 = tb.find(a=>a.code==='5200');
+  html += `<div class="card"><h2>⚖️ ميزان المراجعة — 5xxx (لا يتغير)</h2>
+  <p style="color:#64748b;font-size:11px;margin-bottom:10px">ميزان المراجعة يعرض الأرصدة الخام — لا يتأثر بالإصلاح</p>
+  <table><tr><th>الحساب</th><th>الاسم</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr>
+  ${tb5100?`<tr><td class="mono">5100</td><td>تكلفة المخزون المباع</td><td class="mono red">${fmt(tb5100.dr)}</td><td class="mono">${fmt(tb5100.cr)}</td><td class="mono red">${fmt(tb5100.dr-tb5100.cr)}</td></tr>`:'<tr><td colspan="5" style="color:#64748b">لا قيود 5100</td></tr>'}
+  ${tb5200?`<tr style="background:#f59e0b08"><td class="mono amber">5200</td><td>مصاريف شحن ونقل ✨</td><td class="mono red">${fmt(tb5200.dr)}</td><td class="mono">${fmt(tb5200.cr)}</td><td class="mono red">${fmt(tb5200.dr-tb5200.cr)}</td></tr>`:'<tr><td colspan="5" style="color:#64748b">لا قيود 5200 في الفترة</td></tr>'}
+  </table>
+  <p style="margin-top:10px;font-size:11px;color:#94a3b8">✅ مجموع مدين = مجموع دائن: ${tb.reduce((s,a)=>s+a.dr,0).toFixed(3)} = ${tb.reduce((s,a)=>s+a.cr,0).toFixed(3)} ${Math.abs(tb.reduce((s,a)=>s+a.dr,0)-tb.reduce((s,a)=>s+a.cr,0))<0.01?'✅ متوازن':'⚠️ غير متوازن'}</p>
+  </div>`;
+
+  document.getElementById('results').innerHTML = html;
+}
+</script>
+</body>
+</html>
