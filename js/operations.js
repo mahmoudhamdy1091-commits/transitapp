@@ -1458,9 +1458,13 @@ async function loadPartnerAccountLedger() {
       const fn = r.file_no; if (!fn) return;
       if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, expenses:0 };
       const acc = r.account_code||'', dr = +r.dr_amount||0, cr = +r.cr_amount||0;
-      if (acc.startsWith('4') && cr > 0)                          byFile[fn].sales    += cr;
-      if (acc.startsWith('5') && dr > 0)                          byFile[fn].cogs     += dr;
-      if (acc.startsWith('6') && dr > 0 && r.ref_table==='expenses') byFile[fn].expenses += dr;
+      const ref = r.ref_table||'';
+      if (acc.startsWith('4') && cr > 0)                                               byFile[fn].sales    += cr;
+      // 5100 = COGS حقيقي (تكلفة المخزون المباع)
+      if (acc === '5100' && dr > 0)                                                    byFile[fn].cogs     += dr;
+      // 5200+ من ref=expenses = مصاريف صفقة (شحن/نقل) وليست COGS
+      // 6xxx من ref=expenses = مصاريف صفقة (جمارك، تأمين، إلخ)
+      if ((acc.startsWith('5') && acc !== '5100' || acc.startsWith('6')) && dr > 0 && ref === 'expenses') byFile[fn].expenses += dr;
     });
 
     // ── بناء الحركات الكاملة لكل صفقة ──
@@ -1788,9 +1792,10 @@ async function loadPartnerAccountBalance() {
       if (!fn) return;
       if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, expenses:0, purchase:0 };
       if (acc.startsWith('4') && cr > 0)                                             byFile[fn].sales    += cr;
-      // 5xxx = COGS (5100) + شحن/نقل (5200) — يتوافق مع getAccountType()
-      if (acc.startsWith('5') && dr > 0 && ref !== 'operating_expenses')            byFile[fn].cogs     += dr;
-      if (acc.startsWith('6') && dr > 0 && ref==='expenses')                        byFile[fn].expenses += dr;
+      // 5100 فقط = COGS حقيقي
+      if (acc === '5100' && dr > 0)                                                  byFile[fn].cogs     += dr;
+      // مصاريف الصفقة: 5200+ أو 6xxx من ref=expenses
+      if ((acc.startsWith('5') && acc !== '5100' || acc.startsWith('6')) && dr > 0 && ref === 'expenses') byFile[fn].expenses += dr;
       if (acc === '1300'  && dr > 0 && ref==='purchase_orders')                     byFile[fn].purchase += dr;
     });
 

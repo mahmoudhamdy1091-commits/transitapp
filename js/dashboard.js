@@ -73,8 +73,9 @@ async function loadDashboard() {
       const ref = r.ref_table   || '';
       // إيرادات المبيعات — حساب 4xxx دائن
       if (acc.startsWith('4') && cr > 0) totSales += cr;
-      // مصاريف الصفقات — 6xxx مدين + ref=expenses فقط
-      if (acc.startsWith('6') && dr > 0 && ref === 'expenses') totDealExp += dr;
+      // مصاريف الصفقات — 5xxx أو 6xxx مدين + ref=expenses
+      // (شحن/نقل → 5200، جمارك/صيانة → 6xxx — كلاهما مصاريف صفقة)
+      if ((acc.startsWith('5') || acc.startsWith('6')) && dr > 0 && ref === 'expenses') totDealExp += dr;
       // المصاريف التشغيلية — 6xxx مدين + ref=operating_expenses
       if (acc.startsWith('6') && dr > 0 && ref === 'operating_expenses') totOpex += dr;
       // تكلفة الشراء — حساب 1300 مدين من أوامر شراء
