@@ -3823,6 +3823,24 @@ function showWarehouses() {
   loadWarehouses();
 }
 
+
+// فلتر المخزن بالموقع (الكويت / سوريا / الجميع)
+function filterWhByLocation(loc) {
+  document.querySelectorAll('[id^="whf-"]').forEach(b => b.classList.remove('active'));
+  el('whf-' + loc)?.classList.add('active');
+  whState.locationFilter = loc === 'all' ? '' : loc;
+  const transfers = loc === 'all'
+    ? whState.allTransfers
+    : (whState.allTransfers||[]).filter(t => (t.location_name||'').toLowerCase().includes(loc.toLowerCase()));
+  whState.transfers = transfers;
+  ensureCache().then(() => {
+    const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
+    renderWhKpis(transfers, soldVins);
+    renderWhCards(transfers, soldVins);
+    renderWhTransfersTable(transfers, soldVins);
+  });
+}
+
 async function loadWarehouses() {
   const sys = state.system;
   try {

@@ -4,8 +4,8 @@
 // ╚══════════════════════════════════════════════════════════╝
 
 // ── State objects ──
-const trialState  = { data:[], typeFilter:'all', from:null, to:null, period:'all' };
-const ledgerState = { accountCode:null, accountName:null, from:null, to:null, period:'all' };
+const trialState  = { data:[], typeFilter:'all', from:null, to:null, period:'year' };
+const ledgerState = { accountCode:null, accountName:null, from:null, to:null, period:'year' };
 
 function _getPeriodDates(period) {
   const now = new Date();

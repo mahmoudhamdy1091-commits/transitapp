@@ -5,7 +5,7 @@
 // JOURNAL (صفحة اليومية)
 // ════════════════════════════════════════
 const journalState = {
-  period: 'today',
+  period: 'year',
   entries: [],
 };
 
@@ -248,8 +248,11 @@ function filterJournalByType(filterVal, key) {
 
   // أعمدة مخصصة حسب النوع
   const isPurchase = key === 'purchase';
+  const isSale = key === 'sale';
   const colHeaders = isPurchase
     ? '<th>التاريخ</th><th>الملف</th><th>المورد</th><th>عدد السيارات</th><th>إجمالي الشراء</th>'
+    : isSale
+    ? '<th>التاريخ</th><th>رقم الفاتورة</th><th>الملف</th><th>العميل</th><th>الإجمالي</th>'
     : '<th>التاريخ</th><th>البيان</th><th>الملف</th><th>طريقة الدفع</th><th>المبلغ</th>';
 
   panel.style.display = 'block';
@@ -279,6 +282,21 @@ function filterJournalByType(filterVal, key) {
                 <td>${r.supplier||e.title?.replace('سند شراء — ','')||'—'}</td>
                 <td style="text-align:center">${r.vehicle_count||'—'}</td>
                 <td class="mono" style="font-weight:900;color:var(--accent)">${fmt(e.amount)}</td>
+              </tr>`;
+            }
+            if (isSale) {
+              // استخرج رقم الفاتورة من الوصف: "بيع فاتورة INV-xxx — عميل — ملف"
+              const invMatch = (e.title||'').match(/فاتورة\s+(\S+)/);
+              const invNo = invMatch ? invMatch[1] : '—';
+              const custMatch = (e.title||'').match(/—\s*(.+?)\s*—\s*ملف/);
+              const cust = custMatch ? custMatch[1] : '—';
+              const invClick = invNo !== '—' ? `onclick="openInvoiceModal('${invNo}')" style="cursor:pointer"` : clickAttr;
+              return `<tr ${invClick}>
+                <td class="mono">${fmtDate(e.date)}</td>
+                <td class="mono text-green" style="font-weight:700">${invNo}</td>
+                <td class="mono text-amber">${fileNo}</td>
+                <td>${cust}</td>
+                <td class="mono" style="font-weight:700;color:var(--green)">${fmt(e.amount)}</td>
               </tr>`;
             }
             const method = r.pay_method||r.method||'—';

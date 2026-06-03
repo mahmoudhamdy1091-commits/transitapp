@@ -36,17 +36,10 @@ function showTransactions(type) {
   document.querySelectorAll('[id^="txperiod-"]').forEach(b => b.classList.remove('active'));
   if (el('txCustomDateWrap')) el('txCustomDateWrap').style.display = 'none';
 
-  if (type === 'collections') {
-    // سنة كاملة لتشمل كل التحصيلات المستحقة والمقبوضة
-    el('tx-from').value = `${y}-01-01`;
-    el('tx-to').value   = `${y}-12-31`;
-    el('txperiod-year')?.classList.add('active');
-  } else {
-    // بقية الأنواع: هذا الشهر
-    el('tx-from').value = `${y}-${m}-01`;
-    el('tx-to').value   = today();
-    el('txperiod-month')?.classList.add('active');
-  }
+  // افتراضي: السنة الحالية لكل الأنواع
+  el('tx-from').value = `${y}-01-01`;
+  el('tx-to').value   = `${y}-12-31`;
+  el('txperiod-year')?.classList.add('active');
 
   el('tx-title').textContent = cfg.icon + ' ' + cfg.title;
   loadTransactions();

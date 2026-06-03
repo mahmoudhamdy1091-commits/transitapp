@@ -909,12 +909,30 @@ async function submitPayment() {
   const totalPO = parseFloat(totalPOText) || 0;
   if (amount > remaining + 0.001) {
     const exceedTotal = totalPO > 0 && amount > totalPO + 0.001;
-    const msg = exceedTotal
-      ? `⚠️ تحذير: قيمة الدفعة (${fmt(amount)}) تتجاوز إجمالي الصفقة (${fmt(totalPO)}).\n\nهل تريد المتابعة رغم ذلك؟`
-      : `⚠️ قيمة الدفعة (${fmt(amount)}) أكبر من المتبقي للمورد (${fmt(remaining)}).\n\nهل تريد المتابعة؟`;
-    const proceed = confirm(msg);
-    if (!proceed) return;
+    const warningTitle = exceedTotal ? '⚠️ تجاوز إجمالي الصفقة' : '⚠️ تجاوز الباقي المستحق';
+    const warningMsg   = exceedTotal
+      ? `قيمة الدفعة (${fmt(amount)}) تتجاوز إجمالي الصفقة (${fmt(totalPO)}).\nهل تريد المتابعة رغم ذلك؟`
+      : `قيمة الدفعة (${fmt(amount)}) أكبر من الباقي للمورد (${fmt(remaining)}).\nهل تريد المتابعة؟`;
+    const okBtn = document.getElementById('confirmDeleteOkBtn');
+    confirmAction(warningTitle, warningMsg, async () => {
+      await _proceedSubmitPayment();
+    }, true);
+    if (okBtn) { okBtn.textContent = '⚠️ نعم، متابعة'; okBtn.style.background = 'var(--accent)'; }
+    return;
   }
+  await _proceedSubmitPayment();
+}
+
+// Helper to avoid code duplication
+async function _proceedSubmitPayment() {
+  const fn     = state.currentFileNo;
+  const payer  = el('pay-payer')?.value?.trim()  || '';
+  const amount = parseFloat(el('pay-amount').value);
+  const method = el('pay-method').value;
+  const doc    = el('pay-doc').value.trim();
+  const date   = el('pay-date').value;
+  const notes  = el('pay-notes').value.trim();
+  if (!fn || !payer || !amount || !date) return;
 
   try {
     const refNo = (await genSeqRef('PMT', state.system, fn, 'payments')) || `PMT-${fn}-${Date.now()}`;
