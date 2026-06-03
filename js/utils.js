@@ -410,7 +410,7 @@ function _execCtx(btnEl, key) {
 
 // دفعات المورد (dashboard)
 function _ctxPayment(btn) {
-  const id = +btn.dataset.id, fn = btn.dataset.fn;
+  const id = btn.dataset.id, fn = btn.dataset.fn;
   showCtxMenu(btn, [
     {icon:'✏️', label:'تعديل', action:()=>openEditPaymentModal(id)},
     'divider',
@@ -420,7 +420,7 @@ function _ctxPayment(btn) {
 
 // المصاريف (dashboard)
 function _ctxExpense(btn) {
-  const id = +btn.dataset.id, fn = btn.dataset.fn;
+  const id = btn.dataset.id, fn = btn.dataset.fn;
   showCtxMenu(btn, [
     {icon:'✏️', label:'تعديل', action:()=>openEditExpenseModal(id)},
     'divider',
@@ -430,7 +430,7 @@ function _ctxExpense(btn) {
 
 // التحصيلات (dashboard)
 function _ctxCollection(btn) {
-  const id = +btn.dataset.id, fn = btn.dataset.fn, paid = btn.dataset.paid === '1';
+  const id = btn.dataset.id, fn = btn.dataset.fn, paid = btn.dataset.paid === '1';
   const items = [];
   if (!paid) items.push({icon:'✅', label:'تسجيل دفع', action:()=>markCollectionPaid(id,fn)});
   items.push({icon:'✏️', label:'تعديل', action:()=>openEditCollectionModal(id)});
@@ -441,7 +441,7 @@ function _ctxCollection(btn) {
 
 // صرف الشركاء (dashboard)
 function _ctxPayout(btn) {
-  const id = +btn.dataset.id, fn = btn.dataset.fn;
+  const id = btn.dataset.id, fn = btn.dataset.fn;
   const items = [
     {icon:'🖨️', label:'طباعة سند', action:()=>printPayoutVoucher(id)},
     {icon:'✏️', label:'تعديل', action:()=>openEditPayoutModal(id)},
@@ -453,7 +453,7 @@ function _ctxPayout(btn) {
 
 // مصاريف تشغيلية (operations)
 function _ctxOpex(btn) {
-  const id = +btn.dataset.id;
+  const id = btn.dataset.id;
   const items = [{icon:'✏️', label:'تعديل', action:()=>openEditOpexModal(id)}, 'divider'];
   if (can('delete')) items.push({icon:'🗑', label:'حذف', danger:true, action:()=>confirmAction('حذف مصروف تشغيلي','هل أنت متأكد من حذف هذا المصروف؟',()=>deleteOpex(id))});
   showCtxMenu(btn, items);
@@ -491,8 +491,18 @@ function _ctxApproval(btn) {
 
 // مسودة قيد (accounting)
 function _ctxDraft(btn) {
-  const id = +btn.dataset.id;
+  const id = btn.dataset.id;
   showCtxMenu(btn, [
     {icon:'🗑', label:'حذف المسودة', danger:true, action:()=>confirmAction('حذف مسودة قيد','هل تريد حذف هذه المسودة نهائياً؟',()=>deleteDraftEntry(id))}
+  ]);
+}
+
+// المبيعات (dashboard)
+function _ctxSale(btn) {
+  const invNo = btn.dataset.inv, fn = btn.dataset.fn;
+  showCtxMenu(btn, [
+    {icon:'🖨️', label:'طباعة الفاتورة', action:()=>reprintInvoice(invNo, fn)},
+    'divider',
+    {icon:'🗑', label:'حذف الفاتورة', danger:true, action:()=>confirmAction('حذف فاتورة بيع',`سيتم حذف الفاتورة ${invNo} نهائياً — هل أنت متأكد؟`,()=>deleteSaleInvoice(invNo, fn))}
   ]);
 }
