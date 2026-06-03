@@ -361,3 +361,24 @@ function confirmAction(title, msg, onConfirm, danger = true) {
     }
   }
 }
+
+// ════════════════════════════════════════
+// CTX MENU ACTIONS REGISTRY
+// بدل arrow functions في HTML attributes — نخزن الـ actions هنا
+// ════════════════════════════════════════
+window._ctxReg = {};
+let _ctxRegCounter = 0;
+
+function ctxReg(items) {
+  // كل item ممكن يكون string ('divider') أو object بـ action function
+  // نحوّل كل action لـ string reference آمن
+  const key = 'ctx_' + (++_ctxRegCounter);
+  window._ctxReg[key] = items;
+  return key;
+}
+
+function showCtxMenuById(btnEl, regKey) {
+  const items = window._ctxReg[regKey];
+  if (!items) return;
+  showCtxMenu(btnEl, items);
+}

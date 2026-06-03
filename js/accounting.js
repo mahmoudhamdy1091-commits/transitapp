@@ -3,6 +3,10 @@
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
 
+// ── State objects (كانوا في contacts.js — نُقلوا هنا) ──
+const trialState  = { data:[], typeFilter:'all', from:null, to:null, period:'all' };
+const ledgerState = { accountCode:null, accountName:null, from:null, to:null, period:'all' };
+
 function _getPeriodDates(period) {
   const now = new Date();
   const yr  = now.getFullYear();
