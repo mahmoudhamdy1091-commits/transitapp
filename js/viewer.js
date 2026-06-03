@@ -354,16 +354,19 @@ async function submitQuickCollection() {
 
   try {
     const refNo = (await genSeqRef('COL', state.system, fileNo, 'collections')) || `COL-${fileNo}-${Date.now()}`;
+    // FIX: paid_date لا يُحفظ في حالة Draft
+    const isPostedNow = entryStatus() === 'posted';
     const data = {
       system_type: state.system, file_no: fileNo,
       pay_id: refNo, inv_no: invNo, customer: customer||null,
       vin: vin||null, amount, pay_method: method,
       document: doc||null, due_date: due||null,
-      paid_date: paid, notes: notes||null, ref_no: refNo
+      paid_date: isPostedNow ? paid : null,
+      notes: notes||null, ref_no: refNo
     , post_status:entryStatus()};
     await apiPost('collections', data);
     await logAudit('INSERT','collections', fileNo, null, data);
-    if (entryStatus()==='posted' && customer) await je_collection({sys:state.system,date:paid||today(),amount,fileNo,customer,invNo,method});
+    if (isPostedNow && customer) await je_collection({sys:state.system,date:paid||today(),amount,fileNo,customer,invNo,method});
     markSaving('quickCollectionModal'); closeModal('quickCollectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     invalidateCache();

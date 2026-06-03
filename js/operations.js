@@ -1238,7 +1238,8 @@ async function approveItem(type, id) {
       if (item && item.paid_date) {
         await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
       }
-      // لو لا يوجد paid_date → لا قيد الآن، سيُنشأ عند تسجيل الدفع لاحقاً
+      // FIX: إذا لا يوجد paid_date → التحصيل معلق — يظهر في قائمة "مستحق" ليُسجَّل الدفع لاحقاً
+      // لا قيد يُنشأ الآن لأن المبلغ لم يُقبض بعد
     }
     if (type === 'payment') {
       const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
@@ -1332,6 +1333,7 @@ async function approveAll() {
             const cogs = (allInvSales||[]).reduce((s,x)=>s+(_vCost[x.vin]||0),0);
             if (totalAmt > 0) await je_sale({ sys:state.system, date:r.sale_date||today(), amount:totalAmt, cost:cogs, fileNo:r.file_no, customer:r.customer||'', invNo:r.inv_no||'' });
           } else if (r._type === 'collection' && r.paid_date) {
+            // FIX: القيد يُنشأ فقط إذا كان paid_date موجوداً (مدفوع فعلاً)
             await je_collection({ sys:state.system, date:r.paid_date, amount:+r.amount||0, fileNo:r.file_no, customer:r.customer||'', invNo:r.inv_no||'', method:r.pay_method||'تحويل بنكي' });
           } else if (r._type === 'payment') {
             await je_payment({ sys:state.system, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'تحويل بنكي' });

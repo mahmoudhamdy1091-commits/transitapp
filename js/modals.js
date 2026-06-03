@@ -1313,6 +1313,16 @@ async function submitSale() {
       } catch(jeErr) { toast(`⚠️ تم حفظ الفاتورة لكن فشل قيد البيع: ${jeErr.message}`,'warn'); }
     }
 
+    // ── اقرأ بيانات الدفع قبل إغلاق المودال ──
+    // FIX: القراءة تتم هنا قبل closeModal لضمان وجود العناصر في DOM
+    const isPaid      = el('sale-paid-now')?.checked || false;
+    const payMethod   = el('sale-pay-method')?.value || 'تحويل بنكي';
+    const payDoc      = el('sale-pay-doc')?.value?.trim() || null;
+    const payDate     = el('sale-pay-date')?.value || date;
+    const payNotes    = el('sale-pay-notes')?.value?.trim() || null;
+    const payAmtInput = parseFloat(el('sale-pay-amount')?.value) || 0;
+    const allVins     = saleItems.map(i=>i.vin).filter(Boolean).join(' / ');
+
     // ── تحديث حالة الصفقة ──
     const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const allS = await apiGetAll('sales', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
@@ -1321,23 +1331,18 @@ async function submitSale() {
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` },
       { status: allSold ? 'CLOSED' : 'IN PROGRESS' });
 
-    // اقرأ بيانات الدفع
-    const isPaid      = el('sale-paid-now')?.checked || false;
-    const payMethod   = el('sale-pay-method')?.value || 'تحويل بنكي';
-    const payDoc      = el('sale-pay-doc')?.value?.trim() || null;
-    const payDate     = el('sale-pay-date')?.value || date;
-    const payNotes    = el('sale-pay-notes')?.value?.trim() || null;
-    const payAmtInput = parseFloat(el('sale-pay-amount')?.value) || 0;
-    const collAmt     = payAmtInput > 0 ? Math.min(payAmtInput, grandTotal) : grandTotal;
-    const allVins     = saleItems.map(i=>i.vin).filter(Boolean).join(' / ');
-
     closeModal('saleModal');
     invalidateCache();
 
     // ── تحصيل واحد للفاتورة كلها (شامل المصاريف الإضافية) ──
+    // FIX: القاعدة — paid_date لا يُحفظ إلا إذا كان السجل posted.
+    //      في حالة Draft مع isPaid=true: يُحفظ التحصيل كـ draft بدون paid_date
+    //      ليُنشأ القيد الصحيح عند الموافقة من approveItem().
+    const isPostedNow = entryStatus() === 'posted';
+    const isPartial   = isPaid && payAmtInput > 0 && payAmtInput < grandTotal;
+
     try {
       const colRefNo = (await genSeqRef('COL', state.system, fn, 'collections')) || `COL-${invNo}-${Date.now()}`;
-      const isPartial = isPaid && payAmtInput > 0 && payAmtInput < grandTotal;
 
       if (isPartial) {
         // دفع مقدم: سجّل التحصيل المدفوع + الباقي كمستحق
@@ -1345,7 +1350,9 @@ async function submitSale() {
         const col1 = {
           system_type: state.system, file_no: fn, inv_no: invNo, customer,
           vin: allVins, amount: payAmtInput, pay_method: payMethod,
-          document: payDoc, due_date: date, paid_date: payDate,
+          document: payDoc, due_date: date,
+          // FIX: paid_date يُحفظ فقط إذا كان السجل سيُرحَّل الآن
+          paid_date: isPostedNow ? payDate : null,
           notes: payNotes, post_status: entryStatus(),
           ref_no: colRefNo, pay_id: colRefNo,
         };
@@ -1360,7 +1367,7 @@ async function submitSale() {
         await apiPost('collections', col2);
         await logAudit('INSERT','collections',fn,null,col1);
         if (customer) await ensureContact(customer, 'customer');
-        if (entryStatus()==='posted') {
+        if (isPostedNow) {
           try {
             await je_collection({ sys:state.system, date:payDate, amount:payAmtInput, fileNo:fn, customer, invNo, method:payMethod });
           } catch(jeErr) { toast(`⚠️ فشل قيد التحصيل: ${jeErr.message}`,'warn'); }
@@ -1370,14 +1377,16 @@ async function submitSale() {
         const colData = {
           system_type: state.system, file_no: fn, inv_no: invNo, customer,
           vin: allVins, amount: grandTotal, pay_method: payMethod,
-          document: payDoc, due_date: date, paid_date: isPaid ? payDate : null,
+          document: payDoc, due_date: date,
+          // FIX: paid_date يُحفظ فقط إذا كان isPaid=true AND السجل posted
+          paid_date: (isPaid && isPostedNow) ? payDate : null,
           notes: payNotes, post_status: entryStatus(),
           ref_no: colRefNo, pay_id: colRefNo,
         };
         await apiPost('collections', colData);
         await logAudit('INSERT','collections',fn,null,colData);
         if (customer) await ensureContact(customer, 'customer');
-        if (isPaid && entryStatus()==='posted') {
+        if (isPaid && isPostedNow) {
           try {
             await je_collection({ sys:state.system, date:payDate, amount:grandTotal, fileNo:fn, customer, invNo, method:payMethod });
           } catch(jeErr) { toast(`⚠️ فشل قيد التحصيل: ${jeErr.message}`,'warn'); }
@@ -1563,17 +1572,19 @@ async function submitCollection() {
   try {
     const refNo  = (await genSeqRef('COL', state.system, fn, 'collections')) || `COL-${fn}-${Date.now()}`;
     const pay_id = refNo;
+    // FIX: paid_date لا يُحفظ في حالة Draft — سيُضاف عند الموافقة أو عند تسجيل الدفع
+    const isPostedNow = entryStatus() === 'posted';
     const data = {
       system_type: state.system, file_no: fn,
       pay_id, inv_no: invNo, customer: cust, vin: vin||null, amount,
       pay_method: method, document: doc||null,
-      due_date: due||null, paid_date: paid||null, notes: notes||null,
-      ref_no: refNo, post_status: entryStatus(),
+      due_date: due||null, paid_date: (paid && isPostedNow) ? paid : null,
+      notes: notes||null, ref_no: refNo, post_status: entryStatus(),
     };
     await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
     if (cust) await ensureContact(cust, 'customer');
-    if (entryStatus()==='posted' && cust) await je_collection({sys:state.system,date:paid||today(),amount,fileNo:fn,customer:cust,invNo:invNo||'',method});
+    if (isPostedNow && cust && paid) await je_collection({sys:state.system,date:paid,amount,fileNo:fn,customer:cust,invNo:invNo||'',method});
     markSaving('collectionModal'); closeModal('collectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     invalidateCache();

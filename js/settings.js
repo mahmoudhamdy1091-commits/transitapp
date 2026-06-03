@@ -1003,11 +1003,14 @@ async function submitEditCollection() {
     const old = oldData?.[0] || {};
     const wasUnpaid = !old.paid_date;
     const nowPaid   = !!paid;
+    // FIX: paid_date لا يُحفظ في حالة Draft — يُحفظ فقط إذا كان السجل posted
+    const isPostedRecord = old.post_status !== 'draft';
+    const effectivePaidDate = (paid && isPostedRecord) ? paid : null;
 
-    await apiPatch('collections', { id:`eq.${id}` }, { amount, pay_method:method, due_date:due||null, paid_date:paid||null, document:doc||null, notes:notes||null });
+    await apiPatch('collections', { id:`eq.${id}` }, { amount, pay_method:method, due_date:due||null, paid_date:effectivePaidDate, document:doc||null, notes:notes||null });
 
     // إذا كانت غير مدفوعة وأصبحت مدفوعة الآن → أنشئ قيد تحصيل
-    if (wasUnpaid && nowPaid && old.post_status !== 'draft') {
+    if (wasUnpaid && nowPaid && isPostedRecord) {
       try {
         await je_collection({
           sys:      state.system,
@@ -1068,6 +1071,12 @@ async function submitMarkPaid() {
     const c = data?.[0];
     if (!c) throw new Error('لم يُعثر على التحصيل');
 
+    // FIX: لا يمكن تسجيل الدفع على تحصيل Draft — يجب الموافقة عليه أولاً
+    if (c.post_status === 'draft') {
+      showFieldErr('cpaidError', '⚠️ هذا التحصيل في انتظار الموافقة (Draft) — راجع قائمة الموافقات أولاً');
+      return;
+    }
+
     await apiPatch('collections', { id:`eq.${id}` }, {
       paid_date:  date,
       pay_method: method,
@@ -1075,7 +1084,7 @@ async function submitMarkPaid() {
       notes:      notes || c.notes || null,
     });
 
-    // قيد محاسبي لو مرحّل
+    // قيد محاسبي لو مرحّل (posted أو null = بيانات قديمة)
     if (isPosted(c)) {
       try {
         await je_collection({
