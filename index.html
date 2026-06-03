@@ -1529,19 +1529,14 @@
           <button class="btn btn-sm journal-period-btn active" id="whf-all" onclick="filterWhByLocation('all')">🏪 الجميع</button>
         </div>
 
-        <!-- Warehouse Cards -->
-        <div id="wh-cards" style="margin-bottom:16px">
-          <div class="loading"><div class="spinner"></div></div>
-        </div>
-
-        <!-- Transfers Table -->
+        <!-- جدول المخزن الموحد -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-          <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-            <span style="font-size:13px;font-weight:700">📋 سجل التحويلات</span>
-            <input type="text" id="wh-search" placeholder="🔍 بحث بـ VIN أو مخزن أو ملف..." oninput="filterWhTransfers()"
+          <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <span style="font-size:13px;font-weight:700">🚗 السيارات</span>
+            <input type="text" id="wh-search" placeholder="🔍 بحث بـ VIN أو موديل أو ملف..." oninput="filterWhSearch()"
               style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:220px">
           </div>
-          <div id="wh-transfers-table"><div class="loading"><div class="spinner"></div></div></div>
+          <div id="wh-cards"><div class="loading"><div class="spinner"></div></div></div>
         </div>
       </div><!-- /warehousesView -->
 
@@ -19617,138 +19612,83 @@ function filterWhByLocation(loc) {
   document.querySelectorAll('[id^="whf-"]').forEach(b => b.classList.remove('active'));
   el('whf-' + loc)?.classList.add('active');
   whState.locationFilter = loc === 'all' ? '' : loc;
-  const transfers = loc === 'all'
+  const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
+  const filtered = loc === 'all'
     ? whState.allTransfers
-    : (whState.allTransfers||[]).filter(t => (t.location_name||'').toLowerCase().includes(loc.toLowerCase()));
-  whState.transfers = transfers;
-  ensureCache().then(() => {
-    const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
-    renderWhKpis(transfers, soldVins);
-    renderWhCards(transfers, soldVins);
-    renderWhTransfersTable(transfers, soldVins);
-  });
+    : (whState.allTransfers||[]).filter(t => t.location_name === loc);
+  renderWhTable(filtered, soldVins);
 }
 
 async function loadWarehouses() {
   const sys = state.system;
   try {
-    // جلب كل التحويلات
     const transfers = await apiGetAll('stock_locations', {
       select:'*', system_type:`eq.${sys}`, order:'transfer_date.desc,id.desc'
     });
     whState.transfers    = transfers || [];
     whState.allTransfers = transfers || [];
+    whState.warehouses   = [...new Set((transfers||[]).map(t=>t.location_name).filter(Boolean))].sort();
 
-    // جلب أسماء المخازن الفريدة
-    whState.warehouses = [...new Set((transfers||[]).map(t=>t.location_name).filter(Boolean))];
-
-    // جلب المبيعات والسيارات للحالة
     await ensureCache();
     const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
 
-    renderWhKpis(transfers, soldVins);
-    renderWhCards(transfers, soldVins);
-    renderWhTransfersTable(transfers, soldVins);
+    // KPIs
+    const inStock = (transfers||[]).filter(t => !soldVins.has(t.vin)).length;
+    const sold    = (transfers||[]).filter(t =>  soldVins.has(t.vin)).length;
+    if (el('wh-kpis')) el('wh-kpis').innerHTML = [
+      ['🏪 المخازن',   whState.warehouses.length, 'var(--purple)'],
+      ['📦 في المخزن', inStock,                   'var(--accent)'],
+      ['✅ مباع',      sold,                       'var(--green)'],
+      ['🚗 الإجمالي',  (transfers||[]).length,     'var(--blue)'],
+    ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c};font-size:20px;font-weight:900">${v}</div></div>`).join('');
+
+    // أزرار الفلتر ديناميكياً
+    const filterBar = el('wh-filter-bar');
+    if (filterBar) {
+      filterBar.querySelectorAll('[data-wh-btn]').forEach(b => b.remove());
+      whState.warehouses.forEach(name => {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-sm journal-period-btn';
+        btn.id = 'whf-' + name;
+        btn.setAttribute('data-wh-btn','1');
+        btn.textContent = '🏪 ' + name;
+        btn.onclick = () => filterWhByLocation(name);
+        filterBar.appendChild(btn);
+      });
+      el('whf-all')?.classList.add('active');
+    }
+
+    renderWhTable(transfers, soldVins);
   } catch(e) {
-    if(el('wh-cards')) el('wh-cards').innerHTML = errHTML('خطأ: '+e.message);
+    if (el('wh-cards')) el('wh-cards').innerHTML = errHTML('خطأ: '+e.message);
   }
 }
 
-function renderWhKpis(transfers, soldVins) {
-  const total    = transfers.length;
-  const sold     = transfers.filter(t => soldVins.has(t.vin)).length;
-  const inStock  = total - sold;
-  const whs      = new Set(transfers.map(t=>t.location_name).filter(Boolean)).size;
-  if (el('wh-kpis')) el('wh-kpis').innerHTML = [
-    ['🏪 المخازن',    whs,     'var(--purple)'],
-    ['🚗 إجمالي محوّل', total, 'var(--blue)'],
-    ['📦 في المخزن',  inStock, 'var(--accent)'],
-    ['✅ مباع',       sold,    'var(--green)'],
-  ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c};font-size:20px;font-weight:900">${v}</div></div>`).join('');
-}
-
-function renderWhCards(transfers, soldVins) {
+function renderWhTable(transfers, soldVins) {
   const wrap = el('wh-cards');
   if (!wrap) return;
-  if (!transfers.length) {
-    wrap.innerHTML = emptyHTML('🏪','لا توجد مخازن أو تحويلات بعد');
+  if (!transfers || !transfers.length) {
+    wrap.innerHTML = emptyHTML('🚗','لا توجد سيارات في هذا المخزن');
     return;
   }
-
-  // تجميع بالمخزن
-  const byWh = {};
-  transfers.forEach(t => {
-    const wh = t.location_name || 'غير محدد';
-    if (!byWh[wh]) byWh[wh] = [];
-    byWh[wh].push(t);
-  });
-
-  wrap.innerHTML = Object.entries(byWh).map(([wh, vins]) => {
-    const total   = vins.length;
-    const sold    = vins.filter(t => soldVins.has(t.vin)).length;
-    const inStock = total - sold;
-    const pct     = total > 0 ? Math.round(sold/total*100) : 0;
-
-    const rows = vins.map(t => {
-      const isSold = soldVins.has(t.vin);
-      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);gap:8px">
-        <div style="display:flex;align-items:center;gap:8px;min-width:0">
-          <span style="font-size:16px">${isSold?'✅':'🚗'}</span>
-          <div style="min-width:0">
-            <div style="font-size:11px;font-family:monospace;color:var(--text);direction:ltr;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.vin||'—'}</div>
-            <div style="font-size:10px;color:var(--text2)">${t.model||''} · ملف: ${t.file_no||'—'}</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'مباع':'في المخزن'}</span>
-          <button class="btn btn-sm" onclick="openViewer('${t.file_no}')" title="فتح الصفقة" style="padding:2px 7px;font-size:10px">📂</button>
-          <button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" title="حذف التحويل" style="padding:2px 7px;font-size:10px;background:var(--red-dim);color:var(--red)">🗑</button>
-        </div>
-      </div>`;
-    }).join('');
-
-    return `<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div style="font-size:14px;font-weight:900">🏪 ${wh}</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">${total} سيارة · ${inStock} في المخزن · ${sold} مباع</div>
-        </div>
-        <div style="text-align:left">
-          <div style="font-size:18px;font-weight:900;color:${inStock>0?'var(--accent)':'var(--green)'}">${inStock}</div>
-          <div style="font-size:10px;color:var(--text2)">متاح</div>
-        </div>
-      </div>
-      <div style="padding:4px 0;height:6px;background:var(--card2)">
-        <div style="height:100%;width:${pct}%;background:var(--green);transition:width .4s"></div>
-      </div>
-      <div style="padding:8px 14px;max-height:280px;overflow-y:auto">${rows}</div>
-      <div style="padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:6px">
-        <button class="btn btn-secondary btn-sm" onclick="openNewTransferModal('${wh}')">➕ إضافة سيارات</button>
-        <button class="btn btn-secondary btn-sm" onclick="exportWhCard('${wh}')">📥 تصدير</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function renderWhTransfersTable(transfers, soldVins) {
-  const wrap = el('wh-transfers-table');
-  if (!wrap) return;
-  if (!transfers.length) { wrap.innerHTML = emptyHTML('📋','لا توجد تحويلات'); return; }
+  const vehicleMap = {};
+  (state.allVehicles||[]).forEach(v => { if (v.vin) vehicleMap[v.vin] = v; });
 
   const rows = transfers.map(t => {
     const isSold = soldVins.has(t.vin);
+    const v      = vehicleMap[t.vin] || {};
     return `<tr>
-      <td class="mono text-muted" style="font-size:11px">${t.transfer_date||'—'}</td>
-      <td><span style="font-weight:700;color:var(--purple)">${t.location_name||'—'}</span></td>
-      <td class="mono text-amber" style="cursor:pointer;font-weight:700" onclick="openViewer('${t.file_no}')">${t.file_no||'—'}</td>
-      <td class="mono" style="direction:ltr;font-size:11px">${t.vin||'—'}</td>
-      <td>${t.model||'—'}</td>
-      <td class="mono text-muted" style="font-size:11px">${t.transfer_ref||'—'}</td>
-      <td><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'✅ مباع':'📦 في المخزن'}</span></td>
-      <td style="font-size:11px;color:var(--text2)">${t.notes||'—'}</td>
-      <td>
-        <button class="btn btn-sm" onclick="openViewer('${t.file_no}')" style="padding:2px 8px;font-size:10px">📂</button>
-        <button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" style="padding:2px 8px;font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>
+      <td><span style="font-weight:700;color:var(--purple);white-space:nowrap">🏪 ${t.location_name||'—'}</span></td>
+      <td class="mono text-accent" style="cursor:pointer;font-weight:700;white-space:nowrap" onclick="openViewer('${t.file_no||v.file_no||''}')">${t.file_no||v.file_no||'—'}</td>
+      <td class="mono" style="direction:ltr;font-size:11px;white-space:nowrap">${t.vin||'—'}</td>
+      <td style="white-space:nowrap">${v.model||t.model||'—'} ${v.year||''}</td>
+      <td style="white-space:nowrap">${v.color||'—'}</td>
+      <td class="mono text-blue" style="white-space:nowrap">${v.purchase_price ? fmt(v.purchase_price) : '—'}</td>
+      <td style="white-space:nowrap">${t.transfer_date||v.purchase_date||'—'}</td>
+      <td><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'✅ مباع':'📦 في المخزن'}</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="openViewer('${t.file_no||v.file_no||''}')" style="padding:2px 8px;font-size:10px" title="فتح الصفقة">📂</button>
+        ${t.id && t.transfer_ref !== 'إدخال أولي' ? `<button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" style="padding:2px 8px;font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)" title="حذف التحويل">🗑</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -19756,26 +19696,28 @@ function renderWhTransfersTable(transfers, soldVins) {
   wrap.innerHTML = `<div style="overflow-x:auto">
     <table class="data-table">
       <thead><tr>
-        <th>التاريخ</th><th>المخزن</th><th>الملف</th><th>VIN</th>
-        <th>الموديل</th><th>المستند</th><th>الحالة</th><th>ملاحظات</th><th></th>
+        <th>المخزن</th><th>الملف</th><th>VIN</th>
+        <th>الموديل</th><th>اللون</th><th>سعر الشراء</th>
+        <th>التاريخ</th><th>الحالة</th><th></th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`;
 }
 
-function filterWhTransfers() {
-  const q = (el('wh-search')?.value||'').toLowerCase().trim();
-  const filtered = q
-    ? whState.allTransfers.filter(t =>
-        (t.vin||'').toLowerCase().includes(q) ||
-        (t.location_name||'').toLowerCase().includes(q) ||
-        (t.file_no||'').toLowerCase().includes(q) ||
-        (t.model||'').toLowerCase().includes(q)
-      )
-    : whState.allTransfers;
+function filterWhSearch() {
+  const q   = (el('wh-search')?.value||'').toLowerCase().trim();
+  const loc = whState.locationFilter || '';
+  let filtered = whState.allTransfers || [];
+  if (loc) filtered = filtered.filter(t => t.location_name === loc);
+  if (q)   filtered = filtered.filter(t =>
+    (t.vin||'').toLowerCase().includes(q) ||
+    (t.location_name||'').toLowerCase().includes(q) ||
+    (t.file_no||'').toLowerCase().includes(q) ||
+    (t.model||'').toLowerCase().includes(q)
+  );
   const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
-  renderWhTransfersTable(filtered, soldVins);
+  renderWhTable(filtered, soldVins);
 }
 
 // ── إدارة المخازن ──
