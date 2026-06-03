@@ -270,7 +270,7 @@ function renderTxTable(rows, cfg, auditMap, type) {
     return '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">⏳ معلق</span>';
   };
 
-  const thead = `<tr>${typeCols.map(c=>`<th>${c.t}</th>`).join('')}<th>بواسطة</th><th>الحالة</th></tr>`;
+  const thead = `<tr>${typeCols.map(c=>`<th>${c.t}</th>`).join('')}<th>بواسطة</th><th>الحالة</th><th></th></tr>`;
 
   const tbody = rows.map(r => {
     const cells = typeCols.map(col => {
@@ -288,8 +288,9 @@ function renderTxTable(rows, cfg, auditMap, type) {
     const rowClick  = type==='deals' ? `onclick="openViewer('${r.file_no}')" style="cursor:pointer"` : '';
     let statusCell  = statusBadge(r);
     let rowStyle = '';
+    const isVoided = r.post_status === 'voided';
     if (type === 'collections') {
-      if (r.post_status === 'voided') {
+      if (isVoided) {
         statusCell = '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">🚫 ملغى</span>';
         rowStyle = 'opacity:.5;';
       } else if (r.paid_date) {
@@ -299,7 +300,12 @@ function renderTxTable(rows, cfg, auditMap, type) {
         rowStyle = 'background:var(--accent-dim);';
       }
     }
-    return `<tr ${rowClick} style="${rowStyle}">${cells}<td style="font-size:11px;color:var(--text2)">${shortUser}</td><td>${statusCell}</td></tr>`;
+    // زر ⋮ حسب النوع
+    const fn = r.file_no || '';
+    const ctxBtn = !isVoided && type !== 'deals' && type !== 'opex'
+      ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxTx(this,'${type}')" data-id="${r.id}" data-fn="${fn}" data-paid="${r.paid_date?'1':'0'}" title="إجراءات">⋮</button>`
+      : (type === 'opex' ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxOpex(this)" data-id="${r.id}" title="إجراءات">⋮</button>` : '');
+    return `<tr ${rowClick} style="${rowStyle}">${cells}<td style="font-size:11px;color:var(--text2)">${shortUser}</td><td>${statusCell}</td><td style="text-align:center">${ctxBtn}</td></tr>`;
   }).join('');
 
   const total = rows.filter(r=>r.post_status!=='voided').reduce((s,r)=>s+(+r[cfg.amountField]||0),0);
@@ -313,9 +319,9 @@ function renderTxTable(rows, cfg, auditMap, type) {
           ✅ محصّل: <span style="color:var(--green);font-weight:700">${fmt(totalPaidTX)}</span>
           ${totalPendTX>0?` · ⏳ مستحق: <span style="color:var(--accent);font-weight:700">${fmt(totalPendTX)}</span>`:''}
         </td>
-        <td></td>
+        <td colspan="2"></td>
        </tr>`
-    : `<tr style="background:var(--card2);font-weight:700"><td colspan="${typeCols.length-1}">الإجمالي</td><td class="mono">${fmt(total)}</td><td colspan="2"></td></tr>`;
+    : `<tr style="background:var(--card2);font-weight:700"><td colspan="${typeCols.length-1}">الإجمالي</td><td class="mono">${fmt(total)}</td><td colspan="3"></td></tr>`;
 
   el('tx-table').innerHTML = `
     <table class="data-table" id="tx-data-table">
@@ -378,8 +384,8 @@ function renderSalesInvoices(rows, cfg, auditMap) {
           ${(inv.post_status==='posted'||!inv.post_status)?'✅ مرحّلة':'⏳ معلقة'}
         </span>
       </td>
-      <td>
-        <button class="btn btn-sm" onclick="event.stopPropagation();openInvoiceModal('${inv.inv_no}')" style="font-size:11px;padding:3px 8px">🖨️ فتح</button>
+      <td style="text-align:center" onclick="event.stopPropagation()">
+        <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxSale(this)" data-inv="${inv.inv_no}" data-fn="${inv.file_no}" data-id="${inv.vehicles[0]?.id||''}" title="إجراءات">⋮</button>
       </td>
     </tr>`).join('');
 

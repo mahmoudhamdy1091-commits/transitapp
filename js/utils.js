@@ -507,3 +507,41 @@ function _ctxSale(btn) {
     {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>voidSaleInvoice(invNo, fn)}
   ]);
 }
+
+// المعاملات — handler موحّد لكل أنواع TX
+function _ctxTx(btn, type) {
+  const id = btn.dataset.id, fn = btn.dataset.fn, paid = btn.dataset.paid === '1';
+  switch(type) {
+    case 'payments':
+      return _ctxPayment(btn);
+    case 'expenses':
+      showCtxMenu(btn, [
+        {icon:'✏️', label:'تعديل', action:()=>openEditExpenseModal(id)},
+        'divider',
+        {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء مصروف','سيتم إلغاء المصروف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deleteExpenseEntry(id,fn))}
+      ]);
+      break;
+    case 'collections':
+      _ctxCollection(btn);
+      break;
+    case 'payouts':
+      showCtxMenu(btn, [
+        {icon:'🖨️', label:'طباعة سند', action:()=>printPayoutVoucher(id)},
+        {icon:'✏️', label:'تعديل', action:()=>openEditPayoutModal(id)},
+        'divider',
+        {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء صرف شريك','سيتم إلغاء الصرف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePayoutEntry(id,fn))}
+      ]);
+      break;
+    case 'sales': {
+      // المبيعات في TX: data-inv موجود على الزر
+      const invNo = btn.dataset.inv || '';
+      showCtxMenu(btn, [
+        {icon:'✏️', label:'تعديل الفاتورة', action:()=>openEditSaleApproval(id, fn, invNo)},
+        {icon:'🖨️', label:'طباعة الفاتورة', action:()=>openInvoiceModal(invNo)},
+        'divider',
+        {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>voidSaleInvoice(invNo, fn)}
+      ]);
+      break;
+    }
+  }
+}
