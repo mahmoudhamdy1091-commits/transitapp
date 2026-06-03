@@ -1992,6 +1992,20 @@
           <button class="btn btn-secondary btn-sm" onclick="saleToggleAll(document.getElementById('sale-check-all'))" style="font-size:11px;padding:2px 8px">☑ اختر الكل</button>
         </div>
       </div>
+
+      <!-- VIN Search -->
+      <div style="margin-bottom:8px;position:relative">
+        <input type="text" id="sale-vin-search"
+          placeholder="🔍  ابحث برقم الشاصي (VIN)..."
+          oninput="filterSaleVehiclesByVin(this.value)"
+          style="width:100%;background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 40px 8px 12px;color:var(--text);font-family:monospace,Cairo,sans-serif;font-size:13px;direction:ltr;letter-spacing:.5px;box-sizing:border-box;transition:border-color .2s"
+          onfocus="this.style.borderColor='var(--accent)'"
+          onblur="this.style.borderColor='var(--border)'">
+        <span id="sale-vin-search-clear"
+          onclick="clearSaleVinSearch()"
+          style="display:none;position:absolute;left:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text2);font-size:16px;line-height:1">✕</span>
+        <span id="sale-vin-match-count" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text2);font-family:Cairo,sans-serif"></span>
+      </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:12px" id="saleVehiclesTable">
           <thead>
