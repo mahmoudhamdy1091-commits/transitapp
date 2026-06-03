@@ -3829,24 +3829,15 @@ function filterWhByLocation(loc) {
   document.querySelectorAll('[id^="whf-"]').forEach(b => b.classList.remove('active'));
   el('whf-' + loc)?.classList.add('active');
   whState.locationFilter = loc === 'all' ? '' : loc;
+  const transfers = loc === 'all'
+    ? whState.allTransfers
+    : (whState.allTransfers||[]).filter(t => (t.location_name||'').toLowerCase().includes(loc.toLowerCase()));
+  whState.transfers = transfers;
   ensureCache().then(() => {
     const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
-    // إعادة بناء allWithDefault من البيانات الكاملة
-    const allTransfers = whState.allTransfers || [];
-    const DEFAULT_WH = 'الكويت';
-    const transferredVins = new Set(allTransfers.map(t=>t.vin).filter(Boolean));
-    const kuwaitEntries = (state.allVehicles||[])
-      .filter(v => v.vin && !transferredVins.has(v.vin))
-      .map(v => ({ id:null, vin:v.vin, model:v.model||v.vehicle_type||'', file_no:v.file_no||'', location_name:DEFAULT_WH, transfer_date:v.created_at||null, _isDefault:true }));
-    const allWithDefault = [...kuwaitEntries, ...allTransfers];
-
-    const filtered = loc === 'all'
-      ? allWithDefault
-      : allWithDefault.filter(t => (t.location_name||'').toLowerCase().includes(loc.toLowerCase()));
-
-    renderWhKpis(filtered, soldVins);
-    renderWhCards(filtered, soldVins);
-    renderWhTransfersTable(loc === 'all' ? allTransfers : allTransfers.filter(t=>(t.location_name||'').toLowerCase().includes(loc.toLowerCase())), soldVins);
+    renderWhKpis(transfers, soldVins);
+    renderWhCards(transfers, soldVins);
+    renderWhTransfersTable(transfers, soldVins);
   });
 }
 
@@ -3867,25 +3858,9 @@ async function loadWarehouses() {
     await ensureCache();
     const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
 
-    // ✅ المخزن الافتراضي: كل سيارة ليس لها تحويل = الكويت
-    const DEFAULT_WH = 'الكويت';
-    const transferredVins = new Set((transfers||[]).map(t=>t.vin).filter(Boolean));
-    console.log('[WH-DEBUG] allVehicles count:', (state.allVehicles||[]).length, '| transferredVins:', transferredVins.size);
-    const kuwaitVehicles = (state.allVehicles||[]).filter(v => v.vin && !transferredVins.has(v.vin));
-    console.log('[WH-DEBUG] kuwaitVehicles count:', kuwaitVehicles.length);
-    const kuwaitEntries = kuwaitVehicles.map(v => ({
-      id: null, vin: v.vin,
-      model: v.model || v.vehicle_type || '',
-      file_no: v.file_no || '',
-      location_name: DEFAULT_WH,
-      transfer_date: v.created_at || null,
-      _isDefault: true,
-    }));
-    const allWithDefault = [...kuwaitEntries, ...(transfers||[])];
-
-    renderWhKpis(allWithDefault, soldVins);
-    renderWhCards(allWithDefault, soldVins);
-    renderWhTransfersTable(transfers, soldVins);  // جدول التحويلات = الحقيقية فقط
+    renderWhKpis(transfers, soldVins);
+    renderWhCards(transfers, soldVins);
+    renderWhTransfersTable(transfers, soldVins);
   } catch(e) {
     if(el('wh-cards')) el('wh-cards').innerHTML = errHTML('خطأ: '+e.message);
   }
@@ -3939,7 +3914,7 @@ function renderWhCards(transfers, soldVins) {
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
           <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'مباع':'في المخزن'}</span>
           <button class="btn btn-sm" onclick="openViewer('${t.file_no}')" title="فتح الصفقة" style="padding:2px 7px;font-size:10px">📂</button>
-          ${t._isDefault ? '' : `<button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" title="حذف التحويل" style="padding:2px 7px;font-size:10px;background:var(--red-dim);color:var(--red)">🗑</button>`}
+          <button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" title="حذف التحويل" style="padding:2px 7px;font-size:10px;background:var(--red-dim);color:var(--red)">🗑</button>
         </div>
       </div>`;
     }).join('');

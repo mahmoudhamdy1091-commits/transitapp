@@ -472,7 +472,7 @@ async function submitNewFile() {
       }
     }
 
-    // 3. Insert vehicles
+    // 3. Insert vehicles + تسجيل في مخزن الكويت الأساسي
     for (const v of vehicles) {
       await apiPost('vehicles', {
         system_type: state.system, file_no: fileNo, po_no: poNo||null,
@@ -483,6 +483,19 @@ async function submitNewFile() {
         purchase_price: v.price||0,
         purchase_date: poDate||null, notes: v.notes||null
       });
+      // تسجيل تلقائي في مخزن الكويت (المخزن الأساسي)
+      if (v.vin) {
+        try {
+          await apiPost('stock_locations', {
+            system_type: state.system, file_no: fileNo,
+            vin: v.vin, model: v.model||v.type||null,
+            location_name: 'الكويت',
+            transfer_date: poDate||today(),
+            transfer_ref: 'إدخال أولي', notes: 'مخزن أساسي',
+            transferred_by: state.user?.email||null,
+          });
+        } catch(e) { /* تجاهل لو VIN مكرر */ }
+      }
     }
 
     // 4. Insert partners + their payments
@@ -618,6 +631,19 @@ async function submitEditFileFull() {
           plate:v.plate||null, color:v.color||null,
           purchase_price:v.price||0, purchase_date:poDate||null, notes:v.notes||null
         });
+        // تسجيل تلقائي في مخزن الكويت
+        if (v.vin) {
+          try {
+            await apiPost('stock_locations', {
+              system_type:state.system, file_no:newFileNo,
+              vin:v.vin, model:v.model||v.type||null,
+              location_name:'الكويت',
+              transfer_date:poDate||today(),
+              transfer_ref:'إدخال أولي', notes:'مخزن أساسي',
+              transferred_by:state.user?.email||null,
+            });
+          } catch(e) { /* تجاهل لو VIN مكرر */ }
+        }
       }
     }
 
