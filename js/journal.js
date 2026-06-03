@@ -249,10 +249,27 @@ function filterJournalByType(filterVal, key) {
   // أعمدة مخصصة حسب النوع
   const isPurchase = key === 'purchase';
   const isSale = key === 'sale';
+
+  // ── المبيعات: جيب من Supabase مباشرة بنفس شكل جدول المبيعات جوا الملف ──
+  if (isSale) {
+    panel.style.display = 'block';
+    panel.style.borderColor = cfg.color;
+    panel.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:700">${cfg.title}</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-size:13px;font-weight:700;color:${cfg.color};font-family:monospace">${fmt(total)}</span>
+          <button onclick="document.getElementById('jkpi-detail').style.display='none';document.getElementById('jkpi-detail')._activeKey=null;document.getElementById('jTypeFilter').value='all';renderJournalEntries()"
+            style="background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'Cairo',sans-serif;color:var(--text)">✕ إغلاق</button>
+        </div>
+      </div>
+      <div id="jkpi-sale-detail-body"><div class="loading"><div class="spinner"></div></div></div>`;
+    _loadJournalSalesDetail(entries);
+    return;
+  }
+
   const colHeaders = isPurchase
     ? '<th>التاريخ</th><th>الملف</th><th>المورد</th><th>عدد السيارات</th><th>إجمالي الشراء</th>'
-    : isSale
-    ? '<th>التاريخ</th><th>رقم الفاتورة</th><th>الملف</th><th>العميل</th><th>الإجمالي</th>'
     : '<th>التاريخ</th><th>البيان</th><th>الملف</th><th>طريقة الدفع</th><th>المبلغ</th>';
 
   panel.style.display = 'block';
@@ -271,32 +288,7 @@ function filterJournalByType(filterVal, key) {
       <table class="data-table" style="font-size:12px">
         <thead><tr>${colHeaders}</tr></thead>
         <tbody>
-          ${(isSale ? (() => {
-            // تجميع بـ inv_no عشان كل فاتورة تظهر مرة واحدة
-            const invMap = {};
-            entries.forEach(e => {
-              const m = (e.title||'').match(/فاتورة\s+(\S+)/);
-              const invNo = m ? m[1] : e.entryNo;
-              if (!invMap[invNo]) {
-                const cm = (e.title||'').match(/—\s*(.+?)\s*—\s*ملف/);
-                invMap[invNo] = { invNo, date:e.date, fileNo:e.fileNo||'—', cust:cm?cm[1]:'—', amount:0 };
-              }
-              // نحسب إيرادات المبيعات فقط (account 4100) — نتجنب COGS
-              const lines = e.raw?.lines || [];
-              const revLine = lines.find(l => (l.account_code||'').startsWith('4'));
-              invMap[invNo].amount += revLine ? (+revLine.cr_amount||0) : (+e.amount||0);
-            });
-            return Object.values(invMap).map(inv => {
-              const invClick = inv.invNo !== '—' ? `onclick="openInvoiceModal('${inv.invNo}')" style="cursor:pointer"` : '';
-              return `<tr ${invClick}>
-                <td class="mono">\${fmtDate(inv.date)}</td>
-                <td class="mono text-green" style="font-weight:700">\${inv.invNo}</td>
-                <td class="mono text-amber">\${inv.fileNo}</td>
-                <td>\${inv.cust}</td>
-                <td class="mono" style="font-weight:700;color:var(--green)">\${fmt(inv.amount)}</td>
-              </tr>`;
-            }).join('');
-          })() : entries.map(e => {
+          ${entries.map(e => {
             const r = e.raw || {};
             const fileNo = e.fileNo||r.file_no||'—';
             const clickAttr = fileNo!=='—' ? `onclick="openViewer('${fileNo}')" style="cursor:pointer"` : '';
@@ -309,21 +301,7 @@ function filterJournalByType(filterVal, key) {
                 <td class="mono" style="font-weight:900;color:var(--accent)">${fmt(e.amount)}</td>
               </tr>`;
             }
-            if (isSale) {
-              // استخرج رقم الفاتورة من الوصف: "بيع فاتورة INV-xxx — عميل — ملف"
-              const invMatch = (e.title||'').match(/فاتورة\s+(\S+)/);
-              const invNo = invMatch ? invMatch[1] : '—';
-              const custMatch = (e.title||'').match(/—\s*(.+?)\s*—\s*ملف/);
-              const cust = custMatch ? custMatch[1] : '—';
-              const invClick = invNo !== '—' ? `onclick="openInvoiceModal('${invNo}')" style="cursor:pointer"` : clickAttr;
-              return `<tr ${invClick}>
-                <td class="mono">${fmtDate(e.date)}</td>
-                <td class="mono text-green" style="font-weight:700">${invNo}</td>
-                <td class="mono text-amber">${fileNo}</td>
-                <td>${cust}</td>
-                <td class="mono" style="font-weight:700;color:var(--green)">${fmt(e.amount)}</td>
-              </tr>`;
-            }
+
             const method = r.pay_method||r.method||'—';
             return `<tr ${clickAttr}>
               <td class="mono">${fmtDate(e.date)}</td>
@@ -332,7 +310,7 @@ function filterJournalByType(filterVal, key) {
               <td>${method}</td>
               <td class="mono" style="font-weight:700;color:${cfg.color}">${fmt(e.amount)}</td>
             </tr>`;
-          })).join('')}
+          }).join('')}
         </tbody>
         <tfoot>
           <tr style="background:var(--card2);font-weight:700">
@@ -684,4 +662,95 @@ function _jPrint(btn) {
 function _jEdit(btn) {
   const p = btn.closest('.j-entry-actions') || btn.parentElement;
   editJournalEntry(p.dataset.etype || '', null, p.dataset.fno || '');
+}
+
+// ════════════════════════════════════════
+// JOURNAL SALES DETAIL — نفس شكل جدول المبيعات جوا الملف
+// ════════════════════════════════════════
+async function _loadJournalSalesDetail(entries) {
+  const wrap = document.getElementById('jkpi-sale-detail-body');
+  if (!wrap) return;
+
+  try {
+    const sys = state.system;
+    // استخرج كل الملفات الفريدة من الـ entries
+    const fileNos = [...new Set(entries.map(e => e.fileNo).filter(Boolean))];
+
+    // جيب كل المبيعات للملفات دي في الفترة الزمنية المحددة
+    const { from, to } = getJournalDateRange();
+    let allSales = [];
+    for (const fn of fileNos) {
+      try {
+        const rows = await apiGetAll('sales', {
+          select: '*',
+          system_type: `eq.${sys}`,
+          file_no: `eq.${fn}`,
+          order: 'sale_date.desc'
+        });
+        // فلتر بالفترة الزمنية
+        const filtered = (rows||[]).filter(s => {
+          const d = (s.sale_date||'').slice(0,10);
+          return (!from || d >= from) && (!to || d <= to);
+        });
+        allSales = allSales.concat(filtered);
+      } catch(e) { console.warn('_loadJournalSalesDetail:', e.message); }
+    }
+
+    if (!allSales.length) {
+      wrap.innerHTML = `<div class="empty-state" style="padding:20px"><div class="e-icon">📭</div><p>لا توجد مبيعات</p></div>`;
+      return;
+    }
+
+    // تجميع بالفاتورة — نفس منطق loadSalesTab
+    const invoices = {};
+    allSales.forEach(s => {
+      const k = s.inv_no || `__${s.id}__`;
+      if (!invoices[k]) invoices[k] = { inv_no:s.inv_no, customer:s.customer, date:s.sale_date, fn:s.file_no, items:[] };
+      invoices[k].items.push(s);
+    });
+
+    const total = allSales.reduce((sum,s) => sum + (+s.sale_price||0), 0);
+
+    const rows = Object.values(invoices)
+      .sort((a,b) => (b.date||'').localeCompare(a.date||''))
+      .map(inv => {
+        const invTotal = inv.items.reduce((s,i) => s+(+i.sale_price||0), 0);
+        const vins = inv.items.map(i => i.vin||'—').join('، ');
+        const safeInv = (inv.inv_no||'').replace(/'/g,"\\'");
+        return `<tr style="cursor:pointer" onclick="openInvoiceModal('${safeInv}')"
+          onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
+          <td>
+            <div class="mono text-amber" style="font-weight:700">${inv.inv_no||'—'}</div>
+            <div style="font-size:11px;color:var(--text2)">${fmtDate(inv.date)}</div>
+          </td>
+          <td><div style="font-weight:600">${inv.customer||'—'}</div></td>
+          <td class="mono text-amber" style="font-size:11px">${inv.fn}</td>
+          <td style="font-size:12px;direction:ltr;color:var(--text2)">${vins}</td>
+          <td style="text-align:center">
+            <span style="background:var(--blue-dim);color:var(--blue);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${inv.items.length}</span>
+          </td>
+          <td class="mono text-green" style="font-weight:700">${fmt(invTotal)}</td>
+        </tr>`;
+      }).join('');
+
+    wrap.innerHTML = `
+      <div style="max-height:320px;overflow-y:auto">
+        <table class="data-table" style="font-size:12px">
+          <thead><tr>
+            <th>رقم الفاتورة</th><th>العميل</th><th>الملف</th>
+            <th>VINs</th><th style="text-align:center">سيارات</th><th>الإجمالي</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot>
+            <tr style="background:var(--card2);font-weight:700">
+              <td colspan="5">الإجمالي (${Object.keys(invoices).length} فاتورة)</td>
+              <td class="mono text-green">${fmt(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>`;
+  } catch(e) {
+    const wrap2 = document.getElementById('jkpi-sale-detail-body');
+    if (wrap2) wrap2.innerHTML = errHTML('خطأ: ' + e.message);
+  }
 }
