@@ -4734,7 +4734,7 @@ async function openInvoiceModal(invNo) {
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${v.model||'—'}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${v.year||'—'}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${v.color||'—'}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:left;font-family:monospace;font-weight:700">${(+v.sale_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;direction:ltr;font-family:monospace;font-weight:700">${(+v.sale_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>`).join('');
 
   const invoiceHTML = `
@@ -6194,14 +6194,14 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
       <td style="direction:ltr;text-align:center;font-family:monospace;font-size:12px">${item.vin||'—'}</td>
       <td style="direction:ltr;text-align:center;font-family:monospace">${item.plate||'—'}</td>
       <td style="text-align:center">${item.engine?item.engine+' L':'—'}</td>
-      <td style="text-align:left;font-weight:600">${item.price.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+      <td style="text-align:right;direction:ltr;font-weight:600">${item.price.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>`).join('');
 
   // صف المجموع الفرعي للسيارات (فقط إذا في مصاريف إضافية)
   const subtotalRow = extraCharges.length > 0 ? `
     <tr style="background:#f0f0f0;font-weight:600">
       <td colspan="5" style="text-align:right;padding:8px 12px;color:#555">مجموع السيارات / Vehicles Subtotal</td>
-      <td style="text-align:left;padding:8px 12px">${total.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+      <td style="text-align:right;direction:ltr;padding:8px 12px">${total.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>` : '';
 
   // بنود المصاريف الإضافية
@@ -6212,7 +6212,7 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
         ${c.desc}
         <span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;margin-right:8px;font-weight:700">مصروف إضافي</span>
       </td>
-      <td style="text-align:left;font-weight:600;color:#c47a00;padding:8px 12px">${c.amount.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+      <td style="text-align:right;direction:ltr;font-weight:600;color:#c47a00;padding:8px 12px">${c.amount.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>`).join('');
 
   const html = `<!DOCTYPE html>
@@ -9616,9 +9616,9 @@ function renderTrialBalance() {
       <td class="mono" style="color:var(--accent);font-weight:700">${c.code}</td>
       <td style="font-weight:600">${c.name}</td>
       <td><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${TC[c.type]||'var(--card2)'}22;color:${TC[c.type]||'var(--text2)'}">${TAL[c.type]||c.type}</span></td>
-      <td class="mono text-green" style="text-align:left">${fmt(c.dr)}</td>
-      <td class="mono text-red"   style="text-align:left">${fmt(c.cr)}</td>
-      <td style="text-align:left"><span class="mono" style="font-weight:900;color:${bc}">${fmt(Math.abs(bal))}</span> <span style="font-size:10px;color:${bc}">${bal>0?'مدين':bal<0?'دائن':'صفر'}</span></td>
+      <td class="mono text-green" style="text-align:right;direction:ltr">${fmt(c.dr)}</td>
+      <td class="mono text-red"   style="text-align:right;direction:ltr">${fmt(c.cr)}</td>
+      <td style="text-align:right;direction:ltr"><span class="mono" style="font-weight:900;color:${bc}">${fmt(Math.abs(bal))}</span> <span style="font-size:10px;color:${bc}">${bal>0?'مدين':bal<0?'دائن':'صفر'}</span></td>
     </tr>`;
   }).join('');
   el('trialTable').innerHTML=`<div style="font-size:11px;color:var(--text2);margin-bottom:6px">اضغط على أي حساب لعرض حركاته في دفتر الأستاذ</div>
@@ -9628,9 +9628,9 @@ function renderTrialBalance() {
     <tbody>${rows}</tbody>
     <tfoot style="background:var(--card2)"><tr>
       <td colspan="3" style="padding:10px 16px;font-weight:700">الإجمالي (${list.length})</td>
-      <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(sumDr)}</td>
-      <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:left">${fmt(sumCr)}</td>
-      <td style="padding:10px 16px;font-weight:900;color:${diff<0.01?'var(--green)':'var(--red)'};text-align:left">${diff<0.01?'✅ متوازن':fmt(diff)+' فرق'}</td>
+      <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:right;direction:ltr">${fmt(sumDr)}</td>
+      <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:right;direction:ltr">${fmt(sumCr)}</td>
+      <td style="padding:10px 16px;font-weight:900;color:${diff<0.01?'var(--green)':'var(--red)'};text-align:right;direction:ltr">${diff<0.01?'✅ متوازن':fmt(diff)+' فرق'}</td>
     </tr></tfoot></table>`;
 }
 
@@ -9708,9 +9708,9 @@ function renderLedgerTable() {
   let running=opening, rows='';
   if(opening&&!fileFilter) rows+=`<tr style="background:var(--card2)">
     <td colspan="4" style="padding:8px 14px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
-    <td class="mono text-green" style="padding:8px 14px;text-align:left">${opening>0?fmt(opening):'—'}</td>
-    <td class="mono text-red"   style="padding:8px 14px;text-align:left">${opening<0?fmt(Math.abs(opening)):'—'}</td>
-    <td class="mono" style="padding:8px 14px;font-weight:700;text-align:left">${fmt(Math.abs(opening))}</td><td></td></tr>`;
+    <td class="mono text-green" style="padding:8px 14px;text-align:right;direction:ltr">${opening>0?fmt(opening):'—'}</td>
+    <td class="mono text-red"   style="padding:8px 14px;text-align:right;direction:ltr">${opening<0?fmt(Math.abs(opening)):'—'}</td>
+    <td class="mono" style="padding:8px 14px;font-weight:700;text-align:right;direction:ltr">${fmt(Math.abs(opening))}</td><td></td></tr>`;
   rows+=list.map((e,i)=>{
     running+=e.debit-e.credit;
     const rc=running>=0?'var(--green)':'var(--red)';
@@ -9729,9 +9729,9 @@ function renderLedgerTable() {
         ${e.contact?`<div style="font-size:10px;color:var(--text2)">${e.contact}</div>`:''}
       </td>
       <td class="mono" style="padding:8px 12px;font-size:11px;color:var(--text2)">${e.ref||'—'}</td>
-      <td class="mono text-green" style="padding:8px 12px;font-weight:700;text-align:left">${e.debit>0?fmt(e.debit):'—'}</td>
-      <td class="mono text-red"   style="padding:8px 12px;font-weight:700;text-align:left">${e.credit>0?fmt(e.credit):'—'}</td>
-      <td class="mono" style="padding:8px 12px;font-weight:900;color:${rc};text-align:left">${fmt(Math.abs(running))}</td>
+      <td class="mono text-green" style="padding:8px 12px;font-weight:700;text-align:right;direction:ltr">${e.debit>0?fmt(e.debit):'—'}</td>
+      <td class="mono text-red"   style="padding:8px 12px;font-weight:700;text-align:right;direction:ltr">${e.credit>0?fmt(e.credit):'—'}</td>
+      <td class="mono" style="padding:8px 12px;font-weight:900;color:${rc};text-align:right;direction:ltr">${fmt(Math.abs(running))}</td>
       <td style="padding:8px 12px;text-align:center"><button class="btn btn-sm" onclick="event.stopPropagation();openJEDetail('${e.ref}')" title="تفاصيل القيد" style="padding:2px 7px;font-size:11px">🔍</button></td>
     </tr>`;
   }).join('');
@@ -9745,9 +9745,9 @@ function renderLedgerTable() {
     <tbody>${rows}</tbody>
     <tfoot style="background:var(--card2)"><tr>
       <td colspan="4" style="padding:10px 16px;font-weight:700">الإجمالي</td>
-      <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalDr)}</td>
-      <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalCr)}</td>
-      <td style="padding:10px 16px;font-weight:900;color:${finalBal>=0?'var(--green)':'var(--red)'};text-align:left">${fmt(Math.abs(finalBal))} ${finalBal>0?'مدين':finalBal<0?'دائن':'✓'}</td>
+      <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:right;direction:ltr">${fmt(totalDr)}</td>
+      <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:right;direction:ltr">${fmt(totalCr)}</td>
+      <td style="padding:10px 16px;font-weight:900;color:${finalBal>=0?'var(--green)':'var(--red)'};text-align:right;direction:ltr">${fmt(Math.abs(finalBal))} ${finalBal>0?'مدين':finalBal<0?'دائن':'✓'}</td>
       <td></td>
     </tr></tfoot></table>`;
   el('ledgerView').dataset.entries=JSON.stringify(list);
@@ -9788,8 +9788,8 @@ async function openJEDetail(entryNo) {
       <td class="mono" style="color:var(--accent)">${l.account_code||'—'}</td>
       <td>${l.account_name||'—'}</td>
       <td style="font-size:11px;color:var(--text2)">${l.contact_name||'—'}</td>
-      <td class="mono text-green" style="text-align:left">${+l.dr_amount>0?fmt(l.dr_amount):'—'}</td>
-      <td class="mono text-red"   style="text-align:left">${+l.cr_amount>0?fmt(l.cr_amount):'—'}</td>
+      <td class="mono text-green" style="text-align:right;direction:ltr">${+l.dr_amount>0?fmt(l.dr_amount):'—'}</td>
+      <td class="mono text-red"   style="text-align:right;direction:ltr">${+l.cr_amount>0?fmt(l.cr_amount):'—'}</td>
     </tr>`).join('');
     el('je-detail-lines').innerHTML=`
       <table class="data-table" style="margin-bottom:6px">
@@ -9798,8 +9798,8 @@ async function openJEDetail(entryNo) {
         <tbody>${lineRows}</tbody>
         <tfoot style="background:var(--card2)"><tr>
           <td colspan="3" style="padding:7px 12px;font-weight:700">الإجمالي</td>
-          <td class="mono text-green" style="text-align:left;font-weight:900;padding:7px 12px">${fmt(totalDr)}</td>
-          <td class="mono text-red"   style="text-align:left;font-weight:900;padding:7px 12px">${fmt(totalCr)}</td>
+          <td class="mono text-green" style="text-align:right;direction:ltr;font-weight:900;padding:7px 12px">${fmt(totalDr)}</td>
+          <td class="mono text-red"   style="text-align:right;direction:ltr;font-weight:900;padding:7px 12px">${fmt(totalCr)}</td>
         </tr></tfoot>
       </table>
       <div style="font-size:11px;font-weight:700;color:${balanced?'var(--green)':'var(--red)'};padding:4px 0">${balanced?'✅ القيد متوازن':'❌ القيد غير متوازن!'}</div>`;
@@ -10227,13 +10227,13 @@ async function printPurchaseOrder(fileNo) {
       <td>${v.color||'—'}</td>
       <td style="text-align:center">${v.engine_size?v.engine_size+' L':'—'}</td>
       <td style="text-align:center">${v.year||'—'}</td>
-      <td class="amber" style="text-align:left">${fmt2(v.purchase_price)}</td>
+      <td class="amber" style="text-align:right;direction:ltr">${fmt2(v.purchase_price)}</td>
     </tr>`).join('');
 
     const paymentRows = (payments||[]).map(p => `<tr>
       <td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td>
       <td>${p.payer||'—'}</td>
-      <td class="green" style="text-align:left">${fmt2(p.amount)}</td>
+      <td class="green" style="text-align:right;direction:ltr">${fmt2(p.amount)}</td>
       <td>${p.pay_method||'—'}</td>
       <td style="direction:ltr">${p.document||'—'}</td>
       <td>${p.pay_date||'—'}</td>
@@ -10243,7 +10243,7 @@ async function printPurchaseOrder(fileNo) {
       <td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td>
       <td>${e.description||'—'}</td>
       <td>${e.exp_type||'—'}</td>
-      <td class="red" style="text-align:left">${fmt2(e.amount)}</td>
+      <td class="red" style="text-align:right;direction:ltr">${fmt2(e.amount)}</td>
       <td>${e.pay_method||'—'}</td>
       <td>${e.exp_date||e.expense_date||'—'}</td>
     </tr>`).join('');
@@ -10254,9 +10254,9 @@ async function printPurchaseOrder(fileNo) {
       return `<tr>
         <td style="font-weight:700">${p.partner}</td>
         <td style="text-align:center">${p.share_percent}%</td>
-        <td class="blue" style="text-align:left">${fmt2(due)}</td>
-        <td class="green" style="text-align:left">${fmt2(paid)}</td>
-        <td class="${(due-paid)>0.01?'red':'green'}" style="text-align:left;font-weight:700">${fmt2(due-paid)}</td>
+        <td class="blue" style="text-align:right;direction:ltr">${fmt2(due)}</td>
+        <td class="green" style="text-align:right;direction:ltr">${fmt2(paid)}</td>
+        <td class="${(due-paid)>0.01?'red':'green'}" style="text-align:right;direction:ltr;font-weight:700">${fmt2(due-paid)}</td>
       </tr>`;
     }).join('');
 
@@ -10293,7 +10293,7 @@ async function printPurchaseOrder(fileNo) {
         <tbody>${vehicleRows}</tbody>
         <tfoot><tr>
           <td colspan="6" style="padding:8px 10px"><strong>إجمالي قيمة الشراء</strong></td>
-          <td class="amber" style="text-align:left"><strong>${fmt2(po.total_purchase)} KWD</strong></td>
+          <td class="amber" style="text-align:right;direction:ltr"><strong>${fmt2(po.total_purchase)} KWD</strong></td>
         </tr></tfoot>
       </table>
 
@@ -10311,7 +10311,7 @@ async function printPurchaseOrder(fileNo) {
         <tbody>${paymentRows}</tbody>
         <tfoot><tr>
           <td colspan="2"><strong>الإجمالي المدفوع</strong></td>
-          <td class="green" style="text-align:left"><strong>${fmt2(totalPaid)} KWD</strong></td>
+          <td class="green" style="text-align:right;direction:ltr"><strong>${fmt2(totalPaid)} KWD</strong></td>
           <td colspan="3"></td>
         </tr></tfoot>
       </table>` : ''}
@@ -10323,7 +10323,7 @@ async function printPurchaseOrder(fileNo) {
         <tbody>${expenseRows}</tbody>
         <tfoot><tr>
           <td colspan="3"><strong>إجمالي المصاريف</strong></td>
-          <td class="red" style="text-align:left"><strong>${fmt2(totalExp)} KWD</strong></td>
+          <td class="red" style="text-align:right;direction:ltr"><strong>${fmt2(totalExp)} KWD</strong></td>
           <td colspan="2"></td>
         </tr></tfoot>
       </table>` : ''}
@@ -10858,7 +10858,7 @@ function showJournalReport() {
 
   const summaryRows = Object.entries(groups).map(([type,g]) =>
     `<tr><td>${typeLabels[type]||type}</td><td style="text-align:center">${g.count}</td>
-     <td style="text-align:left">${g.total.toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`
+     <td style="text-align:right;direction:ltr">${g.total.toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`
   ).join('');
 
   const detailRows = entries.map(e => `<tr>
@@ -10866,7 +10866,7 @@ function showJournalReport() {
     <td>${typeLabels[e.type]||e.type||'—'}</td>
     <td>${e.title||e.description||'—'}</td>
     <td>${e.fileNo||'—'}</td>
-    <td style="text-align:left;color:${e.sign>0?'#16a34a':'#dc2626'}">${e.sign>0?'+':'−'}${fmt(e.amount)}</td>
+    <td style="text-align:right;direction:ltr;color:${e.sign>0?'#16a34a':'#dc2626'}">${e.sign>0?'+':'−'}${fmt(e.amount)}</td>
   </tr>`).join('');
 
   const html = `
@@ -12734,8 +12734,8 @@ async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, tit
         <td style="font-family:monospace;font-weight:700;color:#1a1a1a">${l.account_code||'—'}</td>
         <td>${l.account_name||'—'}</td>
         <td style="font-size:11px;color:#666">${l.description||'—'}</td>
-        <td style="text-align:left;font-weight:700;color:#16a34a">${+l.dr_amount>0 ? (+l.dr_amount).toLocaleString('en-US',{minimumFractionDigits:3}) : '—'}</td>
-        <td style="text-align:left;font-weight:700;color:#dc2626">${+l.cr_amount>0 ? (+l.cr_amount).toLocaleString('en-US',{minimumFractionDigits:3}) : '—'}</td>
+        <td style="text-align:right;direction:ltr;font-weight:700;color:#16a34a">${+l.dr_amount>0 ? (+l.dr_amount).toLocaleString('en-US',{minimumFractionDigits:3}) : '—'}</td>
+        <td style="text-align:right;direction:ltr;font-weight:700;color:#dc2626">${+l.cr_amount>0 ? (+l.cr_amount).toLocaleString('en-US',{minimumFractionDigits:3}) : '—'}</td>
       </tr>`).join('');
 
     const html = `<!DOCTYPE html>
@@ -12825,8 +12825,8 @@ async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, tit
     <tfoot>
       <tr>
         <td colspan="4" style="text-align:right;font-weight:700">الإجمالي</td>
-        <td style="text-align:left;color:#16a34a">${totalDr.toLocaleString('en-US',{minimumFractionDigits:3})}</td>
-        <td style="text-align:left;color:#dc2626">${totalCr.toLocaleString('en-US',{minimumFractionDigits:3})}</td>
+        <td style="text-align:right;direction:ltr;color:#16a34a">${totalDr.toLocaleString('en-US',{minimumFractionDigits:3})}</td>
+        <td style="text-align:right;direction:ltr;color:#dc2626">${totalCr.toLocaleString('en-US',{minimumFractionDigits:3})}</td>
       </tr>
     </tfoot>
   </table>
@@ -13165,8 +13165,8 @@ function renderContactsList() {
           ${typeLabels[c.type]||c.type}
         </span>
       </td>
-      <td style="padding:11px 14px;font-family:var(--mono);font-size:12px;color:var(--green);text-align:left">${fmt(c.totalDebit)}</td>
-      <td style="padding:11px 14px;font-family:var(--mono);font-size:12px;color:var(--red);text-align:left">${fmt(c.totalCredit)}</td>
+      <td style="padding:11px 14px;font-family:var(--mono);font-size:12px;color:var(--green);text-align:right;direction:ltr">${fmt(c.totalDebit)}</td>
+      <td style="padding:11px 14px;font-family:var(--mono);font-size:12px;color:var(--red);text-align:right;direction:ltr">${fmt(c.totalCredit)}</td>
       <td style="padding:11px 14px;text-align:left">
         <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${balColor}">${bal!==0?fmt(Math.abs(bal)):'—'}</div>
         <div style="font-size:10px;color:${balColor}">${balLabel}</div>
@@ -13320,9 +13320,9 @@ function printLedgerStatement() {
   if (opening !== 0) {
     rows += `<tr style="background:#f8f9fa;font-weight:700">
       <td>—</td><td colspan="2">رصيد افتتاحي</td>
-      <td style="color:#16a34a;text-align:left">${opening>0?fmt2(opening):'—'}</td>
-      <td style="color:#dc2626;text-align:left">${opening<0?fmt2(Math.abs(opening)):'—'}</td>
-      <td style="text-align:left;font-weight:700">${fmt2(Math.abs(opening))}</td>
+      <td style="color:#16a34a;text-align:right;direction:ltr">${opening>0?fmt2(opening):'—'}</td>
+      <td style="color:#dc2626;text-align:right;direction:ltr">${opening<0?fmt2(Math.abs(opening)):'—'}</td>
+      <td style="text-align:right;direction:ltr;font-weight:700">${fmt2(Math.abs(opening))}</td>
     </tr>`;
   }
 
@@ -13334,9 +13334,9 @@ function printLedgerStatement() {
       <td style="white-space:nowrap">${e.date||e.entry_date||'—'}</td>
       <td style="font-size:11px;line-height:1.6">${e.type?`<strong>[${e.type}]</strong> `:''} ${desc}</td>
       <td style="font-family:monospace;font-size:11px;color:#666">${e.file_no||'—'}</td>
-      <td style="color:#16a34a;text-align:left;font-weight:600">${+e.debit?fmt2(e.debit):'—'}</td>
-      <td style="color:#dc2626;text-align:left;font-weight:600">${+e.credit?fmt2(e.credit):'—'}</td>
-      <td style="text-align:left;font-weight:700;color:${running>=0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(running))}</td>
+      <td style="color:#16a34a;text-align:right;direction:ltr;font-weight:600">${+e.debit?fmt2(e.debit):'—'}</td>
+      <td style="color:#dc2626;text-align:right;direction:ltr;font-weight:600">${+e.credit?fmt2(e.credit):'—'}</td>
+      <td style="text-align:right;direction:ltr;font-weight:700;color:${running>=0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(running))}</td>
     </tr>`;
   });
 
@@ -13416,9 +13416,9 @@ function printLedgerStatement() {
     <tbody>${rows}</tbody>
     <tfoot><tr>
       <td colspan="3">الإجمالي</td>
-      <td style="color:#16a34a;text-align:left">${fmt2(totalDebit)}</td>
-      <td style="color:#dc2626;text-align:left">${fmt2(totalCredit)}</td>
-      <td style="color:${finalBal>=0?'#16a34a':'#dc2626'};text-align:left">${fmt2(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}</td>
+      <td style="color:#16a34a;text-align:right;direction:ltr">${fmt2(totalDebit)}</td>
+      <td style="color:#dc2626;text-align:right;direction:ltr">${fmt2(totalCredit)}</td>
+      <td style="color:${finalBal>=0?'#16a34a':'#dc2626'};text-align:right;direction:ltr">${fmt2(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}</td>
     </tr></tfoot>
   </table>
 
@@ -14976,8 +14976,8 @@ async function loadDealStatement(fn, sys) {
         <td style="padding:10px 12px"><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${e.color}22;color:${e.color}">${e.icon} ${e.type}</span>${infoTag}</td>
         <td style="padding:10px 12px"><div style="font-size:12px;font-weight:600">${e.desc}</div>${e.extra?`<div style="font-size:10px;color:var(--text3)">${e.extra}</div>`:''}</td>
         <td style="padding:10px 12px;font-size:12px;color:var(--text2)">${e.party}</td>
-        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--green)">${e.debit>0?fmt(e.debit):'—'}</td>
-        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--red)">${e.credit>0?fmt(e.credit):'—'}</td>
+        <td style="padding:10px 12px;text-align:right;direction:ltr;font-family:var(--mono);font-size:12px;color:var(--green)">${e.debit>0?fmt(e.debit):'—'}</td>
+        <td style="padding:10px 12px;text-align:right;direction:ltr;font-family:var(--mono);font-size:12px;color:var(--red)">${e.credit>0?fmt(e.credit):'—'}</td>
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:13px;font-weight:700;color:${e._pl?(running>=0?'var(--green)':'var(--red)'):'var(--text2)'}">
           ${e._pl?fmt(Math.abs(running)):'—'}
         </td>
@@ -15035,9 +15035,9 @@ async function printDealStatement(fileNo) {
     const infoNote = !e._pl ? ' *' : '';
     return `<tr><td>${e.date||'—'}</td><td>${e.type}${infoNote}</td><td><b>${e.desc}</b>${e.extra?'<br><small>'+e.extra+'</small>':''}</td>
     <td>${e.party}</td>
-    <td style="text-align:left;color:green">${e.debit>0?e.debit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
-    <td style="text-align:left;color:red">${e.credit>0?e.credit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
-    <td style="text-align:left;font-weight:700;color:${e._pl?(running>=0?'green':'red'):'gray'}">${e._pl?Math.abs(running).toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td></tr>`;
+    <td style="text-align:right;direction:ltr;color:green">${e.debit>0?e.debit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
+    <td style="text-align:right;direction:ltr;color:red">${e.credit>0?e.credit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
+    <td style="text-align:right;direction:ltr;font-weight:700;color:${e._pl?(running>=0?'green':'red'):'gray'}">${e._pl?Math.abs(running).toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td></tr>`;
   }).join('');
   const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>كشف الصفقة ${fn}</title>
   <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;padding:20px}
@@ -16509,9 +16509,9 @@ function renderDrillDown(type) {
           <td class="mono">${r.inv_no||'---'}</td>
           <td style="font-weight:600">${r.customer||'---'}</td>
           <td style="text-align:center;font-weight:700">${r.carCount} سيارة</td>
-          <td class="mono text-blue" style="text-align:left">${fmt(r.total)}</td>
-          <td class="mono text-green" style="text-align:left">${fmt(r._collected)}</td>
-          <td class="mono" style="text-align:left;font-weight:900;color:var(--accent)">${fmt(r._remaining)}</td>
+          <td class="mono text-blue" style="text-align:right;direction:ltr">${fmt(r.total)}</td>
+          <td class="mono text-green" style="text-align:right;direction:ltr">${fmt(r._collected)}</td>
+          <td class="mono" style="text-align:right;direction:ltr;font-weight:900;color:var(--accent)">${fmt(r._remaining)}</td>
           <td class="mono" style="font-size:11px">${r._due||'---'}</td>
           <td><span style="background:${db};color:${dc};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${dl}</span></td>
         </tr>`;
@@ -16589,9 +16589,9 @@ function renderDrillDown(type) {
           <td class="mono text-amber" style="font-weight:700">${r.file_no}</td>
           <td style="font-weight:600">${r.supplier}</td>
           <td class="mono" style="font-size:11px">${r.po_date||'---'}</td>
-          <td class="mono text-blue" style="text-align:left">${fmt(r.total_purchase)}</td>
-          <td class="mono text-green" style="text-align:left">${fmt(r.paid)}</td>
-          <td class="mono" style="text-align:left;font-weight:900;color:var(--red)">${fmt(r.due)}</td>
+          <td class="mono text-blue" style="text-align:right;direction:ltr">${fmt(r.total_purchase)}</td>
+          <td class="mono text-green" style="text-align:right;direction:ltr">${fmt(r.paid)}</td>
+          <td class="mono" style="text-align:right;direction:ltr;font-weight:900;color:var(--red)">${fmt(r.due)}</td>
           <td><div style="display:flex;align-items:center;gap:4px">
             <div style="width:40px;height:5px;background:var(--card2);border-radius:3px;overflow:hidden">
               <div style="width:${pct}%;height:100%;background:${bc};border-radius:3px"></div>
@@ -18915,8 +18915,8 @@ function renderJEManagerTable() {
           <span class="mono" style="color:var(--text2)">${l.account_code||'—'}</span>
         </td>
         <td style="padding:5px 12px;font-size:11px;color:var(--text2)">${l.account_name||'—'}</td>
-        <td style="padding:5px 12px;text-align:left;font-family:var(--mono);font-size:11px;color:var(--green)">${+l.dr_amount>0?fmt(l.dr_amount):'—'}</td>
-        <td style="padding:5px 12px;text-align:left;font-family:var(--mono);font-size:11px;color:var(--red)">${+l.cr_amount>0?fmt(l.cr_amount):'—'}</td>
+        <td style="padding:5px 12px;text-align:right;direction:ltr;font-family:var(--mono);font-size:11px;color:var(--green)">${+l.dr_amount>0?fmt(l.dr_amount):'—'}</td>
+        <td style="padding:5px 12px;text-align:right;direction:ltr;font-family:var(--mono);font-size:11px;color:var(--red)">${+l.cr_amount>0?fmt(l.cr_amount):'—'}</td>
         <td></td>
       </tr>`).join('');
 
@@ -18937,8 +18937,8 @@ function renderJEManagerTable() {
         <td style="padding:10px 12px">
           <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${srcColor}22;color:${srcColor}">${srcLabel}</span>
         </td>
-        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green)">${fmt(g.totalDr)}</td>
-        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--red)">${fmt(g.totalCr)}</td>
+        <td style="padding:10px 12px;text-align:right;direction:ltr;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green)">${fmt(g.totalDr)}</td>
+        <td style="padding:10px 12px;text-align:right;direction:ltr;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--red)">${fmt(g.totalCr)}</td>
         <td style="padding:10px 12px;text-align:center">${balIcon}</td>
         <td style="padding:10px 12px;text-align:center">${ctxBtn}</td>
       </tr>
@@ -20109,8 +20109,8 @@ async function loadContactStatement() {
         <td><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${srcColor}22;color:${srcColor}">${srcLabel}</span></td>
         <td style="font-size:11px;max-width:220px">${r.description||'—'}</td>
         <td class="mono text-muted" style="font-size:11px">${r.file_no||'—'}</td>
-        <td class="mono text-green" style="text-align:left;font-weight:700">${dr>0?fmt(dr):'—'}</td>
-        <td class="mono text-red"   style="text-align:left;font-weight:700">${cr>0?fmt(cr):'—'}</td>
+        <td class="mono text-green" style="text-align:right;direction:ltr;font-weight:700">${dr>0?fmt(dr):'—'}</td>
+        <td class="mono text-red"   style="text-align:right;direction:ltr;font-weight:700">${cr>0?fmt(cr):'—'}</td>
         <td style="text-align:left;white-space:nowrap">
           <span class="mono" style="font-weight:900;color:${balColor}">${fmt(Math.abs(running))}</span>
           <span style="font-size:10px;color:${balColor};margin-right:4px">${balLabel}</span>
@@ -20148,8 +20148,8 @@ async function loadContactStatement() {
             <tfoot style="background:var(--card2)">
               <tr>
                 <td colspan="5" style="padding:10px 16px;font-weight:700">الإجمالي</td>
-                <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalDr)}</td>
-                <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalCr)}</td>
+                <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:right;direction:ltr">${fmt(totalDr)}</td>
+                <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:right;direction:ltr">${fmt(totalCr)}</td>
                 <td style="padding:10px 16px;font-weight:900;color:${balColor};text-align:left">
                   ${fmt(Math.abs(balance))} <span style="font-size:11px">${balLabel}</span>
                 </td>
