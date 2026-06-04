@@ -6191,8 +6191,8 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
         <div style="font-weight:600">${item.model||'—'}</div>
         <div style="font-size:11px;color:#666">${item.color||''}${item.year?' · '+item.year:''}</div>
       </td>
-      <td style="direction:ltr;text-align:center;font-family:monospace;font-size:12px">${item.vin||'—'}</td>
-      <td style="direction:ltr;text-align:center;font-family:monospace">${item.plate||'—'}</td>
+      <td style="text-align:center"><span style="direction:ltr;display:inline-block;font-family:monospace;font-size:12px">${item.vin||'—'}</span></td>
+      <td style="text-align:center"><span style="direction:ltr;display:inline-block;font-family:monospace">${item.plate||'—'}</span></td>
       <td style="text-align:center">${item.engine?item.engine+' L':'—'}</td>
       <td style="text-align:right;direction:ltr;font-weight:600">${item.price.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>`).join('');
@@ -10222,12 +10222,12 @@ async function printPurchaseOrder(fileNo) {
     const vehicleRows = (vehicles||[]).map((v,i) => `<tr>
       <td style="text-align:center;font-weight:700">${i+1}</td>
       <td>${v.vehicle_type||'—'} ${v.model||''}</td>
-      <td style="direction:ltr;font-family:monospace;font-size:11px;font-weight:700">${v.vin||'—'}</td>
-      <td style="direction:ltr">${v.plate||'—'}</td>
+      <td><span style="direction:ltr;display:inline-block;font-family:monospace;font-size:11px;font-weight:700">${v.vin||'—'}</span></td>
+      <td><span style="direction:ltr;display:inline-block">${v.plate||'—'}</span></td>
       <td>${v.color||'—'}</td>
       <td style="text-align:center">${v.engine_size?v.engine_size+' L':'—'}</td>
       <td style="text-align:center">${v.year||'—'}</td>
-      <td class="amber" style="text-align:right;direction:ltr">${fmt2(v.purchase_price)}</td>
+      <td class="amber" style="text-align:center">${fmt2(v.purchase_price)}</td>
     </tr>`).join('');
 
     const paymentRows = (payments||[]).map(p => `<tr>
@@ -10235,7 +10235,7 @@ async function printPurchaseOrder(fileNo) {
       <td>${p.payer||'—'}</td>
       <td class="green" style="text-align:right;direction:ltr">${fmt2(p.amount)}</td>
       <td>${p.pay_method||'—'}</td>
-      <td style="direction:ltr">${p.document||'—'}</td>
+      <td><span style="direction:ltr;display:inline-block">${p.document||'—'}</span></td>
       <td>${p.pay_date||'—'}</td>
     </tr>`).join('');
 
@@ -10293,7 +10293,7 @@ async function printPurchaseOrder(fileNo) {
         <tbody>${vehicleRows}</tbody>
         <tfoot><tr>
           <td colspan="6" style="padding:8px 10px"><strong>إجمالي قيمة الشراء</strong></td>
-          <td class="amber" style="text-align:right;direction:ltr"><strong>${fmt2(po.total_purchase)} KWD</strong></td>
+          <td class="amber" style="text-align:center"><strong>${fmt2(po.total_purchase)} KWD</strong></td>
         </tr></tfoot>
       </table>
 
@@ -10311,7 +10311,7 @@ async function printPurchaseOrder(fileNo) {
         <tbody>${paymentRows}</tbody>
         <tfoot><tr>
           <td colspan="2"><strong>الإجمالي المدفوع</strong></td>
-          <td class="green" style="text-align:right;direction:ltr"><strong>${fmt2(totalPaid)} KWD</strong></td>
+          <td class="green" style="text-align:center"><strong>${fmt2(totalPaid)} KWD</strong></td>
           <td colspan="3"></td>
         </tr></tfoot>
       </table>` : ''}
@@ -10323,7 +10323,7 @@ async function printPurchaseOrder(fileNo) {
         <tbody>${expenseRows}</tbody>
         <tfoot><tr>
           <td colspan="3"><strong>إجمالي المصاريف</strong></td>
-          <td class="red" style="text-align:right;direction:ltr"><strong>${fmt2(totalExp)} KWD</strong></td>
+          <td class="red" style="text-align:center"><strong>${fmt2(totalExp)} KWD</strong></td>
           <td colspan="2"></td>
         </tr></tfoot>
       </table>` : ''}
@@ -10441,7 +10441,7 @@ async function printCurrentReport() {
   } else if (type === 'sales') {
     tableHtml = `<table>
       <thead><tr><th>التاريخ</th><th>الملف</th><th>VIN</th><th>العميل</th><th>السعر</th></tr></thead>
-      <tbody>${data.map(s=>`<tr><td>${s.sale_date||''}</td><td>${s.file_no||''}</td><td style="direction:ltr">${s.vin||''}</td><td>${s.customer||''}</td><td class="green">${fmt(s.sale_price)}</td></tr>`).join('')}</tbody>
+      <tbody>${data.map(s=>`<tr><td>${s.sale_date||''}</td><td>${s.file_no||''}</td><td><span style="direction:ltr;display:inline-block">${s.vin||''}</span></td><td>${s.customer||''}</td><td class="green">${fmt(s.sale_price)}</td></tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="green"><strong>${fmt(data.reduce((s,r)=>s+(+r.sale_price||0),0))}</strong></td></tr></tfoot>
     </table>`;
   } else if (type === 'expenses') {
@@ -11065,7 +11065,7 @@ function printVehiclesReport() {
   const rows = list.map((v,i) => `<tr>
     <td>${v._code}</td><td>${v.file_no||'—'}</td><td>${v._supplier}</td>
     <td>${v.vehicle_type||'—'}</td><td>${v.model||'—'}</td><td>${v.year||'—'}</td>
-    <td style="direction:ltr">${v.vin||'—'}</td><td style="direction:ltr">${v.plate||'—'}</td>
+    <td><span style="direction:ltr;display:inline-block">${v.vin||'—'}</span></td><td><span style="direction:ltr;display:inline-block">${v.plate||'—'}</span></td>
     <td>${v.color||'—'}</td><td>${v.engine_size||'—'}</td>
     <td>${(+v.purchase_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     <td>${v.license_expiry||'—'}</td>
