@@ -6191,8 +6191,8 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
         <div style="font-weight:600">${item.model||'—'}</div>
         <div style="font-size:11px;color:#666">${item.color||''}${item.year?' · '+item.year:''}</div>
       </td>
-      <td style="text-align:center"><span style="direction:ltr;display:inline-block;font-family:monospace;font-size:12px">${item.vin||'—'}</span></td>
-      <td style="text-align:center"><span style="direction:ltr;display:inline-block;font-family:monospace">${item.plate||'—'}</span></td>
+      <td style="text-align:center;font-family:monospace;font-size:12px">${item.vin||'—'}</td>
+      <td style="text-align:center;font-family:monospace">${item.plate||'—'}</td>
       <td style="text-align:center">${item.engine?item.engine+' L':'—'}</td>
       <td style="text-align:right;direction:ltr;font-weight:600">${item.price.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>`).join('');
@@ -10221,42 +10221,42 @@ async function printPurchaseOrder(fileNo) {
 
     const vehicleRows = (vehicles||[]).map((v,i) => `<tr>
       <td style="text-align:center;font-weight:700">${i+1}</td>
-      <td>${v.vehicle_type||'—'} ${v.model||''}</td>
-      <td><span style="direction:ltr;display:inline-block;font-family:monospace;font-size:11px;font-weight:700">${v.vin||'—'}</span></td>
-      <td><span style="direction:ltr;display:inline-block">${v.plate||'—'}</span></td>
-      <td>${v.color||'—'}</td>
+      <td style="text-align:center">${v.vehicle_type||'—'} ${v.model||''}</td>
+      <td style="text-align:center;font-family:monospace;font-size:11px;font-weight:700">${v.vin||'—'}</td>
+      <td style="text-align:center">${v.plate||'—'}</td>
+      <td style="text-align:center">${v.color||'—'}</td>
       <td style="text-align:center">${v.engine_size?v.engine_size+' L':'—'}</td>
       <td style="text-align:center">${v.year||'—'}</td>
       <td class="amber" style="text-align:center">${fmt2(v.purchase_price)}</td>
     </tr>`).join('');
 
     const paymentRows = (payments||[]).map(p => `<tr>
-      <td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td>
-      <td>${p.payer||'—'}</td>
-      <td class="green" style="text-align:right;direction:ltr">${fmt2(p.amount)}</td>
-      <td>${p.pay_method||'—'}</td>
-      <td><span style="direction:ltr;display:inline-block">${p.document||'—'}</span></td>
-      <td>${p.pay_date||'—'}</td>
+      <td style="text-align:center;font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td>
+      <td style="text-align:center">${p.payer||'—'}</td>
+      <td class="green" style="text-align:center">${fmt2(p.amount)}</td>
+      <td style="text-align:center">${p.pay_method||'—'}</td>
+      <td style="text-align:center">${p.document||'—'}</td>
+      <td style="text-align:center">${p.pay_date||'—'}</td>
     </tr>`).join('');
 
     const expenseRows = (expenses||[]).map(e => `<tr>
-      <td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td>
-      <td>${e.description||'—'}</td>
-      <td>${e.exp_type||'—'}</td>
-      <td class="red" style="text-align:right;direction:ltr">${fmt2(e.amount)}</td>
-      <td>${e.pay_method||'—'}</td>
-      <td>${e.exp_date||e.expense_date||'—'}</td>
+      <td style="text-align:center;font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td>
+      <td style="text-align:center">${e.description||'—'}</td>
+      <td style="text-align:center">${e.exp_type||'—'}</td>
+      <td class="red" style="text-align:center">${fmt2(e.amount)}</td>
+      <td style="text-align:center">${e.pay_method||'—'}</td>
+      <td style="text-align:center">${e.exp_date||e.expense_date||'—'}</td>
     </tr>`).join('');
 
     const partnerRows = (partners||[]).map(p => {
       const paid = (payments||[]).filter(pm=>pm.payer===p.partner).reduce((s,pm)=>s+(+pm.amount||0),0);
       const due  = (+po.total_purchase||0) * (+p.share_percent||0) / 100;
       return `<tr>
-        <td style="font-weight:700">${p.partner}</td>
+        <td style="text-align:center;font-weight:700">${p.partner}</td>
         <td style="text-align:center">${p.share_percent}%</td>
-        <td class="blue" style="text-align:right;direction:ltr">${fmt2(due)}</td>
-        <td class="green" style="text-align:right;direction:ltr">${fmt2(paid)}</td>
-        <td class="${(due-paid)>0.01?'red':'green'}" style="text-align:right;direction:ltr;font-weight:700">${fmt2(due-paid)}</td>
+        <td class="blue" style="text-align:center">${fmt2(due)}</td>
+        <td class="green" style="text-align:center">${fmt2(paid)}</td>
+        <td class="${(due-paid)>0.01?'red':'green'}" style="text-align:center;font-weight:700">${fmt2(due-paid)}</td>
       </tr>`;
     }).join('');
 
@@ -10441,7 +10441,7 @@ async function printCurrentReport() {
   } else if (type === 'sales') {
     tableHtml = `<table>
       <thead><tr><th>التاريخ</th><th>الملف</th><th>VIN</th><th>العميل</th><th>السعر</th></tr></thead>
-      <tbody>${data.map(s=>`<tr><td>${s.sale_date||''}</td><td>${s.file_no||''}</td><td><span style="direction:ltr;display:inline-block">${s.vin||''}</span></td><td>${s.customer||''}</td><td class="green">${fmt(s.sale_price)}</td></tr>`).join('')}</tbody>
+      <tbody>${data.map(s=>`<tr><td>${s.sale_date||''}</td><td>${s.file_no||''}</td><td style="text-align:center">${s.vin||''}</td><td>${s.customer||''}</td><td class="green">${fmt(s.sale_price)}</td></tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="green"><strong>${fmt(data.reduce((s,r)=>s+(+r.sale_price||0),0))}</strong></td></tr></tfoot>
     </table>`;
   } else if (type === 'expenses') {
@@ -11065,7 +11065,7 @@ function printVehiclesReport() {
   const rows = list.map((v,i) => `<tr>
     <td>${v._code}</td><td>${v.file_no||'—'}</td><td>${v._supplier}</td>
     <td>${v.vehicle_type||'—'}</td><td>${v.model||'—'}</td><td>${v.year||'—'}</td>
-    <td><span style="direction:ltr;display:inline-block">${v.vin||'—'}</span></td><td><span style="direction:ltr;display:inline-block">${v.plate||'—'}</span></td>
+    <td style="text-align:center">${v.vin||'—'}</td><td style="text-align:center">${v.plate||'—'}</td>
     <td>${v.color||'—'}</td><td>${v.engine_size||'—'}</td>
     <td>${(+v.purchase_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     <td>${v.license_expiry||'—'}</td>
