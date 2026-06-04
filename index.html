@@ -10179,6 +10179,11 @@ function exportToExcel(sheets, filename) {
   });
   XLSX.writeFile(wb, filename + '.xlsx');
 }
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  PRINT MODULE — Canonical source: js/print.js                   ║
+// ║  Functions below are intentionally kept here for standalone     ║
+// ║  deployment. Any changes should be mirrored in js/print.js      ║
+// ╚══════════════════════════════════════════════════════════════════╝
 
 const PRINT_STYLES=`*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Cairo','Segoe UI',Arial,sans-serif;color:#1a1a1a;font-size:12px;direction:rtl}.print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1a1a1a}.logo-area .company{font-size:20px;font-weight:800}.doc-title{font-size:24px;font-weight:800;text-align:left}table{width:100%;border-collapse:collapse;margin:12px 0;font-size:11px}thead tr{background:#1a1a1a;color:#fff}thead th{padding:8px 10px;text-align:right}tbody tr{border-bottom:1px solid #eee}tbody td{padding:7px 10px}tfoot tr{background:#f0f0f0;font-weight:700}.kpi-box{background:#f8f9fa;border-radius:6px;padding:10px 14px;border-right:3px solid #e6930a}.info-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px solid #eee}.green{color:#16a34a}.red{color:#dc2626}.blue{color:#2563eb}.amber{color:#d97706}.page{max-width:700px;margin:0 auto;padding:20px}.amount-box{background:#1a1a1a;color:#fff;border-radius:10px;padding:20px 28px;text-align:center;margin-bottom:22px}.amount-value{font-size:32px;font-weight:900}.sig-box{text-align:center;padding-top:44px;border-top:1px solid #ccc}`;function openPrintOverlay(html,title){const o=document.getElementById('printOverlay'),b=document.getElementById('printOverlayBody'),t=document.getElementById('printOverlayTitle');if(!o||!b)return;if(t)t.textContent=title||'معاينة الطباعة';b.innerHTML=`<style>${PRINT_STYLES}</style>`+html;o.style.display='block';document.body.style.overflow='hidden';}function closePrintOverlay(){const o=document.getElementById('printOverlay');if(o)o.style.display='none';document.body.style.overflow='';}document.addEventListener('keydown',e=>{if(e.key==='Escape')closePrintOverlay();});
 function printDocument(html,title){openPrintOverlay(html,title);}
