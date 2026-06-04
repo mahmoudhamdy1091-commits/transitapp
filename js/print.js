@@ -1,819 +1,356 @@
 // ╔══════════════════════════════════════════════════════════════════════╗
-// ║  print.js — Print Module · Transit Cars Management System           ║
-// ║  Extracted from index.html — non-breaking isolation                 ║
-// ║  All functions remain on window (global scope) for compatibility    ║
+// ║  print.js — Unified Print Module · Transit Cars Management System   ║
+// ║  v3 — Fixed: single renderer · scoped CSS · no DOCTYPE in div       ║
 // ╚══════════════════════════════════════════════════════════════════════╝
 //
-// ── DEPENDENCIES (must be available before this module runs) ──────────
-//   state           → core.js   (state.system)
-//   apiGetAll()     → core.js
-//   fmt()           → utils.js
-//   el()            → utils.js
-//   loadDealStatement()        → settings module
-//   getPartnerDealBalance()    → engine/accounting module
-//   window._ledgerAllEntries   → set by contacts module
-//   window._ledgerContactName  → set by contacts module
-//   window._ledgerVehicleMap   → set by contacts module
-//   window._dealStatementData  → set by settings module
+// ── ARCHITECTURE ──────────────────────────────────────────────────────
+//   renderPrint(fragment, title) — SINGLE renderer used by ALL functions
+//   Opens an isolated print window so:
+//   • @page rules work correctly (real document context)
+//   • CSS scoped to .print-root never leaks to app
+//   • Google Fonts load once from <head> of real document
+//   • window.print() targets the right document
 //
-// ── DOM REQUIREMENTS ──────────────────────────────────────────────────
-//   #printOverlay              → in index.html
-//   #printOverlayBody          → in index.html
-//   #printOverlayTitle         → in index.html
-//   #invoice-print-area        → in transactions UI
-//   #partnerStatementContent   → in accounting UI
-//   #cs-table, #cs-kpis        → in operations UI
+// ── COMPATIBILITY ALIASES (kept so all existing callers never break) ───
+//   openPrintOverlay(html, title) → renderPrint(html, title)
+//   closePrintOverlay()           → closes print window if open
+//   printDocument(html, title)    → renderPrint(html, title)
+//
+// ── DEPENDENCIES ──────────────────────────────────────────────────────
+//   state, apiGetAll, apiGet, ensureCache  → core.js
+//   fmt(), el()                            → utils.js
+//   getPartnerDealBalance()                → engine.js
+//   loadDealStatement()                    → settings module
+//   sendWhatsappInvoice()                  → utils/whatsapp
+//   window._ledger*, window._dealStatement*→ set by caller modules
+//   toast()                                → utils.js
 // ══════════════════════════════════════════════════════════════════════
 
-// ════════════════════════════════════════════════════════════
-// SECTION 1 — Print Infrastructure (Overlay + Styles)
-// ════════════════════════════════════════════════════════════
+'use strict';
 
-// ─── UNIFIED PRINT STYLE TOKEN ──────────────────────────────────────────
-// Single source of truth for ALL printed documents.
-// Key fixes applied:
-//   • Strict @page A4 with fixed margins — prevents browser scale drift
-//   • table-layout:fixed on all tables — stops column shifting
-//   • flex headers replaced with table-based layout in @media print
-//   • Single font stack Cairo → Arial (no Segoe UI — not on Linux/Android)
-//   • print-color-adjust:exact forces background colors in Chrome
-//   • page-break rules for thead/tbody/tfoot prevent mid-row breaks
-//   • RTL direction set globally — no per-element overrides needed
-// ────────────────────────────────────────────────────────────────────────
+// ─── Keep reference to last print window for closePrintOverlay ────────
+let _printWin = null;
 
-const PRINT_STYLES = `
-/* ── Reset ──────────────────────────────────────────────── */
-*, *::before, *::after {
-  margin: 0; padding: 0;
-  box-sizing: border-box;
+// ════════════════════════════════════════════════════════════
+// PRINT_CSS — Single scoped stylesheet for ALL documents
+// Scoped to .print-root — zero leakage to app
+// Table-based layout only — no grid/flex in structural elements
+// @page defined ONCE at top level — not inside @media print
+// ════════════════════════════════════════════════════════════
+const PRINT_CSS = `
+/* ── @page — single global definition ──────────────────── */
+@page           { size: A4 portrait;  margin: 14mm 12mm; orphans: 3; widows: 3; }
+@page landscape { size: A4 landscape; margin: 12mm 10mm; }
+
+/* ── Scoped reset ───────────────────────────────────────── */
+.print-root *, .print-root *::before, .print-root *::after {
+  box-sizing: border-box; margin: 0; padding: 0;
 }
-
-/* ── Base ───────────────────────────────────────────────── */
-body {
+.print-root {
   font-family: 'Cairo', Arial, sans-serif;
-  color: #1a1a1a;
-  font-size: 12px;
-  direction: rtl;
-  background: #fff;
-  line-height: 1.5;
+  color: #1a1a1a; font-size: 12px; direction: rtl;
+  background: #fff; line-height: 1.5;
 }
+.print-page { max-width: 740px; margin: 0 auto; padding: 24px 28px; }
 
-/* ── Page container ─────────────────────────────────────── */
-.page {
-  max-width: 740px;
-  margin: 0 auto;
-  padding: 24px 28px;
-}
-
-/* ── Document header — TABLE-based (flex breaks in print) ── */
-.print-header,
-.inv-header,
-.hdr,
-.header {
-  display: table;
-  width: 100%;
+/* ══ HEADER — table layout (stable in all print engines) ══ */
+.doc-header {
+  display: table; width: 100%; table-layout: fixed;
   border-bottom: 3px solid #1a1a1a;
-  padding-bottom: 14px;
-  margin-bottom: 20px;
-  table-layout: fixed;
-  border-collapse: collapse;
+  padding-bottom: 14px; margin-bottom: 20px; border-collapse: collapse;
 }
-.print-header-right,
-.logo-area,
-.company-info {
-  display: table-cell;
-  text-align: right;
-  vertical-align: top;
-  width: 55%;
+.doc-header-right {
+  display: table-cell; text-align: right; vertical-align: top; width: 55%;
 }
-.print-header-left,
-.inv-title-area,
-.doc-title-area {
-  display: table-cell;
-  text-align: left;
-  vertical-align: top;
-  width: 45%;
+.doc-header-left {
+  display: table-cell; text-align: left; vertical-align: top; width: 45%;
 }
+.doc-company     { font-size: 18px; font-weight: 800; }
+.doc-company-sub { font-size: 11px; color: #888; margin-top: 2px; }
+.doc-title       { font-size: 22px; font-weight: 800; }
+.doc-subtitle    { font-size: 12px; color: #666; margin-top: 3px; }
+.doc-ref         { font-size: 13px; font-weight: 700; color: #c47a00; margin-top: 4px; font-family: monospace, 'Cairo', Arial; }
 
-/* ── Company name typography ─────────────────────────────── */
-.logo-area .company,
-.company-name,
-.co-name,
-.co {
-  font-size: 18px;
-  font-weight: 800;
-  color: #1a1a1a;
-}
-.logo-area .sub,
-.company-name-ar,
-.company-sub,
-.co-sub {
-  font-size: 11px;
-  color: #888;
-  margin-top: 2px;
-}
-
-/* ── Document title typography ───────────────────────────── */
-.doc-title,
-.inv-title,
-.voucher-title h1,
-.rep-title h1,
-.title-area h1 {
-  font-size: 22px;
-  font-weight: 800;
-  color: #1a1a1a;
-  text-align: left;
-}
-.doc-subtitle,
-.inv-title-ar,
-.voucher-sub,
-.rep-title .sub {
-  font-size: 12px;
-  color: #666;
-  text-align: left;
-  margin-top: 3px;
-}
-.inv-number,
-.voucher-no,
-.doc-ref {
-  font-size: 13px;
-  font-weight: 700;
-  color: #c47a00;
-  text-align: left;
-  margin-top: 4px;
-  font-family: monospace, 'Cairo', Arial;
-}
-
-/* ── Info grid (2-column) ────────────────────────────────── */
-.inv-info,
+/* ══ INFO GRID — 2-column table ════════════════════════════ */
 .info-grid {
-  display: table;
-  width: 100%;
-  margin-bottom: 18px;
-  table-layout: fixed;
-  border-spacing: 8px 0;
-  border-collapse: separate;
+  display: table; width: 100%; table-layout: fixed;
+  border-spacing: 8px 0; border-collapse: separate; margin-bottom: 18px;
 }
-.info-box {
-  display: table-cell;
-  background: #f8f9fa;
-  border-radius: 6px;
-  padding: 10px 14px;
-  border: 1px solid #eee;
-  vertical-align: top;
-  width: 50%;
+.info-cell {
+  display: table-cell; background: #f8f9fa; border-radius: 6px;
+  padding: 10px 14px; border: 1px solid #eee; vertical-align: top; width: 50%;
 }
-.info-box-title {
-  font-size: 10px;
-  font-weight: 700;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 6px;
+.info-cell-title {
+  font-size: 10px; font-weight: 700; color: #888;
+  text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;
 }
 .info-row {
-  display: table;
-  width: 100%;
-  padding: 3px 0;
-  font-size: 11px;
-  border-bottom: 1px solid #eee;
-  table-layout: fixed;
+  display: table; width: 100%; table-layout: fixed;
+  padding: 3px 0; font-size: 11px; border-bottom: 1px solid #eee;
 }
 .info-row:last-child { border-bottom: none; }
-.info-label {
-  display: table-cell;
-  color: #666;
-  width: 55%;
+.info-lbl { display: table-cell; color: #666; width: 55%; }
+.info-val { display: table-cell; font-weight: 600; color: #1a1a1a; text-align: left; width: 45%; }
+
+/* ══ TABLES ════════════════════════════════════════════════ */
+.print-root table {
+  width: 100%; border-collapse: collapse; margin: 10px 0;
+  font-size: 11px; table-layout: fixed;
 }
-.info-value,
-.info-val {
-  display: table-cell;
-  font-weight: 600;
-  color: #1a1a1a;
-  text-align: left;
-  width: 45%;
+.print-root thead              { display: table-header-group; }
+.print-root thead tr           { background: #1a1a1a; color: #fff; }
+.print-root thead th           { padding: 8px 10px; text-align: right; font-weight: 700; font-size: 11px; word-break: break-word; }
+.print-root tbody              { display: table-row-group; }
+.print-root tbody tr           { border-bottom: 1px solid #eee; page-break-inside: avoid; }
+.print-root tbody tr:nth-child(even) { background: #fafafa; }
+.print-root tbody td           { padding: 7px 10px; vertical-align: middle; word-break: break-word; }
+.print-root tfoot              { display: table-footer-group; }
+.print-root tfoot tr           { background: #f0f0f0; font-weight: 700; }
+.print-root tfoot td           { padding: 8px 10px; border-top: 2px solid #1a1a1a; }
+.print-root .num, .print-root td.num, .print-root th.num {
+  text-align: left; font-family: monospace, 'Cairo', Arial; direction: ltr;
 }
 
-/* ── Tables — FIXED layout prevents column drift ────────── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 10px 0;
-  font-size: 11px;
-  table-layout: fixed;
-}
-colgroup col { /* explicit col widths override if present */ }
-thead { display: table-header-group; }
-thead tr { background: #1a1a1a; color: #fff; }
-thead th {
-  padding: 8px 10px;
-  text-align: right;
-  white-space: nowrap;
-  font-weight: 700;
-  font-size: 11px;
-  overflow: hidden;
-}
-tbody { display: table-row-group; }
-tbody tr { border-bottom: 1px solid #eee; page-break-inside: avoid; }
-tbody tr:nth-child(even) { background: #fafafa; }
-tbody td {
-  padding: 7px 10px;
-  vertical-align: middle;
-  overflow: hidden;
-}
-tfoot { display: table-footer-group; }
-tfoot tr { background: #f0f0f0; font-weight: 700; }
-tfoot td {
-  padding: 8px 10px;
-  border-top: 2px solid #1a1a1a;
-}
-
-/* ── Numeric columns — always left-align (LTR numbers) ─── */
-td.num, th.num,
-td[data-num], th[data-num],
-.mono,
-td:last-child,
-tfoot td:last-child {
-  text-align: left;
-  font-family: monospace, 'Cairo', Arial;
-  direction: ltr;
-  unicode-bidi: embed;
-}
-
-/* ── KPI boxes ───────────────────────────────────────────── */
+/* ══ KPI ROW — table layout ════════════════════════════════ */
 .kpi-row {
-  display: table;
-  width: 100%;
-  margin: 12px 0;
-  border-spacing: 8px 0;
-  border-collapse: separate;
+  display: table; width: 100%; table-layout: fixed;
+  border-spacing: 8px 0; border-collapse: separate; margin: 12px 0;
 }
-.kpi-box {
-  display: table-cell;
-  background: #f8f9fa;
-  border-radius: 6px;
-  padding: 10px 14px;
-  border-right: 3px solid #e6930a;
-  vertical-align: top;
+.kpi-cell {
+  display: table-cell; background: #f8f9fa; border-radius: 6px;
+  padding: 10px 14px; border-right: 3px solid #e6930a; vertical-align: top;
 }
 .kpi-label { font-size: 10px; color: #666; margin-bottom: 3px; }
-.kpi-val {
-  font-size: 15px;
-  font-weight: 700;
-  font-family: monospace, 'Cairo', Arial;
+.kpi-val   { font-size: 15px; font-weight: 700; font-family: monospace, 'Cairo', Arial; }
+
+/* ══ SUMMARY ROW — table layout ════════════════════════════ */
+.summary-row {
+  display: table; width: 100%; table-layout: fixed;
+  border-spacing: 8px 0; border-collapse: separate; margin-bottom: 14px;
+}
+.s-cell       { display: table-cell; background: #f8f9fa; border-radius: 8px; padding: 10px 16px; vertical-align: top; }
+.s-cell-label { font-size: 10px; color: #888; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.s-cell-val   { font-size: 15px; font-weight: 900; margin-top: 3px; font-family: monospace, 'Cairo', Arial; }
+
+/* ══ TOTAL BOX ══════════════════════════════════════════════ */
+.total-wrap   { text-align: left; margin-bottom: 20px; }
+.total-box    { display: inline-block; background: #1a1a1a; color: #fff; border-radius: 10px; padding: 16px 24px; min-width: 240px; text-align: center; }
+.total-label  { font-size: 11px; color: #aaa; margin-bottom: 3px; }
+.total-amount { font-size: 24px; font-weight: 900; font-family: monospace, 'Cairo', Arial; }
+.total-cur    { font-size: 12px; color: #aaa; margin-top: 2px; }
+.total-sub    { display: table; width: 100%; table-layout: fixed; font-size: 11px; color: #aaa; padding: 3px 0; border-top: 1px solid #444; margin-top: 6px; padding-top: 6px; }
+
+/* ══ SIGNATURE ROW — table layout ══════════════════════════ */
+.sig-row {
+  display: table; width: 100%; table-layout: fixed;
+  border-spacing: 24px 0; border-collapse: separate; margin-top: 28px;
+}
+.sig-cell {
+  display: table-cell; text-align: center; padding-top: 40px;
+  border-top: 1px solid #ccc; font-size: 11px; color: #888; vertical-align: top;
 }
 
-/* ── Summary boxes (printSection) ───────────────────────── */
-.summary {
-  display: table;
-  width: 100%;
-  margin-bottom: 14px;
-  border-spacing: 8px 0;
-  border-collapse: separate;
-}
-.s-box {
-  display: table-cell;
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 10px 16px;
-  vertical-align: top;
-}
-.s-box-label { font-size: 10px; color: #888; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
-.s-box-val { font-size: 15px; font-weight: 900; margin-top: 3px; font-family: monospace, 'Cairo', Arial; }
-
-/* ── Amount / Total box ──────────────────────────────────── */
-.total-section,
-.total-box-wrap {
-  text-align: left;
-  margin-bottom: 20px;
-}
-.total-box,
-.total-inner,
-.amount-box {
-  display: inline-block;
-  background: #1a1a1a;
-  color: #fff;
-  border-radius: 10px;
-  padding: 16px 24px;
-  min-width: 240px;
-  text-align: center;
-}
-.total-label { font-size: 11px; color: #aaa; margin-bottom: 3px; }
-.total-amount,
-.amount-value { font-size: 24px; font-weight: 900; font-family: monospace, 'Cairo', Arial; }
-.total-currency { font-size: 12px; color: #aaa; margin-top: 2px; }
-.total-sub-row {
-  display: table;
-  width: 100%;
-  font-size: 11px;
-  color: #aaa;
-  padding: 3px 0;
-  border-top: 1px solid #444;
-  margin-top: 6px;
-  padding-top: 6px;
-  table-layout: fixed;
-}
-
-/* ── Signature area ──────────────────────────────────────── */
-.sig-row,
-.sig-area {
-  display: table;
-  width: 100%;
-  margin-top: 28px;
-  table-layout: fixed;
-  border-spacing: 30px 0;
-  border-collapse: separate;
-}
-.sig-box {
-  display: table-cell;
-  text-align: center;
-  padding-top: 40px;
-  border-top: 1px solid #ccc;
-  font-size: 11px;
-  color: #888;
-  vertical-align: top;
-}
-.sig-label { font-size: 11px; color: #888; margin-top: 6px; }
-
-/* ── Section titles ──────────────────────────────────────── */
-.section-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #1a1a1a;
-  margin: 16px 0 6px;
-  padding-bottom: 4px;
-  border-bottom: 2px solid #e6930a;
-}
-
-/* ── Notes section ───────────────────────────────────────── */
-.notes-section {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 12px 16px;
-  margin-bottom: 20px;
-}
-.notes-title {
-  font-size: 10px;
-  font-weight: 700;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 6px;
-}
-
-/* ── Footer ──────────────────────────────────────────────── */
-.footer,
-.inv-footer {
-  text-align: center;
-  font-size: 10px;
-  color: #999;
-  margin-top: 24px;
-  padding-top: 10px;
-  border-top: 1px solid #eee;
-}
-
-/* ── Contact badge ───────────────────────────────────────── */
-.contact-badge {
-  display: inline-block;
-  border-radius: 4px;
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 700;
-  margin-right: 6px;
-}
-
-/* ── Utility colors ──────────────────────────────────────── */
-.green  { color: #16a34a; }
-.red    { color: #dc2626; }
-.blue   { color: #2563eb; }
-.amber  { color: #d97706; }
-.balanced { font-size: 11px; color: #16a34a; margin-top: 4px; }
-
-/* ── Print buttons (hidden in print) ────────────────────── */
-.no-print {
-  text-align: center;
-  margin-bottom: 16px;
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-}
-.no-print button {
-  padding: 9px 24px;
-  border-radius: 8px;
-  font-family: 'Cairo', Arial, sans-serif;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  border: none;
-}
-
-/* ── Special: landscape override ────────────────────────── */
-.vehicles-print-landscape { page: landscape; }
+/* ══ UTILITY ════════════════════════════════════════════════ */
+.section-title { font-size: 13px; font-weight: 700; color: #1a1a1a; margin: 16px 0 6px; padding-bottom: 4px; border-bottom: 2px solid #e6930a; page-break-after: avoid; }
+.notes-box     { background: #f8f9fa; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; }
+.notes-title   { font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.doc-footer    { text-align: center; font-size: 10px; color: #999; margin-top: 24px; padding-top: 10px; border-top: 1px solid #eee; }
+.contact-badge { display: inline-block; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700; margin-right: 6px; }
+.c-green { color: #16a34a; } .c-red  { color: #dc2626; }
+.c-blue  { color: #2563eb; } .c-amber{ color: #d97706; }
+.c-ok    { font-size: 11px; color: #16a34a; }
+.no-print { /* hidden in print */ }
 
 /* ════════════════════════════════════════════════════════════
-   @page — Strict A4 control (Chrome priority)
-   • size:A4 prevents browser from adding extra whitespace
-   • margins set here override browser defaults
-   • orphans/widows prevent single-line stranded rows
-   ════════════════════════════════════════════════════════════ */
-@page {
-  size: A4 portrait;
-  margin: 14mm 12mm 14mm 12mm;
-  orphans: 3;
-  widows: 3;
-}
-@page landscape {
-  size: A4 landscape;
-  margin: 12mm 10mm;
-}
-
-/* ════════════════════════════════════════════════════════════
-   @media print — Final overrides for Chrome print engine
+   @media print — Chrome/Firefox final overrides
    ════════════════════════════════════════════════════════════ */
 @media print {
-  /* Force background colors (Chrome strips them by default) */
-  * {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-  /* Remove screen-only elements */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   .no-print { display: none !important; }
-  button.print-btn { display: none !important; }
-
-  /* Body resets for print */
-  body {
-    font-size: 11px;
-    padding: 0;
-    margin: 0;
-    background: #fff;
-  }
-
-  /* Page container — full width in print, no centering needed */
-  .page {
-    max-width: 100%;
-    padding: 0;
-    margin: 0;
-  }
-
-  /* Table stability in print */
-  table {
-    page-break-inside: auto;
-    font-size: 10px;
-    table-layout: fixed;
-    width: 100%;
-  }
-  tr  { page-break-inside: avoid; page-break-after: auto; }
-  thead { display: table-header-group; }
-  tfoot { display: table-footer-group; }
-  tbody tr:nth-child(even) { background: #fafafa !important; }
-
-  /* KPI grid — collapse to inline-block in print for stability */
-  .kpi-row { border-spacing: 4px 0; }
-  .kpi-box { padding: 6px 10px; }
-
-  /* Info grid */
-  .inv-info,
-  .info-grid { border-spacing: 4px 0; }
-
-  /* Sig area */
-  .sig-row,
-  .sig-area { border-spacing: 20px 0; }
-
-  /* Summary boxes */
-  .summary { border-spacing: 4px 0; }
-
-  /* Prevent orphaned section titles */
+  .print-page { max-width: 100%; padding: 0; margin: 0; }
+  .print-root { font-size: 11px; }
+  .print-root table { font-size: 10px; table-layout: fixed; width: 100%; }
+  .print-root tr    { page-break-inside: avoid; }
+  .print-root thead { display: table-header-group; }
+  .print-root tfoot { display: table-footer-group; }
+  .kpi-row, .info-grid, .summary-row { border-spacing: 4px 0; }
+  .sig-row  { border-spacing: 16px 0; }
+  .total-box, .notes-box, .sig-row, .doc-header { page-break-inside: avoid; }
   .section-title { page-break-after: avoid; }
-
-  /* Prevent page break inside total/signature/notes blocks */
-  .total-box, .total-inner, .amount-box,
-  .notes-section, .sig-row, .sig-area {
-    page-break-inside: avoid;
-  }
-
-  /* Header must not break */
-  .print-header, .inv-header, .hdr, .header {
-    page-break-inside: avoid;
-    page-break-after: avoid;
-  }
+  .print-root tbody tr:nth-child(even) { background: #fafafa !important; }
 }
 `;
 
-function openPrintOverlay(html, title) {
+// ════════════════════════════════════════════════════════════
+// CORE: renderPrint — SINGLE renderer for ALL documents
+// ════════════════════════════════════════════════════════════
+
+function renderPrint(fragment, title) {
+  const win = window.open('', '_blank', 'width=860,height=700,scrollbars=yes');
+  if (!win) { _renderOverlay(fragment, title); return; }
+  _printWin = win;
+  win.document.open();
+  win.document.write('<!DOCTYPE html>\n<html lang="ar" dir="rtl">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>' + (title||'طباعة') + '</title>\n<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">\n<style>\n' + PRINT_CSS + '\n</style>\n</head>\n<body>\n<div class="print-root">\n<div class="no-print" style="text-align:center;padding:12px;background:#f8f9fa;border-bottom:2px solid #e5e7eb">\n<button onclick="window.print()" style="background:#1a1a1a;color:#fff;border:none;padding:9px 28px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:\'Cairo\',Arial,sans-serif;margin-left:8px">\u{1F5A8}\uFE0F \u0637\u0628\u0627\u0639\u0629</button>\n<button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd;padding:9px 20px;border-radius:8px;font-size:13px;cursor:pointer;font-family:\'Cairo\',Arial,sans-serif">\u2715 \u0625\u063A\u0644\u0627\u0642</button>\n</div>\n<div class="print-page">\n' + fragment + '\n</div>\n</div>\n</body>\n</html>');
+  win.document.close();
+  win.focus();
+}
+
+function _renderOverlay(fragment, title) {
   const o = document.getElementById('printOverlay');
   const b = document.getElementById('printOverlayBody');
   const t = document.getElementById('printOverlayTitle');
-  if (!o || !b) return;
-  if (t) t.textContent = title || 'معاينة الطباعة';
-  b.innerHTML = `<style>${PRINT_STYLES}</style>` + html;
+  if (!o || !b) { alert('\u064A\u0631\u062C\u0649 \u0627\u0644\u0633\u0645\u0627\u062D \u0628\u0627\u0644\u0646\u0648\u0627\u0641\u0630 \u0627\u0644\u0645\u0646\u0628\u062B\u0642\u0629 \u0644\u0625\u062A\u0645\u0627\u0645 \u0627\u0644\u0637\u0628\u0627\u0639\u0629'); return; }
+  if (t) t.textContent = title || '\u0645\u0639\u0627\u064A\u0646\u0629 \u0627\u0644\u0637\u0628\u0627\u0639\u0629';
+  b.innerHTML = '<style>.print-root{all:initial;font-family:\'Cairo\',Arial,sans-serif;direction:rtl}' + PRINT_CSS + '</style><div class="print-root"><div class="print-page">' + fragment + '</div></div>';
   o.style.display = 'block';
   document.body.style.overflow = 'hidden';
 }
 
-function closePrintOverlay() {
-  const o = document.getElementById('printOverlay');
-  if (o) o.style.display = 'none';
-  document.body.style.overflow = '';
-}
+// ── Compatibility aliases ─────────────────────────────────
+function openPrintOverlay(html, title)  { renderPrint(html, title); }
+function closePrintOverlay()            { if (_printWin) { try { _printWin.close(); } catch(e){} _printWin = null; } const o = document.getElementById('printOverlay'); if (o) o.style.display = 'none'; document.body.style.overflow = ''; }
+function printDocument(html, title)     { renderPrint(html, title); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePrintOverlay(); });
 
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closePrintOverlay();
-});
-
-function printDocument(html, title) { openPrintOverlay(html, title); }
-
+// PRINT_STYLES alias for any legacy reference
+const PRINT_STYLES = PRINT_CSS;
 
 // ════════════════════════════════════════════════════════════
-// SECTION 2 — Document Header Template
+// SECTION 2 — Shared document header builder
 // ════════════════════════════════════════════════════════════
-
 function docHeader(title, subtitle, fileNo) {
-  return `<div class="print-header">
-    <div class="logo-area">
-      <div class="company">Transit International</div>
-      <div class="sub">نظام إدارة صفقات السيارات</div>
-      <div class="sub" style="margin-top:4px;color:#999">تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</div>
+  return `
+  <div class="doc-header">
+    <div class="doc-header-right">
+      <div class="doc-company">Transit International</div>
+      <div class="doc-company-sub">نظام إدارة صفقات السيارات</div>
+      <div class="doc-company-sub" style="margin-top:4px;color:#999">تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</div>
     </div>
-    <div>
+    <div class="doc-header-left">
       <div class="doc-title">${title}</div>
       ${subtitle ? `<div class="doc-subtitle">${subtitle}</div>` : ''}
-      ${fileNo ? `<div style="font-size:13px;color:#e6930a;font-weight:700;text-align:left;margin-top:4px"># ${fileNo}</div>` : ''}
+      ${fileNo   ? `<div class="doc-ref"># ${fileNo}</div>` : ''}
     </div>
   </div>`;
 }
 
 // ════════════════════════════════════════════════════════════
-// SECTION 3 — Invoice Print (reads #invoice-print-area DOM)
+// SECTION 3 — printInvoice (reads live DOM #invoice-print-area)
 // ════════════════════════════════════════════════════════════
-
 function printInvoice() {
   const content = el('invoice-print-area')?.innerHTML;
   if (!content) return;
-  openPrintOverlay(content, 'فاتورة بيع');
+  renderPrint(content, 'فاتورة بيع');
 }
 
 // ════════════════════════════════════════════════════════════
-// SECTION 4 — Sale Invoice Templates
+// SECTION 4 — Sale Invoice
 // ════════════════════════════════════════════════════════════
-
 async function reprintInvoice(invNo, fn) {
   try {
-    // جيب بيانات الفاتورة — من الـ cache أو fresh fetch
     await ensureCache();
     let data = state.allSales.filter(s => s.file_no === fn && s.inv_no === invNo);
     if (!data.length) {
-      // fallback: fresh fetch لو مش في الـ cache
       data = await apiGetAll('sales', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, inv_no:`eq.${invNo}` });
     }
     if (!data?.length) { toast('لم يتم إيجاد بيانات الفاتورة','err'); return; }
     const s = data[0];
-
-    // جيب بيانات السيارات من الـ cache
     const vehicles = state.allVehicles.filter(v => v.file_no === fn);
-
     const items = data.map(d => {
       const v = vehicles.find(v => v.vin === d.vin);
-      return {
-        vin:           d.vin||'',
-        model:         v?.model||v?.vehicle_type||'',
-        plate:         v?.plate||'',
-        color:         v?.color||'',
-        engine:        v?.engine_size||'',
-        year:          v?.year||'',
-        price:         +d.sale_price||0,
-        vnote:         d.notes||'',
-        purchasePrice: +v?.purchase_price||0,
-      };
+      return { vin:d.vin||'', model:v?.model||v?.vehicle_type||'', plate:v?.plate||'', color:v?.color||'', engine:v?.engine_size||'', year:v?.year||'', price:+d.sale_price||0, vnote:d.notes||'', purchasePrice:+v?.purchase_price||0 };
     });
-
-    printSaleInvoice({
-      invNo, customer: s.customer, date: s.sale_date,
-      fn, notes: s.notes||'',
-      items, total: items.reduce((t,i)=>t+i.price,0)
-    });
+    printSaleInvoice({ invNo, customer:s.customer, date:s.sale_date, fn, notes:s.notes||'', items, total:items.reduce((t,i)=>t+i.price,0) });
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
 function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extraCharges = [], grandTotal = null }) {
-  const companyName = 'Transit Co.';
-  const companyNameAr = 'ترانزيت';
+  const companyName    = 'Transit Co.';
+  const companyNameAr  = 'ترانزيت';
   const companyAddress = 'Kuwait · الكويت';
-  const finalTotal = grandTotal != null ? grandTotal : total;
+  const finalTotal     = grandTotal != null ? grandTotal : total;
 
   const itemsHtml = items.map((item, i) => `
     <tr>
       <td style="text-align:center">${i+1}</td>
-      <td>
-        <div style="font-weight:600">${item.model||'—'}</div>
-        <div style="font-size:11px;color:#666">${item.color||''}${item.year?' · '+item.year:''}</div>
-      </td>
+      <td><div style="font-weight:600">${item.model||'—'}</div><div style="font-size:11px;color:#666">${item.color||''}${item.year?' · '+item.year:''}</div></td>
       <td style="direction:ltr;text-align:center;font-family:monospace;font-size:12px">${item.vin||'—'}</td>
       <td style="direction:ltr;text-align:center;font-family:monospace">${item.plate||'—'}</td>
       <td style="text-align:center">${item.engine?item.engine+' L':'—'}</td>
-      <td style="text-align:left;font-weight:600">${item.price.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+      <td class="num">${item.price.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>`).join('');
 
-  // صف المجموع الفرعي للسيارات (فقط إذا في مصاريف إضافية)
   const subtotalRow = extraCharges.length > 0 ? `
     <tr style="background:#f0f0f0;font-weight:600">
       <td colspan="5" style="text-align:right;padding:8px 12px;color:#555">مجموع السيارات / Vehicles Subtotal</td>
-      <td style="text-align:left;padding:8px 12px">${total.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+      <td class="num">${total.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>` : '';
 
-  // بنود المصاريف الإضافية
-  const extraRowsHtml = extraCharges.map((c, i) => `
+  const extraRowsHtml = extraCharges.map(c => `
     <tr style="background:#fff8ec">
       <td style="text-align:center;color:#c47a00;font-size:11px">+</td>
-      <td colspan="4" style="color:#c47a00;font-weight:600;padding:8px 12px">
-        ${c.desc}
-        <span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;margin-right:8px;font-weight:700">مصروف إضافي</span>
-      </td>
-      <td style="text-align:left;font-weight:600;color:#c47a00;padding:8px 12px">${c.amount.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+      <td colspan="4" style="color:#c47a00;font-weight:600;padding:8px 12px">${c.desc}<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;margin-right:8px;font-weight:700">مصروف إضافي</span></td>
+      <td class="num c-amber">${c.amount.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>`).join('');
 
-  const html = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<title>فاتورة ${invNo}</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Cairo', Arial, sans-serif; color:#1a1a1a; font-size:13px; background:#fff; }
-  .page { max-width:800px; margin:0 auto; padding:32px 36px; }
-
-  /* Header */
-  .inv-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:28px; padding-bottom:20px; border-bottom:3px solid #1a1a1a; }
-  .logo-area { text-align:right; }
-  .logo-placeholder { width:120px; height:60px; border:2px dashed #ccc; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:11px; margin-bottom:6px; }
-  .company-name { font-size:22px; font-weight:800; color:#1a1a1a; }
-  .company-name-ar { font-size:14px; color:#555; margin-top:2px; }
-  .inv-title-area { text-align:left; }
-  .inv-title { font-size:28px; font-weight:800; color:#1a1a1a; letter-spacing:-0.5px; }
-  .inv-title-ar { font-size:16px; color:#555; margin-top:4px; }
-  .inv-number { font-size:16px; font-weight:700; margin-top:8px; color:#c47a00; }
-
-  /* Info boxes */
-  .inv-info { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; }
-  .info-box { background:#f8f9fa; border-radius:8px; padding:14px 16px; }
-  .info-box-title { font-size:10px; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
-  .info-row { display:flex; justify-content:space-between; padding:3px 0; font-size:13px; }
-  .info-label { color:#666; }
-  .info-value { font-weight:600; color:#1a1a1a; }
-
-  /* Table */
-  table {table-layout:fixed; width:100%; border-collapse:collapse; margin-bottom:20px; }
-  thead tr { background:#1a1a1a; color:#fff; }
-  thead th { padding:10px 12px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
-  tbody tr { border-bottom:1px solid #eee; }
-  tbody tr:nth-child(even):not(.extra-row):not(.subtotal-row) { background:#fafafa; }
-  tbody td { padding:10px 12px; vertical-align:middle; }
-
-  /* Total */
-  .total-section { display:flex; justify-content:flex-end; margin-bottom:24px; }
-  .total-box { background:#1a1a1a; color:#fff; border-radius:10px; padding:16px 24px; min-width:260px; }
-  .total-label { font-size:12px; color:#aaa; margin-bottom:4px; }
-  .total-amount { font-size:24px; font-weight:800; color:#fff; }
-  .total-currency { font-size:13px; color:#aaa; margin-top:2px; }
-  .total-sub-row { display:flex; justify-content:space-between; font-size:12px; color:#aaa; padding:3px 0; border-top:1px solid #444; margin-top:8px; padding-top:8px; }
-
-  /* Notes */
-  .notes-section { background:#f8f9fa; border-radius:8px; padding:14px 16px; margin-bottom:24px; }
-  .notes-title { font-size:11px; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
-
-  /* Footer */
-  .inv-footer { text-align:center; padding-top:20px; border-top:1px solid #eee; color:#999; font-size:11px; }
-
-  /* Signature area */
-  .sig-area { display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-bottom:24px; }
-  .sig-box { text-align:center; padding-top:40px; border-top:1px solid #ccc; }
-  .sig-label { font-size:11px; color:#888; margin-top:6px; }
-
-  @page{size:A4 portrait;margin:14mm 12mm}
-  @media print {.hdr,.header,.inv-header{display:table!important;table-layout:fixed!important;width:100%!important}.hdr>*,.header>*,.inv-header>*{display:table-cell!important;vertical-align:top}
-    body { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
-    .page { padding:20px; }
-    .no-print { display:none !important; }
-  }
-</style>
-</head>
-<body>
-<div class="page">
-
-  <!-- Print button -->
-  <div class="no-print" style="text-align:center;margin-bottom:20px;display:flex;gap:10px;justify-content:center">
-    <button onclick="window.print()" style="background:#1a1a1a;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">🖨️ طباعة / Print</button>
-    <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">✕ إغلاق</button>
-  </div>
-
-  <!-- Header -->
-  <div class="inv-header">
-    <div class="logo-area">
-      <div class="logo-placeholder">LOGO</div>
-      <div class="company-name">${companyName}</div>
-      <div class="company-name-ar">${companyNameAr}</div>
-      <div style="font-size:11px;color:#888;margin-top:4px">${companyAddress}</div>
+  const fragment = `
+  <div class="doc-header">
+    <div class="doc-header-right">
+      <div style="width:120px;height:60px;border:2px dashed #ccc;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;color:#aaa;font-size:11px;margin-bottom:6px">LOGO</div>
+      <div class="doc-company">${companyName}</div>
+      <div class="doc-company-sub">${companyNameAr}</div>
+      <div class="doc-company-sub">${companyAddress}</div>
     </div>
-    <div class="inv-title-area">
-      <div class="inv-title">INVOICE</div>
-      <div class="inv-title-ar">فاتورة بيع</div>
-      <div class="inv-number"># ${invNo}</div>
+    <div class="doc-header-left">
+      <div class="doc-title">INVOICE</div>
+      <div class="doc-subtitle">فاتورة بيع</div>
+      <div class="doc-ref"># ${invNo}</div>
     </div>
   </div>
 
-  <!-- Info -->
-  <div class="inv-info">
-    <div class="info-box">
-      <div class="info-box-title">بيانات العميل / Bill To</div>
-      <div class="info-row">
-        <span class="info-label">العميل / Customer</span>
-        <span class="info-value">${customer}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">رقم الملف / File No</span>
-        <span class="info-value">${fn||'—'}</span>
-      </div>
+  <div class="info-grid">
+    <div class="info-cell">
+      <div class="info-cell-title">بيانات العميل / Bill To</div>
+      <div class="info-row"><span class="info-lbl">العميل / Customer</span><span class="info-val">${customer}</span></div>
+      <div class="info-row"><span class="info-lbl">رقم الملف / File No</span><span class="info-val">${fn||'—'}</span></div>
     </div>
-    <div class="info-box">
-      <div class="info-box-title">بيانات الفاتورة / Invoice Details</div>
-      <div class="info-row">
-        <span class="info-label">رقم الفاتورة / No</span>
-        <span class="info-value" style="color:#c47a00">${invNo}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">التاريخ / Date</span>
-        <span class="info-value">${new Date(date).toLocaleDateString('en-GB',{year:'numeric',month:'long',day:'numeric'})}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">عدد السيارات / Vehicles</span>
-        <span class="info-value">${items.length}</span>
-      </div>
-      ${extraCharges.length>0 ? `<div class="info-row">
-        <span class="info-label">مصاريف إضافية</span>
-        <span class="info-value" style="color:#c47a00">${extraCharges.length} بند</span>
-      </div>` : ''}
+    <div class="info-cell">
+      <div class="info-cell-title">بيانات الفاتورة / Invoice Details</div>
+      <div class="info-row"><span class="info-lbl">رقم الفاتورة / No</span><span class="info-val c-amber">${invNo}</span></div>
+      <div class="info-row"><span class="info-lbl">التاريخ / Date</span><span class="info-val">${new Date(date).toLocaleDateString('en-GB',{year:'numeric',month:'long',day:'numeric'})}</span></div>
+      <div class="info-row"><span class="info-lbl">عدد السيارات</span><span class="info-val">${items.length}</span></div>
+      ${extraCharges.length>0?`<div class="info-row"><span class="info-lbl">مصاريف إضافية</span><span class="info-val c-amber">${extraCharges.length} بند</span></div>`:''}
     </div>
   </div>
 
-  <!-- Items table -->
   <table>
-    <thead>
-      <tr>
-        <th style="width:40px">#</th>
-        <th>السيارة / Vehicle</th>
-        <th>رقم الشاصي / VIN</th>
-        <th>اللوحة / Plate</th>
-        <th>الحجم / Engine</th>
-        <th style="text-align:left">السعر / Price</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${itemsHtml}
-      ${subtotalRow}
-      ${extraRowsHtml}
-    </tbody>
+    <colgroup><col style="width:36px"><col style="width:25%"><col style="width:22%"><col style="width:12%"><col style="width:10%"><col style="width:15%"></colgroup>
+    <thead><tr>
+      <th>#</th><th>السيارة / Vehicle</th><th>رقم الشاصي / VIN</th><th>اللوحة / Plate</th><th>الحجم / Engine</th><th style="text-align:left">السعر / Price</th>
+    </tr></thead>
+    <tbody>${itemsHtml}${subtotalRow}${extraRowsHtml}</tbody>
   </table>
 
-  <!-- Total -->
-  <div class="total-section">
+  <div class="total-wrap">
     <div class="total-box">
       <div class="total-label">الإجمالي / Total Amount</div>
       <div class="total-amount">${finalTotal.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
-      <div class="total-currency">KWD / د.ك</div>
-      ${extraCharges.length>0 ? `
-      <div class="total-sub-row">
-        <span>قيمة السيارات</span>
-        <span>${total.toLocaleString('en-US',{minimumFractionDigits:2})}</span>
-      </div>
-      <div class="total-sub-row">
-        <span>مصاريف إضافية</span>
-        <span>${(finalTotal-total).toLocaleString('en-US',{minimumFractionDigits:2})}</span>
-      </div>` : ''}
+      <div class="total-cur">KWD / د.ك</div>
+      ${extraCharges.length>0?`<div class="total-sub"><span>قيمة السيارات</span><span>${total.toLocaleString('en-US',{minimumFractionDigits:2})}</span></div><div class="total-sub"><span>مصاريف إضافية</span><span>${(finalTotal-total).toLocaleString('en-US',{minimumFractionDigits:2})}</span></div>`:''}
     </div>
   </div>
 
-  ${notes ? `<div class="notes-section"><div class="notes-title">ملاحظات / Notes</div><p style="color:#444;line-height:1.6">${notes}</p></div>` : ''}
+  ${notes?`<div class="notes-box"><div class="notes-title">ملاحظات / Notes</div><p style="color:#444;line-height:1.6">${notes}</p></div>`:''}
 
-  <!-- Signatures -->
-  <div class="sig-area">
-    <div class="sig-box">
-      <div class="sig-label">توقيع البائع / Seller Signature</div>
-    </div>
-    <div class="sig-box">
-      <div class="sig-label">توقيع المشتري / Buyer Signature</div>
-    </div>
+  <div class="sig-row">
+    <div class="sig-cell">توقيع البائع / Seller Signature</div>
+    <div class="sig-cell">توقيع المشتري / Buyer Signature</div>
   </div>
 
-  <div class="inv-footer">
-    ${companyName} · ${companyAddress} · شكراً لتعاملكم معنا · Thank you for your business
-  </div>
-</div>
-</body>
-</html>`;
+  <div class="doc-footer">${companyName} · ${companyAddress} · شكراً لتعاملكم معنا · Thank you for your business</div>`;
 
-  openPrintOverlay(html);
+  renderPrint(fragment, `فاتورة ${invNo}`);
 
-  // WhatsApp option after print
   setTimeout(() => {
     if (confirm('إرسال الفاتورة عبر واتساب؟')) {
       const phone = prompt('رقم واتساب العميل (مثال: 96512345678)\nاتركه فارغاً لاختيار يدوي:','');
@@ -825,179 +362,84 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
 // ════════════════════════════════════════════════════════════
 // SECTION 5 — Payout Voucher
 // ════════════════════════════════════════════════════════════
-
 async function printPayoutVoucher(payoutId) {
   try {
-    const [pArr, dealArr] = await Promise.all([
-      apiGetAll('partner_payouts', { select:'*', id:`eq.${payoutId}` }),
-      null
-    ]);
+    const pArr = await apiGetAll('partner_payouts', { select:'*', id:`eq.${payoutId}` });
     const p = pArr?.[0];
     if (!p) { toast('لم يُعثر على بيانات الصرف','err'); return; }
 
     const poArr = await apiGetAll('purchase_orders', { select:'supplier,po_date,total_purchase', system_type:`eq.${state.system}`, file_no:`eq.${p.file_no}` });
     const deal  = poArr?.[0];
-    // Get full deal balance for this partner
     let dealSummary = null;
     try { dealSummary = await getPartnerDealBalance(p.file_no, p.partner, state.system); } catch(e) { console.warn('getPartnerDealBalance:', e.message); }
     const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
-    const typeColor = { 'استرداد رأس مال':'#2563eb', 'توزيع أرباح':'#16a34a', 'رأس مال + أرباح':'#7c3aed', 'سلفة':'#e6930a' };
+    const typeColor = { 'استرداد رأس مال':'#2563eb','توزيع أرباح':'#16a34a','رأس مال + أرباح':'#7c3aed','سلفة':'#e6930a' };
     const color = typeColor[p.payout_type] || '#1a1a1a';
 
     const dealBreakdown = dealSummary ? `
-      <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;margin-bottom:20px">
-        <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">ملخص الصفقة — ملف ${p.file_no}</div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
-          <div><div style="font-size:10px;color:#888">رأس المال (شراء)</div><div style="font-weight:700;color:#2563eb">${fmt2(dealSummary._totalCost)} KWD</div></div>
-          <div><div style="font-size:10px;color:#888">المصاريف</div><div style="font-weight:700;color:#dc2626">${fmt2(dealSummary._totalExp)} KWD</div></div>
-          <div><div style="font-size:10px;color:#888">المبيعات</div><div style="font-weight:700;color:#16a34a">${fmt2(dealSummary._totalSales)} KWD</div></div>
-        </div>
-        <div style="border-top:1px solid #e5e7eb;padding-top:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-          <div><div style="font-size:10px;color:#888">رأس المال المدفوع (حصتي)</div><div style="font-weight:700;color:#2563eb">${fmt2(dealSummary.capitalPaid)} KWD</div></div>
-          <div><div style="font-size:10px;color:#888">الربح المستحق (حصتي)</div><div style="font-weight:700;color:${dealSummary.profit>=0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(dealSummary.profit))} KWD</div></div>
-          <div><div style="font-size:10px;color:#888">المسحوبات السابقة</div><div style="font-weight:700;color:#e6930a">${fmt2(dealSummary.totalWithdrawn)} KWD</div></div>
-        </div>
-      </div>` : '';
+    <div class="notes-box" style="margin-bottom:20px">
+      <div class="notes-title">ملخص الصفقة — ملف ${p.file_no}</div>
+      <div class="kpi-row">
+        <div class="kpi-cell"><div class="kpi-label">رأس المال</div><div class="kpi-val c-blue">${fmt2(dealSummary._totalCost)} KWD</div></div>
+        <div class="kpi-cell" style="border-color:#dc2626"><div class="kpi-label">المصاريف</div><div class="kpi-val c-red">${fmt2(dealSummary._totalExp)} KWD</div></div>
+        <div class="kpi-cell" style="border-color:#16a34a"><div class="kpi-label">المبيعات</div><div class="kpi-val c-green">${fmt2(dealSummary._totalSales)} KWD</div></div>
+      </div>
+      <div class="kpi-row" style="margin-top:6px">
+        <div class="kpi-cell" style="border-color:#2563eb"><div class="kpi-label">رأس المال المدفوع</div><div class="kpi-val c-blue">${fmt2(dealSummary.capitalPaid)} KWD</div></div>
+        <div class="kpi-cell" style="border-color:${dealSummary.profit>=0?'#16a34a':'#dc2626'}"><div class="kpi-label">الربح المستحق</div><div class="kpi-val ${dealSummary.profit>=0?'c-green':'c-red'}">${fmt2(Math.abs(dealSummary.profit))} KWD</div></div>
+        <div class="kpi-cell" style="border-color:#e6930a"><div class="kpi-label">المسحوبات السابقة</div><div class="kpi-val c-amber">${fmt2(dealSummary.totalWithdrawn)} KWD</div></div>
+      </div>
+    </div>` : '';
 
     const splitRows = [];
-    if (+p.capital_amount) splitRows.push(`<tr><td>رأس مال مُسترد</td><td style="font-weight:700;color:#2563eb">${(+p.capital_amount).toLocaleString('en-US',{minimumFractionDigits:2})} KWD</td></tr>`);
-    if (+p.profit_amount)  splitRows.push(`<tr><td>أرباح موزعة</td><td style="font-weight:700;color:#16a34a">${(+p.profit_amount).toLocaleString('en-US',{minimumFractionDigits:2})} KWD</td></tr>`);
-    if (+p.advance_amount) splitRows.push(`<tr><td>سلفة</td><td style="font-weight:700;color:#e6930a">${(+p.advance_amount).toLocaleString('en-US',{minimumFractionDigits:2})} KWD</td></tr>`);
+    if (+p.capital_amount) splitRows.push(`<tr><td>رأس مال مُسترد</td><td class="num c-blue">${(+p.capital_amount).toLocaleString('en-US',{minimumFractionDigits:2})} KWD</td></tr>`);
+    if (+p.profit_amount)  splitRows.push(`<tr><td>أرباح موزعة</td><td class="num c-green">${(+p.profit_amount).toLocaleString('en-US',{minimumFractionDigits:2})} KWD</td></tr>`);
+    if (+p.advance_amount) splitRows.push(`<tr><td>سلفة</td><td class="num c-amber">${(+p.advance_amount).toLocaleString('en-US',{minimumFractionDigits:2})} KWD</td></tr>`);
 
-    const html = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<title>سند صرف ${p.pay_id||payoutId}</title>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Cairo',Arial,sans-serif;color:#1a1a1a;background:#fff;font-size:13px}
-  .page{max-width:700px;margin:0 auto;padding:32px 36px}
-  .no-print{text-align:center;margin-bottom:20px;display:flex;gap:10px;justify-content:center}
-  .no-print button{padding:10px 28px;border-radius:8px;font-family:'Cairo',sans-serif;font-size:14px;font-weight:700;cursor:pointer;border:none}
-  /* Header */
-  .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:18px;border-bottom:3px solid #1a1a1a}
-  .company-name{font-size:22px;font-weight:900}
-  .company-sub{font-size:12px;color:#888;margin-top:3px}
-  .voucher-title{text-align:left}
-  .voucher-title h1{font-size:26px;font-weight:900;letter-spacing:-0.5px}
-  .voucher-title .pay-id{font-size:15px;font-weight:700;color:${color};margin-top:6px;letter-spacing:1px}
-  /* Info grid */
-  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px}
-  .info-box{background:#f8f9fa;border-radius:8px;padding:14px 16px}
-  .info-box-title{font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
-  .info-row{display:flex;justify-content:space-between;padding:3px 0;font-size:13px}
-  .info-label{color:#666}
-  .info-value{font-weight:700;color:#1a1a1a}
-  /* Amount box */
-  .amount-box{background:#1a1a1a;color:#fff;border-radius:10px;padding:20px 28px;text-align:center;margin-bottom:22px}
-  .amount-label{font-size:12px;color:#aaa;margin-bottom:6px}
-  .amount-value{font-size:32px;font-weight:900;letter-spacing:-1px}
-  .amount-currency{font-size:13px;color:#aaa;margin-top:4px}
-  .amount-type{display:inline-block;background:${color};color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px}
-  /* Split table */
-  .split-table{table-layout:fixed;width:100%;border-collapse:collapse;margin-bottom:22px}
-  .split-table td{padding:8px 14px;border-bottom:1px solid #eee}
-  .split-table td:last-child{text-align:left}
-  /* Notes */
-  .notes-box{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:22px}
-  .notes-label{font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
-  /* Signatures */
-  .sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-bottom:28px}
-  .sig-box{text-align:center;padding-top:44px;border-top:1px solid #ccc}
-  .sig-label{font-size:11px;color:#888;margin-top:6px}
-  /* Footer */
-  .footer{text-align:center;padding-top:16px;border-top:1px solid #eee;color:#bbb;font-size:10px}
-  @page{size:A4 portrait;margin:14mm 12mm}
-  @media print{.hdr,.header,.inv-header{display:table!important;table-layout:fixed!important;width:100%!important}.hdr>*,.header>*,.inv-header>*{display:table-cell!important;vertical-align:top}
-    body{print-color-adjust:exact;-webkit-print-color-adjust:exact}
-    .page{padding:16px}
-    .no-print{display:none!important}
-  }
-</style>
-</head>
-<body>
-<div class="page">
+    const fragment = `
+    ${docHeader('سند صرف شريك', '', p.pay_id||payoutId)}
+    ${dealBreakdown}
 
-  <div class="no-print">
-    <button onclick="window.print()" style="background:#1a1a1a;color:#fff">🖨️ طباعة</button>
-    <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd">✕ إغلاق</button>
-  </div>
-
-  <div class="hdr">
-    <div>
-      <div class="company-name">Transit Cars</div>
-      <div class="company-sub">ترانزيت للسيارات · الكويت</div>
+    <div class="info-grid">
+      <div class="info-cell">
+        <div class="info-cell-title">بيانات الشريك</div>
+        <div class="info-row"><span class="info-lbl">اسم الشريك</span><span class="info-val">${p.partner||'—'}</span></div>
+        <div class="info-row"><span class="info-lbl">رقم الملف</span><span class="info-val">${p.file_no||'—'}</span></div>
+        ${deal?`<div class="info-row"><span class="info-lbl">المورد</span><span class="info-val">${deal.supplier||'—'}</span></div>`:''}
+      </div>
+      <div class="info-cell">
+        <div class="info-cell-title">بيانات الدفع</div>
+        <div class="info-row"><span class="info-lbl">التاريخ</span><span class="info-val">${p.pay_date||'—'}</span></div>
+        <div class="info-row"><span class="info-lbl">طريقة الدفع</span><span class="info-val">${p.pay_method||'—'}</span></div>
+        ${p.document?`<div class="info-row"><span class="info-lbl">رقم المستند</span><span class="info-val">${p.document}</span></div>`:''}
+      </div>
     </div>
-    <div class="voucher-title">
-      <h1>سند صرف شريك</h1>
-      <div class="pay-id"># ${p.pay_id||payoutId}</div>
+
+    <div class="total-wrap" style="text-align:center">
+      <div class="total-box">
+        <div class="total-label">المبلغ الإجمالي</div>
+        <div class="total-amount">${(+p.amount).toLocaleString('en-US',{minimumFractionDigits:2})}</div>
+        <div class="total-cur">KWD — دينار كويتي</div>
+        <div style="margin-top:8px"><span style="background:${color};color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700">${p.payout_type||'صرف'}</span></div>
+      </div>
     </div>
-  </div>
 
-  ${dealBreakdown}
+    ${splitRows.length>1?`<table style="margin-bottom:20px"><thead><tr><th colspan="2">تفاصيل التوزيع</th></tr></thead><tbody>${splitRows.join('')}</tbody></table>`:''}
+    ${p.notes?`<div class="notes-box" style="background:#fffbeb;border:1px solid #fde68a"><div class="notes-title" style="color:#92400e">ملاحظات</div><div>${p.notes}</div></div>`:''}
 
-  <div class="info-grid">
-    <div class="info-box">
-      <div class="info-box-title">بيانات الشريك</div>
-      <div class="info-row"><span class="info-label">اسم الشريك</span><span class="info-value">${p.partner||'—'}</span></div>
-      <div class="info-row"><span class="info-label">رقم الملف</span><span class="info-value">${p.file_no||'—'}</span></div>
-      ${deal ? `<div class="info-row"><span class="info-label">المورد</span><span class="info-value">${deal.supplier||'—'}</span></div>` : ''}
+    <div class="sig-row">
+      <div class="sig-cell">توقيع المستلم (الشريك)<div style="font-size:12px;color:#1a1a1a;margin-top:4px">${p.partner||''}</div></div>
+      <div class="sig-cell">توقيع المُصدِر</div>
     </div>
-    <div class="info-box">
-      <div class="info-box-title">بيانات الدفع</div>
-      <div class="info-row"><span class="info-label">التاريخ</span><span class="info-value">${p.pay_date||'—'}</span></div>
-      <div class="info-row"><span class="info-label">طريقة الدفع</span><span class="info-value">${p.pay_method||'—'}</span></div>
-      ${p.document ? `<div class="info-row"><span class="info-label">رقم المستند</span><span class="info-value">${p.document}</span></div>` : ''}
-    </div>
-  </div>
+    <div class="doc-footer">تم إنشاؤه بتاريخ ${new Date().toLocaleDateString('en-GB')} · Transit Cars System</div>`;
 
-  <div class="amount-box">
-    <div class="amount-label">المبلغ الإجمالي</div>
-    <div class="amount-value">${(+p.amount).toLocaleString('en-US',{minimumFractionDigits:2})}</div>
-    <div class="amount-currency">KWD — دينار كويتي</div>
-    <div><span class="amount-type">${p.payout_type||'صرف'}</span></div>
-  </div>
-
-  ${splitRows.length > 1 ? `
-  <table class="split-table">
-    <tr style="background:#f8f9fa"><td colspan="2" style="padding:8px 14px;font-weight:700;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px">تفاصيل التوزيع</td></tr>
-    ${splitRows.join('')}
-  </table>` : ''}
-
-  ${p.notes ? `
-  <div class="notes-box">
-    <div class="notes-label">ملاحظات</div>
-    <div>${p.notes}</div>
-  </div>` : ''}
-
-  <div class="sig-grid">
-    <div class="sig-box">
-      <div class="sig-label">توقيع المستلم (الشريك)</div>
-      <div style="font-size:12px;color:#1a1a1a;margin-top:4px">${p.partner||''}</div>
-    </div>
-    <div class="sig-box">
-      <div class="sig-label">توقيع المُصدِر</div>
-    </div>
-  </div>
-
-  <div class="footer">
-    تم إنشاؤه بتاريخ ${new Date().toLocaleDateString('en-GB')} · Transit Cars System
-  </div>
-
-</div>
-</body></html>`;
-
-    openPrintOverlay(html);
-
+    renderPrint(fragment, `سند صرف — ${p.pay_id||payoutId}`);
   } catch(e) { toast('خطأ في الطباعة: '+e.message,'err'); }
 }
 
 // ════════════════════════════════════════════════════════════
-// SECTION 6 — Accounting Reports (Purchase Order / Reports / TB / Vehicles / Partner)
+// SECTION 6 — Purchase Order
 // ════════════════════════════════════════════════════════════
-
 async function printPurchaseOrder(fileNo) {
   try {
     const sys = state.system;
@@ -1008,684 +450,256 @@ async function printPurchaseOrder(fileNo) {
       apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'pay_date.asc' }),
       apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'exp_date.asc' }),
     ]);
-    const po         = poArr?.[0] || {};
-    const totalPaid  = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
-    const totalExp   = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
-    const remaining  = (+po.total_purchase||0) - totalPaid;
+    const po        = poArr?.[0] || {};
+    const totalPaid = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
+    const totalExp  = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
+    const remaining = (+po.total_purchase||0) - totalPaid;
     const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
 
-    const vehicleRows = (vehicles||[]).map((v,i) => `<tr>
-      <td style="text-align:center;font-weight:700">${i+1}</td>
-      <td>${v.vehicle_type||'—'} ${v.model||''}</td>
-      <td style="direction:ltr;font-family:monospace;font-size:11px;font-weight:700">${v.vin||'—'}</td>
-      <td style="direction:ltr">${v.plate||'—'}</td>
-      <td>${v.color||'—'}</td>
-      <td style="text-align:center">${v.engine_size?v.engine_size+' L':'—'}</td>
-      <td style="text-align:center">${v.year||'—'}</td>
-      <td class="amber" style="text-align:left">${fmt2(v.purchase_price)}</td>
-    </tr>`).join('');
+    const vehicleRows  = (vehicles||[]).map((v,i) => `<tr><td style="text-align:center;font-weight:700">${i+1}</td><td>${v.vehicle_type||'—'} ${v.model||''}</td><td style="direction:ltr;font-family:monospace;font-size:11px;font-weight:700">${v.vin||'—'}</td><td style="direction:ltr">${v.plate||'—'}</td><td>${v.color||'—'}</td><td style="text-align:center">${v.engine_size?v.engine_size+' L':'—'}</td><td style="text-align:center">${v.year||'—'}</td><td class="num c-amber">${fmt2(v.purchase_price)}</td></tr>`).join('');
+    const paymentRows  = (payments||[]).map(p => `<tr><td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td><td>${p.payer||'—'}</td><td class="num c-green">${fmt2(p.amount)}</td><td>${p.pay_method||'—'}</td><td style="direction:ltr">${p.document||'—'}</td><td>${p.pay_date||'—'}</td></tr>`).join('');
+    const expenseRows  = (expenses||[]).map(e => `<tr><td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td><td>${e.description||'—'}</td><td>${e.exp_type||'—'}</td><td class="num c-red">${fmt2(e.amount)}</td><td>${e.pay_method||'—'}</td><td>${e.exp_date||e.expense_date||'—'}</td></tr>`).join('');
+    const partnerRows  = (partners||[]).map(p => { const paid=(payments||[]).filter(pm=>pm.payer===p.partner).reduce((s,pm)=>s+(+pm.amount||0),0); const due=(+po.total_purchase||0)*(+p.share_percent||0)/100; return `<tr><td style="font-weight:700">${p.partner}</td><td style="text-align:center">${p.share_percent}%</td><td class="num c-blue">${fmt2(due)}</td><td class="num c-green">${fmt2(paid)}</td><td class="num ${(due-paid)>0.01?'c-red':'c-green'}" style="font-weight:700">${fmt2(due-paid)}</td></tr>`; }).join('');
 
-    const paymentRows = (payments||[]).map(p => `<tr>
-      <td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td>
-      <td>${p.payer||'—'}</td>
-      <td class="green" style="text-align:left">${fmt2(p.amount)}</td>
-      <td>${p.pay_method||'—'}</td>
-      <td style="direction:ltr">${p.document||'—'}</td>
-      <td>${p.pay_date||'—'}</td>
-    </tr>`).join('');
-
-    const expenseRows = (expenses||[]).map(e => `<tr>
-      <td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td>
-      <td>${e.description||'—'}</td>
-      <td>${e.exp_type||'—'}</td>
-      <td class="red" style="text-align:left">${fmt2(e.amount)}</td>
-      <td>${e.pay_method||'—'}</td>
-      <td>${e.exp_date||e.expense_date||'—'}</td>
-    </tr>`).join('');
-
-    const partnerRows = (partners||[]).map(p => {
-      const paid = (payments||[]).filter(pm=>pm.payer===p.partner).reduce((s,pm)=>s+(+pm.amount||0),0);
-      const due  = (+po.total_purchase||0) * (+p.share_percent||0) / 100;
-      return `<tr>
-        <td style="font-weight:700">${p.partner}</td>
-        <td style="text-align:center">${p.share_percent}%</td>
-        <td class="blue" style="text-align:left">${fmt2(due)}</td>
-        <td class="green" style="text-align:left">${fmt2(paid)}</td>
-        <td class="${(due-paid)>0.01?'red':'green'}" style="text-align:left;font-weight:700">${fmt2(due-paid)}</td>
-      </tr>`;
-    }).join('');
-
-    const html = `
-      ${docHeader('سند شراء', 'Purchase Order', fileNo)}
-
-      <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
-        <div class="kpi-box"><div class="kpi-label">قيمة الصفقة</div><div class="kpi-val amber">${fmt2(po.total_purchase)} KWD</div></div>
-        <div class="kpi-box" style="border-color:#16a34a"><div class="kpi-label">المدفوع للمورد</div><div class="kpi-val green">${fmt2(totalPaid)} KWD</div></div>
-        <div class="kpi-box" style="border-color:${remaining>0?'#dc2626':'#16a34a'}"><div class="kpi-label">المتبقي</div><div class="kpi-val ${remaining>0?'red':'green'}">${fmt2(remaining)} KWD</div></div>
-        <div class="kpi-box" style="border-color:#7c3aed"><div class="kpi-label">المصاريف</div><div class="kpi-val" style="color:#7c3aed">${fmt2(totalExp)} KWD</div></div>
+    const fragment = `
+    ${docHeader('سند شراء', 'Purchase Order', fileNo)}
+    <div class="kpi-row">
+      <div class="kpi-cell"><div class="kpi-label">قيمة الصفقة</div><div class="kpi-val c-amber">${fmt2(po.total_purchase)} KWD</div></div>
+      <div class="kpi-cell" style="border-color:#16a34a"><div class="kpi-label">المدفوع للمورد</div><div class="kpi-val c-green">${fmt2(totalPaid)} KWD</div></div>
+      <div class="kpi-cell" style="border-color:${remaining>0?'#dc2626':'#16a34a'}"><div class="kpi-label">المتبقي</div><div class="kpi-val ${remaining>0?'c-red':'c-green'}">${fmt2(remaining)} KWD</div></div>
+      <div class="kpi-cell" style="border-color:#7c3aed"><div class="kpi-label">المصاريف</div><div class="kpi-val" style="color:#7c3aed">${fmt2(totalExp)} KWD</div></div>
+    </div>
+    <div class="info-grid">
+      <div class="info-cell">
+        <div class="info-row"><span class="info-lbl">رقم الملف</span><span class="info-val c-amber">${po.file_no||'—'}</span></div>
+        <div class="info-row"><span class="info-lbl">المورد</span><span class="info-val">${po.supplier||'—'}</span></div>
+        <div class="info-row"><span class="info-lbl">رقم PO</span><span class="info-val" style="direction:ltr">${po.po_no||'—'}</span></div>
+        <div class="info-row"><span class="info-lbl">تاريخ الصفقة</span><span class="info-val">${po.po_date||'—'}</span></div>
+        <div class="info-row"><span class="info-lbl">الحالة</span><span class="info-val">${po.status||'—'}</span></div>
       </div>
-
-      <div class="info-grid">
-        <div class="info-box">
-          <div class="info-row"><span class="info-label">رقم الملف</span><span class="info-val amber">${po.file_no||'—'}</span></div>
-          <div class="info-row"><span class="info-label">المورد</span><span class="info-val">${po.supplier||'—'}</span></div>
-          <div class="info-row"><span class="info-label">رقم PO</span><span class="info-val" style="direction:ltr">${po.po_no||'—'}</span></div>
-          <div class="info-row"><span class="info-label">تاريخ الصفقة</span><span class="info-val">${po.po_date||'—'}</span></div>
-          <div class="info-row"><span class="info-label">الحالة</span><span class="info-val">${po.status||'—'}</span></div>
-        </div>
-        <div class="info-box">
-          <div class="info-row"><span class="info-label">عدد السيارات</span><span class="info-val">${(vehicles||[]).length} سيارة</span></div>
-          <div class="info-row"><span class="info-label">عدد الشركاء</span><span class="info-val">${(partners||[]).length} شريك</span></div>
-          <div class="info-row"><span class="info-label">عدد الدفعات</span><span class="info-val">${(payments||[]).length} دفعة</span></div>
-          <div class="info-row"><span class="info-label">عدد المصاريف</span><span class="info-val">${(expenses||[]).length} بند</span></div>
-          <div class="info-row"><span class="info-label">تاريخ الطباعة</span><span class="info-val">${new Date().toLocaleDateString('en-GB')}</span></div>
-        </div>
+      <div class="info-cell">
+        <div class="info-row"><span class="info-lbl">عدد السيارات</span><span class="info-val">${(vehicles||[]).length} سيارة</span></div>
+        <div class="info-row"><span class="info-lbl">عدد الشركاء</span><span class="info-val">${(partners||[]).length} شريك</span></div>
+        <div class="info-row"><span class="info-lbl">عدد الدفعات</span><span class="info-val">${(payments||[]).length} دفعة</span></div>
+        <div class="info-row"><span class="info-lbl">عدد المصاريف</span><span class="info-val">${(expenses||[]).length} بند</span></div>
+        <div class="info-row"><span class="info-lbl">تاريخ الطباعة</span><span class="info-val">${new Date().toLocaleDateString('en-GB')}</span></div>
       </div>
+    </div>
+    <div class="section-title">📦 السيارات / Vehicles</div>
+    <table><colgroup><col style="width:32px"><col style="width:18%"><col style="width:16%"><col style="width:10%"><col style="width:8%"><col style="width:7%"><col style="width:7%"><col style="width:12%"></colgroup>
+      <thead><tr><th>#</th><th>النوع / الموديل</th><th>رقم الشاصي (VIN)</th><th>اللوحة</th><th>اللون</th><th>الحجم</th><th>السنة</th><th style="text-align:left">سعر الشراء</th></tr></thead>
+      <tbody>${vehicleRows}</tbody>
+      <tfoot><tr><td colspan="7"><strong>إجمالي قيمة الشراء</strong></td><td class="num c-amber"><strong>${fmt2(po.total_purchase)} KWD</strong></td></tr></tfoot>
+    </table>
+    ${partners?.length?`<div class="section-title">👥 الشركاء / Partners</div><table><thead><tr><th>الشريك</th><th>الحصة %</th><th style="text-align:left">المستحق</th><th style="text-align:left">المدفوع</th><th style="text-align:left">المتبقي</th></tr></thead><tbody>${partnerRows}</tbody></table>`:''}
+    ${payments?.length?`<div class="section-title">💳 دفعات المورد / Payments</div><table><thead><tr><th>رقم الدفعة</th><th>الدافع</th><th style="text-align:left">المبلغ</th><th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th></tr></thead><tbody>${paymentRows}</tbody><tfoot><tr><td colspan="2"><strong>الإجمالي المدفوع</strong></td><td class="num c-green"><strong>${fmt2(totalPaid)} KWD</strong></td><td colspan="3"></td></tr></tfoot></table>`:''}
+    ${expenses?.length?`<div class="section-title">💸 المصاريف / Expenses</div><table><thead><tr><th>رقم المصروف</th><th>البيان</th><th>النوع</th><th style="text-align:left">المبلغ</th><th>طريقة الدفع</th><th>التاريخ</th></tr></thead><tbody>${expenseRows}</tbody><tfoot><tr><td colspan="3"><strong>إجمالي المصاريف</strong></td><td class="num c-red"><strong>${fmt2(totalExp)} KWD</strong></td><td colspan="2"></td></tr></tfoot></table>`:''}
+    ${po.notes?`<div class="notes-box" style="background:#fffbeb;border:1px solid #fde68a"><strong>ملاحظات:</strong> ${po.notes}</div>`:''}
+    <div class="sig-row">
+      <div class="sig-cell">توقيع المورد<div style="font-size:12px;font-weight:700;margin-top:4px">${po.supplier||''}</div></div>
+      <div class="sig-cell">توقيع المدير</div>
+      <div class="sig-cell">توقيع المحاسب</div>
+    </div>
+    <div class="doc-footer">Transit Cars · نظام ترانزيت لإدارة صفقات السيارات</div>`;
 
-      <div class="section-title">📦 السيارات / Vehicles</div>
-      <table>
-        <thead><tr><th>#</th><th>النوع / الموديل</th><th>رقم الشاصي (VIN)</th><th>اللوحة</th><th>اللون</th><th>الحجم</th><th>السنة</th><th>سعر الشراء</th></tr></thead>
-        <tbody>${vehicleRows}</tbody>
-        <tfoot><tr>
-          <td colspan="6" style="padding:8px 10px"><strong>إجمالي قيمة الشراء</strong></td>
-          <td class="amber" style="text-align:left"><strong>${fmt2(po.total_purchase)} KWD</strong></td>
-        </tr></tfoot>
-      </table>
-
-      ${partners?.length ? `
-      <div class="section-title">👥 الشركاء / Partners</div>
-      <table>
-        <thead><tr><th>الشريك</th><th>الحصة %</th><th>المستحق</th><th>المدفوع</th><th>المتبقي</th></tr></thead>
-        <tbody>${partnerRows}</tbody>
-      </table>` : ''}
-
-      ${payments?.length ? `
-      <div class="section-title">💳 دفعات المورد / Payments</div>
-      <table>
-        <thead><tr><th>رقم الدفعة</th><th>الدافع</th><th>المبلغ</th><th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th></tr></thead>
-        <tbody>${paymentRows}</tbody>
-        <tfoot><tr>
-          <td colspan="2"><strong>الإجمالي المدفوع</strong></td>
-          <td class="green" style="text-align:left"><strong>${fmt2(totalPaid)} KWD</strong></td>
-          <td colspan="3"></td>
-        </tr></tfoot>
-      </table>` : ''}
-
-      ${expenses?.length ? `
-      <div class="section-title">💸 المصاريف / Expenses</div>
-      <table>
-        <thead><tr><th>رقم المصروف</th><th>البيان</th><th>النوع</th><th>المبلغ</th><th>طريقة الدفع</th><th>التاريخ</th></tr></thead>
-        <tbody>${expenseRows}</tbody>
-        <tfoot><tr>
-          <td colspan="3"><strong>إجمالي المصاريف</strong></td>
-          <td class="red" style="text-align:left"><strong>${fmt2(totalExp)} KWD</strong></td>
-          <td colspan="2"></td>
-        </tr></tfoot>
-      </table>` : ''}
-
-      ${po.notes ? `<div style="margin:12px 0;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px"><strong>ملاحظات:</strong> ${po.notes}</div>` : ''}
-
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;margin-top:32px">
-        <div style="text-align:center;padding-top:44px;border-top:1px solid #ccc">
-          <div style="font-size:11px;color:#888">توقيع المورد</div>
-          <div style="font-size:12px;font-weight:700;margin-top:4px">${po.supplier||''}</div>
-        </div>
-        <div style="text-align:center;padding-top:44px;border-top:1px solid #ccc">
-          <div style="font-size:11px;color:#888">توقيع المدير</div>
-        </div>
-        <div style="text-align:center;padding-top:44px;border-top:1px solid #ccc">
-          <div style="font-size:11px;color:#888">توقيع المحاسب</div>
-        </div>
-      </div>
-
-      <div class="footer">Transit Cars · نظام ترانزيت لإدارة صفقات السيارات</div>`;
-
-    printDocument(html, `سند شراء — ${fileNo}`);
+    renderPrint(fragment, `سند شراء — ${fileNo}`);
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
+// ════════════════════════════════════════════════════════════
+// SECTION 7 — Reports
+// ════════════════════════════════════════════════════════════
 async function printCurrentReport() {
   const type = reportState.type;
   const from = el('r-from').value;
   const to   = el('r-to').value;
   const data = reportState.data || [];
   if (!data.length) { toast('لا توجد بيانات للطباعة','err'); return; }
-
   const titles = { profit:'تقرير الأرباح والخسائر', sales:'تقرير المبيعات', expenses:'تقرير المصاريف', partners:'تقرير الشركاء' };
   let tableHtml = '';
-
-  if (type === 'profit') {
-    const rows = data.map(d=>`<tr>
-      <td>${d.file}</td>
-      <td class="green">${fmt(d.sales)}</td>
-      <td class="red">${fmt(d.expenses)}</td>
-      <td class="amber">${fmt(d.payments)}</td>
-      <td class="${d.profit>=0?'green':'red'}">${fmt(d.profit)}</td>
-    </tr>`).join('');
-    const totProfit = data.reduce((s,d)=>s+d.profit,0);
-    tableHtml = `<table>
-      <thead><tr><th>الملف</th><th>مبيعات</th><th>مصاريف</th><th>دفعات مورد</th><th>صافي ربح</th></tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr><td><strong>الإجمالي</strong></td><td></td><td></td><td></td><td class="${totProfit>=0?'green':'red'}"><strong>${fmt(totProfit)}</strong></td></tr></tfoot>
-    </table>`;
-  } else if (type === 'sales') {
-    tableHtml = `<table>
-      <thead><tr><th>التاريخ</th><th>الملف</th><th>VIN</th><th>العميل</th><th>السعر</th></tr></thead>
-      <tbody>${data.map(s=>`<tr><td>${s.sale_date||''}</td><td>${s.file_no||''}</td><td style="direction:ltr">${s.vin||''}</td><td>${s.customer||''}</td><td class="green">${fmt(s.sale_price)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="green"><strong>${fmt(data.reduce((s,r)=>s+(+r.sale_price||0),0))}</strong></td></tr></tfoot>
-    </table>`;
-  } else if (type === 'expenses') {
-    tableHtml = `<table>
-      <thead><tr><th>التاريخ</th><th>الملف</th><th>البيان</th><th>النوع</th><th>المبلغ</th></tr></thead>
-      <tbody>${data.map(e=>`<tr><td>${e.exp_date||e.expense_date||e.created_at?.split('T')[0]||''}</td><td>${e.file_no||''}</td><td>${e.description||''}</td><td>${e.category||e.exp_type||''}</td><td class="red">${fmt(e.amount)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="red"><strong>${fmt(data.reduce((s,r)=>s+(+r.amount||0),0))}</strong></td></tr></tfoot>
-    </table>`;
-  } else if (type === 'partners') {
-    tableHtml = `<table>
-      <thead><tr><th>التاريخ</th><th>الملف</th><th>الشريك</th><th>النوع</th><th>المبلغ</th></tr></thead>
-      <tbody>${data.map(p=>`<tr><td>${p.pay_date||''}</td><td>${p.file_no||''}</td><td>${p.partner||''}</td><td>${p.payout_type||''}</td><td class="amber">${fmt(p.amount)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="amber"><strong>${fmt(data.reduce((s,r)=>s+(+r.amount||0),0))}</strong></td></tr></tfoot>
-    </table>`;
-  }
-
-  const html = `
-    ${docHeader(titles[type], `من ${from} إلى ${to}`, '')}
-    ${tableHtml}
-    <div class="footer">Transit International · ${titles[type]} · ${from} — ${to}</div>`;
-  printDocument(html, titles[type]);
+  if (type==='profit') { const rows=data.map(d=>`<tr><td>${d.file}</td><td class="num c-green">${fmt(d.sales)}</td><td class="num c-red">${fmt(d.expenses)}</td><td class="num c-amber">${fmt(d.payments)}</td><td class="num ${d.profit>=0?'c-green':'c-red'}">${fmt(d.profit)}</td></tr>`).join(''); const tot=data.reduce((s,d)=>s+d.profit,0); tableHtml=`<table><thead><tr><th>الملف</th><th style="text-align:left">مبيعات</th><th style="text-align:left">مصاريف</th><th style="text-align:left">دفعات مورد</th><th style="text-align:left">صافي ربح</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td><strong>الإجمالي</strong></td><td></td><td></td><td></td><td class="num ${tot>=0?'c-green':'c-red'}"><strong>${fmt(tot)}</strong></td></tr></tfoot></table>`; }
+  else if (type==='sales') { tableHtml=`<table><thead><tr><th>التاريخ</th><th>الملف</th><th>VIN</th><th>العميل</th><th style="text-align:left">السعر</th></tr></thead><tbody>${data.map(s=>`<tr><td>${s.sale_date||''}</td><td>${s.file_no||''}</td><td style="direction:ltr">${s.vin||''}</td><td>${s.customer||''}</td><td class="num c-green">${fmt(s.sale_price)}</td></tr>`).join('')}</tbody><tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="num c-green"><strong>${fmt(data.reduce((s,r)=>s+(+r.sale_price||0),0))}</strong></td></tr></tfoot></table>`; }
+  else if (type==='expenses') { tableHtml=`<table><thead><tr><th>التاريخ</th><th>الملف</th><th>البيان</th><th>النوع</th><th style="text-align:left">المبلغ</th></tr></thead><tbody>${data.map(e=>`<tr><td>${e.exp_date||e.expense_date||e.created_at?.split('T')[0]||''}</td><td>${e.file_no||''}</td><td>${e.description||''}</td><td>${e.category||e.exp_type||''}</td><td class="num c-red">${fmt(e.amount)}</td></tr>`).join('')}</tbody><tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="num c-red"><strong>${fmt(data.reduce((s,r)=>s+(+r.amount||0),0))}</strong></td></tr></tfoot></table>`; }
+  else if (type==='partners') { tableHtml=`<table><thead><tr><th>التاريخ</th><th>الملف</th><th>الشريك</th><th>النوع</th><th style="text-align:left">المبلغ</th></tr></thead><tbody>${data.map(p=>`<tr><td>${p.pay_date||''}</td><td>${p.file_no||''}</td><td>${p.partner||''}</td><td>${p.payout_type||''}</td><td class="num c-amber">${fmt(p.amount)}</td></tr>`).join('')}</tbody><tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="num c-amber"><strong>${fmt(data.reduce((s,r)=>s+(+r.amount||0),0))}</strong></td></tr></tfoot></table>`; }
+  renderPrint(`${docHeader(titles[type],`من ${from} إلى ${to}`,'')}${tableHtml}<div class="doc-footer">Transit International · ${titles[type]} · ${from} — ${to}</div>`, titles[type]);
 }
 
 function printTrialBalance() {
   const data = trialState.data || [];
   if (!data.length) { toast('لا توجد بيانات','err'); return; }
-  // trialState.data fields: {code, name, type, dr, cr}
-  const typeLabelsAr = {
-    asset:'أصول', liability:'التزامات', equity:'حقوق ملكية',
-    revenue:'إيرادات', cogs:'تكلفة', expense:'مصروفات', other:'أخرى',
-    customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة'
-  };
-  const rows = data.map(c => {
-    const bal = c.dr - c.cr;
-    return `<tr>
-    <td class="mono" style="color:#e6930a;font-weight:700">${c.code||'—'}</td>
-    <td>${c.name}</td>
-    <td>${typeLabelsAr[c.type]||c.type}</td>
-    <td class="green">${fmt(c.dr)}</td>
-    <td class="red">${fmt(c.cr)}</td>
-    <td class="${bal>=0?'green':'red'}">${fmt(Math.abs(bal))} ${bal>0?'مدين':bal<0?'دائن':'صفر'}</td>
-  </tr>`;
-  }).join('');
-  const sumD = data.reduce((s,c)=>s+c.dr,0);
-  const sumC = data.reduce((s,c)=>s+c.cr,0);
-  const sumB = sumD - sumC;
-  const html = `
-    ${docHeader('ميزان المراجعة','Trial Balance','')}
-    <table>
-      <thead><tr><th>الكود</th><th>اسم الحساب</th><th>النوع</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr>
-        <td colspan="3"><strong>الإجمالي (${data.length} حساب)</strong></td>
-        <td class="green"><strong>${fmt(sumD)}</strong></td>
-        <td class="red"><strong>${fmt(sumC)}</strong></td>
-        <td class="${sumB>=0?'green':'red'}"><strong>${fmt(Math.abs(sumB))} ${sumB>0?'مدين':sumB<0?'دائن':'✓ متوازن'}</strong></td>
-      </tr></tfoot>
-    </table>
-    <div class="footer">Transit International · ميزان المراجعة · ${new Date().toLocaleDateString('en-GB')}</div>`;
-  printDocument(html, 'ميزان المراجعة');
+  const lbl = { asset:'أصول',liability:'التزامات',equity:'حقوق ملكية',revenue:'إيرادات',cogs:'تكلفة',expense:'مصروفات',other:'أخرى',customer:'عميل',supplier:'مورد',partner:'شريك',custodian:'عهدة' };
+  const rows = data.map(c => { const b=c.dr-c.cr; return `<tr><td style="color:#e6930a;font-weight:700;font-family:monospace">${c.code||'—'}</td><td>${c.name}</td><td>${lbl[c.type]||c.type}</td><td class="num c-green">${fmt(c.dr)}</td><td class="num c-red">${fmt(c.cr)}</td><td class="num ${b>=0?'c-green':'c-red'}">${fmt(Math.abs(b))} ${b>0?'مدين':b<0?'دائن':'صفر'}</td></tr>`; }).join('');
+  const sD=data.reduce((s,c)=>s+c.dr,0), sC=data.reduce((s,c)=>s+c.cr,0), sB=sD-sC;
+  renderPrint(`${docHeader('ميزان المراجعة','Trial Balance','')}<table><colgroup><col style="width:80px"><col><col style="width:80px"><col style="width:14%"><col style="width:14%"><col style="width:16%"></colgroup><thead><tr><th>الكود</th><th>اسم الحساب</th><th>النوع</th><th style="text-align:left">مدين</th><th style="text-align:left">دائن</th><th style="text-align:left">الرصيد</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="3"><strong>الإجمالي (${data.length} حساب)</strong></td><td class="num c-green"><strong>${fmt(sD)}</strong></td><td class="num c-red"><strong>${fmt(sC)}</strong></td><td class="num ${sB>=0?'c-green':'c-red'}"><strong>${fmt(Math.abs(sB))} ${sB>0?'مدين':sB<0?'دائن':'✓ متوازن'}</strong></td></tr></tfoot></table><div class="doc-footer">Transit International · ميزان المراجعة · ${new Date().toLocaleDateString('en-GB')}</div>`, 'ميزان المراجعة');
 }
 
 function printVehiclesReport() {
   const list = vrState.filtered || vrState.all;
   if (!list.length) { toast('لا توجد بيانات','err'); return; }
-  const rows = list.map((v,i) => `<tr>
-    <td>${v._code}</td><td>${v.file_no||'—'}</td><td>${v._supplier}</td>
-    <td>${v.vehicle_type||'—'}</td><td>${v.model||'—'}</td><td>${v.year||'—'}</td>
-    <td style="direction:ltr">${v.vin||'—'}</td><td style="direction:ltr">${v.plate||'—'}</td>
-    <td>${v.color||'—'}</td><td>${v.engine_size||'—'}</td>
-    <td>${(+v.purchase_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
-    <td>${v.license_expiry||'—'}</td>
-    <td>${v._sold?'مباع':'في المخزن'}</td>
-    <td>${v._warehouse||'—'}</td>
-    <td>${v._saleInfo?.customer||'—'}</td>
-  </tr>`).join('');
-  const html = `
-    ${docHeader('تقرير السيارات','Vehicles Report','')}
-    <table>
-      <thead><tr><th>الكود</th><th>الملف</th><th>المورد</th><th>النوع</th><th>الموديل</th>
-      <th>السنة</th><th>VIN</th><th>اللوحة</th><th>اللون</th><th>الحجم</th>
-      <th>السعر</th><th>انتهاء الرخصة</th><th>الحالة</th><th>المخزن</th><th>العميل</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div class="footer">Transit International · تقرير السيارات · ${new Date().toLocaleDateString('en-GB')}</div>`;
-  printDocument(html, 'تقرير السيارات');
+  const rows = list.map(v => `<tr><td>${v._code}</td><td>${v.file_no||'—'}</td><td>${v._supplier}</td><td>${v.vehicle_type||'—'}</td><td>${v.model||'—'}</td><td>${v.year||'—'}</td><td style="direction:ltr">${v.vin||'—'}</td><td style="direction:ltr">${v.plate||'—'}</td><td>${v.color||'—'}</td><td>${v.engine_size||'—'}</td><td class="num">${(+v.purchase_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td><td>${v.license_expiry||'—'}</td><td>${v._sold?'مباع':'في المخزن'}</td><td>${v._warehouse||'—'}</td><td>${v._saleInfo?.customer||'—'}</td></tr>`).join('');
+  renderPrint(`${docHeader('تقرير السيارات','Vehicles Report','')}<table style="font-size:9px"><thead><tr><th>الكود</th><th>الملف</th><th>المورد</th><th>النوع</th><th>الموديل</th><th>السنة</th><th>VIN</th><th>اللوحة</th><th>اللون</th><th>الحجم</th><th style="text-align:left">السعر</th><th>انتهاء الرخصة</th><th>الحالة</th><th>المخزن</th><th>العميل</th></tr></thead><tbody>${rows}</tbody></table><div class="doc-footer">Transit International · تقرير السيارات · ${new Date().toLocaleDateString('en-GB')}</div>`, 'تقرير السيارات');
 }
 
+// ════════════════════════════════════════════════════════════
+// SECTION 8 — Partner Statement (reads live DOM)
+// ════════════════════════════════════════════════════════════
 function printPartnerStatement() {
   const content = document.getElementById('partnerStatementContent');
   if (!content) return;
-  openPrintOverlay(`<!DOCTYPE html><html dir="rtl"><head>    <meta charset="UTF-8">    <title>كشف حساب شريك</title>    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">    <style>      *{box-sizing:border-box;margin:0;padding:0}      body{font-family:'Cairo',sans-serif;direction:rtl;background:#fff;padding:20px;font-size:12px;color:#1a1a2e}      @media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:10px}@page{margin:15mm;size:A4}}      table{table-layout:fixed;border-collapse:collapse;width:100%}      th,td{padding:6px 8px}    </style>  </head><body>${content.outerHTML}<script>window.onload=()=>window.print()<\/script></body></html>`);
-
+  renderPrint(`${docHeader('كشف حساب شريك','Partner Statement','')}${content.innerHTML}`, 'كشف حساب شريك');
 }
 
 // ════════════════════════════════════════════════════════════
-// SECTION 7 — Journal Voucher + Section Print + _jPrint helper
+// SECTION 9 — Journal Voucher
 // ════════════════════════════════════════════════════════════
-
 async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, title) {
   try {
-    // جلب كل أسطر هذا القيد
-    const lines = entryNo
-      ? await apiGet('journal_entries', {
-          select: 'account_code,account_name,dr_amount,cr_amount,description',
-          system_type: `eq.${state.system}`,
-          entry_no: `eq.${entryNo}`,
-          order: 'id.asc',
-        })
-      : [];
-
-    const typeLabelsVoucher = {
-      purchase:'سند شراء', sale:'سند بيع', collection:'سند تحصيل',
-      expense:'سند مصروف', payment:'سند دفع', payout:'سند صرف شريك', journal:'قيد يومية'
-    };
-    const voucherTitle = typeLabelsVoucher[entryType] || 'سند قيد';
-    const printDate    = new Date().toLocaleDateString('ar-EG', { year:'numeric', month:'long', day:'numeric' });
-    const voucherDate  = date ? new Date(date).toLocaleDateString('ar-EG', { year:'numeric', month:'long', day:'numeric' }) : '—';
-
-    const totalDr = (lines||[]).reduce((s,l)=>s+(+l.dr_amount||0),0);
-    const totalCr = (lines||[]).reduce((s,l)=>s+(+l.cr_amount||0),0);
-
-    const linesHtml = (lines||[]).map((l,i) => `
-      <tr>
-        <td style="text-align:center;color:#666;font-size:11px">${i+1}</td>
-        <td style="font-family:monospace;font-weight:700;color:#1a1a1a">${l.account_code||'—'}</td>
-        <td>${l.account_name||'—'}</td>
-        <td style="font-size:11px;color:#666">${l.description||'—'}</td>
-        <td style="text-align:left;font-weight:700;color:#16a34a">${+l.dr_amount>0 ? (+l.dr_amount).toLocaleString('en-US',{minimumFractionDigits:3}) : '—'}</td>
-        <td style="text-align:left;font-weight:700;color:#dc2626">${+l.cr_amount>0 ? (+l.cr_amount).toLocaleString('en-US',{minimumFractionDigits:3}) : '—'}</td>
-      </tr>`).join('');
-
-    const html = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<title>${voucherTitle} — ${entryNo}</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Cairo',Arial,sans-serif; color:#1a1a1a; font-size:13px; background:#fff; }
-  .page { max-width:780px; margin:0 auto; padding:32px 36px; }
-  .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; padding-bottom:16px; border-bottom:2px solid #1a1a1a; }
-  .company { font-size:20px; font-weight:800; }
-  .company-sub { font-size:12px; color:#666; margin-top:4px; }
-  .voucher-title { text-align:left; }
-  .voucher-title h1 { font-size:22px; font-weight:800; color:#1a1a1a; }
-  .voucher-no { font-size:14px; font-weight:700; color:#c47a00; margin-top:4px; font-family:monospace; }
-  .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px; }
-  .info-box { background:#f8f9fa; border-radius:8px; padding:12px 14px; }
-  .info-row { display:flex; justify-content:space-between; padding:3px 0; font-size:12px; border-bottom:1px solid #eee; }
-  .info-row:last-child { border:none; }
-  .info-label { color:#888; }
-  .info-val { font-weight:700; }
-  table {table-layout:fixed; width:100%; border-collapse:collapse; margin-bottom:16px; }
-  thead tr { background:#1a1a1a; color:#fff; }
-  thead th { padding:9px 10px; font-size:11px; font-weight:700; text-align:right; }
-  tbody tr { border-bottom:1px solid #eee; }
-  tbody tr:nth-child(even) { background:#fafafa; }
-  tbody td { padding:9px 10px; vertical-align:middle; }
-  tfoot tr { background:#f0f0f0; font-weight:700; }
-  tfoot td { padding:9px 10px; border-top:2px solid #1a1a1a; }
-  .total-box { display:flex; justify-content:flex-end; margin-bottom:20px; }
-  .total-inner { background:#1a1a1a; color:#fff; border-radius:10px; padding:14px 20px; min-width:220px; }
-  .total-label { font-size:11px; color:#aaa; margin-bottom:3px; }
-  .total-amount { font-size:20px; font-weight:900; }
-  .balanced { font-size:11px; color:#4ade80; margin-top:4px; }
-  .sig-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:30px; margin-top:30px; }
-  .sig-box { text-align:center; padding-top:36px; border-top:1px solid #ccc; font-size:11px; color:#888; }
-  .footer { text-align:center; margin-top:20px; padding-top:12px; border-top:1px solid #eee; font-size:10px; color:#aaa; }
-  .no-print { text-align:center; margin-bottom:20px; display:flex; gap:10px; justify-content:center; }
-  @page{size:A4 portrait;margin:14mm 12mm}
-  @media print {.hdr,.header,.inv-header{display:table!important;table-layout:fixed!important;width:100%!important}.hdr>*,.header>*,.inv-header>*{display:table-cell!important;vertical-align:top} .no-print { display:none!important; } body { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
-</style>
-</head>
-<body>
-<div class="page">
-  <div class="no-print">
-    <button onclick="window.print()" style="background:#1a1a1a;color:#fff;border:none;padding:9px 24px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">🖨️ طباعة</button>
-    <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd;padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer">✕ إغلاق</button>
-  </div>
-
-  <div class="header">
-    <div>
-      <div class="company">Transit Co. · ترانزيت</div>
-      <div class="company-sub">Kuwait · الكويت</div>
+    const lines = entryNo ? await apiGet('journal_entries', { select:'account_code,account_name,dr_amount,cr_amount,description', system_type:`eq.${state.system}`, entry_no:`eq.${entryNo}`, order:'id.asc' }) : [];
+    const lbl = { purchase:'سند شراء',sale:'سند بيع',collection:'سند تحصيل',expense:'سند مصروف',payment:'سند دفع',payout:'سند صرف شريك',journal:'قيد يومية' };
+    const vTitle = lbl[entryType] || 'سند قيد';
+    const pDate  = new Date().toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});
+    const vDate  = date ? new Date(date).toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'}) : '—';
+    const tDr    = (lines||[]).reduce((s,l)=>s+(+l.dr_amount||0),0);
+    const tCr    = (lines||[]).reduce((s,l)=>s+(+l.cr_amount||0),0);
+    const linesHtml = (lines||[]).map((l,i) => `<tr><td style="text-align:center;color:#666;font-size:11px">${i+1}</td><td style="font-family:monospace;font-weight:700">${l.account_code||'—'}</td><td>${l.account_name||'—'}</td><td style="font-size:11px;color:#666">${l.description||'—'}</td><td class="num c-green">${+l.dr_amount>0?(+l.dr_amount).toLocaleString('en-US',{minimumFractionDigits:3}):'—'}</td><td class="num c-red">${+l.cr_amount>0?(+l.cr_amount).toLocaleString('en-US',{minimumFractionDigits:3}):'—'}</td></tr>`).join('');
+    const fragment = `
+    ${docHeader(vTitle, '', entryNo||'—')}
+    <div class="info-grid">
+      <div class="info-cell">
+        <div class="info-row"><span class="info-lbl">رقم السند</span><span class="info-val c-amber" style="font-family:monospace">${entryNo||'—'}</span></div>
+        <div class="info-row"><span class="info-lbl">نوع العملية</span><span class="info-val">${vTitle}</span></div>
+        <div class="info-row"><span class="info-lbl">تاريخ العملية</span><span class="info-val">${vDate}</span></div>
+      </div>
+      <div class="info-cell">
+        <div class="info-row"><span class="info-lbl">رقم الملف</span><span class="info-val" style="font-family:monospace">${fileNo||'—'}</span></div>
+        <div class="info-row"><span class="info-lbl">البيان</span><span class="info-val">${title||'—'}</span></div>
+        <div class="info-row"><span class="info-lbl">تاريخ الطباعة</span><span class="info-val">${pDate}</span></div>
+      </div>
     </div>
-    <div class="voucher-title">
-      <h1>${voucherTitle}</h1>
-      <div class="voucher-no"># ${entryNo||'—'}</div>
+    <table><colgroup><col style="width:32px"><col style="width:80px"><col><col><col style="width:15%"><col style="width:15%"></colgroup>
+      <thead><tr><th>#</th><th>كود الحساب</th><th>اسم الحساب</th><th>البيان</th><th style="text-align:left">مدين (Dr)</th><th style="text-align:left">دائن (Cr)</th></tr></thead>
+      <tbody>${linesHtml||`<tr><td colspan="6" style="text-align:center;color:#888;padding:20px">لا توجد تفاصيل — المبلغ الإجمالي: ${amount?.toLocaleString?.('en-US',{minimumFractionDigits:3})||'—'}</td></tr>`}</tbody>
+      <tfoot><tr><td colspan="4" style="text-align:right;font-weight:700">الإجمالي</td><td class="num c-green">${tDr.toLocaleString('en-US',{minimumFractionDigits:3})}</td><td class="num c-red">${tCr.toLocaleString('en-US',{minimumFractionDigits:3})}</td></tr></tfoot>
+    </table>
+    <div class="total-wrap">
+      <div class="total-box">
+        <div class="total-label">إجمالي القيد / Total</div>
+        <div class="total-amount">${(tDr||amount||0).toLocaleString('en-US',{minimumFractionDigits:3})}</div>
+        <div class="total-cur">KWD / د.ك</div>
+        ${Math.abs(tDr-tCr)<0.01?'<div class="c-ok">✓ القيد متوازن</div>':'<div style="color:#f87171;font-size:11px">⚠ القيد غير متوازن</div>'}
+      </div>
     </div>
-  </div>
-
-  <div class="info-grid">
-    <div class="info-box">
-      <div class="info-row"><span class="info-label">رقم السند</span><span class="info-val" style="color:#c47a00;font-family:monospace">${entryNo||'—'}</span></div>
-      <div class="info-row"><span class="info-label">نوع العملية</span><span class="info-val">${voucherTitle}</span></div>
-      <div class="info-row"><span class="info-label">تاريخ العملية</span><span class="info-val">${voucherDate}</span></div>
+    <div class="sig-row">
+      <div class="sig-cell">المحاسب / Accountant</div>
+      <div class="sig-cell">المراجع / Reviewer</div>
+      <div class="sig-cell">المدير / Manager</div>
     </div>
-    <div class="info-box">
-      <div class="info-row"><span class="info-label">رقم الملف</span><span class="info-val" style="font-family:monospace">${fileNo||'—'}</span></div>
-      <div class="info-row"><span class="info-label">البيان</span><span class="info-val">${title||'—'}</span></div>
-      <div class="info-row"><span class="info-label">تاريخ الطباعة</span><span class="info-val">${printDate}</span></div>
-    </div>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th style="width:36px">#</th>
-        <th style="width:80px">كود الحساب</th>
-        <th>اسم الحساب</th>
-        <th>البيان</th>
-        <th style="text-align:left">مدين (Dr)</th>
-        <th style="text-align:left">دائن (Cr)</th>
-      </tr>
-    </thead>
-    <tbody>${linesHtml||`<tr><td colspan="6" style="text-align:center;color:#888;padding:20px">لا توجد تفاصيل — المبلغ الإجمالي: ${amount?.toLocaleString?.('en-US',{minimumFractionDigits:3})||'—'}</td></tr>`}</tbody>
-    <tfoot>
-      <tr>
-        <td colspan="4" style="text-align:right;font-weight:700">الإجمالي</td>
-        <td style="text-align:left;color:#16a34a">${totalDr.toLocaleString('en-US',{minimumFractionDigits:3})}</td>
-        <td style="text-align:left;color:#dc2626">${totalCr.toLocaleString('en-US',{minimumFractionDigits:3})}</td>
-      </tr>
-    </tfoot>
-  </table>
-
-  <div class="total-box">
-    <div class="total-inner">
-      <div class="total-label">إجمالي القيد / Total</div>
-      <div class="total-amount">${(totalDr||amount||0).toLocaleString('en-US',{minimumFractionDigits:3})}</div>
-      <div class="total-currency" style="font-size:11px;color:#aaa">KWD / د.ك</div>
-      ${Math.abs(totalDr-totalCr)<0.01 ? '<div class="balanced">✓ القيد متوازن</div>' : '<div style="color:#f87171;font-size:11px">⚠ القيد غير متوازن</div>'}
-    </div>
-  </div>
-
-  <div class="sig-row">
-    <div class="sig-box">المحاسب / Accountant</div>
-    <div class="sig-box">المراجع / Reviewer</div>
-    <div class="sig-box">المدير / Manager</div>
-  </div>
-
-  <div class="footer">Transit Cars System · ${printDate} · رقم السند: ${entryNo||'—'}</div>
-</div>
-</body>
-</html>`;
-
-    openPrintOverlay(html);
-  } catch(e) {
-    toast('خطأ في طباعة القيد: ' + e.message, 'err');
-  }
+    <div class="doc-footer">Transit Cars System · ${pDate} · رقم السند: ${entryNo||'—'}</div>`;
+    renderPrint(fragment, `${vTitle} — ${entryNo}`);
+  } catch(e) { toast('خطأ في طباعة القيد: '+e.message,'err'); }
 }
 
+// ════════════════════════════════════════════════════════════
+// SECTION 10 — printSection (generic section printer)
+// ════════════════════════════════════════════════════════════
 function printSection(title, subtitle, tableHtml, summaryHtml='') {
-  const html = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<title>${title}</title>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Cairo',Arial,sans-serif;color:#1a1a1a;font-size:12px;background:#fff}
-  .page{max-width:900px;margin:0 auto;padding:28px 32px}
-  .hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1a1a1a;padding-bottom:16px;margin-bottom:20px}
-  .co-name{font-size:20px;font-weight:900} .co-sub{font-size:11px;color:#888;margin-top:2px}
-  .rep-title{text-align:left} .rep-title h1{font-size:22px;font-weight:900}
-  .rep-title .sub{font-size:12px;color:#666;margin-top:4px}
-  .summary{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
-  .s-box{background:#f8f9fa;border-radius:8px;padding:10px 16px;flex:1;min-width:120px}
-  .s-box-label{font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
-  .s-box-val{font-size:16px;font-weight:900;margin-top:3px}
-  table{table-layout:fixed;width:100%;border-collapse:collapse;margin-bottom:16px}
-  thead tr{background:#1a1a1a;color:#fff}
-  thead th{padding:9px 10px;font-size:11px;font-weight:700;text-align:right}
-  tbody tr:nth-child(even){background:#fafafa}
-  tbody td{padding:8px 10px;border-bottom:1px solid #eee;vertical-align:middle}
-  tfoot td{padding:9px 10px;background:#f0f2f5;font-weight:700}
-  .footer{text-align:center;padding-top:12px;border-top:1px solid #eee;color:#aaa;font-size:10px;margin-top:12px}
-  .no-print{text-align:center;margin-bottom:16px;display:flex;gap:8px;justify-content:center}
-  .no-print button{padding:9px 24px;border-radius:8px;font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;cursor:pointer;border:none}
-  @page{size:A4 portrait;margin:14mm 12mm}
-  @media print{.summary{display:block!important}.s-box{display:inline-block!important;width:30%!important;min-width:80px!important;vertical-align:top}.hdr,.header,.inv-header{display:table!important;table-layout:fixed!important;width:100%!important}.hdr>*,.header>*,.inv-header>*{display:table-cell!important;vertical-align:top}.no-print{display:none!important}body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
-</style>
-</head>
-<body><div class="page">
-  <div class="no-print">
-    <button onclick="window.print()" style="background:#1a1a1a;color:#fff">🖨️ طباعة</button>
-    <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd">✕ إغلاق</button>
-  </div>
-  <div class="hdr">
-    <div><div class="co-name">Transit Cars</div><div class="co-sub">ترانزيت للسيارات · الكويت</div></div>
-    <div class="rep-title"><h1>${title}</h1><div class="sub">${subtitle}</div></div>
-  </div>
-  ${summaryHtml}
-  ${tableHtml}
-  <div class="footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('en-GB')} · Transit Cars System</div>
-</div></body></html>`;
-  openPrintOverlay(html, title);
+  renderPrint(`${docHeader(title,subtitle,'')}${summaryHtml}${tableHtml}<div class="doc-footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('en-GB')} · Transit Cars System</div>`, title);
 }
 
+// ════════════════════════════════════════════════════════════
+// SECTION 11 — _jPrint helper (unchanged)
+// ════════════════════════════════════════════════════════════
 function _jPrint(btn) {
   const p = btn.closest('.j-entry-actions') || btn.parentElement;
-  printJournalVoucher(
-    p.dataset.eno   || '',
-    p.dataset.etype || '',
-    p.dataset.fno   || '',
-    parseFloat(p.dataset.amt) || 0,
-    p.dataset.date  || '',
-    p.dataset.etitle|| ''
-  );
+  printJournalVoucher(p.dataset.eno||'', p.dataset.etype||'', p.dataset.fno||'', parseFloat(p.dataset.amt)||0, p.dataset.date||'', p.dataset.etitle||'');
 }
 
 // ════════════════════════════════════════════════════════════
-// SECTION 8 — Contact Ledger Statement
+// SECTION 12 — Contact Ledger Statement
 // ════════════════════════════════════════════════════════════
-
 function printLedgerStatement() {
   const contactName = window._ledgerContactName || '—';
   const contactType = window._ledgerContactType || '';
   const allEntries  = window._ledgerAllEntries  || [];
-  const vehicleMap  = window._ledgerVehicleMap  || {};
   const fileFilter  = el('ledger-file-filter')?.value || '';
   const opening     = !fileFilter ? (window._ledgerOpening || 0) : 0;
   const fmt2        = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
-
-  const typeLabelsP = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
-  const typeColors  = { customer:'#2563eb', supplier:'#e6930a', partner:'#7c3aed', custodian:'#0891b2' };
+  const typeLabels  = { customer:'عميل',supplier:'مورد',partner:'شريك',custodian:'عهدة' };
+  const typeColors  = { customer:'#2563eb',supplier:'#e6930a',partner:'#7c3aed',custodian:'#0891b2' };
   const color = typeColors[contactType] || '#1a1a1a';
-
-  let list = fileFilter ? allEntries.filter(e => e.file_no === fileFilter) : allEntries;
+  let list    = fileFilter ? allEntries.filter(e => e.file_no===fileFilter) : allEntries;
   let running = opening;
-
   const totalDebit  = list.reduce((s,e)=>s+(+e.debit||0),0)  + (opening>0?opening:0);
   const totalCredit = list.reduce((s,e)=>s+(+e.credit||0),0) + (opening<0?Math.abs(opening):0);
   const finalBal    = opening + list.reduce((s,e)=>s+(+e.debit||0)-(+e.credit||0),0);
-
   let rows = '';
-  if (opening !== 0) {
-    rows += `<tr style="background:#f8f9fa;font-weight:700">
-      <td>—</td><td colspan="2">رصيد افتتاحي</td>
-      <td style="color:#16a34a;text-align:left">${opening>0?fmt2(opening):'—'}</td>
-      <td style="color:#dc2626;text-align:left">${opening<0?fmt2(Math.abs(opening)):'—'}</td>
-      <td style="text-align:left;font-weight:700">${fmt2(Math.abs(opening))}</td>
-    </tr>`;
-  }
-
-  list.forEach(e => {
-    running += (+e.debit||0) - (+e.credit||0);
-    const desc = (e.desc || e.description || '—').replace(/<[^>]+>/g,'');
-    const rowBg = running < 0 ? '#fff5f5' : '';
-    rows += `<tr style="background:${rowBg}">
-      <td style="white-space:nowrap">${e.date||e.entry_date||'—'}</td>
-      <td style="font-size:11px;line-height:1.6">${e.type?`<strong>[${e.type}]</strong> `:''} ${desc}</td>
-      <td style="font-family:monospace;font-size:11px;color:#666">${e.file_no||'—'}</td>
-      <td style="color:#16a34a;text-align:left;font-weight:600">${+e.debit?fmt2(e.debit):'—'}</td>
-      <td style="color:#dc2626;text-align:left;font-weight:600">${+e.credit?fmt2(e.credit):'—'}</td>
-      <td style="text-align:left;font-weight:700;color:${running>=0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(running))}</td>
-    </tr>`;
-  });
-
-  const printDate = new Date().toLocaleDateString('en-GB');
-  const html = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<title>كشف حساب — ${contactName}</title>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Cairo',Arial,sans-serif;color:#1a1a1a;background:#fff;font-size:12px}
-  .page{max-width:960px;margin:0 auto;padding:28px 32px}
-  .no-print{text-align:center;margin-bottom:16px;display:flex;gap:8px;justify-content:center}
-  .no-print button{padding:9px 24px;border-radius:8px;font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;cursor:pointer;border:none}
-  .hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1a1a1a;padding-bottom:16px;margin-bottom:20px}
-  .co{font-size:18px;font-weight:900}.co-sub{font-size:11px;color:#888;margin-top:2px}
-  .title-area h1{font-size:22px;font-weight:900;text-align:left}
-  .contact-badge{display:inline-block;background:${color};color:#fff;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;margin-top:6px}
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
-  .kpi{background:#f8f9fa;border-radius:8px;padding:10px 14px;border-right:3px solid ${color}}
-  .kpi-label{font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
-  .kpi-val{font-size:15px;font-weight:900;margin-top:3px}
-  table{table-layout:fixed;width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px}
-  thead tr{background:#1a1a1a;color:#fff}
-  thead th{padding:8px 10px;text-align:right;font-weight:700}
-  tbody tr{border-bottom:1px solid #eee}
-  tbody tr:nth-child(even){background:#fafafa}
-  tbody td{padding:7px 10px;vertical-align:top}
-  tfoot td{padding:9px 10px;background:#f0f2f5;font-weight:700}
-  .footer{text-align:center;padding-top:12px;border-top:1px solid #eee;color:#aaa;font-size:10px;margin-top:16px}
-  .sig-row{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:28px}
-  .sig-box{text-align:center;padding-top:40px;border-top:1px solid #ccc;font-size:11px;color:#888}
-  @page{size:A4 portrait;margin:14mm 12mm}
-  @media print{.hdr,.header,.inv-header{display:table!important;table-layout:fixed!important;width:100%!important}.hdr>*,.header>*,.inv-header>*{display:table-cell!important;vertical-align:top}
-    .no-print{display:none!important}
-    body{print-color-adjust:exact;-webkit-print-color-adjust:exact}
-    .page{padding:14px}
-  }
-</style>
-</head>
-<body><div class="page">
-
-  <div class="no-print">
-    <button onclick="window.print()" style="background:#1a1a1a;color:#fff">🖨️ طباعة</button>
-    <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd">✕ إغلاق</button>
-  </div>
-
-  <div class="hdr">
-    <div>
-      <div class="co">Transit Cars</div>
-      <div class="co-sub">ترانزيت للسيارات · الكويت</div>
-      <div class="co-sub" style="margin-top:4px">تاريخ الطباعة: ${printDate}</div>
-    </div>
-    <div class="title-area">
-      <h1>كشف حساب</h1>
-      <div class="contact-badge">${typeLabelsP[contactType]||contactType}</div>
-      <div style="font-size:18px;font-weight:900;text-align:left;margin-top:6px">${contactName}</div>
-      ${fileFilter?`<div style="font-size:12px;color:#666;text-align:left;margin-top:2px">ملف: ${fileFilter}</div>`:''}
+  if (opening!==0) rows+=`<tr style="background:#f8f9fa;font-weight:700"><td>—</td><td colspan="2">رصيد افتتاحي</td><td class="num c-green">${opening>0?fmt2(opening):'—'}</td><td class="num c-red">${opening<0?fmt2(Math.abs(opening)):'—'}</td><td class="num" style="font-weight:700">${fmt2(Math.abs(opening))}</td></tr>`;
+  list.forEach(e => { running+=(+e.debit||0)-(+e.credit||0); const desc=(e.desc||e.description||'—').replace(/<[^>]+>/g,''); rows+=`<tr style="background:${running<0?'#fff5f5':''}"><td style="white-space:nowrap">${e.date||e.entry_date||'—'}</td><td style="font-size:11px;line-height:1.6">${e.type?`<strong>[${e.type}]</strong> `:''} ${desc}</td><td style="font-family:monospace;font-size:11px;color:#666">${e.file_no||'—'}</td><td class="num c-green">${+e.debit?fmt2(e.debit):'—'}</td><td class="num c-red">${+e.credit?fmt2(e.credit):'—'}</td><td class="num" style="font-weight:700;color:${running>=0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(running))}</td></tr>`; });
+  const pDate = new Date().toLocaleDateString('en-GB');
+  const fragment = `
+  <div class="doc-header">
+    <div class="doc-header-right"><div class="doc-company">Transit Cars</div><div class="doc-company-sub">ترانزيت للسيارات · الكويت</div><div class="doc-company-sub" style="margin-top:4px">تاريخ الطباعة: ${pDate}</div></div>
+    <div class="doc-header-left">
+      <div class="doc-title">كشف حساب</div>
+      <span class="contact-badge" style="background:${color};color:#fff">${typeLabels[contactType]||contactType}</span>
+      <div style="font-size:18px;font-weight:900;margin-top:6px">${contactName}</div>
+      ${fileFilter?`<div class="doc-subtitle">ملف: ${fileFilter}</div>`:''}
     </div>
   </div>
-
-  <div class="kpis">
-    <div class="kpi"><div class="kpi-label">إجمالي المدين</div><div class="kpi-val" style="color:#16a34a">${fmt2(totalDebit)}</div></div>
-    <div class="kpi"><div class="kpi-label">إجمالي الدائن</div><div class="kpi-val" style="color:#dc2626">${fmt2(totalCredit)}</div></div>
-    <div class="kpi"><div class="kpi-label">الرصيد الحالي</div><div class="kpi-val" style="color:${finalBal>=0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}</div></div>
-    <div class="kpi"><div class="kpi-label">عدد الحركات</div><div class="kpi-val">${list.length}</div></div>
+  <div class="kpi-row">
+    <div class="kpi-cell"><div class="kpi-label">إجمالي المدين</div><div class="kpi-val c-green">${fmt2(totalDebit)}</div></div>
+    <div class="kpi-cell" style="border-color:#dc2626"><div class="kpi-label">إجمالي الدائن</div><div class="kpi-val c-red">${fmt2(totalCredit)}</div></div>
+    <div class="kpi-cell" style="border-color:${finalBal>=0?'#16a34a':'#dc2626'}"><div class="kpi-label">الرصيد الحالي</div><div class="kpi-val ${finalBal>=0?'c-green':'c-red'}">${fmt2(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}</div></div>
+    <div class="kpi-cell" style="border-color:#888"><div class="kpi-label">عدد الحركات</div><div class="kpi-val">${list.length}</div></div>
   </div>
-
-  <table>
-    <thead><tr>
-      <th>التاريخ</th><th>البيان</th><th>الملف</th>
-      <th style="text-align:left">مدين</th>
-      <th style="text-align:left">دائن</th>
-      <th style="text-align:left">الرصيد</th>
-    </tr></thead>
+  <table><colgroup><col style="width:80px"><col><col style="width:70px"><col style="width:13%"><col style="width:13%"><col style="width:14%"></colgroup>
+    <thead><tr><th>التاريخ</th><th>البيان</th><th>الملف</th><th style="text-align:left">مدين</th><th style="text-align:left">دائن</th><th style="text-align:left">الرصيد</th></tr></thead>
     <tbody>${rows}</tbody>
-    <tfoot><tr>
-      <td colspan="3">الإجمالي</td>
-      <td style="color:#16a34a;text-align:left">${fmt2(totalDebit)}</td>
-      <td style="color:#dc2626;text-align:left">${fmt2(totalCredit)}</td>
-      <td style="color:${finalBal>=0?'#16a34a':'#dc2626'};text-align:left">${fmt2(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}</td>
-    </tr></tfoot>
+    <tfoot><tr><td colspan="3">الإجمالي</td><td class="num c-green">${fmt2(totalDebit)}</td><td class="num c-red">${fmt2(totalCredit)}</td><td class="num ${finalBal>=0?'c-green':'c-red'}">${fmt2(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}</td></tr></tfoot>
   </table>
-
-  <div class="sig-row">
-    <div class="sig-box">توقيع المحاسب</div>
-    <div class="sig-box">توقيع المدير</div>
-  </div>
-
-  <div class="footer">Transit Cars System · تم الإنشاء بتاريخ ${printDate}</div>
-
-</div></body></html>`;
-
-  openPrintOverlay(html);
-
+  <div class="sig-row"><div class="sig-cell">توقيع المحاسب</div><div class="sig-cell">توقيع المدير</div></div>
+  <div class="doc-footer">Transit Cars System · تم الإنشاء بتاريخ ${pDate}</div>`;
+  renderPrint(fragment, `كشف حساب — ${contactName}`);
 }
 
 // ════════════════════════════════════════════════════════════
-// SECTION 9 — Deal Statement
+// SECTION 13 — Deal Statement
 // ════════════════════════════════════════════════════════════
-
 async function printDealStatement(fileNo) {
-  // لو فيه fileNo → جيب البيانات مباشرة
-  // لو مفيش → استخدم _dealStatementData المحفوظ
   let d = window._dealStatementData;
-  if (fileNo && (!d || d.fn !== fileNo)) {
+  if (fileNo && (!d || d.fn!==fileNo)) {
     toast('⏳ جاري تحميل كشف الصفقة...', 'ok');
-    try {
-      await loadDealStatement(fileNo, state.system);
-      d = window._dealStatementData;
-    } catch(e) { toast('خطأ: ' + e.message, 'err'); return; }
+    try { await loadDealStatement(fileNo, state.system); d=window._dealStatementData; }
+    catch(e) { toast('خطأ: '+e.message,'err'); return; }
   }
-  if (!d) { toast('افتح كشف الصفقة أولاً', 'err'); return; }
-  const { fn, deal, entries, totalPurchase, totalPaid, totalExp, totalSales, totalColl, profit } = d;
+  if (!d) { toast('افتح كشف الصفقة أولاً','err'); return; }
+  const {fn,deal,entries,totalPurchase,totalPaid,totalExp,totalSales,totalColl,profit} = d;
   let running = 0;
-  const rows = entries.map(e => {
-    if(e._pl) { if(e.debit>0) running+=e.debit; if(e.credit>0) running-=e.credit; }
-    const infoNote = !e._pl ? ' *' : '';
-    return `<tr><td>${e.date||'—'}</td><td>${e.type}${infoNote}</td><td><b>${e.desc}</b>${e.extra?'<br><small>'+e.extra+'</small>':''}</td>
-    <td>${e.party}</td>
-    <td style="text-align:left;color:green">${e.debit>0?e.debit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
-    <td style="text-align:left;color:red">${e.credit>0?e.credit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
-    <td style="text-align:left;font-weight:700;color:${e._pl?(running>=0?'green':'red'):'gray'}">${e._pl?Math.abs(running).toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td></tr>`;
-  }).join('');
-  const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>كشف الصفقة ${fn}</title>
-  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Cairo',Arial,sans-serif;font-size:12px;padding:20px}
-  h2{margin-bottom:4px}.sub{color:#666;margin-bottom:16px}
-  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px}
-  .kpi{border:1px solid #ddd;border-radius:6px;padding:8px;text-align:center}
-  .kpi div:first-child{font-size:10px;color:#666}.kpi div:last-child{font-weight:700;font-size:13px}
-  table{table-layout:fixed;width:100%;border-collapse:collapse}th{background:#f0f0f0;padding:7px 10px;font-size:11px;border:1px solid #ddd;text-align:right}
-  td{padding:6px 10px;border:1px solid #eee;font-size:11px}tr:nth-child(even){background:#fafafa}
-  @media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}@page{size:A4 landscape}}</style></head><body>
-  <div style="display:flex;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #000">
-    <div><h2>كشف الصفقة — ${fn}</h2><div class="sub">المورد: ${deal.supplier||'—'} · تاريخ: ${deal.po_date||'—'}</div></div>
-    <div style="text-align:left;font-size:11px;color:#666">Transit Co.<br>${new Date().toLocaleDateString('en-GB')}</div>
+  const rows = entries.map(e => { if(e._pl){if(e.debit>0)running+=e.debit;if(e.credit>0)running-=e.credit;} return `<tr><td>${e.date||'—'}</td><td>${e.type}${!e._pl?' *':''}</td><td><b>${e.desc}</b>${e.extra?`<br><small>${e.extra}</small>`:''}</td><td>${e.party}</td><td class="num c-green">${e.debit>0?e.debit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td><td class="num c-red">${e.credit>0?e.credit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td><td class="num" style="font-weight:700;color:${e._pl?(running>=0?'#16a34a':'#dc2626'):'#aaa'}">${e._pl?Math.abs(running).toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td></tr>`; }).join('');
+  const fragment = `
+  <div class="doc-header">
+    <div class="doc-header-right"><div class="doc-company">Transit Co.</div><div class="doc-company-sub">${new Date().toLocaleDateString('en-GB')}</div></div>
+    <div class="doc-header-left"><div class="doc-title">كشف الصفقة</div><div class="doc-ref"># ${fn}</div><div class="doc-subtitle">المورد: ${deal.supplier||'—'} · تاريخ: ${deal.po_date||'—'}</div></div>
   </div>
-  <div class="kpis">
-    <div class="kpi"><div>تكلفة الشراء</div><div style="color:#2563eb">${totalPurchase.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-    <div class="kpi"><div>المدفوع</div><div style="color:#0891b2">${totalPaid.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-    <div class="kpi"><div>المصاريف</div><div style="color:#dc2626">${totalExp.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-    <div class="kpi"><div>المبيعات</div><div style="color:#16a34a">${totalSales.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-    <div class="kpi"><div>المحصّل</div><div style="color:#16a34a">${totalColl.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-    <div class="kpi"><div>صافي الربح</div><div style="color:${profit>=0?'#16a34a':'#dc2626'}">${Math.abs(profit).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+  <div class="kpi-row">
+    <div class="kpi-cell" style="border-color:#2563eb"><div class="kpi-label">تكلفة الشراء</div><div class="kpi-val c-blue">${totalPurchase.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+    <div class="kpi-cell" style="border-color:#0891b2"><div class="kpi-label">المدفوع</div><div class="kpi-val" style="color:#0891b2">${totalPaid.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+    <div class="kpi-cell" style="border-color:#dc2626"><div class="kpi-label">المصاريف</div><div class="kpi-val c-red">${totalExp.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+    <div class="kpi-cell" style="border-color:#16a34a"><div class="kpi-label">المبيعات</div><div class="kpi-val c-green">${totalSales.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+    <div class="kpi-cell" style="border-color:#16a34a"><div class="kpi-label">المحصّل</div><div class="kpi-val c-green">${totalColl.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+    <div class="kpi-cell" style="border-color:${profit>=0?'#16a34a':'#dc2626'}"><div class="kpi-label">صافي الربح</div><div class="kpi-val ${profit>=0?'c-green':'c-red'}">${Math.abs(profit).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
   </div>
-  <table><thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>الطرف</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
-  <tbody>${rows}</tbody></table>
-  <scr` + `ipt>window.onload=()=>window.print()<` + `/scr` + `ipt></body></html>`;
-  openPrintOverlay(html, 'كشف الصفقة');
+  <table>
+    <thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>الطرف</th><th style="text-align:left">مدين</th><th style="text-align:left">دائن</th><th style="text-align:left">الرصيد</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="doc-footer">Transit Cars · كشف الصفقة · ${fn}</div>`;
+  renderPrint(fragment, `كشف الصفقة — ${fn}`);
 }
 
 // ════════════════════════════════════════════════════════════
-// SECTION 10 — Contact Statement (Operations)
+// SECTION 14 — Contact Statement (Operations)
 // ════════════════════════════════════════════════════════════
-
 function printContactStatement() {
   const name    = csState.contactName;
   const content = el('cs-table')?.innerHTML || '';
