@@ -520,9 +520,18 @@ async function openInvoiceModal(invNo) {
 }
 
 function printInvoice() {
-  const content = el('invoice-print-area')?.innerHTML;
-  if (!content) return;
-  openPrintOverlay(content, 'فاتورة بيع');
+  const area = el('invoice-print-area');
+  if (!area) return;
+  // نسخ الفاتورة وإضافة @media print للخلفيات
+  const printStyle = `<style>
+    @media print {
+      @page { size: A4; margin: 15mm 10mm; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+    * { box-sizing: border-box; }
+    body { font-family: 'Cairo', Arial, sans-serif; direction: rtl; margin: 0; padding: 0; }
+  </style>`;
+  openPrintOverlay(printStyle + area.outerHTML, 'فاتورة بيع');
 }
 
 async function downloadInvoicePDF() {
@@ -541,8 +550,30 @@ function filterTxTable() {
 async function exportTxPDF() {
   const table = el('tx-data-table');
   if (!table) { toast('لا توجد بيانات','err'); return; }
-  const cfg = TX_CONFIG[_txType];
-  printDocument(`<h2 style="margin-bottom:16px">${cfg.icon} ${cfg.title}</h2>${table.outerHTML}`, cfg.title);
+  const cfg  = TX_CONFIG[_txType];
+  const from = el('tx-from')?.value || '';
+  const to   = el('tx-to')?.value   || '';
+  // نسخ الجدول مع تحويل CSS variables لألوان ثابتة تعمل في الطباعة
+  const clone = table.cloneNode(true);
+  clone.querySelectorAll('.btn-ctx-menu, button').forEach(b => b.remove());
+  clone.querySelectorAll('[style]').forEach(node => {
+    node.setAttribute('style', node.getAttribute('style')
+      .replace(/var\(--green\)/g,      '#16a34a')
+      .replace(/var\(--red\)/g,        '#dc2626')
+      .replace(/var\(--blue\)/g,       '#2563eb')
+      .replace(/var\(--accent\)/g,     '#d97706')
+      .replace(/var\(--text2\)/g,      '#666666')
+      .replace(/var\(--card2\)/g,      '#f0f0f0')
+      .replace(/var\(--green-dim\)/g,  '#dcfce7')
+      .replace(/var\(--blue-dim\)/g,   '#dbeafe')
+      .replace(/var\(--accent-dim\)/g, '#fef3c7')
+      .replace(/var\(--[^)]+\)/g,      '')
+    );
+  });
+  const header = typeof docHeader === 'function'
+    ? docHeader(cfg.icon + ' ' + cfg.title, from && to ? from + ' — ' + to : '', '')
+    : `<div style="display:flex;justify-content:space-between;border-bottom:3px solid #1a1a1a;padding-bottom:12px;margin-bottom:16px"><div style="font-size:18px;font-weight:800">Transit International</div><div style="font-size:22px;font-weight:900">${cfg.icon} ${cfg.title}</div></div>`;
+  printDocument(header + clone.outerHTML, cfg.title);
 }
 
 async function exportTxExcel() {
