@@ -10182,7 +10182,7 @@ function exportToExcel(sheets, filename) {
 
 const PRINT_STYLES=`*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Cairo','Segoe UI',Arial,sans-serif;color:#1a1a1a;font-size:12px;direction:rtl}.print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1a1a1a}.logo-area .company{font-size:20px;font-weight:800}.doc-title{font-size:24px;font-weight:800;text-align:left}.doc-subtitle{font-size:13px;color:#666;text-align:left;margin-top:3px}.logo-area .sub{font-size:11px;color:#888;margin-top:2px}table{width:100%;border-collapse:collapse;margin:12px 0;font-size:11px;table-layout:auto}thead{display:table-header-group}thead tr{background:#1a1a1a;color:#fff}thead th{padding:8px 10px;text-align:right;white-space:nowrap}tbody tr{border-bottom:1px solid #eee;page-break-inside:avoid}tbody td{padding:7px 10px;vertical-align:top}tfoot{display:table-footer-group}tfoot tr{background:#f0f0f0;font-weight:700}tfoot td{padding:7px 10px}.kpi-row{display:grid;gap:10px;margin:12px 0}.kpi-box{background:#f8f9fa;border-radius:6px;padding:10px 14px;border-right:3px solid #e6930a}.kpi-label{font-size:10px;color:#666;margin-bottom:3px}.kpi-val{font-size:15px;font-weight:700;font-family:monospace}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}.info-box{background:#f8f9fa;border-radius:6px;padding:10px 14px;border:1px solid #eee}.info-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px solid #eee}.info-label{color:#666}.info-val{font-weight:600}.section-title{font-size:13px;font-weight:700;color:#1a1a1a;margin:16px 0 6px;padding-bottom:4px;border-bottom:2px solid #e6930a}.green{color:#16a34a}.red{color:#dc2626}.blue{color:#2563eb}.amber{color:#d97706}.mono{font-family:monospace}.page{max-width:700px;margin:0 auto;padding:20px}.amount-box{background:#1a1a1a;color:#fff;border-radius:10px;padding:20px 28px;text-align:center;margin-bottom:22px}.amount-value{font-size:32px;font-weight:900}.sig-box{text-align:center;padding-top:44px;border-top:1px solid #ccc}.footer{text-align:center;font-size:10px;color:#999;margin-top:24px;padding-top:10px;border-top:1px solid #eee}@media print{@page{size:A4;margin:15mm 10mm}body{padding:0;font-size:11px}button{display:none!important}.print-actions{display:none!important}table{page-break-inside:auto;font-size:10px}tr{page-break-inside:avoid;page-break-after:auto}thead{display:table-header-group}tfoot{display:table-footer-group}tbody tr:nth-child(even){background:#fafafa}.kpi-row{grid-template-columns:repeat(4,1fr)}.info-grid{grid-template-columns:1fr 1fr}.btn-secondary.btn-sm{display:none!important}}
 /* vehicles report landscape */
-.vehicles-print-landscape{page:landscape}`;function openPrintOverlay(html,title){const o=document.getElementById('printOverlay'),b=document.getElementById('printOverlayBody'),t=document.getElementById('printOverlayTitle');if(!o||!b)return;if(t)t.textContent=title||'معاينة الطباعة';b.innerHTML=`<style>${PRINT_STYLES}</style>`+html;o.style.display='block';document.body.style.overflow='hidden';}function closePrintOverlay(){const o=document.getElementById('printOverlay');if(o)o.style.display='none';document.body.style.overflow='';}document.addEventListener('keydown',e=>{if(e.key==='Escape')closePrintOverlay();});
+.vehicles-print-landscape{page:landscape}`;function openPrintOverlay(html,title){const o=document.getElementById('printOverlay'),b=document.getElementById('printOverlayBody'),t=document.getElementById('printOverlayTitle');if(!o||!b)return;if(t)t.textContent=title||'معاينة الطباعة';b.innerHTML=`<div dir="rtl"><style>${PRINT_STYLES}</style>`+html+`</div>`;o.style.display='block';document.body.style.overflow='hidden';}function closePrintOverlay(){const o=document.getElementById('printOverlay');if(o)o.style.display='none';document.body.style.overflow='';}document.addEventListener('keydown',e=>{if(e.key==='Escape')closePrintOverlay();});
 function printDocument(html,title){openPrintOverlay(html,title);}
 
 function docHeader(title, subtitle, fileNo) {
@@ -10263,12 +10263,20 @@ async function printPurchaseOrder(fileNo) {
     const html = `
       ${docHeader('سند شراء', 'Purchase Order', fileNo)}
 
-      <div class="kpi-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0">
-        <div class="kpi-box"><div class="kpi-label">قيمة الصفقة</div><div class="kpi-val amber">${fmt2(po.total_purchase)} KWD</div></div>
-        <div class="kpi-box" style="border-color:#16a34a"><div class="kpi-label">المدفوع للمورد</div><div class="kpi-val green">${fmt2(totalPaid)} KWD</div></div>
-        <div class="kpi-box" style="border-color:${remaining>0?'#dc2626':'#16a34a'}"><div class="kpi-label">المتبقي</div><div class="kpi-val ${remaining>0?'red':'green'}">${fmt2(remaining)} KWD</div></div>
-        <div class="kpi-box" style="border-color:#7c3aed"><div class="kpi-label">المصاريف</div><div class="kpi-val" style="color:#7c3aed">${fmt2(totalExp)} KWD</div></div>
-      </div>
+      <table style="width:100%;border-collapse:collapse;margin:12px 0;table-layout:fixed">
+        <thead><tr>
+          <th style="background:#f8f9fa;color:#666;font-size:10px;font-weight:700;padding:8px 10px;text-align:center;border-right:3px solid #e6930a;border:1px solid #eee">قيمة الصفقة</th>
+          <th style="background:#f8f9fa;color:#666;font-size:10px;font-weight:700;padding:8px 10px;text-align:center;border-right:3px solid #16a34a;border:1px solid #eee">المدفوع للمورد</th>
+          <th style="background:#f8f9fa;color:#666;font-size:10px;font-weight:700;padding:8px 10px;text-align:center;border-right:3px solid ${remaining>0?'#dc2626':'#16a34a'};border:1px solid #eee">المتبقي</th>
+          <th style="background:#f8f9fa;color:#666;font-size:10px;font-weight:700;padding:8px 10px;text-align:center;border-right:3px solid #7c3aed;border:1px solid #eee">المصاريف</th>
+        </tr></thead>
+        <tbody><tr>
+          <td style="padding:10px;text-align:center;font-size:15px;font-weight:700;font-family:monospace;color:#d97706;border:1px solid #eee">${fmt2(po.total_purchase)} KWD</td>
+          <td style="padding:10px;text-align:center;font-size:15px;font-weight:700;font-family:monospace;color:#16a34a;border:1px solid #eee">${fmt2(totalPaid)} KWD</td>
+          <td style="padding:10px;text-align:center;font-size:15px;font-weight:700;font-family:monospace;color:${remaining>0?'#dc2626':'#16a34a'};border:1px solid #eee">${fmt2(remaining)} KWD</td>
+          <td style="padding:10px;text-align:center;font-size:15px;font-weight:700;font-family:monospace;color:#7c3aed;border:1px solid #eee">${fmt2(totalExp)} KWD</td>
+        </tr></tbody>
+      </table>
 
       <div class="info-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0">
         <div class="info-box">
@@ -10292,8 +10300,8 @@ async function printPurchaseOrder(fileNo) {
         <thead><tr><th>#</th><th>النوع / الموديل</th><th>رقم الشاصي (VIN)</th><th>اللوحة</th><th>اللون</th><th>الحجم</th><th>السنة</th><th>سعر الشراء</th></tr></thead>
         <tbody>${vehicleRows}</tbody>
         <tfoot><tr>
-          <td colspan="6" style="padding:8px 10px"><strong>إجمالي قيمة الشراء</strong></td>
           <td class="amber" style="text-align:center"><strong>${fmt2(po.total_purchase)} KWD</strong></td>
+          <td colspan="7" style="padding:8px 10px;text-align:right"><strong>إجمالي قيمة الشراء</strong></td>
         </tr></tfoot>
       </table>
 
