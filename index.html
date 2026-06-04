@@ -24,6 +24,8 @@
 .imp-step.done{background:var(--green-dim);color:var(--green)}
 .imp-type-card{background:var(--card);border:2px solid var(--border);border-radius:var(--radius);padding:20px 14px;text-align:center;cursor:pointer;transition:all .2s}
 .imp-type-card:hover,.imp-type-card.active{border-color:var(--accent);background:var(--accent-dim)}
+  @page{size:A4 portrait;margin:14mm 12mm}
+  @media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.no-print{display:none!important}}
 </style>
 </head>
 <body>
@@ -3351,7 +3353,8 @@
 
 <!-- PRINT OVERLAY -->
 <div id="printOverlay" style="display:none;position:fixed;inset:0;z-index:99999;background:#fff;overflow-y:auto"><div id="printOverlayToolbar" style="position:sticky;top:0;background:#1a1a1a;display:flex;align-items:center;gap:10px;padding:10px 20px"><span style="color:#fff;font-family:Cairo,sans-serif;font-size:14px;font-weight:700;flex:1" id="printOverlayTitle">معاينة الطباعة</span><button onclick="window.print()" style="background:#e6930a;color:#000;border:none;padding:8px 20px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;font-weight:700;cursor:pointer">🖨️ طباعة</button><button onclick="closePrintOverlay()" style="background:#444;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-family:Cairo,sans-serif;font-size:13px;cursor:pointer">✕ إغلاق</button></div><div id="printOverlayBody" style="padding:24px;max-width:1000px;margin:0 auto"></div></div>
-<style>@media print{body>*:not(#printOverlay){display:none!important}#printOverlay{display:block!important;position:static!important}#printOverlayToolbar{display:none!important}}</style>
+<style>@page{size:A4 portrait;margin:14mm 12mm}
+  @media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body>*:not(#printOverlay){display:none!important}#printOverlay{display:block!important;position:static!important}#printOverlayToolbar{display:none!important}}</style>
 
 <!-- DEAL NOTE MODAL -->
 <div class="modal-overlay" id="dealNoteModal">
@@ -6222,7 +6225,7 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
 <title>فاتورة ${invNo}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color:#1a1a1a; font-size:13px; background:#fff; }
+  body { font-family: 'Cairo', Arial, sans-serif; color:#1a1a1a; font-size:13px; background:#fff; }
   .page { max-width:800px; margin:0 auto; padding:32px 36px; }
 
   /* Header */
@@ -6245,7 +6248,7 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
   .info-value { font-weight:600; color:#1a1a1a; }
 
   /* Table */
-  table { width:100%; border-collapse:collapse; margin-bottom:20px; }
+  table {table-layout:fixed; width:100%; border-collapse:collapse; margin-bottom:20px; }
   thead tr { background:#1a1a1a; color:#fff; }
   thead th { padding:10px 12px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
   tbody tr { border-bottom:1px solid #eee; }
@@ -6272,7 +6275,8 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
   .sig-box { text-align:center; padding-top:40px; border-top:1px solid #ccc; }
   .sig-label { font-size:11px; color:#888; margin-top:6px; }
 
-  @media print {
+  @page{size:A4 portrait;margin:14mm 12mm}
+  @media print {.hdr,.header,.inv-header{display:table!important;table-layout:fixed!important;width:100%!important}.hdr>*,.header>*,.inv-header>*{display:table-cell!important;vertical-align:top!important}
     body { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
     .page { padding:20px; }
     .no-print { display:none !important; }
@@ -6610,7 +6614,7 @@ async function printPayoutVoucher(payoutId) {
   .amount-currency{font-size:13px;color:#aaa;margin-top:4px}
   .amount-type{display:inline-block;background:${color};color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px}
   /* Split table */
-  .split-table{width:100%;border-collapse:collapse;margin-bottom:22px}
+  .split-table{table-layout:fixed;width:100%;border-collapse:collapse;margin-bottom:22px}
   .split-table td{padding:8px 14px;border-bottom:1px solid #eee}
   .split-table td:last-child{text-align:left}
   /* Notes */
@@ -6622,7 +6626,8 @@ async function printPayoutVoucher(payoutId) {
   .sig-label{font-size:11px;color:#888;margin-top:6px}
   /* Footer */
   .footer{text-align:center;padding-top:16px;border-top:1px solid #eee;color:#bbb;font-size:10px}
-  @media print{
+  @page{size:A4 portrait;margin:14mm 12mm}
+  @media print{.hdr,.header,.inv-header{display:table!important;table-layout:fixed!important;width:100%!important}.hdr>*,.header>*,.inv-header>*{display:table-cell!important;vertical-align:top!important}
     body{print-color-adjust:exact;-webkit-print-color-adjust:exact}
     .page{padding:16px}
     .no-print{display:none!important}
@@ -10185,8 +10190,487 @@ function exportToExcel(sheets, filename) {
 // ║  deployment. Any changes should be mirrored in js/print.js      ║
 // ╚══════════════════════════════════════════════════════════════════╝
 
-const PRINT_STYLES=`*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Cairo','Segoe UI',Arial,sans-serif;color:#1a1a1a;font-size:12px;direction:rtl}.print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1a1a1a}.logo-area .company{font-size:20px;font-weight:800}.doc-title{font-size:24px;font-weight:800;text-align:left}table{width:100%;border-collapse:collapse;margin:12px 0;font-size:11px}thead tr{background:#1a1a1a;color:#fff}thead th{padding:8px 10px;text-align:right}tbody tr{border-bottom:1px solid #eee}tbody td{padding:7px 10px}tfoot tr{background:#f0f0f0;font-weight:700}.kpi-box{background:#f8f9fa;border-radius:6px;padding:10px 14px;border-right:3px solid #e6930a}.info-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px solid #eee}.green{color:#16a34a}.red{color:#dc2626}.blue{color:#2563eb}.amber{color:#d97706}.page{max-width:700px;margin:0 auto;padding:20px}.amount-box{background:#1a1a1a;color:#fff;border-radius:10px;padding:20px 28px;text-align:center;margin-bottom:22px}.amount-value{font-size:32px;font-weight:900}.sig-box{text-align:center;padding-top:44px;border-top:1px solid #ccc}`;function openPrintOverlay(html,title){const o=document.getElementById('printOverlay'),b=document.getElementById('printOverlayBody'),t=document.getElementById('printOverlayTitle');if(!o||!b)return;if(t)t.textContent=title||'معاينة الطباعة';b.innerHTML=`<style>${PRINT_STYLES}</style>`+html;o.style.display='block';document.body.style.overflow='hidden';}function closePrintOverlay(){const o=document.getElementById('printOverlay');if(o)o.style.display='none';document.body.style.overflow='';}document.addEventListener('keydown',e=>{if(e.key==='Escape')closePrintOverlay();});
-function printDocument(html,title){openPrintOverlay(html,title);}
+const PRINT_STYLES = `
+/* ── Reset ──────────────────────────────────────────────── */
+*, *::before, *::after {
+  margin: 0; padding: 0;
+  box-sizing: border-box;
+}
+
+/* ── Base ───────────────────────────────────────────────── */
+body {
+  font-family: 'Cairo', Arial, sans-serif;
+  color: #1a1a1a;
+  font-size: 12px;
+  direction: rtl;
+  background: #fff;
+  line-height: 1.5;
+}
+
+/* ── Page container ─────────────────────────────────────── */
+.page {
+  max-width: 740px;
+  margin: 0 auto;
+  padding: 24px 28px;
+}
+
+/* ── Document header — TABLE-based (flex breaks in print) ── */
+.print-header,
+.inv-header,
+.hdr,
+.header {
+  display: table;
+  width: 100%;
+  border-bottom: 3px solid #1a1a1a;
+  padding-bottom: 14px;
+  margin-bottom: 20px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.print-header-right,
+.logo-area,
+.company-info {
+  display: table-cell;
+  text-align: right;
+  vertical-align: top;
+  width: 55%;
+}
+.print-header-left,
+.inv-title-area,
+.doc-title-area {
+  display: table-cell;
+  text-align: left;
+  vertical-align: top;
+  width: 45%;
+}
+
+/* ── Company name typography ─────────────────────────────── */
+.logo-area .company,
+.company-name,
+.co-name,
+.co {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1a1a1a;
+}
+.logo-area .sub,
+.company-name-ar,
+.company-sub,
+.co-sub {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+
+/* ── Document title typography ───────────────────────────── */
+.doc-title,
+.inv-title,
+.voucher-title h1,
+.rep-title h1,
+.title-area h1 {
+  font-size: 22px;
+  font-weight: 800;
+  color: #1a1a1a;
+  text-align: left;
+}
+.doc-subtitle,
+.inv-title-ar,
+.voucher-sub,
+.rep-title .sub {
+  font-size: 12px;
+  color: #666;
+  text-align: left;
+  margin-top: 3px;
+}
+.inv-number,
+.voucher-no,
+.doc-ref {
+  font-size: 13px;
+  font-weight: 700;
+  color: #c47a00;
+  text-align: left;
+  margin-top: 4px;
+  font-family: monospace, 'Cairo', Arial;
+}
+
+/* ── Info grid (2-column) ────────────────────────────────── */
+.inv-info,
+.info-grid {
+  display: table;
+  width: 100%;
+  margin-bottom: 18px;
+  table-layout: fixed;
+  border-spacing: 8px 0;
+  border-collapse: separate;
+}
+.info-box {
+  display: table-cell;
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 10px 14px;
+  border: 1px solid #eee;
+  vertical-align: top;
+  width: 50%;
+}
+.info-box-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.info-row {
+  display: table;
+  width: 100%;
+  padding: 3px 0;
+  font-size: 11px;
+  border-bottom: 1px solid #eee;
+  table-layout: fixed;
+}
+.info-row:last-child { border-bottom: none; }
+.info-label {
+  display: table-cell;
+  color: #666;
+  width: 55%;
+}
+.info-value,
+.info-val {
+  display: table-cell;
+  font-weight: 600;
+  color: #1a1a1a;
+  text-align: left;
+  width: 45%;
+}
+
+/* ── Tables — FIXED layout prevents column drift ────────── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 11px;
+  table-layout: fixed;
+}
+colgroup col { /* explicit col widths override if present */ }
+thead { display: table-header-group; }
+thead tr { background: #1a1a1a; color: #fff; }
+thead th {
+  padding: 8px 10px;
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 11px;
+  overflow: hidden;
+}
+tbody { display: table-row-group; }
+tbody tr { border-bottom: 1px solid #eee; page-break-inside: avoid; }
+tbody tr:nth-child(even) { background: #fafafa; }
+tbody td {
+  padding: 7px 10px;
+  vertical-align: middle;
+  overflow: hidden;
+}
+tfoot { display: table-footer-group; }
+tfoot tr { background: #f0f0f0; font-weight: 700; }
+tfoot td {
+  padding: 8px 10px;
+  border-top: 2px solid #1a1a1a;
+}
+
+/* ── Numeric columns — always left-align (LTR numbers) ─── */
+td.num, th.num,
+td[data-num], th[data-num],
+.mono,
+td:last-child,
+tfoot td:last-child {
+  text-align: left;
+  font-family: monospace, 'Cairo', Arial;
+  direction: ltr;
+  unicode-bidi: embed;
+}
+
+/* ── KPI boxes ───────────────────────────────────────────── */
+.kpi-row {
+  display: table;
+  width: 100%;
+  margin: 12px 0;
+  border-spacing: 8px 0;
+  border-collapse: separate;
+}
+.kpi-box {
+  display: table-cell;
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 10px 14px;
+  border-right: 3px solid #e6930a;
+  vertical-align: top;
+}
+.kpi-label { font-size: 10px; color: #666; margin-bottom: 3px; }
+.kpi-val {
+  font-size: 15px;
+  font-weight: 700;
+  font-family: monospace, 'Cairo', Arial;
+}
+
+/* ── Summary boxes (printSection) ───────────────────────── */
+.summary {
+  display: table;
+  width: 100%;
+  margin-bottom: 14px;
+  border-spacing: 8px 0;
+  border-collapse: separate;
+}
+.s-box {
+  display: table-cell;
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 10px 16px;
+  vertical-align: top;
+}
+.s-box-label { font-size: 10px; color: #888; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.s-box-val { font-size: 15px; font-weight: 900; margin-top: 3px; font-family: monospace, 'Cairo', Arial; }
+
+/* ── Amount / Total box ──────────────────────────────────── */
+.total-section,
+.total-box-wrap {
+  text-align: left;
+  margin-bottom: 20px;
+}
+.total-box,
+.total-inner,
+.amount-box {
+  display: inline-block;
+  background: #1a1a1a;
+  color: #fff;
+  border-radius: 10px;
+  padding: 16px 24px;
+  min-width: 240px;
+  text-align: center;
+}
+.total-label { font-size: 11px; color: #aaa; margin-bottom: 3px; }
+.total-amount,
+.amount-value { font-size: 24px; font-weight: 900; font-family: monospace, 'Cairo', Arial; }
+.total-currency { font-size: 12px; color: #aaa; margin-top: 2px; }
+.total-sub-row {
+  display: table;
+  width: 100%;
+  font-size: 11px;
+  color: #aaa;
+  padding: 3px 0;
+  border-top: 1px solid #444;
+  margin-top: 6px;
+  padding-top: 6px;
+  table-layout: fixed;
+}
+
+/* ── Signature area ──────────────────────────────────────── */
+.sig-row,
+.sig-area {
+  display: table;
+  width: 100%;
+  margin-top: 28px;
+  table-layout: fixed;
+  border-spacing: 30px 0;
+  border-collapse: separate;
+}
+.sig-box {
+  display: table-cell;
+  text-align: center;
+  padding-top: 40px;
+  border-top: 1px solid #ccc;
+  font-size: 11px;
+  color: #888;
+  vertical-align: top;
+}
+.sig-label { font-size: 11px; color: #888; margin-top: 6px; }
+
+/* ── Section titles ──────────────────────────────────────── */
+.section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin: 16px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 2px solid #e6930a;
+}
+
+/* ── Notes section ───────────────────────────────────────── */
+.notes-section {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+.notes-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+.footer,
+.inv-footer {
+  text-align: center;
+  font-size: 10px;
+  color: #999;
+  margin-top: 24px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+/* ── Contact badge ───────────────────────────────────────── */
+.contact-badge {
+  display: inline-block;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+/* ── Utility colors ──────────────────────────────────────── */
+.green  { color: #16a34a; }
+.red    { color: #dc2626; }
+.blue   { color: #2563eb; }
+.amber  { color: #d97706; }
+.balanced { font-size: 11px; color: #16a34a; margin-top: 4px; }
+
+/* ── Print buttons (hidden in print) ────────────────────── */
+.no-print {
+  text-align: center;
+  margin-bottom: 16px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.no-print button {
+  padding: 9px 24px;
+  border-radius: 8px;
+  font-family: 'Cairo', Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+}
+
+/* ── Special: landscape override ────────────────────────── */
+.vehicles-print-landscape { page: landscape; }
+
+/* ════════════════════════════════════════════════════════════
+   @page — Strict A4 control (Chrome priority)
+   • size:A4 prevents browser from adding extra whitespace
+   • margins set here override browser defaults
+   • orphans/widows prevent single-line stranded rows
+   ════════════════════════════════════════════════════════════ */
+@page {
+  size: A4 portrait;
+  margin: 14mm 12mm 14mm 12mm;
+  orphans: 3;
+  widows: 3;
+}
+@page landscape {
+  size: A4 landscape;
+  margin: 12mm 10mm;
+}
+
+/* ════════════════════════════════════════════════════════════
+   @media print — Final overrides for Chrome print engine
+   ════════════════════════════════════════════════════════════ */
+@media print {
+  /* Force background colors (Chrome strips them by default) */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Remove screen-only elements */
+  .no-print { display: none !important; }
+  button.print-btn { display: none !important; }
+
+  /* Body resets for print */
+  body {
+    font-size: 11px;
+    padding: 0;
+    margin: 0;
+    background: #fff;
+  }
+
+  /* Page container — full width in print, no centering needed */
+  .page {
+    max-width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Table stability in print */
+  table {
+    page-break-inside: auto;
+    font-size: 10px;
+    table-layout: fixed;
+    width: 100%;
+  }
+  tr  { page-break-inside: avoid; page-break-after: auto; }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tbody tr:nth-child(even) { background: #fafafa !important; }
+
+  /* KPI grid — collapse to inline-block in print for stability */
+  .kpi-row { border-spacing: 4px 0; }
+  .kpi-box { padding: 6px 10px; }
+
+  /* Info grid */
+  .inv-info,
+  .info-grid { border-spacing: 4px 0; }
+
+  /* Sig area */
+  .sig-row,
+  .sig-area { border-spacing: 20px 0; }
+
+  /* Summary boxes */
+  .summary { border-spacing: 4px 0; }
+
+  /* Prevent orphaned section titles */
+  .section-title { page-break-after: avoid; }
+
+  /* Prevent page break inside total/signature/notes blocks */
+  .total-box, .total-inner, .amount-box,
+  .notes-section, .sig-row, .sig-area {
+    page-break-inside: avoid;
+  }
+
+  /* Header must not break */
+  .print-header, .inv-header, .hdr, .header {
+    page-break-inside: avoid;
+    page-break-after: avoid;
+  }
+}
+`;
+
+function openPrintOverlay(html, title) {
+  const o = document.getElementById('printOverlay');
+  const b = document.getElementById('printOverlayBody');
+  const t = document.getElementById('printOverlayTitle');
+  if (!o || !b) return;
+  if (t) t.textContent = title || 'معاينة الطباعة';
+  b.innerHTML = `<style>${PRINT_STYLES}</style>` + html;
+  o.style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+
+function closePrintOverlay() {
+  const o = document.getElementById('printOverlay');
+  if (o) o.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePrintOverlay();
+});
+
+function printDocument(html, title) { openPrintOverlay(html, title); }
 
 function docHeader(title, subtitle, fileNo) {
   return `<div class="print-header">
@@ -11746,7 +12230,7 @@ function loadScript(src) {
 function printPartnerStatement() {
   const content = document.getElementById('partnerStatementContent');
   if (!content) return;
-  openPrintOverlay(`<!DOCTYPE html><html dir="rtl"><head>    <meta charset="UTF-8">    <title>كشف حساب شريك</title>    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">    <style>      *{box-sizing:border-box;margin:0;padding:0}      body{font-family:'Cairo',sans-serif;direction:rtl;background:#fff;padding:20px;font-size:12px;color:#1a1a2e}      @media print{body{padding:10px}@page{margin:15mm;size:A4}}      table{border-collapse:collapse;width:100%}      th,td{padding:6px 8px}    </style>  </head><body>${content.outerHTML}<script>window.onload=()=>window.print()<\/script></body></html>`);
+  openPrintOverlay(`<!DOCTYPE html><html dir="rtl"><head>    <meta charset="UTF-8">    <title>كشف حساب شريك</title>    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">    <style>      *{box-sizing:border-box;margin:0;padding:0}      body{font-family:'Cairo',sans-serif;direction:rtl;background:#fff;padding:20px;font-size:12px;color:#1a1a2e}      @media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:10px}@page{margin:15mm;size:A4}}      table{table-layout:fixed;border-collapse:collapse;width:100%}      th,td{padding:6px 8px}    </style>  </head><body>${content.outerHTML}<script>window.onload=()=>window.print()<\/script></body></html>`);
 
 }
 
@@ -12748,7 +13232,7 @@ async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, tit
 <title>${voucherTitle} — ${entryNo}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a1a; font-size:13px; background:#fff; }
+  body { font-family:'Cairo',Arial,sans-serif; color:#1a1a1a; font-size:13px; background:#fff; }
   .page { max-width:780px; margin:0 auto; padding:32px 36px; }
   .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; padding-bottom:16px; border-bottom:2px solid #1a1a1a; }
   .company { font-size:20px; font-weight:800; }
@@ -12762,7 +13246,7 @@ async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, tit
   .info-row:last-child { border:none; }
   .info-label { color:#888; }
   .info-val { font-weight:700; }
-  table { width:100%; border-collapse:collapse; margin-bottom:16px; }
+  table {table-layout:fixed; width:100%; border-collapse:collapse; margin-bottom:16px; }
   thead tr { background:#1a1a1a; color:#fff; }
   thead th { padding:9px 10px; font-size:11px; font-weight:700; text-align:right; }
   tbody tr { border-bottom:1px solid #eee; }
@@ -12779,7 +13263,8 @@ async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, tit
   .sig-box { text-align:center; padding-top:36px; border-top:1px solid #ccc; font-size:11px; color:#888; }
   .footer { text-align:center; margin-top:20px; padding-top:12px; border-top:1px solid #eee; font-size:10px; color:#aaa; }
   .no-print { text-align:center; margin-bottom:20px; display:flex; gap:10px; justify-content:center; }
-  @media print { .no-print { display:none!important; } body { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
+  @page{size:A4 portrait;margin:14mm 12mm}
+  @media print {.hdr,.header,.inv-header{display:table!important;table-layout:fixed!important;width:100%!important}.hdr>*,.header>*,.inv-header>*{display:table-cell!important;vertical-align:top!important} .no-print { display:none!important; } body { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
 </style>
 </head>
 <body>
@@ -12906,7 +13391,7 @@ function printSection(title, subtitle, tableHtml, summaryHtml='') {
   .s-box{background:#f8f9fa;border-radius:8px;padding:10px 16px;flex:1;min-width:120px}
   .s-box-label{font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
   .s-box-val{font-size:16px;font-weight:900;margin-top:3px}
-  table{width:100%;border-collapse:collapse;margin-bottom:16px}
+  table{table-layout:fixed;width:100%;border-collapse:collapse;margin-bottom:16px}
   thead tr{background:#1a1a1a;color:#fff}
   thead th{padding:9px 10px;font-size:11px;font-weight:700;text-align:right}
   tbody tr:nth-child(even){background:#fafafa}
@@ -12915,7 +13400,8 @@ function printSection(title, subtitle, tableHtml, summaryHtml='') {
   .footer{text-align:center;padding-top:12px;border-top:1px solid #eee;color:#aaa;font-size:10px;margin-top:12px}
   .no-print{text-align:center;margin-bottom:16px;display:flex;gap:8px;justify-content:center}
   .no-print button{padding:9px 24px;border-radius:8px;font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;cursor:pointer;border:none}
-  @media print{.no-print{display:none!important}body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+  @page{size:A4 portrait;margin:14mm 12mm}
+  @media print{.hdr,.header,.inv-header{display:table!important;table-layout:fixed!important;width:100%!important}.hdr>*,.header>*,.inv-header>*{display:table-cell!important;vertical-align:top!important}.no-print{display:none!important}body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
 </style>
 </head>
 <body><div class="page">
@@ -13364,7 +13850,7 @@ function printLedgerStatement() {
   .kpi{background:#f8f9fa;border-radius:8px;padding:10px 14px;border-right:3px solid ${color}}
   .kpi-label{font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
   .kpi-val{font-size:15px;font-weight:900;margin-top:3px}
-  table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px}
+  table{table-layout:fixed;width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px}
   thead tr{background:#1a1a1a;color:#fff}
   thead th{padding:8px 10px;text-align:right;font-weight:700}
   tbody tr{border-bottom:1px solid #eee}
@@ -13374,7 +13860,8 @@ function printLedgerStatement() {
   .footer{text-align:center;padding-top:12px;border-top:1px solid #eee;color:#aaa;font-size:10px;margin-top:16px}
   .sig-row{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:28px}
   .sig-box{text-align:center;padding-top:40px;border-top:1px solid #ccc;font-size:11px;color:#888}
-  @media print{
+  @page{size:A4 portrait;margin:14mm 12mm}
+  @media print{.hdr,.header,.inv-header{display:table!important;table-layout:fixed!important;width:100%!important}.hdr>*,.header>*,.inv-header>*{display:table-cell!important;vertical-align:top!important}
     .no-print{display:none!important}
     body{print-color-adjust:exact;-webkit-print-color-adjust:exact}
     .page{padding:14px}
@@ -15043,14 +15530,14 @@ async function printDealStatement(fileNo) {
     <td style="text-align:left;font-weight:700;color:${e._pl?(running>=0?'green':'red'):'gray'}">${e._pl?Math.abs(running).toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td></tr>`;
   }).join('');
   const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>كشف الصفقة ${fn}</title>
-  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;padding:20px}
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Cairo',Arial,sans-serif;font-size:12px;padding:20px}
   h2{margin-bottom:4px}.sub{color:#666;margin-bottom:16px}
   .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px}
   .kpi{border:1px solid #ddd;border-radius:6px;padding:8px;text-align:center}
   .kpi div:first-child{font-size:10px;color:#666}.kpi div:last-child{font-weight:700;font-size:13px}
-  table{width:100%;border-collapse:collapse}th{background:#f0f0f0;padding:7px 10px;font-size:11px;border:1px solid #ddd;text-align:right}
+  table{table-layout:fixed;width:100%;border-collapse:collapse}th{background:#f0f0f0;padding:7px 10px;font-size:11px;border:1px solid #ddd;text-align:right}
   td{padding:6px 10px;border:1px solid #eee;font-size:11px}tr:nth-child(even){background:#fafafa}
-  @media print{@page{size:A4 landscape}}</style></head><body>
+  @media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}@page{size:A4 landscape}}</style></head><body>
   <div style="display:flex;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #000">
     <div><h2>كشف الصفقة — ${fn}</h2><div class="sub">المورد: ${deal.supplier||'—'} · تاريخ: ${deal.po_date||'—'}</div></div>
     <div style="text-align:left;font-size:11px;color:#666">Transit Co.<br>${new Date().toLocaleDateString('en-GB')}</div>
