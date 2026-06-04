@@ -637,7 +637,7 @@ function printSection(title, subtitle, tableHtml, summaryHtml='') {
     <button onclick="window.close()" style="background:#f1f1f1;color:#333;border:1px solid #ddd">✕ إغلاق</button>
   </div>
   <div class="hdr">
-    <div><div class="co-name">Transit Cars</div><div class="co-sub">ترانزيت للسيارات · الكويت</div></div>
+    <div><div class="co-name">Transit Cars</div><div class="co-sub">الكويت</div></div>
     <div class="rep-title"><h1>${title}</h1><div class="sub">${subtitle}</div></div>
   </div>
   ${summaryHtml}

@@ -446,7 +446,7 @@ async function openInvoiceModal(invNo) {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #1a1a2e">
         <div>
           <div style="font-size:26px;font-weight:900;color:#1a1a2e">🚗 Transit Cars</div>
-          <div style="font-size:13px;color:#666;margin-top:4px">${sysName} — نظام إدارة صفقات السيارات</div>
+          <div style="font-size:13px;color:#666;margin-top:4px">${sysName}</div>
         </div>
         <div style="text-align:left">
           <div style="font-size:22px;font-weight:900;color:#1a1a2e">فاتورة بيع</div>
