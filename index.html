@@ -6650,7 +6650,7 @@ async function printPayoutVoucher(payoutId) {
 
   ${dealBreakdown}
 
-  <div class="info-grid">
+  <div class="info-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0">
     <div class="info-box">
       <div class="info-box-title">بيانات الشريك</div>
       <div class="info-row"><span class="info-label">اسم الشريك</span><span class="info-value">${p.partner||'—'}</span></div>
@@ -10263,14 +10263,14 @@ async function printPurchaseOrder(fileNo) {
     const html = `
       ${docHeader('سند شراء', 'Purchase Order', fileNo)}
 
-      <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0">
         <div class="kpi-box"><div class="kpi-label">قيمة الصفقة</div><div class="kpi-val amber">${fmt2(po.total_purchase)} KWD</div></div>
         <div class="kpi-box" style="border-color:#16a34a"><div class="kpi-label">المدفوع للمورد</div><div class="kpi-val green">${fmt2(totalPaid)} KWD</div></div>
         <div class="kpi-box" style="border-color:${remaining>0?'#dc2626':'#16a34a'}"><div class="kpi-label">المتبقي</div><div class="kpi-val ${remaining>0?'red':'green'}">${fmt2(remaining)} KWD</div></div>
         <div class="kpi-box" style="border-color:#7c3aed"><div class="kpi-label">المصاريف</div><div class="kpi-val" style="color:#7c3aed">${fmt2(totalExp)} KWD</div></div>
       </div>
 
-      <div class="info-grid">
+      <div class="info-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0">
         <div class="info-box">
           <div class="info-row"><span class="info-label">رقم الملف</span><span class="info-val amber">${po.file_no||'—'}</span></div>
           <div class="info-row"><span class="info-label">المورد</span><span class="info-val">${po.supplier||'—'}</span></div>
@@ -12797,7 +12797,7 @@ async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, tit
     </div>
   </div>
 
-  <div class="info-grid">
+  <div class="info-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0">
     <div class="info-box">
       <div class="info-row"><span class="info-label">رقم السند</span><span class="info-val" style="color:#c47a00;font-family:monospace">${entryNo||'—'}</span></div>
       <div class="info-row"><span class="info-label">نوع العملية</span><span class="info-val">${voucherTitle}</span></div>
