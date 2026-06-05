@@ -3983,6 +3983,22 @@ function filterWhTransfers() {
   renderWhTransfersTable(filtered, soldVins);
 }
 
+function filterWhByStatus(status) {
+  ['all','stock','sold'].forEach(s => {
+    el('whfs-'+s)?.classList.toggle('active', s === status);
+  });
+  const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
+  const all = whState.allTransfers || [];
+  const filtered = status === 'stock' ? all.filter(t => !soldVins.has(t.vin))
+                 : status === 'sold'  ? all.filter(t =>  soldVins.has(t.vin))
+                 : all;
+  renderWhTransfersTable(filtered, soldVins);
+}
+
+function filterWhSearch() {
+  filterWhTransfers();
+}
+
 // ── إدارة المخازن ──
 async function openManageWarehousesModal() {
   await refreshWhList();
@@ -4401,12 +4417,8 @@ async function loadContactStatement() {
   }
 }
 
-function printContactStatement() {
-  const name    = csState.contactName;
-  const content = el('cs-table')?.innerHTML || '';
-  const kpis    = el('cs-kpis')?.innerHTML  || '';
-  printSection(`كشف حساب — ${name}`, `نظام ${state.system}`, kpis + content);
-}
+// printContactStatement → js/print.js
+
 
 function exportContactStatementCSV() {
   const rows = csState.entries.map(r => [
@@ -4418,10 +4430,7 @@ function exportContactStatementCSV() {
 }
 
 // تُستدعى من صفحة جهات الاتصال عند الضغط على الطرف
-function showPartnerStatement(name) {
-  // الشريك له كشف حساب متخصص يشمل التكلفة + المديونية + الأرباح
-  openPartnerAccountLedger(name);
-}
+// showPartnerStatement → js/accounting.js
 
 // ════════════════════════════════════════════════════════
 // IMPORT WIZARD — استيراد بيانات تاريخية من Excel

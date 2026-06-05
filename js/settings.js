@@ -498,55 +498,8 @@ async function loadDealStatement(fn, sys) {
   } catch(e) { el('dealStatementWrap').innerHTML = errHTML('خطأ: '+e.message); }
 }
 
-async function printDealStatement(fileNo) {
-  // لو فيه fileNo → جيب البيانات مباشرة
-  // لو مفيش → استخدم _dealStatementData المحفوظ
-  let d = window._dealStatementData;
-  if (fileNo && (!d || d.fn !== fileNo)) {
-    toast('⏳ جاري تحميل كشف الصفقة...', 'ok');
-    try {
-      await loadDealStatement(fileNo, state.system);
-      d = window._dealStatementData;
-    } catch(e) { toast('خطأ: ' + e.message, 'err'); return; }
-  }
-  if (!d) { toast('افتح كشف الصفقة أولاً', 'err'); return; }
-  const { fn, deal, entries, totalPurchase, totalPaid, totalExp, totalSales, totalColl, profit } = d;
-  let running = 0;
-  const rows = entries.map(e => {
-    if(e._pl) { if(e.debit>0) running+=e.debit; if(e.credit>0) running-=e.credit; }
-    const infoNote = !e._pl ? ' *' : '';
-    return `<tr><td>${e.date||'—'}</td><td>${e.type}${infoNote}</td><td><b>${e.desc}</b>${e.extra?'<br><small>'+e.extra+'</small>':''}</td>
-    <td>${e.party}</td>
-    <td style="text-align:left;color:green">${e.debit>0?e.debit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
-    <td style="text-align:left;color:red">${e.credit>0?e.credit.toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td>
-    <td style="text-align:left;font-weight:700;color:${e._pl?(running>=0?'green':'red'):'gray'}">${e._pl?Math.abs(running).toLocaleString('en-US',{minimumFractionDigits:2}):'—'}</td></tr>`;
-  }).join('');
-  const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>كشف الصفقة ${fn}</title>
-  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;padding:20px}
-  h2{margin-bottom:4px}.sub{color:#666;margin-bottom:16px}
-  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px}
-  .kpi{border:1px solid #ddd;border-radius:6px;padding:8px;text-align:center}
-  .kpi div:first-child{font-size:10px;color:#666}.kpi div:last-child{font-weight:700;font-size:13px}
-  table{width:100%;border-collapse:collapse}th{background:#f0f0f0;padding:7px 10px;font-size:11px;border:1px solid #ddd;text-align:right}
-  td{padding:6px 10px;border:1px solid #eee;font-size:11px}tr:nth-child(even){background:#fafafa}
-  @media print{@page{size:A4 landscape}}</style></head><body>
-  <div style="display:flex;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #000">
-    <div><h2>كشف الصفقة — ${fn}</h2><div class="sub">المورد: ${deal.supplier||'—'} · تاريخ: ${deal.po_date||'—'}</div></div>
-    <div style="text-align:left;font-size:11px;color:#666">Transit Co.<br>${new Date().toLocaleDateString('en-GB')}</div>
-  </div>
-  <div class="kpis">
-    <div class="kpi"><div>تكلفة الشراء</div><div style="color:#2563eb">${totalPurchase.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-    <div class="kpi"><div>المدفوع</div><div style="color:#0891b2">${totalPaid.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-    <div class="kpi"><div>المصاريف</div><div style="color:#dc2626">${totalExp.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-    <div class="kpi"><div>المبيعات</div><div style="color:#16a34a">${totalSales.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-    <div class="kpi"><div>المحصّل</div><div style="color:#16a34a">${totalColl.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-    <div class="kpi"><div>صافي الربح</div><div style="color:${profit>=0?'#16a34a':'#dc2626'}">${Math.abs(profit).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-  </div>
-  <table><thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>الطرف</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
-  <tbody>${rows}</tbody></table>
-  <scr` + `ipt>window.onload=()=>window.print()<` + `/scr` + `ipt></body></html>`;
-  openPrintOverlay(html, 'كشف الصفقة');
-}
+// printDealStatement → js/print.js
+
 
 function exportDealStatementExcel() {
   const d = window._dealStatementData;

@@ -720,20 +720,21 @@ function clearSavedLogin() {
 // ════════════════════════════════════════
 // EVENT LISTENERS
 // ════════════════════════════════════════
-document.getElementById('loginBtn').addEventListener('click', login);
-document.getElementById('loginPass').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('loginBtn')?.addEventListener('click', login);
+  document.getElementById('loginPass')?.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
 
-// Close modals on overlay click
-document.querySelectorAll('.modal-overlay').forEach(overlay => {
-  overlay.addEventListener('click', function(e) {
-    if (e.target === this) closeModal(this.id);
+  // Close modals on overlay click
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', function(e) {
+      if (e.target === this) closeModal(this.id);
+    });
   });
-});
 
-// Intercept collection/sale/payout modal buttons (safe - all use ?.)
-document.querySelector('[onclick="openModal(\'collectionModal\')"]')?.setAttribute('onclick','openCollectionModal()');
-// saleModal button already calls openSaleModal() directly
-document.querySelector('[onclick="openModal(\'payoutModal\')"]')?.setAttribute('onclick','openPayoutModal()');
+  // Intercept collection/sale/payout modal buttons
+  document.querySelector('[onclick="openModal(\'collectionModal\')"]')?.setAttribute('onclick','openCollectionModal()');
+  document.querySelector('[onclick="openModal(\'payoutModal\')"]')?.setAttribute('onclick','openPayoutModal()');
+});
 
 
 // ════════════════════════════════════════

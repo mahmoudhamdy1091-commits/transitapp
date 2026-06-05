@@ -519,20 +519,8 @@ async function openInvoiceModal(invNo) {
   openModal('invoiceModal');
 }
 
-function printInvoice() {
-  const area = el('invoice-print-area');
-  if (!area) return;
-  // نسخ الفاتورة وإضافة @media print للخلفيات
-  const printStyle = `<style>
-    @media print {
-      @page { size: A4; margin: 15mm 10mm; }
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    }
-    * { box-sizing: border-box; }
-    body { font-family: 'Cairo', Arial, sans-serif; direction: rtl; margin: 0; padding: 0; }
-  </style>`;
-  openPrintOverlay(printStyle + area.outerHTML, 'فاتورة بيع');
-}
+// printInvoice → js/print.js
+
 
 async function downloadInvoicePDF() {
   printInvoice();

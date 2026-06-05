@@ -724,6 +724,10 @@ async function deleteOrphanDeal(dealId) {
 
 // ── EXCEL EXPORT ──
 function exportToExcel(sheets, filename) {
+  if (typeof XLSX === 'undefined') {
+    toast('مكتبة Excel غير محملة — تحقق من الاتصال بالإنترنت', 'err');
+    return;
+  }
   const wb = XLSX.utils.book_new();
   sheets.forEach(({ name, data, headers }) => {
     const wsData = [headers, ...data];
@@ -739,174 +743,16 @@ function exportToExcel(sheets, filename) {
   XLSX.writeFile(wb, filename + '.xlsx');
 }
 
-const PRINT_STYLES=`*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Cairo','Segoe UI',Arial,sans-serif;color:#1a1a1a;font-size:12px;direction:rtl}.print-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1a1a1a}.logo-area .company{font-size:20px;font-weight:800}.doc-title{font-size:24px;font-weight:800;text-align:left}.doc-subtitle{font-size:13px;color:#666;text-align:left;margin-top:3px}.logo-area .sub{font-size:11px;color:#888;margin-top:2px}table{width:100%;border-collapse:collapse;margin:12px 0;font-size:11px;table-layout:auto}thead{display:table-header-group}thead tr{background:#1a1a1a;color:#fff}thead th{padding:8px 10px;text-align:right;white-space:nowrap}tbody tr{border-bottom:1px solid #eee;page-break-inside:avoid}tbody td{padding:7px 10px;vertical-align:top}tfoot{display:table-footer-group}tfoot tr{background:#f0f0f0;font-weight:700}tfoot td{padding:7px 10px}.kpi-row{display:grid;gap:10px;margin:12px 0}.kpi-box{background:#f8f9fa;border-radius:6px;padding:10px 14px;border-right:3px solid #e6930a}.kpi-label{font-size:10px;color:#666;margin-bottom:3px}.kpi-val{font-size:15px;font-weight:700;font-family:monospace}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}.info-box{background:#f8f9fa;border-radius:6px;padding:10px 14px;border:1px solid #eee}.info-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px solid #eee}.info-label{color:#666}.info-val{font-weight:600}.section-title{font-size:13px;font-weight:700;color:#1a1a1a;margin:16px 0 6px;padding-bottom:4px;border-bottom:2px solid #e6930a}.green{color:#16a34a}.red{color:#dc2626}.blue{color:#2563eb}.amber{color:#d97706}.mono{font-family:monospace}.page{max-width:700px;margin:0 auto;padding:20px}.amount-box{background:#1a1a1a;color:#fff;border-radius:10px;padding:20px 28px;text-align:center;margin-bottom:22px}.amount-value{font-size:32px;font-weight:900}.sig-box{text-align:center;padding-top:44px;border-top:1px solid #ccc}.footer{text-align:center;font-size:10px;color:#999;margin-top:24px;padding-top:10px;border-top:1px solid #eee}@media print{@page{size:A4;margin:15mm 10mm}body{padding:0;font-size:11px}button{display:none!important}.print-actions{display:none!important}table{page-break-inside:auto;font-size:10px}tr{page-break-inside:avoid;page-break-after:auto}thead{display:table-header-group}tfoot{display:table-footer-group}tbody tr:nth-child(even){background:#fafafa}.kpi-row{grid-template-columns:repeat(4,1fr)}.info-grid{grid-template-columns:1fr 1fr}.btn-secondary.btn-sm{display:none!important}}
-/* vehicles report landscape */
-.vehicles-print-landscape{page:landscape}`;function openPrintOverlay(html,title){const o=document.getElementById('printOverlay'),b=document.getElementById('printOverlayBody'),t=document.getElementById('printOverlayTitle');if(!o||!b)return;if(t)t.textContent=title||'معاينة الطباعة';b.innerHTML=`<style>${PRINT_STYLES}</style>`+html;o.style.display='block';document.body.style.overflow='hidden';}function closePrintOverlay(){const o=document.getElementById('printOverlay');if(o)o.style.display='none';document.body.style.overflow='';}document.addEventListener('keydown',e=>{if(e.key==='Escape')closePrintOverlay();});
-function printDocument(html,title){openPrintOverlay(html,title);}
+// PRINT_STYLES و print helpers → js/print.js
 
-function docHeader(title, subtitle, fileNo) {
-  return `<div class="print-header">
-    <div class="logo-area">
-      <div class="company">Transit International</div>
-      
-      <div class="sub" style="margin-top:4px;color:#999">تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</div>
-    </div>
-    <div>
-      <div class="doc-title">${title}</div>
-      ${subtitle ? `<div class="doc-subtitle">${subtitle}</div>` : ''}
-      ${fileNo ? `<div style="font-size:13px;color:#e6930a;font-weight:700;text-align:left;margin-top:4px"># ${fileNo}</div>` : ''}
-    </div>
-  </div>`;
-}
+// docHeader → js/print.js
+
 
 // ════════════════════════════════════════
 // 1. PURCHASE ORDER PRINT / EXPORT
 // ════════════════════════════════════════
-async function printPurchaseOrder(fileNo) {
-  try {
-    const sys = state.system;
-    const [poArr, vehicles, partners, payments, expenses] = await Promise.all([
-      apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'pay_date.asc' }),
-      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, order:'exp_date.asc' }),
-    ]);
-    const po         = poArr?.[0] || {};
-    const totalPaid  = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
-    const totalExp   = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
-    const remaining  = (+po.total_purchase||0) - totalPaid;
-    const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
+// printPurchaseOrder → js/print.js
 
-    const vehicleRows = (vehicles||[]).map((v,i) => `<tr>
-      <td style="text-align:center;font-weight:700">${i+1}</td>
-      <td>${v.vehicle_type||'—'} ${v.model||''}</td>
-      <td style="direction:ltr;font-family:monospace;font-size:11px;font-weight:700">${v.vin||'—'}</td>
-      <td style="direction:ltr">${v.plate||'—'}</td>
-      <td>${v.color||'—'}</td>
-      <td style="text-align:center">${v.engine_size?v.engine_size+' L':'—'}</td>
-      <td style="text-align:center">${v.year||'—'}</td>
-      <td class="amber" style="text-align:left">${fmt2(v.purchase_price)}</td>
-    </tr>`).join('');
-
-    const paymentRows = (payments||[]).map(p => `<tr>
-      <td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td>
-      <td>${p.payer||'—'}</td>
-      <td class="green" style="text-align:left">${fmt2(p.amount)}</td>
-      <td>${p.pay_method||'—'}</td>
-      <td style="direction:ltr">${p.document||'—'}</td>
-      <td>${p.pay_date||'—'}</td>
-    </tr>`).join('');
-
-    const expenseRows = (expenses||[]).map(e => `<tr>
-      <td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td>
-      <td>${e.description||'—'}</td>
-      <td>${e.exp_type||'—'}</td>
-      <td class="red" style="text-align:left">${fmt2(e.amount)}</td>
-      <td>${e.pay_method||'—'}</td>
-      <td>${e.exp_date||e.expense_date||'—'}</td>
-    </tr>`).join('');
-
-    const partnerRows = (partners||[]).map(p => {
-      const paid = (payments||[]).filter(pm=>pm.payer===p.partner).reduce((s,pm)=>s+(+pm.amount||0),0);
-      const due  = (+po.total_purchase||0) * (+p.share_percent||0) / 100;
-      return `<tr>
-        <td style="font-weight:700">${p.partner}</td>
-        <td style="text-align:center">${p.share_percent}%</td>
-        <td class="blue" style="text-align:left">${fmt2(due)}</td>
-        <td class="green" style="text-align:left">${fmt2(paid)}</td>
-        <td class="${(due-paid)>0.01?'red':'green'}" style="text-align:left;font-weight:700">${fmt2(due-paid)}</td>
-      </tr>`;
-    }).join('');
-
-    const html = `
-      ${docHeader('سند شراء', 'Purchase Order', fileNo)}
-
-      <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
-        <div class="kpi-box"><div class="kpi-label">قيمة الصفقة</div><div class="kpi-val amber">${fmt2(po.total_purchase)} KWD</div></div>
-        <div class="kpi-box" style="border-color:#16a34a"><div class="kpi-label">المدفوع للمورد</div><div class="kpi-val green">${fmt2(totalPaid)} KWD</div></div>
-        <div class="kpi-box" style="border-color:${remaining>0?'#dc2626':'#16a34a'}"><div class="kpi-label">المتبقي</div><div class="kpi-val ${remaining>0?'red':'green'}">${fmt2(remaining)} KWD</div></div>
-        <div class="kpi-box" style="border-color:#7c3aed"><div class="kpi-label">المصاريف</div><div class="kpi-val" style="color:#7c3aed">${fmt2(totalExp)} KWD</div></div>
-      </div>
-
-      <div class="info-grid">
-        <div class="info-box">
-          <div class="info-row"><span class="info-label">رقم الملف</span><span class="info-val amber">${po.file_no||'—'}</span></div>
-          <div class="info-row"><span class="info-label">المورد</span><span class="info-val">${po.supplier||'—'}</span></div>
-          <div class="info-row"><span class="info-label">رقم PO</span><span class="info-val" style="direction:ltr">${po.po_no||'—'}</span></div>
-          <div class="info-row"><span class="info-label">تاريخ الصفقة</span><span class="info-val">${po.po_date||'—'}</span></div>
-          <div class="info-row"><span class="info-label">الحالة</span><span class="info-val">${po.status||'—'}</span></div>
-        </div>
-        <div class="info-box">
-          <div class="info-row"><span class="info-label">عدد السيارات</span><span class="info-val">${(vehicles||[]).length} سيارة</span></div>
-          <div class="info-row"><span class="info-label">عدد الشركاء</span><span class="info-val">${(partners||[]).length} شريك</span></div>
-          <div class="info-row"><span class="info-label">عدد الدفعات</span><span class="info-val">${(payments||[]).length} دفعة</span></div>
-          <div class="info-row"><span class="info-label">عدد المصاريف</span><span class="info-val">${(expenses||[]).length} بند</span></div>
-          <div class="info-row"><span class="info-label">تاريخ الطباعة</span><span class="info-val">${new Date().toLocaleDateString('en-GB')}</span></div>
-        </div>
-      </div>
-
-      <div class="section-title">📦 السيارات / Vehicles</div>
-      <table>
-        <thead><tr><th>#</th><th>النوع / الموديل</th><th>رقم الشاصي (VIN)</th><th>اللوحة</th><th>اللون</th><th>الحجم</th><th>السنة</th><th>سعر الشراء</th></tr></thead>
-        <tbody>${vehicleRows}</tbody>
-        <tfoot><tr>
-          <td colspan="7" style="padding:8px 10px"><strong>إجمالي قيمة الشراء</strong></td>
-          <td class="amber" style="text-align:left"><strong>${fmt2(po.total_purchase)} KWD</strong></td>
-        </tr></tfoot>
-      </table>
-
-      ${partners?.length ? `
-      <div class="section-title">👥 الشركاء / Partners</div>
-      <table>
-        <thead><tr><th>الشريك</th><th>الحصة %</th><th>المستحق</th><th>المدفوع</th><th>المتبقي</th></tr></thead>
-        <tbody>${partnerRows}</tbody>
-      </table>` : ''}
-
-      ${payments?.length ? `
-      <div class="section-title">💳 دفعات المورد / Payments</div>
-      <table>
-        <thead><tr><th>رقم الدفعة</th><th>الدافع</th><th>المبلغ</th><th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th></tr></thead>
-        <tbody>${paymentRows}</tbody>
-        <tfoot><tr>
-          <td colspan="2"><strong>الإجمالي المدفوع</strong></td>
-          <td class="green" style="text-align:left"><strong>${fmt2(totalPaid)} KWD</strong></td>
-          <td colspan="3"></td>
-        </tr></tfoot>
-      </table>` : ''}
-
-      ${expenses?.length ? `
-      <div class="section-title">💸 المصاريف / Expenses</div>
-      <table>
-        <thead><tr><th>رقم المصروف</th><th>البيان</th><th>النوع</th><th>المبلغ</th><th>طريقة الدفع</th><th>التاريخ</th></tr></thead>
-        <tbody>${expenseRows}</tbody>
-        <tfoot><tr>
-          <td colspan="3"><strong>إجمالي المصاريف</strong></td>
-          <td class="red" style="text-align:left"><strong>${fmt2(totalExp)} KWD</strong></td>
-          <td colspan="2"></td>
-        </tr></tfoot>
-      </table>` : ''}
-
-      ${po.notes ? `<div style="margin:12px 0;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px"><strong>ملاحظات:</strong> ${po.notes}</div>` : ''}
-
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;margin-top:32px">
-        <div style="text-align:center;padding-top:44px;border-top:1px solid #ccc">
-          <div style="font-size:11px;color:#888">توقيع المورد</div>
-          <div style="font-size:12px;font-weight:700;margin-top:4px">${po.supplier||''}</div>
-        </div>
-        <div style="text-align:center;padding-top:44px;border-top:1px solid #ccc">
-          <div style="font-size:11px;color:#888">توقيع المدير</div>
-        </div>
-        <div style="text-align:center;padding-top:44px;border-top:1px solid #ccc">
-          <div style="font-size:11px;color:#888">توقيع المحاسب</div>
-        </div>
-      </div>
-
-      <div class="footer">Transit Cars</div>`;
-
-    printDocument(html, `سند شراء — ${fileNo}`);
-  } catch(e) { toast('خطأ: '+e.message,'err'); }
-}
 
 async function exportPurchaseOrderExcel(fileNo) {
   try {
@@ -973,56 +819,8 @@ async function exportDealExcel(fileNo) {
 // ════════════════════════════════════════
 // 3. REPORTS PRINT / EXPORT
 // ════════════════════════════════════════
-async function printCurrentReport() {
-  const type = reportState.type;
-  const from = el('r-from').value;
-  const to   = el('r-to').value;
-  const data = reportState.data || [];
-  if (!data.length) { toast('لا توجد بيانات للطباعة','err'); return; }
+// printCurrentReport → js/print.js
 
-  const titles = { profit:'تقرير الأرباح والخسائر', sales:'تقرير المبيعات', expenses:'تقرير المصاريف', partners:'تقرير الشركاء' };
-  let tableHtml = '';
-
-  if (type === 'profit') {
-    const rows = data.map(d=>`<tr>
-      <td>${d.file}</td>
-      <td class="green">${fmt(d.sales)}</td>
-      <td class="red">${fmt(d.expenses)}</td>
-      <td class="amber">${fmt(d.payments)}</td>
-      <td class="${d.profit>=0?'green':'red'}">${fmt(d.profit)}</td>
-    </tr>`).join('');
-    const totProfit = data.reduce((s,d)=>s+d.profit,0);
-    tableHtml = `<table>
-      <thead><tr><th>الملف</th><th>مبيعات</th><th>مصاريف</th><th>دفعات مورد</th><th>صافي ربح</th></tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr><td><strong>الإجمالي</strong></td><td></td><td></td><td></td><td class="${totProfit>=0?'green':'red'}"><strong>${fmt(totProfit)}</strong></td></tr></tfoot>
-    </table>`;
-  } else if (type === 'sales') {
-    tableHtml = `<table>
-      <thead><tr><th>التاريخ</th><th>الملف</th><th>VIN</th><th>العميل</th><th>السعر</th></tr></thead>
-      <tbody>${data.map(s=>`<tr><td>${s.sale_date||''}</td><td>${s.file_no||''}</td><td style="direction:ltr">${s.vin||''}</td><td>${s.customer||''}</td><td class="green">${fmt(s.sale_price)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="green"><strong>${fmt(data.reduce((s,r)=>s+(+r.sale_price||0),0))}</strong></td></tr></tfoot>
-    </table>`;
-  } else if (type === 'expenses') {
-    tableHtml = `<table>
-      <thead><tr><th>التاريخ</th><th>الملف</th><th>البيان</th><th>النوع</th><th>المبلغ</th></tr></thead>
-      <tbody>${data.map(e=>`<tr><td>${e.exp_date||e.expense_date||e.created_at?.split('T')[0]||''}</td><td>${e.file_no||''}</td><td>${e.description||''}</td><td>${e.category||e.exp_type||''}</td><td class="red">${fmt(e.amount)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="red"><strong>${fmt(data.reduce((s,r)=>s+(+r.amount||0),0))}</strong></td></tr></tfoot>
-    </table>`;
-  } else if (type === 'partners') {
-    tableHtml = `<table>
-      <thead><tr><th>التاريخ</th><th>الملف</th><th>الشريك</th><th>النوع</th><th>المبلغ</th></tr></thead>
-      <tbody>${data.map(p=>`<tr><td>${p.pay_date||''}</td><td>${p.file_no||''}</td><td>${p.partner||''}</td><td>${p.payout_type||''}</td><td class="amber">${fmt(p.amount)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="4"><strong>الإجمالي</strong></td><td class="amber"><strong>${fmt(data.reduce((s,r)=>s+(+r.amount||0),0))}</strong></td></tr></tfoot>
-    </table>`;
-  }
-
-  const html = `
-    ${docHeader(titles[type], `من ${from} إلى ${to}`, '')}
-    ${tableHtml}
-    <div class="footer">Transit International · ${titles[type]} · ${from} — ${to}</div>`;
-  printDocument(html, titles[type]);
-}
 
 async function exportCurrentReportExcel() {
   const type = reportState.type;
@@ -1047,44 +845,8 @@ async function exportCurrentReportExcel() {
 // ════════════════════════════════════════
 // 4. TRIAL BALANCE PRINT / EXPORT
 // ════════════════════════════════════════
-function printTrialBalance() {
-  const data = trialState.data || [];
-  if (!data.length) { toast('لا توجد بيانات','err'); return; }
-  // trialState.data fields: {code, name, type, dr, cr}
-  const typeLabelsAr = {
-    asset:'أصول', liability:'التزامات', equity:'حقوق ملكية',
-    revenue:'إيرادات', cogs:'تكلفة', expense:'مصروفات', other:'أخرى',
-    customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة'
-  };
-  const rows = data.map(c => {
-    const bal = c.dr - c.cr;
-    return `<tr>
-    <td class="mono" style="color:#e6930a;font-weight:700">${c.code||'—'}</td>
-    <td>${c.name}</td>
-    <td>${typeLabelsAr[c.type]||c.type}</td>
-    <td class="green">${fmt(c.dr)}</td>
-    <td class="red">${fmt(c.cr)}</td>
-    <td class="${bal>=0?'green':'red'}">${fmt(Math.abs(bal))} ${bal>0?'مدين':bal<0?'دائن':'صفر'}</td>
-  </tr>`;
-  }).join('');
-  const sumD = data.reduce((s,c)=>s+c.dr,0);
-  const sumC = data.reduce((s,c)=>s+c.cr,0);
-  const sumB = sumD - sumC;
-  const html = `
-    ${docHeader('ميزان المراجعة','Trial Balance','')}
-    <table>
-      <thead><tr><th>الكود</th><th>اسم الحساب</th><th>النوع</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr>
-        <td colspan="3"><strong>الإجمالي (${data.length} حساب)</strong></td>
-        <td class="green"><strong>${fmt(sumD)}</strong></td>
-        <td class="red"><strong>${fmt(sumC)}</strong></td>
-        <td class="${sumB>=0?'green':'red'}"><strong>${fmt(Math.abs(sumB))} ${sumB>0?'مدين':sumB<0?'دائن':'✓ متوازن'}</strong></td>
-      </tr></tfoot>
-    </table>
-    <div class="footer">Transit International · ميزان المراجعة · ${new Date().toLocaleDateString('en-GB')}</div>`;
-  printDocument(html, 'ميزان المراجعة');
-}
+// printTrialBalance → js/print.js
+
 
 function exportTrialBalanceExcel() {
   const data = trialState.data || [];
@@ -1618,32 +1380,8 @@ function filterVehiclesReport(status) {
   vrState.filtered = list;
 }
 
-function printVehiclesReport() {
-  const list = vrState.filtered || vrState.all;
-  if (!list.length) { toast('لا توجد بيانات','err'); return; }
-  const rows = list.map((v,i) => `<tr>
-    <td>${v._code}</td><td>${v.file_no||'—'}</td><td>${v._supplier}</td>
-    <td>${v.vehicle_type||'—'}</td><td>${v.model||'—'}</td><td>${v.year||'—'}</td>
-    <td style="direction:ltr">${v.vin||'—'}</td><td style="direction:ltr">${v.plate||'—'}</td>
-    <td>${v.color||'—'}</td><td>${v.engine_size||'—'}</td>
-    <td>${(+v.purchase_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
-    <td>${v.license_expiry||'—'}</td>
-    <td>${v._sold?'مباع':'في المخزن'}</td>
-    <td>${v._warehouse||'—'}</td>
-    <td>${v._saleInfo?.customer||'—'}</td>
-  </tr>`).join('');
-  const html = `
-    <style>@media print{@page{size:A4 landscape;margin:10mm}table{font-size:9px}thead th{padding:5px 6px}tbody td{padding:5px 6px}}</style>
-    ${docHeader('تقرير السيارات','Vehicles Report','')}
-    <table>
-      <thead><tr><th>الكود</th><th>الملف</th><th>المورد</th><th>النوع</th><th>الموديل</th>
-      <th>السنة</th><th>VIN</th><th>اللوحة</th><th>اللون</th><th>الحجم</th>
-      <th>السعر</th><th>انتهاء الرخصة</th><th>الحالة</th><th>المخزن</th><th>العميل</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div class="footer">Transit International · تقرير السيارات · ${new Date().toLocaleDateString('en-GB')}</div>`;
-  printDocument(html, 'تقرير السيارات');
-}
+// printVehiclesReport → js/print.js
+
 
 function exportVehiclesExcel() {
   const list = vrState.filtered || vrState.all;
@@ -2300,12 +2038,8 @@ function loadScript(src) {
 }
 
 // للطباعة
-function printPartnerStatement() {
-  const content = document.getElementById('partnerStatementContent');
-  if (!content) return;
-  openPrintOverlay(`<!DOCTYPE html><html dir="rtl"><head>    <meta charset="UTF-8">    <title>كشف حساب شريك</title>    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">    <style>      *{box-sizing:border-box;margin:0;padding:0}      body{font-family:'Cairo',sans-serif;direction:rtl;background:#fff;padding:20px;font-size:12px;color:#1a1a2e}      @media print{body{padding:10px}@page{margin:15mm;size:A4}}      table{border-collapse:collapse;width:100%}      th,td{padding:6px 8px}    </style>  </head><body>${content.outerHTML}<script>window.onload=()=>window.print()<\/script></body></html>`);
+// printPartnerStatement → js/print.js
 
-}
 
 function openPartnerStatementFromReport() {
   const partner = el('report-partner-select')?.value;
@@ -2476,11 +2210,8 @@ function _renderInventoryTable(list) {
   </table>`;
 }
 
-function filterInventoryByWarehouse(wh) {
-  if (!reportState.data?.length) return;
-  const list = wh ? reportState.data.filter(v=>v._warehouse===wh) : reportState.data;
-  _renderInventoryTable(list);
-}
+// filterInventoryByWarehouse — النسخة الصح في ملف آخر
+
 
 // ── مساعد لجلب تواريخ التقرير الحالية ──────────────────
 function _reportDates() {
@@ -2490,25 +2221,8 @@ function _reportDates() {
 }
 
 // ── CSV export ────────────────────────────────────────────
-function exportReportCSV() {
-  const type = reportState.type;
-  const data = reportState.data||[];
-  if (!data.length) { toast('لا توجد بيانات للتصدير','err'); return; }
-  const { from, to } = _reportDates();
-  const names = { profit:'تقرير-الأرباح', cashflow:'تقرير-التدفقات', inventory:'تقرير-المخزون', sales:'تقرير-المبيعات', expenses:'تقرير-المصاريف', partners:'تقرير-الشركاء', opex:'تقرير-التشغيلية' };
-  const cfgs = {
-    profit:    { h:['الملف','المورد','مبيعات','تكلفة','مصاريف','دفعات مورد','صافي ربح'],                              r:d=>[d.file,d.supplier,d.sales,d.cost,d.expenses,d.payments,d.profit] },
-    cashflow:  { h:['التاريخ','الملف','النوع','الجهة','المبلغ'],                                                       r:d=>[d.paid_date||d.pay_date||d.exp_date||'',d.file_no||'',d._type||'',d.customer||d.payer||d.description||'',+d.amount||0] },
-    inventory: { h:['الملف','المورد','النوع','الموديل','VIN','اللون','سعر الشراء','المخزن','الحالة','العميل'],          r:v=>[v.file_no,v._supplier,v.vehicle_type,v.model,v.vin,v.color,+v.purchase_price||0,v._warehouse,v._sold?'مباع':'في المخزن',v._saleInfo?.customer||''] },
-    sales:     { h:['التاريخ','الملف','VIN','الفاتورة','العميل','السعر'],                                              r:s=>[s.sale_date,s.file_no,s.vin,s.inv_no,s.customer,+s.sale_price||0] },
-    expenses:  { h:['التاريخ','الملف','البيان','النوع','المبلغ','طريقة الدفع'],                                        r:e=>[e.exp_date||e.expense_date,e.file_no,e.description,e.category||e.exp_type||'',+e.amount||0,e.pay_method||''] },
-    partners:  { h:['التاريخ','الملف','الشريك','نوع الصرف','المبلغ','طريقة الدفع'],                                   r:p=>[p.pay_date,p.file_no,p.partner,p.payout_type,+p.amount||0,p.pay_method||''] },
-    opex:      { h:['التاريخ','النوع','البيان','المبلغ','طريقة الدفع','المستند'],                                      r:e=>[e.exp_date,e.exp_type,e.description,+e.amount||0,e.pay_method||'',e.document||''] },
-  };
-  const cfg = cfgs[type]; if (!cfg) return;
-  downloadCSV([cfg.h, ...data.map(cfg.r)], `${names[type]}_${from}_${to}.csv`);
-  toast('✅ تم تصدير CSV','ok');
-}
+// exportReportCSV — النسخة الصح في ملف آخر
+
 
 // ── print current report ──────────────────────────────────
 // (overrides the stub in printCurrentReport that used reportState.data)
