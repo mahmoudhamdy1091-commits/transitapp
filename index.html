@@ -5651,6 +5651,257 @@ function switchTab(idx) {
   loadViewerTab(idx);
 }
 
+
+// ── Restored missing viewer functions ──────────────────────
+async function loadDealStatement(fn, sys) {
+  const wrap = el('dealStatementWrap');
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
+  try {
+    const [po, vehicles, payments, expenses, sales, collections, partners, payouts] = await Promise.all([
+      apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
+      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.asc' }),
+      apiGetAll('sales',           { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.asc' }),
+      apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.asc' }),
+      apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
+    ]);
+
+    const deal = po?.[0] || {};
+    const totalPurchase = +deal.total_purchase || 0;
+    const totalPaid     = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
+    const totalExp      = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
+    const totalSales    = (sales||[]).reduce((s,s2)=>s+(+s2.sale_price||0),0);
+    const totalColl     = (collections||[]).reduce((s,c)=>s+(+c.amount||0),0);
+    const totalPayouts  = (payouts||[]).reduce((s,p)=>s+(+p.amount||0),0);
+    const profit        = totalSales - totalPurchase - totalExp;
+
+    const entries = [
+      { date:deal.po_date||deal.created_at, type:'شراء', icon:'📋', color:'var(--blue)',
+        party:deal.supplier||'—', debit:0, credit:totalPurchase, _pl:true,
+        desc:`سند شراء ${fn}${deal.po_no?' — PO: '+deal.po_no:''}`,
+        extra:`${(vehicles||[]).length} سيارة` },
+      ...(payments||[]).map(p=>({ date:p.pay_date, type:'دفعة للمورد', icon:'💳', color:'var(--cyan)',
+        party:p.payer||'—', debit:+p.amount, credit:0, _pl:false,
+        desc:`دفعة من ${p.payer||'—'}`, extra:`${p.pay_method||''}${p.document?' · '+p.document:''}` })),
+      ...(expenses||[]).map(e=>({ date:e.exp_date||e.expense_date, type:'مصروف', icon:'💸', color:'var(--red)',
+        party:e.vendor||'—', debit:0, credit:+e.amount, _pl:true,
+        desc:e.category||e.description||'مصروف', extra:`${e.pay_method||''}` })),
+      ...(sales||[]).map(s=>({ date:s.sale_date, type:'بيع', icon:'🤝', color:'var(--green)',
+        party:s.customer||'—', debit:+s.sale_price, credit:0, _pl:true,
+        desc:`بيع ${s.model||s.vin||'سيارة'} — ${s.customer||'—'}`,
+        extra:`${s.vin?'شاصي: '+s.vin:''}${s.invoice_no?' · '+s.invoice_no:''}` })),
+      // التحصيلات: معلوماتية فقط لا تدخل في الربح/الخسارة
+      ...(collections||[]).map(c=>({ date:c.paid_date, type:'تحصيل', icon:'💰', color:'var(--green)',
+        party:c.customer||'—', debit:+c.amount, credit:0, _pl:false,
+        desc:`تحصيل من ${c.customer||'—'}`, extra:`${c.pay_method||''}` })),
+      ...(payouts||[]).map(p=>({ date:p.pay_date, type:'صرف شريك', icon:'👥', color:'var(--purple)',
+        party:p.partner||'—', debit:0, credit:+p.amount, _pl:false,
+        desc:`${p.payout_type||'صرف'} — ${p.partner||'—'}`, extra:`${p.pay_method||''}${p.notes?' · '+p.notes:''}` })),
+    ].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+
+    window._dealStatementData = { fn, deal, entries, totalPurchase, totalPaid, totalExp, totalSales, totalColl, totalPayouts, profit, partners, payouts, vehicles };
+
+    const kpis = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px">
+      ${[['تكلفة الشراء',fmt(totalPurchase),'var(--blue)'],['المدفوع',fmt(totalPaid),'var(--cyan)'],
+         ['المصاريف',fmt(totalExp),'var(--red)'],['المبيعات',fmt(totalSales),'var(--green)'],
+         ['المحصّل',fmt(totalColl),'var(--green)'],['صافي الربح',fmt(Math.abs(profit)),profit>=0?'var(--green)':'var(--red)'],
+      ].map(([l,v,c])=>`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px">
+        <div style="font-size:10px;color:var(--text2);margin-bottom:4px">${l}</div>
+        <div style="font-size:16px;font-weight:700;color:${c}">${v}</div></div>`).join('')}
+    </div>`;
+
+    let running = 0;
+    const rows = entries.map(e => {
+      // الرصيد الجاري يعكس ربح/خسارة الصفقة فقط (بيع - شراء - مصاريف)
+      if (e._pl) {
+        if (e.debit>0) running += e.debit;
+        if (e.credit>0) running -= e.credit;
+      }
+      const infoTag = !e._pl
+        ? `<span style="font-size:9px;background:var(--card2);color:var(--text2);padding:1px 5px;border-radius:6px;margin-right:4px">معلوماتي</span>`
+        : '';
+      return `<tr onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
+        <td style="padding:10px 12px;font-size:11px;color:var(--text3);white-space:nowrap">${e.date||'—'}</td>
+        <td style="padding:10px 12px"><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${e.color}22;color:${e.color}">${e.icon} ${e.type}</span>${infoTag}</td>
+        <td style="padding:10px 12px"><div style="font-size:12px;font-weight:600">${e.desc}</div>${e.extra?`<div style="font-size:10px;color:var(--text3)">${e.extra}</div>`:''}</td>
+        <td style="padding:10px 12px;font-size:12px;color:var(--text2)">${e.party}</td>
+        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--green)">${e.debit>0?fmt(e.debit):'—'}</td>
+        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--red)">${e.credit>0?fmt(e.credit):'—'}</td>
+        <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:13px;font-weight:700;color:${e._pl?(running>=0?'var(--green)':'var(--red)'):'var(--text2)'}">
+          ${e._pl?fmt(Math.abs(running)):'—'}
+        </td>
+      </tr>`;
+    }).join('');
+
+    const partnersHtml = (partners||[]).length ? `
+      <div style="margin-top:16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
+        <div style="font-weight:700;margin-bottom:12px;font-size:13px">👥 توزيع الأرباح على الشركاء</div>
+        ${(partners||[]).map(p=>{
+          const paid = (payouts||[]).filter(py=>py.partner===p.partner).reduce((s,py)=>s+(+py.amount||0),0);
+          const share = profit*(+p.share_percent||0)/100;
+          return `<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+            <div style="flex:1;font-weight:700;min-width:100px">${p.partner}</div>
+            <div style="font-size:12px;color:var(--text2)">حصة: <b>${p.share_percent}%</b></div>
+            <div style="font-size:12px;color:var(--green)">ربح مستحق: <b>${fmt(share)}</b></div>
+            <div style="font-size:12px;color:var(--accent)">مصروف: <b>${fmt(paid)}</b></div>
+            <div style="font-size:12px;font-weight:700;color:${share-paid>0?'var(--red)':'var(--green)'}">متبقي: <b>${fmt(share-paid)}</b></div>
+          </div>`;
+        }).join('')}
+      </div>` : '';
+
+    wrap.innerHTML = kpis + `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <div style="padding:8px 14px;background:var(--card2);border-bottom:1px solid var(--border);font-size:11px;color:var(--text2)">
+          📊 الرصيد الجاري = صافي ربح/خسارة الصفقة (مبيعات − تكلفة شراء − مصاريف) · الصفوف المعلّمة "معلوماتي" لا تدخل في الحساب
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--card2);border-bottom:1px solid var(--border)">
+            ${['التاريخ','النوع','البيان','الطرف','مدين','دائن','الرصيد (ر/خ)'].map((h,i)=>`<th style="padding:10px 12px;font-size:11px;color:var(--text3);font-weight:700;text-align:${i>=4?'left':'right'}">${h}</th>`).join('')}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>` + partnersHtml;
+
+  } catch(e) { el('dealStatementWrap').innerHTML = errHTML('خطأ: '+e.message); }
+}
+
+async function loadDealNotes() {
+  const fn  = state.currentFileNo;
+  const container = el('dealNotesContainer');
+  if (!container || !fn) return;
+
+  container.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
+
+  try {
+    const notes = await apiGet('audit_log', {
+      select:     '*',
+      system_type:`eq.${state.system}`,
+      action:     'eq.DEAL_NOTE',
+      file_no:    `eq.${fn}`,
+      order:      'created_at.desc',
+    });
+
+    if (!notes?.length) {
+      container.innerHTML = `
+        <div style="text-align:center;padding:48px 20px;color:var(--text2)">
+          <div style="font-size:40px;margin-bottom:12px">📝</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:6px">لا توجد ملاحظات بعد</div>
+          <div style="font-size:12px">اضغط "إضافة ملاحظة" لتسجيل أول ملاحظة على هذه الصفقة</div>
+        </div>`;
+      return;
+    }
+
+    const typeStyles = {
+      'عام':     { icon:'📌', bg:'var(--card2)',       border:'var(--border)',  color:'var(--text2)'  },
+      'متابعة':  { icon:'🔔', bg:'var(--blue-dim)',    border:'var(--blue)',    color:'var(--blue)'   },
+      'مشكلة':   { icon:'⚠️', bg:'var(--accent-dim)',  border:'var(--accent)',  color:'var(--accent)' },
+      'مهم':     { icon:'🔴', bg:'var(--red-dim)',      border:'var(--red)',     color:'var(--red)'    },
+      'تم':      { icon:'✅', bg:'var(--green-dim)',    border:'var(--green)',   color:'var(--green)'  },
+    };
+
+    const rows = notes.map(n => {
+      const noteType = n.old_value || 'عام';
+      const noteDate = n.new_value || '';
+      const st = typeStyles[noteType] || typeStyles['عام'];
+      const createdAt = n.created_at ? new Date(n.created_at).toLocaleString('en-GB', {
+        day:'2-digit', month:'2-digit', year:'numeric',
+        hour:'2-digit', minute:'2-digit'
+      }) : '—';
+      const author = (n.user_email || 'unknown').split('@')[0];
+
+      return `
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:10px;border-right:4px solid ${st.border}">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+            <div style="flex:1">
+              <!-- نوع + تاريخ الملاحظة -->
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+                <span style="background:${st.bg};color:${st.color};border:1px solid ${st.border};padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">
+                  ${st.icon} ${noteType}
+                </span>
+                ${noteDate ? `<span style="font-size:11px;color:var(--text2);font-family:monospace">📅 ${noteDate}</span>` : ''}
+              </div>
+              <!-- نص الملاحظة -->
+              <div style="font-size:13px;line-height:1.7;color:var(--text);white-space:pre-wrap">${(n.notes||'').replace(/</g,'&lt;')}</div>
+            </div>
+            <!-- حذف -->
+            ${can('delete') ? `
+            <button onclick="deleteDealNote(${n.id})"
+              style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;font-family:'Cairo',sans-serif;flex-shrink:0"
+              title="حذف الملاحظة">🗑</button>` : ''}
+          </div>
+          <!-- معلومات التسجيل -->
+          <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px;font-size:11px;color:var(--text2)">
+            <span>👤 ${author}</span>
+            <span>🕐 ${createdAt}</span>
+          </div>
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:12px;color:var(--text2)">${notes.length} ملاحظة مسجلة</div>
+      </div>
+      ${rows}`;
+
+  } catch(e) {
+    container.innerHTML = errHTML('خطأ في تحميل الملاحظات: ' + e.message);
+  }
+}
+
+async function loadViewerKpis(fn, sys) {
+  try {
+    const [po, vehicles, sales, expenses, collections, payments] = await Promise.all([
+      apiGetAll('purchase_orders', { select:'total_purchase,status',      system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('vehicles',        { select:'purchase_price,vin',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('sales',           { select:'sale_price,vin,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('expenses',        { select:'amount,post_status',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('collections',     { select:'amount,post_status',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('payments',        { select:'amount,post_status',         system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+    ]);
+
+    const totalCost    = +(po?.[0]?.total_purchase) || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
+    const totalExp     = (expenses||[]).filter(isPosted).reduce((s,e)=>s+(+e.amount||0),0);
+    const fullCost     = totalCost + totalExp;
+    const totalSales   = (sales||[]).filter(isPosted).reduce((s,s2)=>s+(+s2.sale_price||0),0);
+    const totalColl    = (collections||[]).filter(isPosted).reduce((s,c)=>s+(+c.amount||0),0);
+    const totalPaid    = (payments||[]).filter(isPosted).reduce((s,p)=>s+(+p.amount||0),0);
+    const profit       = totalSales - fullCost;
+    const soldVins     = new Set((sales||[]).filter(isPosted).map(s=>s.vin));
+    const unsold       = (vehicles||[]).filter(v=>!soldVins.has(v.vin)).length;
+    const uncollected  = totalSales - totalColl;
+    const supplierLeft = totalCost - totalPaid;
+
+    el('viewer-kpis').innerHTML = `
+      <div class="vkpi">
+        <div class="vkpi-label">💰 تكلفة الشراء</div>
+        <div class="vkpi-val text-blue">${fmt(totalCost)}</div>
+      </div>
+      <div class="vkpi">
+        <div class="vkpi-label">💸 المصاريف</div>
+        <div class="vkpi-val text-red">${fmt(totalExp)}</div>
+      </div>
+      <div class="vkpi">
+        <div class="vkpi-label">🤝 المبيعات</div>
+        <div class="vkpi-val text-green">${fmt(totalSales)}</div>
+      </div>
+      <div class="vkpi">
+        <div class="vkpi-label">${profit>=0?'📈 الربح':'📉 الخسارة'}</div>
+        <div class="vkpi-val" style="color:${profit>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(profit))}</div>
+      </div>
+      <div class="vkpi">
+        <div class="vkpi-label">🚗 سيارات</div>
+        <div class="vkpi-val">${(vehicles||[]).length} <span style="font-size:11px;color:var(--text2)">/ ${soldVins.size} مباع / ${unsold} متبقي</span></div>
+      </div>
+      <div class="vkpi">
+        <div class="vkpi-label">💳 متبقي للمورد</div>
+        <div class="vkpi-val" style="color:${supplierLeft>0?'var(--red)':'var(--green)'}">${fmt(supplierLeft)}</div>
+      </div>
+    `;
+  } catch(e) { console.warn('KPI strip error:', e.message); if(el('viewer-kpis')) el('viewer-kpis').innerHTML=''; }
+}
+
 async function loadViewerTab(idx) {
   const fn = state.currentFileNo;
   const sys = state.system;
