@@ -927,8 +927,8 @@ async function loadPaymentsTab(fn, sys) {
     el('paymentsTable').innerHTML = `
       ${dupWarning}
       ${exportBtns(
-        `exportCSV(${JSON.stringify(csvHeaders)},${JSON.stringify(csvRows)},'دفعات_${fn}')`,
-        `printPaymentsTab(data, fn)`
+        () => exportCSV(csvHeaders, csvRows, 'دفعات_'+fn),
+        () => printPaymentsTab(data, fn)
       )}
       <table class="data-table">
         <thead><tr>
@@ -986,8 +986,8 @@ async function loadExpensesTab(fn, sys) {
     el('expensesTable').innerHTML = `
       ${dupWarning}
       ${exportBtns(
-        `exportCSV(${JSON.stringify(csvHeaders)},${JSON.stringify(csvRows)},'مصاريف_${fn}')`,
-        `printExpensesTab(data, fn)`
+        () => exportCSV(csvHeaders, csvRows, 'مصاريف_'+fn),
+        () => printExpensesTab(data, fn)
       )}
       <table class="data-table">
         <thead><tr>
@@ -1068,8 +1068,8 @@ async function loadSalesTab(fn, sys) {
     ]);
     el('salesTable').innerHTML = `
       ${exportBtns(
-        `exportCSV(['رقم الفاتورة','العميل','VINs','عدد السيارات','الإجمالي'],${JSON.stringify(salesCsvRows)},'مبيعات_${fn}')`,
-        `printSalesTab(invoices, total, fn)`
+        () => exportCSV(['رقم الفاتورة','العميل','VINs','عدد السيارات','الإجمالي'], salesCsvRows, 'مبيعات_'+fn),
+        () => printSalesTab(invoices, total, fn)
       )}
       <table class="data-table">
         <thead><tr>
@@ -1178,8 +1178,8 @@ async function loadCollectionsTab(fn, sys) {
 
     el('collectionsTable').innerHTML = `
       ${exportBtns(
-        `exportCSV(${JSON.stringify(csvHeaders)},${JSON.stringify(csvRows)},'تحصيلات_${fn}')`,
-        `printCollectionsTab(data, fn)`
+        () => exportCSV(csvHeaders, csvRows, 'تحصيلات_'+fn),
+        () => printCollectionsTab(data, fn)
       )}
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <div class="j-kpi" style="border-right:3px solid var(--blue)"><div class="j-kpi-label">📄 إجمالي الفواتير</div><div class="j-kpi-val text-blue">${fmt(totalInvoiced)}</div></div>
@@ -1275,8 +1275,8 @@ async function loadPayoutsTab(fn, sys) {
         <div class="j-kpi"><div class="j-kpi-label">سلف</div><div class="j-kpi-val text-amber">${fmt(advTotal)}</div></div>
       </div>
       ${exportBtns(
-        `exportCSV(['رقم الصرف','الشريك','نوع الصرف','المبلغ','طريقة الدفع','المستند','التاريخ'],${JSON.stringify(data.map(p=>[p.pay_id||'—',p.partner||'—',p.payout_type||'—',+p.amount||0,p.pay_method||'—',p.document||'—',p.pay_date||'—']))},'صرف_شركاء_${fn}')`,
-        `printPayoutsTab(data, fn)`
+        () => exportCSV(['رقم الصرف','الشريك','نوع الصرف','المبلغ','طريقة الدفع','المستند','التاريخ'], data.map(p=>[p.pay_id||'—',p.partner||'—',p.payout_type||'—',+p.amount||0,p.pay_method||'—',p.document||'—',p.pay_date||'—']), 'صرف_شركاء_'+fn),
+        () => printPayoutsTab(data, fn)
       )}
       <table class="data-table">
         <thead><tr>

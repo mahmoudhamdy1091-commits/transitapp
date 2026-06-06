@@ -4242,8 +4242,8 @@ async function loadVehiclesTab(fn, sys) {
 
     el('vehiclesTable').innerHTML = `
       ${exportBtns(
-        `exportCSV(['الكود','VIN','النوع','الموديل','السنة','اللوحة','اللون','الحجم','سعر الشراء','انتهاء الرخصة','الموقع','الحالة'],${JSON.stringify(vCsvRows)},'سيارات_${fn}')`,
-        `printVehiclesTab(data, fn)`
+        () => exportCSV(['الكود','VIN','النوع','الموديل','السنة','اللوحة','اللون','الحجم','سعر الشراء','انتهاء الرخصة','الموقع','الحالة'], vCsvRows, 'سيارات_'+fn),
+        () => printVehiclesTab(data, fn)
       )}
       <table class="data-table">
         <thead><tr>

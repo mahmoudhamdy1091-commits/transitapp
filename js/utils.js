@@ -10,11 +10,28 @@
 // ════════════════════════════════════════
 // EXPORT BUTTONS (shared across all tabs)
 // ════════════════════════════════════════
+// ── مخزن مؤقت لبيانات التصدير ──
+window._exportStore = window._exportStore || {};
+
 function exportBtns(csvFn, printFn) {
+  // نخزن الدوال مباشرة في window._exportStore — مش strings
+  // عشان data وfn يكونوا في closure scope وقت الاستدعاء
+  const key = '_exp_' + Math.random().toString(36).slice(2);
+  window._exportStore[key] = {
+    csv:   typeof csvFn   === 'function' ? csvFn   : () => eval(csvFn),
+    print: typeof printFn === 'function' ? printFn : () => eval(printFn),
+  };
   return `<div class="no-print" style="display:flex;gap:6px;margin-bottom:10px;justify-content:flex-end">
-    <button class="btn btn-sm btn-secondary" onclick="${csvFn}" style="color:var(--green)">⬇️ Excel</button>
-    <button class="btn btn-sm btn-secondary" onclick="${printFn}" style="color:var(--blue)">🖨️ PDF</button>
+    <button class="btn btn-sm btn-secondary" onclick="_runExport('${key}','csv')" style="color:var(--green)">⬇️ Excel</button>
+    <button class="btn btn-sm btn-secondary" onclick="_runExport('${key}','print')" style="color:var(--blue)">🖨️ PDF</button>
   </div>`;
+}
+
+function _runExport(key, type) {
+  const entry = window._exportStore?.[key];
+  if (!entry) { toast('انتهت صلاحية الزر — أعد تحميل الجدول', 'err'); return; }
+  try { entry[type]?.(); }
+  catch(e) { toast('خطأ: ' + e.message, 'err'); }
 }
 
 
