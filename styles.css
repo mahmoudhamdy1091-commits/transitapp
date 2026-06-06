@@ -1,25 +1,26 @@
 :root {
-  --bg: #f0f2f5;
-  --surface: #ffffff;
-  --card: #ffffff;
-  --card2: #f8f9fb;
-  --border: #e2e6ed;
-  --border2: #c8cdd8;
-  --accent: #e6930a;
-  --accent-dim: rgba(230,147,10,0.12);
-  --blue: #2563eb;
-  --blue-dim: rgba(37,99,235,0.10);
-  --green: #16a34a;
-  --green-dim: rgba(22,163,74,0.10);
-  --red: #dc2626;
-  --red-dim: rgba(220,38,38,0.10);
-  --purple: #7c3aed;
-  --purple-dim: rgba(124,58,237,0.10);
-  --cyan: #0891b2;
-  --cyan-dim: rgba(8,145,178,0.10);
-  --text: #111827;
-  --text2: #6b7280;
-  --text3: #9ca3af;
+  /* ── Warm Stone Theme ── */
+  --bg:      #F9F8F6;
+  --surface: #FFFFFF;
+  --card:    #FFFFFF;
+  --card2:   #F2F0EC;
+  --border:  #E4E0D8;
+  --border2: #C8C4BA;
+  --accent:  #44403C;
+  --accent-dim: rgba(68,64,60,0.10);
+  --blue:    #1D4ED8;
+  --blue-dim: rgba(29,78,216,0.10);
+  --green:   #1A7F4E;
+  --green-dim: rgba(26,127,78,0.10);
+  --red:     #C0392B;
+  --red-dim: rgba(192,57,43,0.10);
+  --purple:  #6D28D9;
+  --purple-dim: rgba(109,40,217,0.10);
+  --cyan:    #0E7490;
+  --cyan-dim: rgba(14,116,144,0.10);
+  --text:    #1C1917;
+  --text2:   #57534E;
+  --text3:   #78716C;
   --mono: 'JetBrains Mono', monospace;
   --sidebar-w: 240px;
   --radius: 12px;
@@ -41,7 +42,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   display:flex;align-items:center;justify-content:center;
   min-height:100vh;
   background:radial-gradient(ellipse at 30% 50%,rgba(37,99,235,0.07) 0%,transparent 60%),
-             radial-gradient(ellipse at 70% 30%,rgba(230,147,10,0.06) 0%,transparent 50%),
+             radial-gradient(ellipse at 70% 30%,rgba(68,64,60,0.05) 0%,transparent 50%),
              var(--bg);
 }
 .login-box{
@@ -57,11 +58,11 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 }
 .login-logo .icon{
   width:60px;height:60px;
-  background:linear-gradient(135deg,var(--accent),#e08000);
+  background:linear-gradient(135deg,#5C5650,#44403C);
   border-radius:16px;
   display:inline-flex;align-items:center;justify-content:center;
   font-size:28px;margin-bottom:12px;
-  box-shadow:0 8px 24px rgba(245,166,35,0.3);
+  box-shadow:0 8px 24px rgba(68,64,60,0.20);
 }
 .login-logo h1{font-size:22px;font-weight:700;letter-spacing:-0.5px}
 .login-logo p{color:var(--text2);font-size:13px;margin-top:4px}
@@ -86,8 +87,8 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   font-family:'Cairo',sans-serif;font-size:14px;font-weight:600;
   border:none;cursor:pointer;transition:all .15s;white-space:nowrap;
 }
-.btn-primary{background:linear-gradient(135deg,var(--accent),#e08000);color:#000}
-.btn-primary:hover{opacity:.9;transform:translateY(-1px);box-shadow:0 6px 20px rgba(245,166,35,0.3)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px);box-shadow:0 6px 20px rgba(68,64,60,0.25)}
 .btn-primary:active{transform:translateY(0)}
 .btn-secondary{background:var(--card2);border:1px solid var(--border);color:var(--text)}
 .btn-secondary:hover{background:var(--border);border-color:var(--border2)}
@@ -133,7 +134,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 }
 .sidebar-logo .s-icon{
   width:36px;height:36px;
-  background:linear-gradient(135deg,var(--accent),#e08000);
+  background:linear-gradient(135deg,#5C5650,#44403C);
   border-radius:10px;
   display:flex;align-items:center;justify-content:center;
   font-size:18px;flex-shrink:0;
@@ -156,9 +157,9 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   transition:all .2s;color:var(--text2);
 }
 .sys-btn.active{
-  background:linear-gradient(135deg,var(--accent),#e08000);
-  color:#000;
-  box-shadow:0 2px 8px rgba(245,166,35,0.3);
+  background:linear-gradient(135deg,#5C5650,#44403C);
+  color:#fff;
+  box-shadow:0 2px 8px rgba(68,64,60,0.20);
 }
 
 /* Search */
@@ -295,7 +296,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   opacity:0;
   transition:opacity .2s;
 }
-.kpi-card.kpi-amber::before{background:radial-gradient(at top left,rgba(230,147,10,.06) 0%,transparent 60%)}
+.kpi-card.kpi-amber::before{background:radial-gradient(at top left,rgba(68,64,60,.05) 0%,transparent 60%)}
 .kpi-card.kpi-blue::before{background:radial-gradient(at top left,rgba(37,99,235,.06) 0%,transparent 60%)}
 .kpi-card.kpi-green::before{background:radial-gradient(at top left,rgba(22,163,74,.06) 0%,transparent 60%)}
 .kpi-card.kpi-red::before{background:radial-gradient(at top left,rgba(220,38,38,.06) 0%,transparent 60%)}
@@ -421,9 +422,9 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   to   { opacity:1; transform:scale(1); }
 }
 @keyframes pulseOnce {
-  0%   { box-shadow:0 0 0 0 rgba(230,147,10,.4); }
-  70%  { box-shadow:0 0 0 8px rgba(230,147,10,0); }
-  100% { box-shadow:0 0 0 0 rgba(230,147,10,0); }
+  0%   { box-shadow:0 0 0 0 rgba(68,64,60,.3); }
+  70%  { box-shadow:0 0 0 8px rgba(68,64,60,0); }
+  100% { box-shadow:0 0 0 0 rgba(68,64,60,0); }
 }
 @keyframes shimmer {
   0%   { background-position: -600px 0; }
@@ -494,7 +495,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 .btn:hover  { transform: translateY(-1px); }
 .btn:active { transform: translateY(0) scale(.97); }
 .btn-primary:hover {
-  box-shadow: 0 6px 20px rgba(230,147,10,.35);
+  box-shadow: 0 6px 20px rgba(68,64,60,0.25);
 }
 
 /* KPI card hover enhanced */
@@ -1282,13 +1283,13 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   cursor: pointer;
   align-items: center;
   gap: 8px;
-  box-shadow: 0 4px 20px rgba(230,147,10,0.5);
+  box-shadow: 0 4px 20px rgba(68,64,60,0.35);
   white-space: nowrap;
   animation: fabPulse 2s infinite;
 }
 @keyframes fabPulse {
-  0%,100% { box-shadow: 0 4px 20px rgba(230,147,10,0.4); }
-  50%      { box-shadow: 0 4px 30px rgba(230,147,10,0.8); }
+  0%,100% { box-shadow: 0 4px 20px rgba(68,64,60,0.30); }
+  50%      { box-shadow: 0 4px 30px rgba(68,64,60,0.50); }
 }
 @media(min-width:641px){
   .pwa-fab { bottom: 24px; }
