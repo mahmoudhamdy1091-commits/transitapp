@@ -368,7 +368,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 .badge-progress{background:var(--accent-dim);color:var(--accent)}
 .badge-closed{background:var(--green-dim);color:var(--green)}
 
-.mono{font-family:var(--mono);font-size:12px}
+.mono{font-family:var(--mono);font-size:13px}
 .text-right{text-align:right}
 .text-green{color:var(--green)}
 .text-red{color:var(--red)}
