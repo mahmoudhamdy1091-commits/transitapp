@@ -7,6 +7,17 @@
 // ════════════════════════════════════════
 // UI HELPERS — showDashboard, hideAllViews, navActive
 // ════════════════════════════════════════
+// ════════════════════════════════════════
+// EXPORT BUTTONS (shared across all tabs)
+// ════════════════════════════════════════
+function exportBtns(csvFn, printFn) {
+  return `<div class="no-print" style="display:flex;gap:6px;margin-bottom:10px;justify-content:flex-end">
+    <button class="btn btn-sm btn-secondary" onclick="${csvFn}" style="color:var(--green)">⬇️ Excel</button>
+    <button class="btn btn-sm btn-secondary" onclick="${printFn}" style="color:var(--blue)">🖨️ PDF</button>
+  </div>`;
+}
+
+
 function showDashboard() {
   sessionStorage.setItem('tm_last_view','dashboard');
   hideAllViews();

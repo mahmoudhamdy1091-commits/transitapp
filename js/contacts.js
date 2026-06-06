@@ -2,15 +2,6 @@
 // ║  contacts.js — Contacts · Autocomplete · Statements     ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-function exportBtns(csvFn, printFn) {
-  // ✅ no-print: يُخفى في نافذة الطباعة (PRINT_CSS يتعامل معه)
-  return `<div class="no-print" style="display:flex;gap:6px;margin-bottom:10px;justify-content:flex-end">
-    <button class="btn btn-sm btn-secondary" onclick="${csvFn}" style="color:var(--green)">⬇️ Excel</button>
-    <button class="btn btn-sm btn-secondary" onclick="${printFn}" style="color:var(--blue)">🖨️ PDF</button>
-  </div>`;
-}
-
-
 // ════════════════════════════════════════
 // CONTACTS VIEW
 // ════════════════════════════════════════
