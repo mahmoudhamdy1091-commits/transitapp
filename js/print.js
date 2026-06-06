@@ -161,6 +161,12 @@ const PRINT_CSS = `
 .c-blue  { color: #2563eb; } .c-amber{ color: #d97706; }
 .c-ok    { font-size: 11px; color: #16a34a; }
 .no-print { /* hidden in print */ }
+/* إخفاء أزرار الإجراءات والـ ctx menu عند الطباعة */
+.btn-ctx-menu { display: none !important; }
+/* تعريف CSS variables للطباعة (fallback من var(--x) ) */
+.print-root { --green:#16a34a; --red:#dc2626; --blue:#2563eb; --accent:#d97706;
+              --cyan:#0891b2; --purple:#7c3aed; --amber:#d97706; --text2:#6b7280;
+              --text3:#9ca3af; --card2:#f9fafb; --border:#e5e7eb; }
 
 /* ════════════════════════════════════════════════════════════
    @media print — Chrome/Firefox final overrides

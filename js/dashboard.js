@@ -851,11 +851,56 @@ function summRow(label, cls, val, bold=false) {
 
 // loadVehiclesTab — النسخة الصح في ملف آخر
 
+// ════════════════════════════════════════════════
+// طباعة سند دفعة مورد منفردة
+// ════════════════════════════════════════════════
+async function printPaymentVoucher(paymentId, fn) {
+  try {
+    const rows = await apiGetAll('payments', { select:'*', id:`eq.${paymentId}` });
+    const p = rows?.[0];
+    if (!p) { toast('لم يُعثر على الدفعة','err'); return; }
+    // جيب entry_no من journal_entries
+    const jes = await apiGet('journal_entries', {
+      select:'entry_no,dr_amount,cr_amount',
+      system_type:`eq.${state.system}`, file_no:`eq.${fn}`,
+      ref_table:'eq.payments', post_status:'eq.posted',
+      order:'id.desc', limit:50
+    });
+    // ابحث عن القيد الأقرب للمبلغ والتاريخ
+    const match = (jes||[]).find(j => +j.dr_amount === +p.amount || +j.cr_amount === +p.amount);
+    const entryNo = match?.entry_no || '';
+    const title = `دفعة مورد — ${p.ref_no||p.id} — ${p.payer||''}`;
+    printJournalVoucher(entryNo, 'payment', fn, +p.amount, p.pay_date, title);
+  } catch(e) { toast('خطأ في الطباعة: '+e.message,'err'); }
+}
+
+// ════════════════════════════════════════════════
+// طباعة سند مصروف منفرد
+// ════════════════════════════════════════════════
+async function printExpenseVoucher(expenseId, fn) {
+  try {
+    const rows = await apiGetAll('expenses', { select:'*', id:`eq.${expenseId}` });
+    const e = rows?.[0];
+    if (!e) { toast('لم يُعثر على المصروف','err'); return; }
+    const jes = await apiGet('journal_entries', {
+      select:'entry_no,dr_amount,cr_amount',
+      system_type:`eq.${state.system}`, file_no:`eq.${fn}`,
+      ref_table:'eq.expenses', post_status:'eq.posted',
+      order:'id.desc', limit:50
+    });
+    const match = (jes||[]).find(j => +j.dr_amount === +e.amount || +j.cr_amount === +e.amount);
+    const entryNo = match?.entry_no || '';
+    const title = `مصروف — ${e.ref_no||e.id} — ${e.description||e.exp_type||''}`;
+    printJournalVoucher(entryNo, 'expense', fn, +e.amount, e.exp_date||e.expense_date, title);
+  } catch(e2) { toast('خطأ في الطباعة: '+e2.message,'err'); }
+}
+
 async function loadPaymentsTab(fn, sys) {
   try {
     const data = await apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc,id.asc' });
     if (!data?.length) { el('paymentsTable').innerHTML = emptyHTML('💳','لا توجد دفعات'); return; }
-    const total = data.reduce((s,p)=>s+(+p.amount||0),0);
+    // ✅ الإجمالي يستثني الملغية
+    const total = data.filter(p=>p.post_status!=='voided').reduce((s,p)=>s+(+p.amount||0),0);
 
     // كشف الدفعات المشبوهة (نفس المبلغ ونفس الدافع في نفس اليوم أو متقاربة)
     const dupKeys = new Set();
@@ -927,7 +972,8 @@ async function loadExpensesTab(fn, sys) {
   try {
     const data = await apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.asc,id.asc' });
     if (!data?.length) { el('expensesTable').innerHTML = emptyHTML('💸','لا توجد مصاريف'); return; }
-    const total = data.reduce((s,e)=>s+(+e.amount||0),0);
+    // ✅ الإجمالي يستثني الملغية
+    const total = data.filter(e=>e.post_status!=='voided').reduce((s,e)=>s+(+e.amount||0),0);
 
     // كشف المصاريف المشبوهة
     const dupKeyCount = {};
@@ -1014,7 +1060,17 @@ async function loadSalesTab(fn, sys) {
       </tr>`;
     }).join('');
 
+    const salesCsvRows = Object.values(invoices).map(inv=>[
+      inv.inv_no||'—', inv.customer||'—',
+      inv.items.map(i=>i.vin||'').join(' | '),
+      inv.items.length,
+      inv.items.reduce((s,i)=>s+(+i.sale_price||0),0)
+    ]);
     el('salesTable').innerHTML = `
+      ${exportBtns(
+        `exportCSV(['رقم الفاتورة','العميل','VINs','عدد السيارات','الإجمالي'],${JSON.stringify(salesCsvRows)},'مبيعات_${fn}')`,
+        `printSection('المبيعات','ملف: ${fn}',document.getElementById('salesTable')?.innerHTML||'')`
+      )}
       <table class="data-table">
         <thead><tr>
           <th>رقم الفاتورة</th><th>العميل</th><th>VINs</th>
@@ -1105,10 +1161,11 @@ async function loadCollectionsTab(fn, sys) {
     const data = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'due_date.desc' });
     if (!data?.length) { el('collectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
 
-    // فصل المقبوض عن المنتظر
-    const paidData    = data.filter(c => c.paid_date);
-    const pendingData = data.filter(c => !c.paid_date);
-    const totalInvoiced = data.reduce((s,c)=>s+(+c.amount||0),0);
+    // فصل المقبوض عن المنتظر — ✅ استثناء الملغية من كل الإجماليات
+    const activeData  = data.filter(c => c.post_status !== 'voided');
+    const paidData    = activeData.filter(c => c.paid_date);
+    const pendingData = activeData.filter(c => !c.paid_date);
+    const totalInvoiced = activeData.reduce((s,c)=>s+(+c.amount||0),0);
     const totalPaid     = paidData.reduce((s,c)=>s+(+c.amount||0),0);
     const totalPending  = pendingData.reduce((s,c)=>s+(+c.amount||0),0);
 
@@ -1176,10 +1233,12 @@ async function loadPayoutsTab(fn, sys) {
     ]);
     const supplierName = poArr?.[0]?.supplier || '—';
     if (!data?.length) { el('payoutsTable').innerHTML = emptyHTML('👥','لا توجد صرف للشركاء بعد'); return; }
-    const total     = data.reduce((s,p)=>s+(+p.amount||0),0);
-    const capTotal  = data.reduce((s,p)=>s+(+p.capital_amount||0),0);
-    const profTotal = data.reduce((s,p)=>s+(+p.profit_amount||0),0);
-    const advTotal  = data.reduce((s,p)=>s+(+p.advance_amount||0),0);
+    // ✅ الإجماليات تستثني الملغية
+    const activePayouts = data.filter(p=>p.post_status!=='voided');
+    const total     = activePayouts.reduce((s,p)=>s+(+p.amount||0),0);
+    const capTotal  = activePayouts.reduce((s,p)=>s+(+p.capital_amount||0),0);
+    const profTotal = activePayouts.reduce((s,p)=>s+(+p.profit_amount||0),0);
+    const advTotal  = activePayouts.reduce((s,p)=>s+(+p.advance_amount||0),0);
 
     const rows = data.map(p => {
       const hasSplit = (+p.capital_amount||0) + (+p.profit_amount||0) + (+p.advance_amount||0) > 0;

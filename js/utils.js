@@ -412,6 +412,7 @@ function _execCtx(btnEl, key) {
 function _ctxPayment(btn) {
   const id = btn.dataset.id, fn = btn.dataset.fn;
   showCtxMenu(btn, [
+    {icon:'🖨️', label:'طباعة سند الدفعة', action:()=>printPaymentVoucher(id, fn)},
     {icon:'✏️', label:'تعديل', action:()=>openEditPaymentModal(id)},
     'divider',
     {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء دفعة','سيتم إلغاء الدفعة بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePaymentEntry(id,fn))}
@@ -422,6 +423,7 @@ function _ctxPayment(btn) {
 function _ctxExpense(btn) {
   const id = btn.dataset.id, fn = btn.dataset.fn;
   showCtxMenu(btn, [
+    {icon:'🖨️', label:'طباعة سند المصروف', action:()=>printExpenseVoucher(id, fn)},
     {icon:'✏️', label:'تعديل', action:()=>openEditExpenseModal(id)},
     'divider',
     {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء مصروف','سيتم إلغاء المصروف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deleteExpenseEntry(id,fn))}
