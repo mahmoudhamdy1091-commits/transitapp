@@ -70,7 +70,7 @@ const PRINT_CSS = `
 .doc-company-sub { font-size: 11px; color: #888; margin-top: 2px; }
 .doc-title       { font-size: 22px; font-weight: 800; }
 .doc-subtitle    { font-size: 12px; color: #666; margin-top: 3px; }
-.doc-ref         { font-size: 13px; font-weight: 700; color: #c47a00; margin-top: 4px; font-family: monospace, 'Cairo', Arial; }
+.doc-ref         { font-size: 13px; font-weight: 700; color: #3C3834; margin-top: 4px; font-family: monospace, 'Cairo', Arial; }
 
 /* ══ INFO GRID — 2-column table ════════════════════════════ */
 .info-grid {
@@ -119,7 +119,7 @@ const PRINT_CSS = `
 }
 .kpi-cell {
   display: table-cell; background: #f8f9fa; border-radius: 6px;
-  padding: 10px 14px; border-right: 3px solid #e6930a; vertical-align: top;
+  padding: 10px 14px; border-right: 3px solid #3C3834; vertical-align: top;
 }
 .kpi-label { font-size: 10px; color: #666; margin-bottom: 3px; }
 .kpi-val   { font-size: 15px; font-weight: 700; font-family: monospace, 'Cairo', Arial; }
@@ -152,20 +152,20 @@ const PRINT_CSS = `
 }
 
 /* ══ UTILITY ════════════════════════════════════════════════ */
-.section-title { font-size: 13px; font-weight: 700; color: #1a1a1a; margin: 16px 0 6px; padding-bottom: 4px; border-bottom: 2px solid #e6930a; page-break-after: avoid; }
+.section-title { font-size: 13px; font-weight: 700; color: #1a1a1a; margin: 16px 0 6px; padding-bottom: 4px; border-bottom: 2px solid #3C3834; page-break-after: avoid; }
 .notes-box     { background: #f8f9fa; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; }
 .notes-title   { font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
 .doc-footer    { text-align: center; font-size: 10px; color: #999; margin-top: 24px; padding-top: 10px; border-top: 1px solid #eee; }
 .contact-badge { display: inline-block; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700; margin-right: 6px; }
 .c-green { color: #16a34a; } .c-red  { color: #dc2626; }
-.c-blue  { color: #2563eb; } .c-amber{ color: #d97706; }
+.c-blue  { color: #2563eb; } .c-amber{ color: #3C3834; }
 .c-ok    { font-size: 11px; color: #16a34a; }
 .no-print { /* hidden in print */ }
 /* إخفاء أزرار الإجراءات والـ ctx menu عند الطباعة */
 .btn-ctx-menu { display: none !important; }
 /* تعريف CSS variables للطباعة (fallback من var(--x) ) */
-.print-root { --green:#16a34a; --red:#dc2626; --blue:#2563eb; --accent:#d97706;
-              --cyan:#0891b2; --purple:#7c3aed; --amber:#d97706; --text2:#6b7280;
+.print-root { --green:#16a34a; --red:#dc2626; --blue:#2563eb; --accent:#3C3834;
+              --cyan:#0891b2; --purple:#7c3aed; --amber:#3C3834; --text2:#57534E;
               --text3:#9ca3af; --card2:#f9fafb; --border:#e5e7eb; }
 
 /* ════════════════════════════════════════════════════════════
@@ -295,8 +295,8 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
 
   const extraRowsHtml = extraCharges.map(c => `
     <tr style="background:#fff8ec">
-      <td style="text-align:center;color:#c47a00;font-size:11px">+</td>
-      <td colspan="4" style="color:#c47a00;font-weight:600;padding:8px 12px">${c.desc}<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;margin-right:8px;font-weight:700">مصروف إضافي</span></td>
+      <td style="text-align:center;color:#3C3834;font-size:11px">+</td>
+      <td colspan="4" style="color:#3C3834;font-weight:600;padding:8px 12px">${c.desc}<span style="font-size:10px;background:#F0EEE9;color:#3C3834;padding:1px 7px;border-radius:10px;margin-right:8px;font-weight:700">مصروف إضافي</span></td>
       <td class="num c-amber">${c.amount.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>`).join('');
 
@@ -379,7 +379,7 @@ async function printPayoutVoucher(payoutId) {
     let dealSummary = null;
     try { dealSummary = await getPartnerDealBalance(p.file_no, p.partner, state.system); } catch(e) { console.warn('getPartnerDealBalance:', e.message); }
     const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
-    const typeColor = { 'استرداد رأس مال':'#2563eb','توزيع أرباح':'#16a34a','رأس مال + أرباح':'#7c3aed','سلفة':'#e6930a' };
+    const typeColor = { 'استرداد رأس مال':'#2563eb','توزيع أرباح':'#16a34a','رأس مال + أرباح':'#7c3aed','سلفة':'#3C3834' };
     const color = typeColor[p.payout_type] || '#1a1a1a';
 
     const dealBreakdown = dealSummary ? `
@@ -393,7 +393,7 @@ async function printPayoutVoucher(payoutId) {
       <div class="kpi-row" style="margin-top:6px">
         <div class="kpi-cell" style="border-color:#2563eb"><div class="kpi-label">رأس المال المدفوع</div><div class="kpi-val c-blue">${fmt2(dealSummary.capitalPaid)} KWD</div></div>
         <div class="kpi-cell" style="border-color:${dealSummary.profit>=0?'#16a34a':'#dc2626'}"><div class="kpi-label">الربح المستحق</div><div class="kpi-val ${dealSummary.profit>=0?'c-green':'c-red'}">${fmt2(Math.abs(dealSummary.profit))} KWD</div></div>
-        <div class="kpi-cell" style="border-color:#e6930a"><div class="kpi-label">المسحوبات السابقة</div><div class="kpi-val c-amber">${fmt2(dealSummary.totalWithdrawn)} KWD</div></div>
+        <div class="kpi-cell" style="border-color:#3C3834"><div class="kpi-label">المسحوبات السابقة</div><div class="kpi-val c-amber">${fmt2(dealSummary.totalWithdrawn)} KWD</div></div>
       </div>
     </div>` : '';
 
@@ -431,7 +431,7 @@ async function printPayoutVoucher(payoutId) {
     </div>
 
     ${splitRows.length>1?`<table style="margin-bottom:20px"><thead><tr><th colspan="2">تفاصيل التوزيع</th></tr></thead><tbody>${splitRows.join('')}</tbody></table>`:''}
-    ${p.notes?`<div class="notes-box" style="background:#fffbeb;border:1px solid #fde68a"><div class="notes-title" style="color:#92400e">ملاحظات</div><div>${p.notes}</div></div>`:''}
+    ${p.notes?`<div class="notes-box" style="background:#F0EEE9;border:1px solid #C8C4BA"><div class="notes-title" style="color:#3C3834">ملاحظات</div><div>${p.notes}</div></div>`:''}
 
     <div class="sig-row">
       <div class="sig-cell">توقيع المستلم (الشريك)<div style="font-size:12px;color:#1a1a1a;margin-top:4px">${p.partner||''}</div></div>
@@ -536,7 +536,7 @@ function printTrialBalance() {
   const data = trialState.data || [];
   if (!data.length) { toast('لا توجد بيانات','err'); return; }
   const lbl = { asset:'أصول',liability:'التزامات',equity:'حقوق ملكية',revenue:'إيرادات',cogs:'تكلفة',expense:'مصروفات',other:'أخرى',customer:'عميل',supplier:'مورد',partner:'شريك',custodian:'عهدة' };
-  const rows = data.map(c => { const b=c.dr-c.cr; return `<tr><td style="color:#e6930a;font-weight:700;font-family:monospace">${c.code||'—'}</td><td>${c.name}</td><td>${lbl[c.type]||c.type}</td><td class="num c-green">${fmt(c.dr)}</td><td class="num c-red">${fmt(c.cr)}</td><td class="num ${b>=0?'c-green':'c-red'}">${fmt(Math.abs(b))} ${b>0?'مدين':b<0?'دائن':'صفر'}</td></tr>`; }).join('');
+  const rows = data.map(c => { const b=c.dr-c.cr; return `<tr><td style="color:#3C3834;font-weight:700;font-family:monospace">${c.code||'—'}</td><td>${c.name}</td><td>${lbl[c.type]||c.type}</td><td class="num c-green">${fmt(c.dr)}</td><td class="num c-red">${fmt(c.cr)}</td><td class="num ${b>=0?'c-green':'c-red'}">${fmt(Math.abs(b))} ${b>0?'مدين':b<0?'دائن':'صفر'}</td></tr>`; }).join('');
   const sD=data.reduce((s,c)=>s+c.dr,0), sC=data.reduce((s,c)=>s+c.cr,0), sB=sD-sC;
   renderPrint(`${docHeader('ميزان المراجعة','Trial Balance','')}<table><colgroup><col style="width:80px"><col><col style="width:80px"><col style="width:14%"><col style="width:14%"><col style="width:16%"></colgroup><thead><tr><th>الكود</th><th>اسم الحساب</th><th>النوع</th><th style="text-align:left">مدين</th><th style="text-align:left">دائن</th><th style="text-align:left">الرصيد</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="3"><strong>الإجمالي (${data.length} حساب)</strong></td><td class="num c-green"><strong>${fmt(sD)}</strong></td><td class="num c-red"><strong>${fmt(sC)}</strong></td><td class="num ${sB>=0?'c-green':'c-red'}"><strong>${fmt(Math.abs(sB))} ${sB>0?'مدين':sB<0?'دائن':'✓ متوازن'}</strong></td></tr></tfoot></table><div class="doc-footer">Transit International · ميزان المراجعة · ${new Date().toLocaleDateString('en-GB')}</div>`, 'ميزان المراجعة');
 }
@@ -633,7 +633,7 @@ function printLedgerStatement() {
   const opening     = !fileFilter ? (window._ledgerOpening || 0) : 0;
   const fmt2        = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
   const typeLabels  = { customer:'عميل',supplier:'مورد',partner:'شريك',custodian:'عهدة' };
-  const typeColors  = { customer:'#2563eb',supplier:'#e6930a',partner:'#7c3aed',custodian:'#0891b2' };
+  const typeColors  = { customer:'#2563eb',supplier:'#3C3834',partner:'#7c3aed',custodian:'#0891b2' };
   const color = typeColors[contactType] || '#1a1a1a';
   let list    = fileFilter ? allEntries.filter(e => e.file_no===fileFilter) : allEntries;
   let running = opening;
