@@ -1,12 +1,12 @@
 {
-  "name": "Transit Cars",
-  "short_name": "Transit",
+  "name": "Transit International Company",
+  "short_name": "TIC",
   "description": "نظام إدارة صفقات السيارات",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#f0f2f5",
-  "theme_color": "#e6930a",
+  "background_color": "#F9F8F6",
+  "theme_color": "#44403C",
   "lang": "ar",
   "dir": "rtl",
   "icons": [
