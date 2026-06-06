@@ -4245,7 +4245,22 @@ async function loadVehiclesTab(fn, sys) {
         () => exportCSV(['الكود','VIN','النوع','الموديل','السنة','اللوحة','اللون','الحجم','سعر الشراء','انتهاء الرخصة','الموقع','الحالة'], vCsvRows, 'سيارات_'+fn),
         () => printVehiclesTab(data, fn)
       )}
-      <table class="data-table">
+      <table class="data-table" style="table-layout:fixed;width:100%">
+        <colgroup>
+          <col style="width:10%"><!-- الكود -->
+          <col style="width:9%"> <!-- VIN -->
+          <col style="width:8%"> <!-- النوع -->
+          <col style="width:10%"><!-- الموديل -->
+          <col style="width:5%"> <!-- السنة -->
+          <col style="width:8%"> <!-- اللوحة -->
+          <col style="width:6%"> <!-- اللون -->
+          <col style="width:6%"> <!-- الحجم -->
+          <col style="width:9%"> <!-- سعر الشراء -->
+          <col style="width:9%"> <!-- انتهاء الرخصة -->
+          <col style="width:12%"><!-- الموقع -->
+          <col style="width:8%"> <!-- الحالة -->
+          <col style="width:3%"> <!-- ⋮ -->
+        </colgroup>
         <thead><tr>
           <th>الكود</th><th>VIN</th><th>النوع</th><th>الموديل</th>
           <th>السنة</th><th>اللوحة</th><th>اللون</th><th>الحجم</th>
@@ -4260,14 +4275,14 @@ async function loadVehiclesTab(fn, sys) {
             ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--purple-dim);color:var(--purple);cursor:pointer" onclick="showWarehouses()" title="في مخزن ${loc}">🏪 ${loc}</span>`
             : `<span style="font-size:10px;color:var(--text2)">المخزن الرئيسي</span>`;
           return `<tr>
-            <td><span class="mono text-amber" style="font-size:11px">${code}</span></td>
-            <td><span class="mono" style="direction:ltr;font-size:11px">${v.vin||'—'}</span></td>
-            <td>${v.vehicle_type||'—'}</td>
-            <td>${v.model||'—'}</td>
-            <td>${v.year||'—'}</td>
-            <td><span class="mono" style="direction:ltr">${v.plate||'—'}</span></td>
-            <td>${v.color||'—'}</td>
-            <td>${v.engine_size||'—'}</td>
+            <td style="overflow:hidden;text-overflow:ellipsis"><span class="mono text-amber" style="font-size:11px">${code}</span></td>
+            <td style="overflow:hidden;text-overflow:ellipsis"><span class="mono" style="direction:ltr;font-size:11px">${v.vin||'—'}</span></td>
+            <td style="overflow:hidden;text-overflow:ellipsis">${v.vehicle_type||'—'}</td>
+            <td style="overflow:hidden;text-overflow:ellipsis">${v.model||'—'}</td>
+            <td style="text-align:center">${v.year||'—'}</td>
+            <td style="overflow:hidden"><span class="mono" style="direction:ltr">${v.plate||'—'}</span></td>
+            <td style="overflow:hidden;text-overflow:ellipsis">${v.color||'—'}</td>
+            <td style="text-align:center;white-space:nowrap">${v.engine_size||'—'}</td>
             <td class="mono text-blue">${fmt(v.purchase_price)}</td>
             <td class="${expired?'text-red':'text-muted'}">${v.license_expiry||'—'}</td>
             <td>${locBadge}</td>
