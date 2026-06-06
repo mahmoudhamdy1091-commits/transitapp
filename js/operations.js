@@ -1678,40 +1678,43 @@ async function loadPartnerAccountLedger() {
 
     // ── حساب الأرصدة ──
     const netLiability = totalLiability - totalPaid;   // المديونية المتبقية (ما عليه - ما دفع)
-    const netBalance   = totalProfit - totalPayout - Math.max(netLiability, 0); // الرصيد الصافي
+    const netBalance   = totalProfit - totalPayout - Math.max(netLiability, 0); // صافي الربح المتبقي
+    // ✅ إجمالي المستحق = رأس المال المدفوع + حصة الربح - ما استرده
+    // هذا هو الرقم الصحيح الذي يجب عرضه كـ "مستحق له"
+    const totalDue     = totalPaid + totalProfit - totalPayout;
 
     // ── KPIs ──
     const liabilityColor = netLiability > 0.01 ? 'var(--red)' : 'var(--green)';
-    const balanceColor   = netBalance   > 0.01 ? 'var(--green)' : netBalance < -0.01 ? 'var(--red)' : 'var(--text2)';
+    const dueColor       = totalDue > 0.01 ? 'var(--green)' : totalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
 
     el('pa-summary-kpis').innerHTML = `
       <div class="j-kpi" style="border-right:3px solid var(--blue)">
-        <div class="j-kpi-label">إجمالي حصص التكلفة</div>
-        <div class="j-kpi-val text-blue">${fmt(totalLiability)}</div>
-        <div style="font-size:10px;color:var(--text2)">ما عليه في كل الصفقات</div>
-      </div>
-      <div class="j-kpi" style="border-right:3px solid var(--accent)">
         <div class="j-kpi-label">إجمالي ما دفع للمورد</div>
-        <div class="j-kpi-val" style="color:var(--accent)">${fmt(totalPaid)}</div>
+        <div class="j-kpi-val" style="color:var(--blue)">${fmt(totalPaid)}</div>
         <div style="font-size:10px;color:${liabilityColor};font-weight:700">
-          ${netLiability > 0.01 ? `⚠️ متبقي عليه ${fmt(netLiability)}` : '✅ سوّى كامل'}
+          ${netLiability > 0.01 ? `⚠️ متبقي عليه ${fmt(netLiability)}` : '✅ سوّى كامل التكلفة'}
         </div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--green)">
         <div class="j-kpi-label">حصته في الأرباح</div>
-        <div class="j-kpi-val" style="color:${totalProfit>=0?'var(--green)':'var(--red)'}">${fmt(totalProfit)}</div>
-        <div style="font-size:10px;color:var(--text2)">صافي ربح/خسارة</div>
+        <div class="j-kpi-val" style="color:${totalProfit>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(totalProfit))}</div>
+        <div style="font-size:10px;color:var(--text2)">${totalProfit>=0?'ربح صافي':'خسارة'}</div>
+      </div>
+      <div class="j-kpi" style="border-right:3px solid var(--accent)">
+        <div class="j-kpi-label">إجمالي الصرف السابق</div>
+        <div class="j-kpi-val" style="color:var(--accent)">${fmt(totalPayout)}</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--purple);background:var(--purple-dim)">
-        <div class="j-kpi-label">الرصيد الصافي</div>
-        <div class="j-kpi-val" style="color:${balanceColor};font-size:20px;font-weight:900">${fmt(Math.abs(netBalance))}</div>
-        <div style="font-size:10px;color:${balanceColor};font-weight:700">
-          ${netBalance > 0.01 ? '← مستحق له' : netBalance < -0.01 ? '← مدين عليه' : '← متوازن'}
+        <div class="j-kpi-label">إجمالي المستحق له</div>
+        <div class="j-kpi-val" style="color:${dueColor};font-size:20px;font-weight:900">${fmt(Math.abs(totalDue))}</div>
+        <div style="font-size:10px;color:${dueColor};font-weight:700">
+          ${totalDue > 0.01 ? '← رأس مال + أرباح' : totalDue < -0.01 ? '← مدين عليه' : '← تسوية كاملة'}
         </div>
       </div>`;
 
-    partnerAccountState.balance  = netBalance;
+    partnerAccountState.balance      = totalDue;
     partnerAccountState.netLiability = netLiability;
+    partnerAccountState.totalPaid    = totalPaid;
 
     renderPartnerAccountLedger();
   } catch(e) {
@@ -1742,32 +1745,34 @@ function renderPartnerAccountLedger() {
                      - entriesForKpi.filter(e=>e.type==='loss_debit').reduce((s,e)=>s+(+e.amount||0),0);
   const kpiPayout    = entriesForKpi.filter(e=>e.type==='deal_payout'||e.type==='general_withdraw'||e.type==='advance').reduce((s,e)=>s+(+e.amount||0),0);
   const kpiNetLiab   = kpiLiability - kpiPaid;
-  const kpiBalance   = kpiProfit - kpiPayout - Math.max(kpiNetLiab, 0);
+  // ✅ إجمالي المستحق = ما دفع + حصة الربح - ما استرده
+  const kpiTotalDue  = kpiPaid + kpiProfit - kpiPayout;
   const liabColor    = kpiNetLiab > 0.01 ? 'var(--red)' : 'var(--green)';
-  const balColor     = kpiBalance > 0.01 ? 'var(--green)' : kpiBalance < -0.01 ? 'var(--red)' : 'var(--text2)';
+  const balColor     = kpiTotalDue > 0.01 ? 'var(--green)' : kpiTotalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
   const filterLabel  = filterFile ? ` — ${filterFile}` : ' — كل الصفقات';
 
   if (el('pa-summary-kpis')) el('pa-summary-kpis').innerHTML = `
     <div class="j-kpi" style="border-right:3px solid var(--blue)">
-      <div class="j-kpi-label">حصص التكلفة${filterLabel}</div>
-      <div class="j-kpi-val text-blue">${fmt(kpiLiability)}</div>
+      <div class="j-kpi-label">ما دفع للمورد${filterLabel}</div>
+      <div class="j-kpi-val" style="color:var(--blue)">${fmt(kpiPaid)}</div>
       <div style="font-size:10px;color:${liabColor};font-weight:700">
-        ${kpiNetLiab > 0.01 ? `⚠️ متبقي عليه ${fmt(kpiNetLiab)}` : '✅ سوّى كامل'}
+        ${kpiNetLiab > 0.01 ? `⚠️ متبقي عليه ${fmt(kpiNetLiab)}` : '✅ سوّى كامل التكلفة'}
       </div>
-    </div>
-    <div class="j-kpi" style="border-right:3px solid var(--accent)">
-      <div class="j-kpi-label">ما دفع للمورد</div>
-      <div class="j-kpi-val" style="color:var(--accent)">${fmt(kpiPaid)}</div>
     </div>
     <div class="j-kpi" style="border-right:3px solid var(--green)">
       <div class="j-kpi-label">حصته في الأرباح</div>
-      <div class="j-kpi-val" style="color:${kpiProfit>=0?'var(--green)':'var(--red)'}">${fmt(kpiProfit)}</div>
+      <div class="j-kpi-val" style="color:${kpiProfit>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(kpiProfit))}</div>
+      <div style="font-size:10px;color:var(--text2)">${kpiProfit>=0?'ربح':'خسارة'}</div>
+    </div>
+    <div class="j-kpi" style="border-right:3px solid var(--accent)">
+      <div class="j-kpi-label">إجمالي الصرف السابق</div>
+      <div class="j-kpi-val" style="color:var(--accent)">${fmt(kpiPayout)}</div>
     </div>
     <div class="j-kpi" style="border-right:3px solid var(--purple);background:var(--purple-dim)">
-      <div class="j-kpi-label">الرصيد الصافي</div>
-      <div class="j-kpi-val" style="color:${balColor};font-size:20px;font-weight:900">${fmt(Math.abs(kpiBalance))}</div>
+      <div class="j-kpi-label">إجمالي المستحق له</div>
+      <div class="j-kpi-val" style="color:${balColor};font-size:20px;font-weight:900">${fmt(Math.abs(kpiTotalDue))}</div>
       <div style="font-size:10px;color:${balColor};font-weight:700">
-        ${kpiBalance > 0.01 ? '← مستحق له' : kpiBalance < -0.01 ? '← مدين عليه' : '← متوازن'}
+        ${kpiTotalDue > 0.01 ? '← رأس مال + أرباح' : kpiTotalDue < -0.01 ? '← مدين عليه' : '← تسوية كاملة'}
       </div>
     </div>`;
 
@@ -1798,14 +1803,16 @@ function renderPartnerAccountLedger() {
   }
 
   let runningBalance = 0;
-  const rows = [...entries].reverse().map(e => {
+  // ✅ الحساب من القديم للحديث (الترتيب الصح للرصيد التراكمي)
+  const rowsData = entries.map(e => {
     const type   = e.type || e.entry_type;
     const sign   = e._sign || (type==='general_withdraw'||type==='advance'||type==='deal_payout' ? -1 : +1);
     const amount = +e.amount || 0;
     runningBalance += sign * amount;
-    const balance = runningBalance;
-    return { e, type, sign, amount, balance };
-  }).reverse().map(({e, type, sign, amount, balance}) => {
+    return { e, type, sign, amount, balance: runningBalance };
+  });
+
+  const rows = rowsData.map(({e, type, sign, amount, balance}) => {
     const color = typeColors[type] || 'var(--text2)';
     const date  = e.entry_date||e.pay_date||e.created_at?.split('T')[0]||'—';
     return `<tr>
@@ -1848,7 +1855,7 @@ function exportPartnerAccountPDF() {
     <div class="page">
       <div class="print-header">
         <div class="logo-area">
-          <div class="company">Transit Management</div>
+          <img src="data:image/png;base64,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" alt="TIC" style="width:40px;height:40px;border-radius:8px;display:block;margin-bottom:4px"><div class="company">Transit International</div>
           <div style="font-size:12px;color:#666">نظام ${state.system}</div>
         </div>
         <div>
