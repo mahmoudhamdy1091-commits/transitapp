@@ -611,7 +611,14 @@ async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, tit
 // SECTION 10 — printSection (generic section printer)
 // ════════════════════════════════════════════════════════════
 function printSection(title, subtitle, tableHtml, summaryHtml='') {
-  renderPrint(`${docHeader(title,subtitle,'')}${summaryHtml}${tableHtml}<div class="doc-footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('en-GB')} · Transit International</div>`, title);
+  // ✅ حذف عناصر no-print (أزرار Excel/PDF وأزرار الـ ctx menu) من HTML قبل الطباعة
+  const tmp = document.createElement('div');
+  tmp.innerHTML = tableHtml;
+  tmp.querySelectorAll('.no-print, .btn-ctx-menu').forEach(el => el.remove());
+  // حذف العمود الأخير الفارغ (عمود الـ ⋮) من الـ header والـ footer
+  tmp.querySelectorAll('th:last-child:empty, td:last-child:empty').forEach(el => el.remove());
+  const cleanHtml = tmp.innerHTML;
+  renderPrint(`${docHeader(title,subtitle,'')}${summaryHtml}${cleanHtml}<div class="doc-footer">تم الإنشاء بتاريخ ${new Date().toLocaleDateString('en-GB')} · Transit International</div>`, title);
 }
 
 // ════════════════════════════════════════════════════════════
