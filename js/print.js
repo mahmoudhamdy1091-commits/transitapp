@@ -65,7 +65,7 @@ const PRINT_CSS = `
 .doc-header-left {
   display: table-cell; text-align: left; vertical-align: top; width: 45%;
 }
-.doc-logo        { width: 48px; height: 48px; border-radius: 10px; display: block; margin-bottom: 6px; }
+.doc-logo        { width: 72px; height: 72px; border-radius: 14px; display: block; margin-bottom: 8px; }
 .doc-company     { font-size: 18px; font-weight: 800; }
 .doc-company-sub { font-size: 11px; color: #888; margin-top: 2px; }
 .doc-title       { font-size: 22px; font-weight: 800; }
