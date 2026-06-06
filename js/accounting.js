@@ -1211,7 +1211,7 @@ function showJournalReport() {
       <thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>الملف</th><th>المبلغ</th></tr></thead>
       <tbody>${detailRows}</tbody>
     </table>
-    <div class="footer">Transit International · التقرير اليومي · ${new Date().toLocaleDateString('en-GB')}</div>`;
+    <div class="footer">Transit International Company · التقرير اليومي · ${new Date().toLocaleDateString('en-GB')}</div>`;
 
   printDocument(html, 'التقرير اليومي');
 }
