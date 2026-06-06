@@ -607,6 +607,172 @@ async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, tit
   } catch(e) { toast('خطأ في طباعة القيد: '+e.message,'err'); }
 }
 
+
+// ════════════════════════════════════════════════════════════
+// SECTION 10b — buildPrintTable: بناء جدول طباعة نظيف
+// المدخلات: عنوان، ملف، أعمدة [{label, key, width, align, format}]، بيانات []
+// ════════════════════════════════════════════════════════════
+function buildPrintTable(title, fileNo, columns, rows, totalsRow = null) {
+  const totalWidth = columns.reduce((s, c) => s + (c.w || 1), 0);
+  const colgroup = columns.map(c =>
+    `<col style="width:${((c.w||1)/totalWidth*100).toFixed(1)}%">`
+  ).join('');
+
+  const thead = columns.map(c =>
+    `<th style="text-align:${c.align||'right'}">${c.label}</th>`
+  ).join('');
+
+  const tbody = rows.map((row, i) => {
+    const cells = columns.map(c => {
+      const val = c.format ? c.format(row, i) : (row[c.key] ?? '—');
+      const align = c.align || 'right';
+      const style = c.mono ? 'font-family:monospace;direction:ltr;' : '';
+      return `<td style="text-align:${align};${style}">${val}</td>`;
+    }).join('');
+    return `<tr>${cells}</tr>`;
+  }).join('');
+
+  const tfoot = totalsRow ? `<tfoot><tr>${
+    columns.map((c, i) => {
+      const val = totalsRow[i] ?? '';
+      return `<td style="text-align:${c.align||'right'};font-weight:700">${val}</td>`;
+    }).join('')
+  }</tr></tfoot>` : '';
+
+  return `${docHeader(title, 'ملف: ' + fileNo, '')}
+  <table>
+    <colgroup>${colgroup}</colgroup>
+    <thead><tr>${thead}</tr></thead>
+    <tbody>${tbody}</tbody>
+    ${tfoot}
+  </table>
+  <div class="doc-footer">Transit International Company · ${title} · ${fileNo} · ${new Date().toLocaleDateString('en-GB')}</div>`;
+}
+
+
+// ════════════════════════════════════════════════════════════
+// SECTION 10c — Tab Print Functions (جداول نظيفة بدون ⋮)
+// ════════════════════════════════════════════════════════════
+
+// ── السيارات ──
+function printVehiclesTab(data, fn) {
+  // soldVins من state.currentSales — نفس المصدر اللي بيستخدمه الجدول على الشاشة
+  const soldVins = new Set((state.currentSales||[]).map(s=>s.vin).filter(Boolean));
+  const cols = [
+    {label:'#',            w:0.4, align:'center', format:(_,i)=>i+1},
+    {label:'الكود',        w:1.8, format:(v,i)=>`${fn}-V${String(i+1).padStart(2,'0')}`},
+    {label:'VIN',          w:1.8, mono:true, align:'left', format:v=>v.vin||'—'},
+    {label:'النوع',        w:1.2, format:v=>v.vehicle_type||'—'},
+    {label:'الموديل',      w:1.2, format:v=>v.model||'—'},
+    {label:'السنة',        w:0.7, align:'center', format:v=>v.year||'—'},
+    {label:'اللوحة',       w:1.0, mono:true, align:'left', format:v=>v.plate||'—'},
+    {label:'اللون',        w:0.8, format:v=>v.color||'—'},
+    {label:'الحجم',        w:0.7, align:'center', format:v=>v.engine_size||'—'},
+    {label:'سعر الشراء',   w:1.2, mono:true, align:'left', format:v=>(+v.purchase_price||0).toLocaleString('en-US',{minimumFractionDigits:3})},
+    {label:'الحالة',       w:0.9, align:'center', format:v=>soldVins.has(v.vin)?'مباع':'في المخزن'},
+  ];
+  renderPrint(buildPrintTable('السيارات', fn, cols, data||[],
+    ['', `الإجمالي: ${(data||[]).length} سيارة`, '', '', '', '', '', '', '',
+     (data||[]).reduce((s,v)=>s+(+v.purchase_price||0),0).toLocaleString('en-US',{minimumFractionDigits:3})+' KWD', '']),
+    `السيارات — ${fn}`);
+}
+
+// ── الدفعات ──
+function printPaymentsTab(data, fn) {
+  const active = (data||[]).filter(p=>p.post_status!=='voided');
+  const cols = [
+    {label:'#',              w:0.4, align:'center', format:(_,i)=>i+1},
+    {label:'رقم الدفعة',    w:2.2, mono:true, format:p=>p.ref_no||'—'},
+    {label:'الدافع',         w:1.5, format:p=>p.payer||'—'},
+    {label:'المبلغ',         w:1.3, mono:true, align:'left', format:p=>(+p.amount||0).toLocaleString('en-US',{minimumFractionDigits:3})},
+    {label:'طريقة الدفع',   w:1.0, format:p=>p.pay_method||'—'},
+    {label:'المستند',        w:1.0, mono:true, format:p=>p.document||'—'},
+    {label:'التاريخ',        w:1.0, mono:true, format:p=>p.pay_date||'—'},
+    {label:'ملاحظات',        w:1.5, format:p=>p.notes||'—'},
+  ];
+  const total = active.reduce((s,p)=>s+(+p.amount||0),0);
+  renderPrint(buildPrintTable('دفعات المورد', fn, cols, active,
+    ['', `الإجمالي (${active.length} دفعة)`, '',
+     total.toLocaleString('en-US',{minimumFractionDigits:3})+' KWD', '', '', '', '']),
+    `دفعات المورد — ${fn}`);
+}
+
+// ── المصاريف ──
+function printExpensesTab(data, fn) {
+  const active = (data||[]).filter(e=>e.post_status!=='voided');
+  const cols = [
+    {label:'#',            w:0.4, align:'center', format:(_,i)=>i+1},
+    {label:'رقم المصروف', w:2.0, mono:true, format:e=>e.ref_no||'—'},
+    {label:'الوصف',        w:2.0, format:e=>e.description||'—'},
+    {label:'النوع',        w:1.0, format:e=>e.exp_type||'—'},
+    {label:'المبلغ',       w:1.3, mono:true, align:'left', format:e=>(+e.amount||0).toLocaleString('en-US',{minimumFractionDigits:3})},
+    {label:'طريقة الدفع', w:1.0, format:e=>e.pay_method||'—'},
+    {label:'التاريخ',      w:1.0, mono:true, format:e=>e.exp_date||e.expense_date||'—'},
+  ];
+  const total = active.reduce((s,e)=>s+(+e.amount||0),0);
+  renderPrint(buildPrintTable('المصاريف', fn, cols, active,
+    ['', `الإجمالي (${active.length} مصروف)`, '', '',
+     total.toLocaleString('en-US',{minimumFractionDigits:3})+' KWD', '', '']),
+    `المصاريف — ${fn}`);
+}
+
+// ── المبيعات ──
+function printSalesTab(invoices, total, fn) {
+  const invList = Object.values(invoices||{});
+  const cols = [
+    {label:'#',              w:0.4, align:'center', format:(_,i)=>i+1},
+    {label:'رقم الفاتورة',  w:2.5, mono:true, format:inv=>inv.inv_no||'—'},
+    {label:'العميل',         w:2.0, format:inv=>inv.customer||'—'},
+    {label:'VINs',           w:2.5, mono:true, align:'left', format:inv=>(inv.items||[]).map(i=>i.vin||'—').join(' · ')},
+    {label:'عدد السيارات',  w:0.9, align:'center', format:inv=>(inv.items||[]).length},
+    {label:'الإجمالي',       w:1.5, mono:true, align:'left', format:inv=>(inv.items||[]).reduce((s,i)=>s+(+i.sale_price||0),0).toLocaleString('en-US',{minimumFractionDigits:3})},
+  ];
+  renderPrint(buildPrintTable('المبيعات', fn, cols, invList,
+    ['', `الإجمالي (${invList.length} فاتورة)`, '', '',
+     invList.length, (total||0).toLocaleString('en-US',{minimumFractionDigits:3})+' KWD']),
+    `المبيعات — ${fn}`);
+}
+
+// ── التحصيلات ──
+function printCollectionsTab(data, fn) {
+  const active = (data||[]).filter(c=>c.post_status!=='voided');
+  const cols = [
+    {label:'#',              w:0.4, align:'center', format:(_,i)=>i+1},
+    {label:'رقم التحصيل',   w:2.0, mono:true, format:c=>c.ref_no||'—'},
+    {label:'رقم الفاتورة',  w:1.8, mono:true, format:c=>c.inv_no||'—'},
+    {label:'العميل',         w:1.5, format:c=>c.customer||'—'},
+    {label:'المبلغ',         w:1.3, mono:true, align:'left', format:c=>(+c.amount||0).toLocaleString('en-US',{minimumFractionDigits:3})},
+    {label:'طريقة الدفع',   w:1.0, format:c=>c.pay_method||'—'},
+    {label:'الاستحقاق',      w:1.0, mono:true, format:c=>c.due_date||'—'},
+    {label:'تاريخ الدفع',   w:1.0, mono:true, format:c=>c.paid_date||'—'},
+    {label:'الحالة',         w:0.9, align:'center', format:c=>c.paid_date?'محصّل':'مستحق'},
+  ];
+  const totalPaid = active.filter(c=>c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
+  renderPrint(buildPrintTable('التحصيلات', fn, cols, active,
+    ['', `الإجمالي (${active.length})`, '',
+     '', totalPaid.toLocaleString('en-US',{minimumFractionDigits:3})+' KWD محصّل', '', '', '', '']),
+    `التحصيلات — ${fn}`);
+}
+
+// ── صرف الشركاء ──
+function printPayoutsTab(data, fn) {
+  const cols = [
+    {label:'#',            w:0.4, align:'center', format:(_,i)=>i+1},
+    {label:'رقم الصرف',   w:2.0, mono:true, format:p=>p.pay_id||'—'},
+    {label:'الشريك',       w:1.5, format:p=>p.partner||'—'},
+    {label:'نوع الصرف',   w:1.5, format:p=>p.payout_type||'—'},
+    {label:'المبلغ',       w:1.3, mono:true, align:'left', format:p=>(+p.amount||0).toLocaleString('en-US',{minimumFractionDigits:3})},
+    {label:'طريقة الدفع', w:1.0, format:p=>p.pay_method||'—'},
+    {label:'التاريخ',      w:1.0, mono:true, format:p=>p.pay_date||'—'},
+    {label:'ملاحظات',      w:1.5, format:p=>p.notes||'—'},
+  ];
+  const total = (data||[]).reduce((s,p)=>s+(+p.amount||0),0);
+  renderPrint(buildPrintTable('صرف الشركاء', fn, cols, data||[],
+    ['', `الإجمالي (${(data||[]).length})`, '', '',
+     total.toLocaleString('en-US',{minimumFractionDigits:3})+' KWD', '', '', '']),
+    `صرف الشركاء — ${fn}`);
+}
+
 // ════════════════════════════════════════════════════════════
 // SECTION 10 — printSection (generic section printer)
 // ════════════════════════════════════════════════════════════

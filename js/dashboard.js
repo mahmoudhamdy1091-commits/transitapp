@@ -928,7 +928,7 @@ async function loadPaymentsTab(fn, sys) {
       ${dupWarning}
       ${exportBtns(
         `exportCSV(${JSON.stringify(csvHeaders)},${JSON.stringify(csvRows)},'دفعات_${fn}')`,
-        `printSection('دفعات المورد','ملف: ${fn}',document.getElementById('paymentsTable')?.innerHTML||'')`
+        `printPaymentsTab(data, fn)`
       )}
       <table class="data-table">
         <thead><tr>
@@ -987,7 +987,7 @@ async function loadExpensesTab(fn, sys) {
       ${dupWarning}
       ${exportBtns(
         `exportCSV(${JSON.stringify(csvHeaders)},${JSON.stringify(csvRows)},'مصاريف_${fn}')`,
-        `printSection('المصاريف','ملف: ${fn}',document.getElementById('expensesTable')?.innerHTML||'')`
+        `printExpensesTab(data, fn)`
       )}
       <table class="data-table">
         <thead><tr>
@@ -1069,7 +1069,7 @@ async function loadSalesTab(fn, sys) {
     el('salesTable').innerHTML = `
       ${exportBtns(
         `exportCSV(['رقم الفاتورة','العميل','VINs','عدد السيارات','الإجمالي'],${JSON.stringify(salesCsvRows)},'مبيعات_${fn}')`,
-        `printSection('المبيعات','ملف: ${fn}',document.getElementById('salesTable')?.innerHTML||'')`
+        `printSalesTab(invoices, total, fn)`
       )}
       <table class="data-table">
         <thead><tr>
@@ -1179,7 +1179,7 @@ async function loadCollectionsTab(fn, sys) {
     el('collectionsTable').innerHTML = `
       ${exportBtns(
         `exportCSV(${JSON.stringify(csvHeaders)},${JSON.stringify(csvRows)},'تحصيلات_${fn}')`,
-        `printSection('التحصيلات','ملف: ${fn}',document.getElementById('collectionsTable')?.innerHTML||'')`
+        `printCollectionsTab(data, fn)`
       )}
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <div class="j-kpi" style="border-right:3px solid var(--blue)"><div class="j-kpi-label">📄 إجمالي الفواتير</div><div class="j-kpi-val text-blue">${fmt(totalInvoiced)}</div></div>
@@ -1276,7 +1276,7 @@ async function loadPayoutsTab(fn, sys) {
       </div>
       ${exportBtns(
         `exportCSV(['رقم الصرف','الشريك','نوع الصرف','المبلغ','طريقة الدفع','المستند','التاريخ'],${JSON.stringify(data.map(p=>[p.pay_id||'—',p.partner||'—',p.payout_type||'—',+p.amount||0,p.pay_method||'—',p.document||'—',p.pay_date||'—']))},'صرف_شركاء_${fn}')`,
-        `printSection('صرف الشركاء','ملف: ${fn}',document.getElementById('payoutsTable')?.innerHTML||'')`
+        `printPayoutsTab(data, fn)`
       )}
       <table class="data-table">
         <thead><tr>
