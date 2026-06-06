@@ -286,8 +286,14 @@ let _pwaInstallPrompt = null;
     state.token        = savedToken;
     state.refreshToken = savedRefresh || null;
     state.user         = savedUser ? JSON.parse(savedUser) : { email: 'user@tm.com' };
-    // ✅ defer حتى تكتمل تحميل كل الملفات
-    setTimeout(() => { if (typeof initApp === 'function') initApp(); }, 0);
+    // ✅ انتظر اكتمال DOM + كل الملفات قبل initApp
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        if (typeof initApp === 'function') initApp();
+      });
+    } else {
+      if (typeof initApp === 'function') initApp();
+    }
   }
 
   // Prefill saved credentials
