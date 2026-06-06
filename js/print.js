@@ -464,7 +464,16 @@ async function printPurchaseOrder(fileNo) {
     const remaining = (+po.total_purchase||0) - totalPaid;
     const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
 
-    const vehicleRows  = (vehicles||[]).map((v,i) => `<tr><td style="text-align:center;font-weight:700">${i+1}</td><td>${v.vehicle_type||'—'} ${v.model||''}</td><td style="direction:ltr;font-family:monospace;font-size:11px;font-weight:700">${v.vin||'—'}</td><td style="direction:ltr">${v.plate||'—'}</td><td>${v.color||'—'}</td><td style="text-align:center">${v.engine_size?v.engine_size+' L':'—'}</td><td style="text-align:center">${v.year||'—'}</td><td class="num c-amber">${fmt2(v.purchase_price)}</td></tr>`).join('');
+    const vehicleRows  = (vehicles||[]).map((v,i) => `<tr>
+      <td style="text-align:center;font-weight:700">${i+1}</td>
+      <td style="overflow:hidden;text-overflow:ellipsis">${v.vehicle_type||'—'} ${v.model||''}</td>
+      <td style="direction:ltr;font-family:monospace;font-size:10px;font-weight:700;overflow:hidden">${v.vin||'—'}</td>
+      <td style="direction:ltr;white-space:nowrap">${v.plate||'—'}</td>
+      <td style="overflow:hidden;text-overflow:ellipsis">${v.color||'—'}</td>
+      <td style="text-align:center;white-space:nowrap">${v.engine_size?v.engine_size+' L':'—'}</td>
+      <td style="text-align:center">${v.year||'—'}</td>
+      <td class="num c-amber">${fmt2(v.purchase_price)}</td>
+    </tr>`).join('');
     const paymentRows  = (payments||[]).map(p => `<tr><td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td><td>${p.payer||'—'}</td><td class="num c-green">${fmt2(p.amount)}</td><td>${p.pay_method||'—'}</td><td style="direction:ltr">${p.document||'—'}</td><td>${p.pay_date||'—'}</td></tr>`).join('');
     const expenseRows  = (expenses||[]).map(e => `<tr><td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td><td>${e.description||'—'}</td><td>${e.exp_type||'—'}</td><td class="num c-red">${fmt2(e.amount)}</td><td>${e.pay_method||'—'}</td><td>${e.exp_date||e.expense_date||'—'}</td></tr>`).join('');
     const partnerRows  = (partners||[]).map(p => { const paid=(payments||[]).filter(pm=>pm.payer===p.partner&&notVoided(pm)).reduce((s,pm)=>s+(+pm.amount||0),0); const due=(+po.total_purchase||0)*(+p.share_percent||0)/100; return `<tr><td style="font-weight:700">${p.partner}</td><td style="text-align:center">${p.share_percent}%</td><td class="num c-blue">${fmt2(due)}</td><td class="num c-green">${fmt2(paid)}</td><td class="num ${(due-paid)>0.01?'c-red':'c-green'}" style="font-weight:700">${fmt2(due-paid)}</td></tr>`; }).join('');
@@ -494,8 +503,8 @@ async function printPurchaseOrder(fileNo) {
       </div>
     </div>
     <div class="section-title">📦 السيارات / Vehicles</div>
-    <table><colgroup><col style="width:32px"><col style="width:18%"><col style="width:16%"><col style="width:10%"><col style="width:8%"><col style="width:7%"><col style="width:7%"><col style="width:12%"></colgroup>
-      <thead><tr><th>#</th><th>النوع / الموديل</th><th>رقم الشاصي (VIN)</th><th>اللوحة</th><th>اللون</th><th>الحجم</th><th>السنة</th><th style="text-align:left">سعر الشراء</th></tr></thead>
+    <table style="table-layout:fixed;width:100%"><colgroup><col style="width:4%"><col style="width:22%"><col style="width:15%"><col style="width:10%"><col style="width:7%"><col style="width:8%"><col style="width:6%"><col style="width:12%"></colgroup>
+      <thead><tr><th style="text-align:center">#</th><th>النوع / الموديل</th><th>رقم الشاصي (VIN)</th><th>اللوحة</th><th>اللون</th><th style="text-align:center">الحجم</th><th style="text-align:center">السنة</th><th style="text-align:left">سعر الشراء</th></tr></thead>
       <tbody>${vehicleRows}</tbody>
       <tfoot><tr><td colspan="7"><strong>إجمالي قيمة الشراء</strong></td><td class="num c-amber"><strong>${fmt2(po.total_purchase)} KWD</strong></td></tr></tfoot>
     </table>
