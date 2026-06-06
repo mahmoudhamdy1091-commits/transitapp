@@ -1,7 +1,7 @@
 {
   "name": "Transit International Company",
   "short_name": "TIC",
-  "description": "نظام إدارة صفقات السيارات",
+  "description": "نظام إدارة صفقات الشاحنات والمركبات",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
