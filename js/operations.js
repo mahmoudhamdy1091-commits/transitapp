@@ -4230,7 +4230,21 @@ async function loadVehiclesTab(fn, sys) {
     (locations||[]).forEach(t => { locMap[t.vin] = t.location_name; });
 
     if (!data?.length) { el('vehiclesTable').innerHTML = emptyHTML('🚗','لا توجد سيارات'); return; }
+
+    // بيانات CSV للتصدير
+    const vCsvRows = (data||[]).map((v,i) => [
+      `${fn}-V${String(i+1).padStart(2,'0')}`, v.vin||'', v.vehicle_type||'', v.model||'',
+      v.year||'', v.plate||'', v.color||'', v.engine_size||'',
+      +v.purchase_price||0, v.license_expiry||'',
+      locMap[v.vin]||'المخزن الرئيسي',
+      soldVins.has(v.vin)?'مباع':'في المخزن'
+    ]);
+
     el('vehiclesTable').innerHTML = `
+      ${exportBtns(
+        `exportCSV(['الكود','VIN','النوع','الموديل','السنة','اللوحة','اللون','الحجم','سعر الشراء','انتهاء الرخصة','الموقع','الحالة'],${JSON.stringify(vCsvRows)},'سيارات_${fn}')`,
+        `printSection('السيارات','ملف: ${fn}',document.getElementById('vehiclesTable')?.innerHTML||'')`
+      )}
       <table class="data-table">
         <thead><tr>
           <th>الكود</th><th>VIN</th><th>النوع</th><th>الموديل</th>
