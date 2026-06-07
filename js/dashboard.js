@@ -720,27 +720,22 @@ async function loadSummaryTab(fn, sys) {
           🖨️ طباعة ملخص الصفقة
         </button>
       </div>` + draftBanner + `
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
-          <div style="font-size:11px;color:var(--text2);margin-bottom:4px">تكلفة الشراء</div>
-          <div style="font-size:20px;font-weight:700;color:var(--blue)">${fmt(totalPurchase)}</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">+ ${fmt(totalExp)} مصاريف</div>
-        </div>
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
-          <div style="font-size:11px;color:var(--text2);margin-bottom:4px">المبيعات</div>
-          <div style="font-size:20px;font-weight:700;color:var(--green)">${fmt(totalSales)}</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">${soldV} سيارة مباعة</div>
-        </div>
-        <div style="background:var(--card);border:1px solid ${profit>=0?'var(--green)':'var(--red)'};border-radius:var(--radius);padding:14px 16px">
-          <div style="font-size:11px;color:var(--text2);margin-bottom:4px">صافي الربح</div>
-          <div style="font-size:20px;font-weight:700;color:${profit>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(profit))}</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">${profit>=0?'ربح':'خسارة'} · هامش ${margin}%</div>
-        </div>
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
-          <div style="font-size:11px;color:var(--text2);margin-bottom:4px">غير محصّل</div>
-          <div style="font-size:20px;font-weight:700;color:${uncollected>0?'var(--accent)':'var(--green)'}">${fmt(uncollected)}</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">${uncollected>0?`فواتير مستحقة من العملاء`:'✓ كل شيء محصّل'}</div>
-        </div>
+      <div id="kpiGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+        ${[
+          {label:'تكلفة الشراء',    icon:'📋', val:fmt(totalPurchase), sub:'+ '+fmt(totalExp)+' مصاريف = '+fmt(fullCost),       cls:'kpi-blue'},
+          {label:'المصاريف',        icon:'💸', val:fmt(totalExp),       sub:(postedExp.length)+' بند مصروف',                     cls:'kpi-red'},
+          {label:'التكلفة الكاملة', icon:'🏷️', val:fmt(fullCost),       sub:'شراء + مصاريف',                                     cls:'kpi-amber'},
+          {label:'المبيعات',        icon:'💹', val:fmt(totalSales),     sub:soldV+' من '+totalV+' سيارة · '+sellPct+'%',         cls:'kpi-green'},
+          {label:'صافي الربح',      icon:profit>=0?'📈':'📉', val:fmt(Math.abs(profit)), sub:(profit>=0?'ربح':'خسارة')+' · هامش '+margin+'%', cls:profit>=0?'kpi-green':'kpi-red'},
+          {label:'غير محصّل',       icon:'⏳', val:fmt(uncollected),    sub:uncollected>0?'فواتير مستحقة':'✅ كل شيء محصّل',     cls:uncollected>0?'kpi-amber':'kpi-green'},
+          {label:'المدفوع للمورد',  icon:'💳', val:fmt(totalPaid),      sub:'من '+fmt(totalPurchase),                            cls:'kpi-cyan'},
+          {label:'المتبقي للمورد',  icon:remaining>0?'⚠️':'✅', val:fmt(Math.abs(remaining)), sub:remaining>0?'يحتاج سداد':'مسدد كامل', cls:remaining>0?'kpi-red':'kpi-green'},
+          {label:'مقبوض فعلاً',     icon:'💰', val:fmt(totalCollected), sub:'من '+fmt(totalSales)+' إجمالي الفواتير',            cls:'kpi-purple'},
+        ].map(k => `<div class="kpi-card ${k.cls}">
+          <div class="kpi-top"><span class="kpi-label">${k.label}</span><div class="kpi-icon">${k.icon}</div></div>
+          <div class="kpi-val">${k.val}</div>
+          <div class="kpi-sub">${k.sub}</div>
+        </div>`).join('')}
       </div>
 
       <!-- Two cols -->
@@ -784,71 +779,95 @@ async function loadSummaryTab(fn, sys) {
         </div>
       </div>`;
 
-    // ── Partners ──
-    const partnerColors = [
-      {bg:'var(--blue-dim)',   color:'var(--blue)'},
-      {bg:'var(--accent-dim)',color:'var(--accent)'},
-      {bg:'var(--green-dim)', color:'var(--green)'},
-      {bg:'var(--purple-dim)',color:'var(--purple)'},
-      {bg:'var(--cyan-dim)',  color:'var(--cyan)'},
-    ];
-
+    // ── Partners — بطاقة مفصّلة ──
+    const isOpen = (totalV - soldV) > 0;
     const partnersHtml = (partners||[]).map((p,i) => {
-      const share     = +p.share_percent || 0;
-      const pAmt      = profit * (share/100);   // حصته في الربح/الخسارة
-      // ما دفعه للمورد في هذه الصفقة (posted فقط)
-      const capitalIn = (payments||[]).filter(px=>isPosted(px)&&px.payer===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
-      // حصته في تكلفة الشراء (ما عليه)
-      const liability = totalPurchase * (share/100);
-      // المديونية المتبقية = ما عليه - ما دفعه (لو صفر أو أقل = سوّى)
-      const remainingLiab = Math.max(liability - capitalIn, 0);
-      // ما استرده من أرباح
-      const pPayouts  = (payouts||[]).filter(px=>isPosted(px)&&px.partner===p.partner);
-      const totalOut  = pPayouts.reduce((s,px)=>s+(+px.amount||0),0);
-      // الرصيد الصافي = حصة ربح - مديونية متبقية - ما استرد
-      const netDue    = pAmt - remainingLiab - totalOut;
-      const c         = partnerColors[i % partnerColors.length];
-      return `
-        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer"
-          onclick="showPartnerDealStatement('${fn}','${p.partner}','${sys}')"
-          onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
-          <div style="width:36px;height:36px;border-radius:50%;background:${c.bg};color:${c.color};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">
-            ${p.partner[0]}
-          </div>
-          <div style="flex:1">
-            <div style="font-size:13px;font-weight:600;margin-bottom:4px">
-              ${p.partner}
-              <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:${c.bg};color:${c.color};margin-right:4px">${share}%</span>
+      const share        = +p.share_percent || 0;
+      const capitalIn    = (payments||[]).filter(px=>isPosted(px)&&px.payer===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
+      const liability    = totalPurchase * (share/100);
+      const remainingLiab= Math.max(liability - capitalIn, 0);
+      const profitShare  = profit * (share/100);
+      const pPayouts     = (payouts||[]).filter(px=>isPosted(px)&&px.partner===p.partner);
+      const totalOut     = pPayouts.reduce((s,px)=>s+(+px.amount||0),0);
+      const netDue       = capitalIn + profitShare - totalOut;
+      const pc           = profitShare >= 0 ? 'var(--green)' : 'var(--red)';
+      const nc           = netDue >= 0 ? 'var(--green)' : 'var(--red)';
+
+      return `<div style="border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;overflow:hidden;cursor:pointer"
+        onclick="showPartnerDealStatement('${fn}','${p.partner}','${sys}')">
+
+        <!-- header -->
+        <div style="background:var(--accent);color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">
+              ${p.partner[0]}
             </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--card2);color:var(--text2)">حصة التكلفة: <strong style="color:var(--blue)">${fmt(liability)}</strong></span>
-              <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--card2);color:var(--text2)">دفع: <strong style="color:var(--accent)">${fmt(capitalIn)}</strong></span>
-              ${remainingLiab > 0.01 ? `<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#fef3c7;color:#92400e">⚠️ عليه: <strong>${fmt(remainingLiab)}</strong></span>` : `<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--green-dim);color:var(--green)">✅ سوّى</span>`}
-              <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--card2);color:var(--text2)">ربح: <strong style="color:${pAmt>=0?'var(--green)':'var(--red)'}">${fmt(pAmt)}</strong></span>
-              ${totalOut > 0 ? `<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--card2);color:var(--text2)">سُحب: <strong style="color:var(--amber)">${fmt(totalOut)}</strong></span>` : ''}
-            </div>
+            <span style="font-size:14px;font-weight:700">${p.partner}</span>
           </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          <span style="font-size:12px;background:rgba(255,255,255,.2);padding:3px 12px;border-radius:10px">${share}%</span>
+        </div>
+
+        <!-- two cols -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+
+          <!-- رأس المال -->
+          <div style="padding:12px 14px;border-left:1px solid var(--border);border-bottom:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--text2);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">رأس المال</div>
+            ${summRow('حصته في التكلفة','text-blue',fmt(liability))}
+            ${summRow('دفع فعلاً','text-green',fmt(capitalIn))}
+            ${remainingLiab > 0.01
+              ? summRow('المتبقي عليه','text-red',fmt(remainingLiab)+' ⚠️',true)
+              : summRow('المتبقي عليه','text-green','صفر ✅',true)}
+          </div>
+
+          <!-- الربح / الخسارة -->
+          <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--text2);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">الربح / الخسارة</div>
+            ${summRow('إجمالي المبيعات','text-green',fmt(totalSales))}
+            ${summRow('التكلفة الكاملة','text-red',fmt(fullCost))}
+            ${summRow('حصته ('+share+'%)','',fmt(profitShare),true,pc)}
+          </div>
+        </div>
+
+        <!-- تنبيه صفقة مفتوحة -->
+        ${isOpen ? `<div style="background:var(--accent-dim);border-top:1px solid var(--border);padding:8px 14px;font-size:11px;color:var(--accent);display:flex;align-items:center;gap:6px">
+          ⚠️ الصفقة مفتوحة — ${totalV-soldV} سيارة في المخزن · الأرقام ستتغير عند اكتمال المبيعات
+        </div>` : ''}
+
+        <!-- المستحق النهائي -->
+        <div style="background:var(--card2);padding:12px 16px;border-top:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text2);margin-bottom:6px">
+            المستحق = رأس مال مدفوع + حصة الربح − مسحوبات
+          </div>
+          <div style="font-size:11px;color:var(--text2);font-family:var(--mono);margin-bottom:10px">
+            ${fmt(capitalIn)} + (${fmt(profitShare)}) − ${fmt(totalOut)} = <strong>${fmt(Math.abs(netDue))}</strong>
+          </div>
+          ${totalOut > 0 ? `<div style="font-size:11px;color:var(--text2);margin-bottom:8px">تم الصرف: <strong style="color:var(--accent)">${fmt(totalOut)}</strong></div>` : ''}
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:12px;font-weight:700;color:var(--text)">المستحق${isOpen?' (تقديري)':''}:</span>
             <div style="text-align:left">
-              <div style="font-size:15px;font-weight:700;color:${netDue>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(netDue))}</div>
+              <div style="font-size:20px;font-weight:700;color:${nc};font-family:var(--mono)">${fmt(Math.abs(netDue))} ${netDue>=0?'↑':'↓'}</div>
               <div style="font-size:10px;color:var(--text2)">${netDue>=0?'مستحق له':'مدين عليه'}</div>
             </div>
-            <div style="display:flex;gap:4px">
-              <button onclick="event.stopPropagation();showPartnerStatement('${p.partner}','${fn}')"
-                style="background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
-                📋 هذه الصفقة
-              </button>
-              <button onclick="event.stopPropagation();showPartnerStatement('${p.partner}')"
-                style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
-                📊 كل الصفقات
-              </button>
-              <button onclick="event.stopPropagation();openPartnerAccountLedger('${p.partner}')"
-                style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
-                📒 جاري الشريك
-              </button>
-            </div>
           </div>
-        </div>`;
+        </div>
+
+        <!-- أزرار -->
+        <div style="padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap;background:var(--card)">
+          <button onclick="event.stopPropagation();showPartnerStatement('${p.partner}','${fn}')"
+            style="background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+            📋 هذه الصفقة
+          </button>
+          <button onclick="event.stopPropagation();showPartnerStatement('${p.partner}')"
+            style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+            📊 كل الصفقات
+          </button>
+          <button onclick="event.stopPropagation();openPartnerAccountLedger('${p.partner}')"
+            style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+            📒 جاري الشريك
+          </button>
+        </div>
+      </div>`;
     }).join('');
 
     el('sum-partners').innerHTML = `
@@ -861,10 +880,10 @@ async function loadSummaryTab(fn, sys) {
   } catch(e) { console.error('Summary error:', e); el('sum-financial').innerHTML = errHTML('خطأ في تحميل الملخص: ' + e.message); }
 }
 
-function summRow(label, cls, val, bold=false) {
+function summRow(label, cls, val, bold=false, color='') {
   return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px">
     <span style="color:var(--text2)">${label}</span>
-    <span class="${cls}" style="${bold?'font-weight:700':''}${cls?'':';color:var(--text)'}">${val}</span>
+    <span class="${cls}" style="${bold?'font-weight:700':''}${cls?'':';color:var(--text)'}${color?';color:'+color:''}">${val}</span>
   </div>`;
 }
 
