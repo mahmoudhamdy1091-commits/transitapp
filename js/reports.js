@@ -13,7 +13,7 @@ function showReport(type) {
   setReportType(type);
 }
 
-const reportPeriodState = { period: 'today' };
+const reportPeriodState = { period: 'year' };
 
 function setReportPeriod(period, autoRun = true) {
   reportPeriodState.period = period;

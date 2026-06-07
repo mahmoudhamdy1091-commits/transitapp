@@ -20,6 +20,12 @@ async function showOpex() {
   if(el('opexSystemLabel')) el('opexSystemLabel').textContent = `نظام ${state.system}`;
   navActive('nav-opex');
   sessionStorage.setItem('tm_last_view','opex');
+  // ✅ default: السنة الحالية
+  const yr = new Date().getFullYear();
+  if (el('opex-filter-from') && !el('opex-filter-from').value)
+    el('opex-filter-from').value = `${yr}-01-01`;
+  if (el('opex-filter-to') && !el('opex-filter-to').value)
+    el('opex-filter-to').value = `${yr}-12-31`;
   await loadOpex();
 }
 
@@ -2231,7 +2237,7 @@ async function checkDbStructure() {
 // ════════════════════════════════════════════════════════
 
 const reviewState = {
-  period: 'month', from: null, to: null,
+  period: 'year', from: null, to: null,
   checkResults: [], activeTab: 0,
 };
 

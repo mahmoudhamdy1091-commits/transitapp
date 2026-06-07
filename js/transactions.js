@@ -604,6 +604,7 @@ async function initApp() {
   }, 50 * 60 * 1000);
 
   loadChartOfAccounts();
+  setDashPeriod('year'); // ✅ default السنة الحالية
   loadDashboard().then(() => {
     // Restore last view after refresh
     const lastView = sessionStorage.getItem('tm_last_view');
@@ -675,7 +676,7 @@ function updateSystemUI() {
 // ════════════════════════════════════════
 // DASHBOARD — period-based
 // ════════════════════════════════════════
-const dashState = { days: 30, from: null, to: null };
+const dashState = { days: 'year', from: null, to: null };
 
 function setDashPeriod(days) {
   // Update active button
