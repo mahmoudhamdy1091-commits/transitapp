@@ -652,7 +652,7 @@ async function loadSummaryTab(fn, sys) {
       apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGetAll('purchase_orders', { select:'total_purchase,supplier', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('purchase_orders', { select:'total_purchase,supplier,po_date,status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
     state.currentVehicles = vehicles || [];

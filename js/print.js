@@ -851,7 +851,7 @@ async function printDealSummary(fn) {
       </tbody>
     </table>`;
 
-    const html = `${docHeader('ملخص الصفقة', fn, fn)}
+    const html = `${docHeader('ملخص الصفقة', '', fn)}
     ${dealInfo}
     ${kpis}
     ${finTable}
