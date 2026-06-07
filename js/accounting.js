@@ -1505,8 +1505,14 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       const mySales      = totalSales * share;
       const myProfit     = dealProfit * share;
 
-      // ما دفعه الشريك (posted + null = قديم)
-      const capitalPaid  = (payments||[]).filter(isPosted).reduce((s,p)=>s+(+p.amount||0),0);
+      // ما دفعه الشريك — استثناء الملغية
+      // لو شريك واحد بحصة 100% → كل دفعات الملف تخصه
+      // لو أكثر من شريك → نفلتر بالاسم
+      const allPartnersCount = (allPartners||[]).length;
+      const capitalPaid  = (payments||[])
+        .filter(p => isPosted(p) && p.post_status !== 'voided')
+        .filter(p => allPartnersCount <= 1 || p.payer === partnerName)
+        .reduce((s,p)=>s+(+p.amount||0),0);
 
       // ما استرده
       const capitalRet   = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
@@ -1519,12 +1525,12 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
       // ما دفعه كل شركاء الصفقة (مش بس الشريك المطلوب)
       const allPartnersPayments = await apiGetAll('payments', {
-        select:'payer,amount', system_type:`eq.${sys}`, file_no:`eq.${fn}`
+        select:'payer,amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}`
       });
 
-      // احسب ما دفعه كل شريك فعلاً
+      // احسب ما دفعه كل شريك فعلاً — استثناء الملغية
       const paidByPartner = {};
-      (allPartnersPayments||[]).forEach(p => {
+      (allPartnersPayments||[]).filter(p => p.post_status !== 'voided').forEach(p => {
         paidByPartner[p.payer] = (paidByPartner[p.payer]||0) + (+p.amount||0);
       });
 
