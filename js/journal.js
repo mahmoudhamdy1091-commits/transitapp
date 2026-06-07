@@ -17,6 +17,9 @@ function showJournal() {
   el('topBarSub').textContent      = `نظام ${state.system}`;
   navActive('nav-journal');
   state.currentFileNo = null;
+  // ✅ تفعيل زرار السنة الحالية عند الفتح
+  document.querySelectorAll('.journal-period-btn').forEach(b => b.classList.remove('active'));
+  el('jperiod-year')?.classList.add('active');
   loadJournal();
 }
 
