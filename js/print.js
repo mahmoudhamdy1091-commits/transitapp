@@ -703,19 +703,18 @@ async function printDealSummary(fn) {
       </tr>`;
 
     // ── KPI Cards — نفس شكل الداشبورد ──
-    const mkKpi = (label, icon, val, sub, color) => `
-      <div style="background:#fff;border:1px solid #e4e0d8;border-radius:12px;padding:16px 18px;position:relative;overflow:hidden">
-        <div style="position:absolute;inset:0;background:radial-gradient(at top left,${color}0d 0%,transparent 60%)"></div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <span style="font-size:12px;color:#57534e;font-weight:600">${label}</span>
-          <div style="width:32px;height:32px;border-radius:8px;background:${color}1a;display:flex;align-items:center;justify-content:center;font-size:15px">${icon}</div>
-        </div>
-        <div style="font-family:'Courier New',monospace;font-size:22px;font-weight:600;color:${color};margin-bottom:4px">${val}</div>
-        <div style="font-size:11px;color:#78716c">${sub}</div>
-      </div>`;
+    const mkKpi = (label, icon, val, sub, color) =>
+      '<div style="background:#fff;border:1px solid #e4e0d8;border-radius:8px;padding:10px 12px;border-right:3px solid ' + color + '">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+      '<span style="font-size:10px;color:#78716c;font-weight:600">' + label + '</span>' +
+      '<span style="font-size:13px">' + icon + '</span>' +
+      '</div>' +
+      '<div style="font-family:monospace;font-size:16px;font-weight:700;color:' + color + ';margin-bottom:3px">' + val + '</div>' +
+      '<div style="font-size:10px;color:#a8a49c">' + sub + '</div>' +
+      '</div>';
 
     const kpis = `
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0">
       ${mkKpi('تكلفة الشراء',       '📋', f2(totalPurchase), `+ ${f2(totalExp)} مصاريف = ${f2(fullCost)}`,                          '#1d4ed8')}
       ${mkKpi('المصاريف',           '💸', f2(totalExp),       `${(expenses||[]).filter(isPosted).length} بند مصروف`,                  '#c0392b')}
       ${mkKpi('التكلفة الكاملة',    '🏷️', f2(fullCost),       'شراء + مصاريف',                                                        '#44403c')}
@@ -756,39 +755,76 @@ async function printDealSummary(fn) {
       </div>
     </div>`;
 
-    // ── جدول الشركاء ──
-    const partnersTable = (partners||[]).length > 0 ? `
-    <div class="section-title">👥 الشركاء</div>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
-      <thead><tr style="background:#1a1a1a;color:#fff">
-        <th style="padding:8px 12px;text-align:right;font-size:11px">الشريك</th>
-        <th style="padding:8px 12px;text-align:center;font-size:11px">الحصة</th>
-        <th style="padding:8px 12px;text-align:left;font-size:11px">حصة التكلفة</th>
-        <th style="padding:8px 12px;text-align:left;font-size:11px">المدفوع</th>
-        <th style="padding:8px 12px;text-align:left;font-size:11px">حصة الربح</th>
-        <th style="padding:8px 12px;text-align:left;font-size:11px">تم الصرف</th>
-        <th style="padding:8px 12px;text-align:left;font-size:11px">المستحق</th>
-      </tr></thead>
-      <tbody>
-        ${(partners||[]).map(p => {
-          const share    = +p.share_percent||0;
-          const capitalIn= (payments||[]).filter(px=>isPosted(px)&&px.payer===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
-          const liability= totalPurchase*(share/100);
-          const profitShare = profit*(share/100);
-          const totalOut = (payouts||[]).filter(px=>isPosted(px)&&px.partner===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
-          const netDue   = capitalIn + profitShare - totalOut;
-          return `<tr style="border-bottom:1px solid #e5e7eb">
-            <td style="padding:8px 12px;font-weight:700;font-size:12px">${p.partner}</td>
-            <td style="padding:8px 12px;text-align:center;font-size:12px">${share}%</td>
-            <td style="padding:8px 12px;font-family:monospace;font-size:12px;color:#2563eb">${f2(liability)}</td>
-            <td style="padding:8px 12px;font-family:monospace;font-size:12px;color:#16a34a">${f2(capitalIn)}</td>
-            <td style="padding:8px 12px;font-family:monospace;font-size:12px;color:${profitShare>=0?'#16a34a':'#dc2626'}">${f2(profitShare)}</td>
-            <td style="padding:8px 12px;font-family:monospace;font-size:12px;color:#d97706">${f2(totalOut)}</td>
-            <td style="padding:8px 12px;font-family:monospace;font-size:12px;font-weight:700;color:${netDue>=0?'#16a34a':'#dc2626'}">${f2(Math.abs(netDue))} ${netDue>=0?'↑':'↓'}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>` : '';
+    // ── بطاقات الشركاء المفصّلة ──
+    const isOpen = (totalV - soldV) > 0;
+    const partnersTable = (partners||[]).length > 0 ? (partners||[]).map(p => {
+      const share       = +p.share_percent||0;
+      const capitalIn   = (payments||[]).filter(px=>isPosted(px)&&px.payer===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
+      const liability   = totalPurchase*(share/100);
+      const remaining_  = Math.max(liability - capitalIn, 0);
+      const profitShare = profit*(share/100);
+      const totalOut    = (payouts||[]).filter(px=>isPosted(px)&&px.partner===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
+      const netDue      = capitalIn + profitShare - totalOut;
+      const pc          = profitShare >= 0 ? '#15803d' : '#c0392b';
+      const nc          = netDue >= 0 ? '#15803d' : '#c0392b';
+      const rows = (label, val, bold, color) =>
+        '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px solid #f0ede8">' +
+        '<span style="color:#57534e">' + label + '</span>' +
+        '<span style="font-family:monospace;font-weight:' + (bold?'700':'500') + ';color:' + (color||'#1c1917') + '">' + val + '</span>' +
+        '</div>';
+
+      let html = '<div style="border:1px solid #e4e0d8;border-radius:10px;margin-bottom:14px;overflow:hidden">';
+
+      // header
+      html += '<div style="background:#1C1917;color:#F9F8F6;padding:10px 16px;display:flex;justify-content:space-between;align-items:center">'
+            + '<span style="font-size:14px;font-weight:700">' + p.partner + '</span>'
+            + '<span style="font-size:12px;background:#44403C;padding:3px 12px;border-radius:10px">' + share + '%</span>'
+            + '</div>';
+
+      // two cols
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0">';
+
+      // رأس المال
+      html += '<div style="padding:12px 14px;border-left:1px solid #e4e0d8;border-bottom:1px solid #e4e0d8">'
+            + '<div style="font-size:10px;color:#78716c;font-weight:700;margin-bottom:8px;letter-spacing:1px">رأس المال</div>'
+            + rows('حصته في التكلفة', f2(liability),  false, '#1d4ed8')
+            + rows('دفع فعلاً',        f2(capitalIn),  false, '#15803d')
+            + rows('المتبقي عليه',     remaining_ > 0.01 ? f2(remaining_)+' ⚠️' : 'صفر ✅', true, remaining_>0.01?'#c0392b':'#15803d')
+            + '</div>';
+
+      // الربح
+      html += '<div style="padding:12px 14px;border-bottom:1px solid #e4e0d8">'
+            + '<div style="font-size:10px;color:#78716c;font-weight:700;margin-bottom:8px;letter-spacing:1px">الربح / الخسارة</div>'
+            + rows('إجمالي المبيعات', f2(totalSales), false, '#15803d')
+            + rows('التكلفة الكاملة', f2(fullCost),   false, '#c0392b')
+            + rows('حصته (' + share + '%)', (profitShare>=0?'+':'') + f2(profitShare), true, pc)
+            + '</div>';
+
+      html += '</div>';
+
+      // تنبيه صفقة مفتوحة
+      if (isOpen) {
+        html += '<div style="background:#fef9ec;border-top:1px solid #e4e0d8;padding:8px 14px;font-size:11px;color:#92400e">'
+              + '⚠️ الصفقة مفتوحة — ' + (totalV-soldV) + ' سيارة في المخزن · الأرقام ستتغير عند اكتمال المبيعات'
+              + '</div>';
+      }
+
+      // المستحق النهائي
+      html += '<div style="background:#f9f8f6;padding:12px 16px;border-top:1px solid #e4e0d8">'
+            + '<div style="font-size:10px;color:#78716c;margin-bottom:6px">المستحق = رأس مال مدفوع + حصة الربح − مسحوبات</div>'
+            + '<div style="font-size:11px;color:#57534e;font-family:monospace;margin-bottom:10px">'
+            + f2(capitalIn) + ' + (' + f2(profitShare) + ') − ' + f2(totalOut) + ' = <strong>' + f2(Math.abs(netDue)) + '</strong>'
+            + '</div>'
+            + (totalOut > 0 ? '<div style="font-size:11px;color:#57534e;margin-bottom:8px">تم الصرف: <span style="font-family:monospace;color:#d97706;font-weight:600">' + f2(totalOut) + '</span></div>' : '')
+            + '<div style="display:flex;justify-content:space-between;align-items:center">'
+            + '<span style="font-size:12px;font-weight:700;color:#1c1917">المستحق' + (isOpen?' (تقديري)':'') + ':</span>'
+            + '<span style="font-size:20px;font-weight:700;font-family:monospace;color:' + nc + '">' + f2(Math.abs(netDue)) + ' ' + (netDue>=0?'↑':'↓') + '</span>'
+            + '</div>'
+            + '</div>';
+
+      html += '</div>';
+      return html;
+    }).join('') : '';
 
     // ── بيانات الصفقة ──
     const dealInfo = `
