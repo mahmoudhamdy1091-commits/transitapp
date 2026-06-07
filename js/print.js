@@ -659,6 +659,174 @@ function buildPrintTable(title, fileNo, columns, rows, totalsRow = null) {
 }
 
 
+
+// ════════════════════════════════════════════════════════════
+// SECTION 14 — printDealSummary (ملخص الصفقة الكامل)
+// ════════════════════════════════════════════════════════════
+async function printDealSummary(fn) {
+  try {
+    // ✅ قراءة من المصدر الموحد — لا طلبات جديدة
+    const d = state.currentDealData;
+    if (!d || d.fn !== fn) {
+      toast('يرجى فتح تاب الملخص أولاً', 'err');
+      return;
+    }
+
+    const { vehicles, payments, expenses, sales, collections, partners, payouts, po } = d;
+    const totalPurchase  = +(po.total_purchase) || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
+    const postedPay      = (payments||[]).filter(isPosted);
+    const postedExp      = (expenses||[]).filter(isPosted).filter(r=>r.post_status!=='voided');
+    const postedSal      = (sales||[]).filter(isPosted).filter(r=>r.post_status!=='voided');
+    const postedCol      = (collections||[]).filter(isPosted).filter(r=>r.post_status!=='voided');
+    const postedPout     = (payouts||[]).filter(isPosted);
+
+    const totalPaid      = postedPay.reduce((s,p)=>s+(+p.amount||0),0);
+    const totalExp       = postedExp.reduce((s,e)=>s+(+e.amount||0),0);
+    const totalSalesRaw  = postedSal.reduce((s,s2)=>s+(+s2.sale_price||0),0);
+    const totalCollected = postedCol.filter(c=>c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
+    const totalPending   = postedCol.filter(c=>!c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
+    const totalSales     = postedCol.length > 0 ? postedCol.reduce((s,c)=>s+(+c.amount||0),0) : totalSalesRaw;
+    const fullCost       = totalPurchase + totalExp;
+    const profit         = totalSales - fullCost;
+    const margin         = totalSales > 0 ? Math.round(profit/totalSales*100) : 0;
+    const remaining      = totalPurchase - totalPaid;
+    const soldVins       = new Set(postedSal.map(s=>s.vin));
+    const totalV         = (vehicles||[]).length;
+    const soldV          = soldVins.size;
+    const pDate          = new Date().toLocaleDateString('en-GB');
+
+    const f2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3});
+    const pRow = (label, val, bold=false, color='') =>
+      `<tr ${bold?'style="font-weight:700;background:#f8f9fa"':''}>
+        <td style="padding:7px 12px;color:#6b7280;font-size:12px">${label}</td>
+        <td style="padding:7px 12px;text-align:left;font-family:monospace;font-size:12px;${color?'color:'+color:''};${bold?'font-weight:700':''}">${val}</td>
+      </tr>`;
+
+    // ── KPI Cards — نفس شكل الداشبورد ──
+    const mkKpi = (label, icon, val, sub, color) => `
+      <div style="background:#fff;border:1px solid #e4e0d8;border-radius:12px;padding:16px 18px;position:relative;overflow:hidden">
+        <div style="position:absolute;inset:0;background:radial-gradient(at top left,${color}0d 0%,transparent 60%)"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span style="font-size:12px;color:#57534e;font-weight:600">${label}</span>
+          <div style="width:32px;height:32px;border-radius:8px;background:${color}1a;display:flex;align-items:center;justify-content:center;font-size:15px">${icon}</div>
+        </div>
+        <div style="font-family:'Courier New',monospace;font-size:22px;font-weight:600;color:${color};margin-bottom:4px">${val}</div>
+        <div style="font-size:11px;color:#78716c">${sub}</div>
+      </div>`;
+
+    const kpis = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0">
+      ${mkKpi('تكلفة الشراء',       '📋', f2(totalPurchase), `+ ${f2(totalExp)} مصاريف = ${f2(fullCost)}`,                          '#1d4ed8')}
+      ${mkKpi('المصاريف',           '💸', f2(totalExp),       `${(expenses||[]).filter(isPosted).length} بند مصروف`,                  '#c0392b')}
+      ${mkKpi('التكلفة الكاملة',    '🏷️', f2(fullCost),       'شراء + مصاريف',                                                        '#44403c')}
+      ${mkKpi('المبيعات',           '💹', f2(totalSales),     `${soldV} من ${totalV} سيارة · ${Math.round(soldV/Math.max(totalV,1)*100)}%`, '#15803d')}
+      ${mkKpi('صافي الربح',         profit>=0?'📈':'📉', f2(Math.abs(profit)), `${profit>=0?'ربح':'خسارة'} · هامش ${margin}%`,       profit>=0?'#15803d':'#c0392b')}
+      ${mkKpi('غير محصّل',          '⏳', f2(totalPending),   totalPending>0?'فواتير مستحقة من العملاء':'✅ كل شيء محصّل',             totalPending>0?'#d97706':'#15803d')}
+      ${mkKpi('المدفوع للمورد',     '💳', f2(totalPaid),      `من ${f2(totalPurchase)}`,                                              '#0e7490')}
+      ${mkKpi('المتبقي للمورد',     remaining>0?'⚠️':'✅', f2(Math.abs(remaining)), remaining>0?'يحتاج سداد':'مسدد كامل',            remaining>0?'#c0392b':'#15803d')}
+      ${mkKpi('مقبوض فعلاً',        '💰', f2(totalCollected), `من ${f2(totalSales)} إجمالي الفواتير`,                                '#6d28d9')}
+    </div>`;
+
+    // ── جدول المالية ──
+    const finTable = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div>
+        <div class="section-title">💰 التكاليف والمبيعات</div>
+        <table style="width:100%;border-collapse:collapse">
+          ${pRow('تكلفة الشراء', f2(totalPurchase)+' KWD', false, '#2563eb')}
+          ${pRow('المصاريف', f2(totalExp)+' KWD', false, '#dc2626')}
+          ${pRow('التكلفة الكاملة', f2(fullCost)+' KWD', true)}
+          ${pRow('المبيعات', f2(totalSales)+' KWD', false, '#16a34a')}
+          ${pRow('مقبوض فعلاً', f2(totalCollected)+' KWD', false, '#16a34a')}
+          ${totalPending > 0 ? pRow('⏳ منتظر تحصيل', f2(totalPending)+' KWD', false, '#d97706') : ''}
+          ${pRow('صافي الربح', (profit>=0?'+':'-')+f2(Math.abs(profit))+' KWD', true, profit>=0?'#16a34a':'#dc2626')}
+        </table>
+      </div>
+      <div>
+        <div class="section-title">🚛 المخزون والمدفوعات</div>
+        <table style="width:100%;border-collapse:collapse">
+          ${pRow('إجمالي السيارات', totalV+' سيارة')}
+          ${pRow('مباعة', soldV+' سيارة', false, '#16a34a')}
+          ${pRow('في المخزن', (totalV-soldV)+' سيارة', false, '#2563eb')}
+          <tr><td colspan="2" style="padding:4px 0"><hr style="border:none;border-top:1px solid #e5e7eb"></td></tr>
+          ${pRow('المدفوع للمورد', f2(totalPaid)+' KWD', false, '#16a34a')}
+          ${pRow('المتبقي للمورد', f2(Math.abs(remaining))+' KWD', remaining>0, remaining>0?'#dc2626':'#16a34a')}
+          ${pRow('صرف الشركاء', f2(postedPout.reduce((s,p)=>s+(+p.amount||0),0))+' KWD')}
+        </table>
+      </div>
+    </div>`;
+
+    // ── جدول الشركاء ──
+    const partnersTable = (partners||[]).length > 0 ? `
+    <div class="section-title">👥 الشركاء</div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+      <thead><tr style="background:#1a1a1a;color:#fff">
+        <th style="padding:8px 12px;text-align:right;font-size:11px">الشريك</th>
+        <th style="padding:8px 12px;text-align:center;font-size:11px">الحصة</th>
+        <th style="padding:8px 12px;text-align:left;font-size:11px">حصة التكلفة</th>
+        <th style="padding:8px 12px;text-align:left;font-size:11px">المدفوع</th>
+        <th style="padding:8px 12px;text-align:left;font-size:11px">حصة الربح</th>
+        <th style="padding:8px 12px;text-align:left;font-size:11px">تم الصرف</th>
+        <th style="padding:8px 12px;text-align:left;font-size:11px">المستحق</th>
+      </tr></thead>
+      <tbody>
+        ${(partners||[]).map(p => {
+          const share    = +p.share_percent||0;
+          const capitalIn= (payments||[]).filter(px=>isPosted(px)&&px.payer===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
+          const liability= totalPurchase*(share/100);
+          const profitShare = profit*(share/100);
+          const totalOut = (payouts||[]).filter(px=>isPosted(px)&&px.partner===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
+          const netDue   = capitalIn + profitShare - totalOut;
+          return `<tr style="border-bottom:1px solid #e5e7eb">
+            <td style="padding:8px 12px;font-weight:700;font-size:12px">${p.partner}</td>
+            <td style="padding:8px 12px;text-align:center;font-size:12px">${share}%</td>
+            <td style="padding:8px 12px;font-family:monospace;font-size:12px;color:#2563eb">${f2(liability)}</td>
+            <td style="padding:8px 12px;font-family:monospace;font-size:12px;color:#16a34a">${f2(capitalIn)}</td>
+            <td style="padding:8px 12px;font-family:monospace;font-size:12px;color:${profitShare>=0?'#16a34a':'#dc2626'}">${f2(profitShare)}</td>
+            <td style="padding:8px 12px;font-family:monospace;font-size:12px;color:#d97706">${f2(totalOut)}</td>
+            <td style="padding:8px 12px;font-family:monospace;font-size:12px;font-weight:700;color:${netDue>=0?'#16a34a':'#dc2626'}">${f2(Math.abs(netDue))} ${netDue>=0?'↑':'↓'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : '';
+
+    // ── بيانات الصفقة ──
+    const dealInfo = `
+    <div class="section-title">📋 بيانات الصفقة</div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+      <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
+      <tbody>
+        <tr>
+          <td style="padding:6px 12px;font-size:11px;color:#6b7280">رقم الملف</td>
+          <td style="padding:6px 12px;font-size:12px;font-weight:700;color:#3C3834;font-family:monospace">${fn}</td>
+        </tr>
+        <tr style="background:#f8f9fa">
+          <td style="padding:6px 12px;font-size:11px;color:#6b7280">المورد</td>
+          <td style="padding:6px 12px;font-size:12px">${po.supplier||'—'}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 12px;font-size:11px;color:#6b7280">تاريخ الصفقة</td>
+          <td style="padding:6px 12px;font-size:12px;font-family:monospace">${po.po_date||'—'}</td>
+        </tr>
+        <tr style="background:#f8f9fa">
+          <td style="padding:6px 12px;font-size:11px;color:#6b7280">الحالة</td>
+          <td style="padding:6px 12px;font-size:12px;font-weight:700">${po.status||'—'}</td>
+        </tr>
+      </tbody>
+    </table>`;
+
+    const html = `${docHeader('ملخص الصفقة', fn, fn)}
+    ${dealInfo}
+    ${kpis}
+    ${finTable}
+    ${partnersTable}
+    <div class="doc-footer">Transit International Company · ملخص الصفقة · ${fn} · ${pDate}</div>`;
+
+    renderPrint(html, `ملخص الصفقة — ${fn}`);
+
+  } catch(e) { toast('خطأ في الطباعة: '+e.message, 'err'); }
+}
+
 // ════════════════════════════════════════════════════════════
 // SECTION 10c — Tab Print Functions (جداول نظيفة بدون ⋮)
 // ════════════════════════════════════════════════════════════

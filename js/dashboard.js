@@ -658,6 +658,19 @@ async function loadSummaryTab(fn, sys) {
     state.currentVehicles = vehicles || [];
     state.currentSales    = sales    || [];
 
+    // ✅ مصدر موحد للبيانات — printDealSummary تقرأ منه بدون طلبات جديدة
+    state.currentDealData = {
+      fn, sys,
+      vehicles:    vehicles    || [],
+      payments:    payments    || [],
+      expenses:    expenses    || [],
+      sales:       sales       || [],
+      collections: collections || [],
+      partners:    partners    || [],
+      payouts:     payouts     || [],
+      po:          poArr?.[0]  || {},
+    };
+
     const totalPurchase  = +(poArr?.[0]?.total_purchase) || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
 
     // فصل posted من draft — null يُعامَل كـ posted (بيانات قديمة)
@@ -700,7 +713,13 @@ async function loadSummaryTab(fn, sys) {
     const draftBanner    = draftCount > 0 ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:8px 14px;margin-bottom:12px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px">⏳ <strong>${draftCount} عملية معلقة</strong> لم تُرحَّل بعد — الأرقام تعكس المرحَّل فقط &nbsp;<a onclick="showApprovalQueue()" href="javascript:void(0)" style="color:#92400e;font-weight:700;text-decoration:underline">راجعها</a></div>` : '';
 
     // ── KPI Strip ──
-    el('sum-financial').innerHTML = draftBanner + `
+    // زرار طباعة ملخص الصفقة
+    el('sum-financial').innerHTML = `
+      <div class="no-print" style="display:flex;justify-content:flex-end;margin-bottom:10px">
+        <button class="btn btn-secondary btn-sm" onclick="printDealSummary('${fn}')" style="color:var(--blue)">
+          🖨️ طباعة ملخص الصفقة
+        </button>
+      </div>` + draftBanner + `
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
         <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
           <div style="font-size:11px;color:var(--text2);margin-bottom:4px">تكلفة الشراء</div>
