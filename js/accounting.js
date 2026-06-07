@@ -1412,7 +1412,8 @@ async function loadViewerKpis(fn, sys) {
     const fullCost     = totalCost + totalExp;
     const totalSales   = (sales||[]).filter(isPosted).reduce((s,s2)=>s+(+s2.sale_price||0),0);
     const totalColl    = (collections||[]).filter(isPosted).reduce((s,c)=>s+(+c.amount||0),0);
-    const totalPaid    = (payments||[]).filter(isPosted).reduce((s,p)=>s+(+p.amount||0),0);
+    // ✅ pending_edit = مرحّلة في طور التعديل → تُحسب كمدفوع
+    const totalPaid    = (payments||[]).filter(p => isPosted(p) || p.post_status === 'pending_edit').reduce((s,p)=>s+(+p.amount||0),0);
     const profit       = totalSales - fullCost;
     const soldVins     = new Set((sales||[]).filter(isPosted).map(s=>s.vin));
     const unsold       = (vehicles||[]).filter(v=>!soldVins.has(v.vin)).length;
