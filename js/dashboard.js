@@ -674,11 +674,13 @@ async function loadSummaryTab(fn, sys) {
     const totalPurchase  = +(poArr?.[0]?.total_purchase) || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
 
     // فصل posted من draft — null يُعامَل كـ posted (بيانات قديمة)
-    const postedPay  = (payments||[]).filter(isPosted);
-    const postedExp  = (expenses||[]).filter(isPosted);
-    const postedSal  = (sales||[]).filter(isPosted);
-    const postedCol  = (collections||[]).filter(isPosted);
-    const postedPout = (payouts||[]).filter(isPosted);
+    // ✅ pending_edit = عملية مرحّلة في طور التعديل → تُحسب كـ posted
+    const isActive = r => isPosted(r) || r.post_status === 'pending_edit';
+    const postedPay  = (payments||[]).filter(isActive);
+    const postedExp  = (expenses||[]).filter(isActive);
+    const postedSal  = (sales||[]).filter(isActive);
+    const postedCol  = (collections||[]).filter(isActive);
+    const postedPout = (payouts||[]).filter(isActive);
     const draftCount = (payments||[]).filter(isDraft).length +
                        (expenses||[]).filter(isDraft).length +
                        (sales||[]).filter(isDraft).length +

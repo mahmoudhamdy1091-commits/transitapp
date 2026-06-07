@@ -1509,8 +1509,9 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       // لو شريك واحد بحصة 100% → كل دفعات الملف تخصه
       // لو أكثر من شريك → نفلتر بالاسم
       const allPartnersCount = (allPartners||[]).length;
+      // ✅ pending_edit = مرحّلة في طور التعديل → تُحسب
       const capitalPaid  = (payments||[])
-        .filter(p => isPosted(p) && p.post_status !== 'voided')
+        .filter(p => (isPosted(p) || p.post_status === 'pending_edit') && p.post_status !== 'voided')
         .filter(p => allPartnersCount <= 1 || p.payer === partnerName)
         .reduce((s,p)=>s+(+p.amount||0),0);
 

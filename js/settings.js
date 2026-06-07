@@ -404,7 +404,8 @@ async function loadDealStatement(fn, sys) {
 
     // ✅ فلترة: المرحّلة فقط (posted أو null) — استثناء الملغية والمعلقة
     const isActive  = r => r.post_status !== 'voided' && r.post_status !== 'draft';
-    const isSettled = r => isPosted(r) && r.post_status !== 'voided';
+    // ✅ pending_edit = مرحّلة في طور التعديل
+    const isSettled = r => (isPosted(r) || r.post_status === 'pending_edit') && r.post_status !== 'voided';
 
     const totalPaid    = (payments||[]).filter(isActive).reduce((s,p)=>s+(+p.amount||0),0);
     const totalExp     = (expenses||[]).filter(isSettled).reduce((s,e)=>s+(+e.amount||0),0);
