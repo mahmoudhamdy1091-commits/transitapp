@@ -217,7 +217,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 .nav-item .ni-icon{width:20px;text-align:center;font-size:15px}
 .nav-item .ni-badge{
   margin-right:auto;
-  background:var(--accent);color:#000;
+  background:var(--accent);color:#fff;
   font-size:9px;font-weight:700;
   padding:1px 6px;border-radius:10px;
 }
@@ -911,7 +911,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 /* ── Filter button active ── */
 .section-actions .btn.active-filter {
   background: var(--accent);
-  color: #000;
+  color: #fff;
   border-color: var(--accent);
 }
 
