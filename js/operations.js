@@ -879,7 +879,11 @@ const APPROVAL_CONFIG = {
   collection:{ icon:'💰', label:'تحصيل',        color:'var(--blue)',   table:'collections',      amountField:'amount',         dateField:'paid_date',  descFields:['inv_no','customer','file_no'] },
   payment:   { icon:'💳', label:'دفعة مورد',    color:'var(--cyan)',   table:'payments',         amountField:'amount',         dateField:'pay_date',   descFields:['payer','file_no','pay_method'] },
   payout:    { icon:'👥', label:'صرف شريك',    color:'var(--purple)', table:'partner_payouts',  amountField:'amount',         dateField:'pay_date',   descFields:['partner','payout_type','file_no'] },
-  reversal:  { icon:'🔄', label:'طلب إلغاء',   color:'var(--orange,#f97316)', table:null, amountField:'amount', dateField:'created_at', descFields:['ref_type','ref_desc','file_no'] },
+  reversal:      { icon:'🔄', label:'طلب إلغاء',        color:'var(--orange,#f97316)', table:null,          amountField:'amount', dateField:'created_at', descFields:['ref_type','ref_desc','file_no'] },
+  // ✅ طلبات التعديل — in-place edit requests
+  payment_edit:    { icon:'✏️', label:'تعديل دفعة',      color:'var(--cyan)',   table:'payments',         amountField:'_edit_amount', dateField:'created_at', descFields:['payer','_edit_payer','file_no'] },
+  expense_edit:    { icon:'✏️', label:'تعديل مصروف',     color:'var(--red)',    table:'expenses',         amountField:'_edit_amount', dateField:'created_at', descFields:['description','_edit_desc','file_no'] },
+  collection_edit: { icon:'✏️', label:'تعديل تحصيل',     color:'var(--blue)',   table:'collections',      amountField:'_edit_amount', dateField:'created_at', descFields:['inv_no','customer','file_no'] },
 };
 
 async function showApprovalQueue() {
@@ -901,7 +905,8 @@ async function loadApprovalQueue() {
 
     // جيب كل البنود المعلقة من كل الجداول بالتوازي
     const [purchases, sales, expenses, collections, payments, payouts,
-           voidPay, voidExp, voidCol, voidPayout] = await Promise.all([
+           voidPay, voidExp, voidCol, voidPayout,
+           editPay, editExp, editCol] = await Promise.all([
       apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
       apiGetAll('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
       apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
@@ -912,6 +917,10 @@ async function loadApprovalQueue() {
       apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_void`, order:'created_at.desc' }),
       apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_void`, order:'created_at.desc' }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_void`, order:'created_at.desc' }),
+      // ✅ pending_edit — تعديلات في انتظار الموافقة
+      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
+      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
+      apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
     ]);
 
     // دمج كل البنود مع نوعها
@@ -938,6 +947,25 @@ async function loadApprovalQueue() {
       ...(voidPayout||[]).map(r => buildRevItem(r,'payout',    r=>`${r.partner||'—'} · ${r.file_no||'—'}`)),
     ];
 
+    // بناء edit items
+    const buildEditItem = (r, srcType, descFn) => ({
+      ...r, _type: srcType + '_edit', _srcType: srcType,
+      _amount: +r.amount || +r.sale_price || 0,
+      _date: r.created_at,
+      _desc: `تعديل ${srcType==='payment'?'دفعة':srcType==='expense'?'مصروف':'تحصيل'} — ${descFn(r)}`,
+      _file: r.file_no,
+      _editData: {
+        payment:    { payer:r._edit_payer, amount:r._edit_amount, method:r._edit_method, date:r._edit_date, doc:r._edit_doc },
+        expense:    { desc:r._edit_desc, type:r._edit_type, amount:r._edit_amount, date:r._edit_date, method:r._edit_method, doc:r._edit_doc },
+        collection: { amount:r._edit_amount, method:r._edit_method, due:r._edit_due, paid:r._edit_paid, doc:r._edit_doc },
+      }[srcType],
+    });
+    const editItems = [
+      ...(editPay||[]).map(r => buildEditItem(r, 'payment',    r => `${r.payer||'—'} → ${r._edit_payer||'—'} · ${r.file_no||'—'}`)),
+      ...(editExp||[]).map(r => buildEditItem(r, 'expense',    r => `${r.description||'—'} → ${r._edit_desc||'—'} · ${r.file_no||'—'}`)),
+      ...(editCol||[]).map(r => buildEditItem(r, 'collection', r => `${r.inv_no||'—'} · ${r.amount||0} → ${r._edit_amount||0}`)),
+    ];
+
     approvalState.all = [
       ...(purchases||[]).map(r    => ({...r, _type:'purchase',   _amount:+r.total_purchase||0, _date:r.po_date,    _desc:`${r.file_no||'—'} · ${r.supplier||'—'} · ${r.vehicle_count||0} سيارة`, _file:r.file_no })),
       ...(sales||[]).map(r        => ({...r, _type:'sale',       _amount:+r.sale_price||0,     _date:r.sale_date,  _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.vin||'—'}`,               _file:r.file_no })),
@@ -946,6 +974,7 @@ async function loadApprovalQueue() {
       ...(payments||[]).map(r     => ({...r, _type:'payment',    _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.payer||'—'} · ${r.file_no||'—'} · ${r.pay_method||'—'}`,          _file:r.file_no })),
       ...(payouts||[]).map(r      => ({...r, _type:'payout',     _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.partner||'—'} · ${r.payout_type||'—'} · ${r.file_no||'—'}`,       _file:r.file_no })),
       ...reversalItems,
+      ...editItems,
     ].sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
 
     // تحديث الـ badge في الـ sidebar
@@ -1282,6 +1311,81 @@ async function approveItem(type, id) {
     const cfg = APPROVAL_CONFIG[type];
     if (!cfg) { toast('نوع غير معروف','err'); return; }
 
+    // ── معالجة طلبات التعديل (pending_edit) ──
+    if (type === 'payment_edit' || type === 'expense_edit' || type === 'collection_edit') {
+      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+      if (!item) { toast('لم يُعثر على طلب التعديل','err'); return; }
+      const srcType = type.replace('_edit','');
+      const ed = item._editData || {};
+      const tableMap = { payment:'payments', expense:'expenses', collection:'collections' };
+      const tbl = tableMap[srcType];
+
+      // ── 1. تحديث القيد المحاسبي الأصلي ──
+      try {
+        // جيب القيد الأصلي المرتبط بالسجل
+        const jeRows = await apiGetAll('journal_entries', {
+          select:'id,dr_amount,cr_amount,account_code',
+          system_type:`eq.${state.system}`,
+          file_no:`eq.${item.file_no}`,
+          ref_table:`eq.${tbl}`,
+          post_status:'eq.posted',
+          order:'id.desc', limit:20
+        });
+        // ابحث عن القيد الأقرب للمبلغ القديم
+        const oldAmount = +item.amount || 0;
+        const newAmount = +ed.amount || +ed.amount || oldAmount;
+        const matchJE = (jeRows||[]).find(j =>
+          Math.abs((+j.dr_amount||0) - oldAmount) < 0.001 ||
+          Math.abs((+j.cr_amount||0) - oldAmount) < 0.001
+        );
+
+        if (matchJE && Math.abs(newAmount - oldAmount) > 0.001) {
+          // تعديل مبالغ القيد مباشرة
+          const isDr = (+matchJE.dr_amount||0) > 0;
+          await apiPatch('journal_entries', { id:`eq.${matchJE.id}` }, {
+            dr_amount: isDr ? newAmount : 0,
+            cr_amount: isDr ? 0 : newAmount,
+          });
+        }
+      } catch(e) { console.warn('approveItem edit JE update:', e.message); }
+
+      // ── 2. تطبيق التعديلات على السجل الأصلي ──
+      let patchData = { post_status: 'posted' };
+      if (srcType === 'payment') {
+        if (ed.payer)  patchData.payer      = ed.payer;
+        if (ed.amount) patchData.amount     = +ed.amount;
+        if (ed.method) patchData.pay_method = ed.method;
+        if (ed.date)   patchData.pay_date   = ed.date;
+        if (ed.doc !== undefined) patchData.document = ed.doc;
+      } else if (srcType === 'expense') {
+        if (ed.desc)   patchData.description = ed.desc;
+        if (ed.type)   patchData.exp_type    = ed.type;
+        if (ed.amount) patchData.amount      = +ed.amount;
+        if (ed.date)   patchData.exp_date    = ed.date;
+        if (ed.method) patchData.pay_method  = ed.method;
+        if (ed.doc !== undefined) patchData.document = ed.doc;
+      } else if (srcType === 'collection') {
+        if (ed.amount) patchData.amount     = +ed.amount;
+        if (ed.method) patchData.pay_method = ed.method;
+        if (ed.due !== undefined)  patchData.due_date  = ed.due;
+        if (ed.paid !== undefined) patchData.paid_date = ed.paid;
+        if (ed.doc !== undefined)  patchData.document  = ed.doc;
+      }
+
+      // حذف حقول _edit_* المؤقتة
+      ['_edit_payer','_edit_amount','_edit_method','_edit_date','_edit_doc',
+       '_edit_desc','_edit_type','_edit_due','_edit_paid'].forEach(f => {
+        patchData[f] = null;
+      });
+
+      await apiPatch(tbl, { id:`eq.${id}` }, patchData);
+      await logAudit('EDIT_APPROVED', tbl, item.file_no, item, patchData, `موافقة تعديل ${srcType} ${item.ref_no||id}`);
+      invalidateCache();
+      toast('✅ تم تطبيق التعديل','ok');
+      await loadApprovalQueue();
+      return;
+    }
+
     // ── معالجة طلبات الإلغاء ──
     if (type === 'reversal') {
       const item = approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
@@ -1380,6 +1484,26 @@ async function approveItem(type, id) {
 async function rejectItem(type, id) {
   const cfg = APPROVAL_CONFIG[type];
   if (!cfg) return;
+
+  // ── رفض طلب التعديل — يرجع للحالة posted بدون تغيير ──
+  if (type === 'payment_edit' || type === 'expense_edit' || type === 'collection_edit') {
+    const srcType = type.replace('_edit','');
+    const tableMap = { payment:'payments', expense:'expenses', collection:'collections' };
+    const tbl = tableMap[srcType];
+    try {
+      // حذف حقول _edit_* وإرجاع post_status لـ posted
+      const clearData = { post_status: 'posted' };
+      ['_edit_payer','_edit_amount','_edit_method','_edit_date','_edit_doc',
+       '_edit_desc','_edit_type','_edit_due','_edit_paid'].forEach(f => {
+        clearData[f] = null;
+      });
+      await apiPatch(tbl, { id:`eq.${id}` }, clearData);
+      invalidateCache();
+      toast('↩ تم رفض التعديل — رجعت للحالة الأصلية','ok');
+      await loadApprovalQueue();
+    } catch(e) { toast('خطأ: '+e.message,'err'); }
+    return;
+  }
 
   // ── استرداد طلب الإلغاء (reversal) — يرجع للحالة posted ──
   if (type === 'reversal') {

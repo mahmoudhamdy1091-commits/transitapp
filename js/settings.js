@@ -401,43 +401,68 @@ async function loadDealStatement(fn, sys) {
 
     const deal = po?.[0] || {};
     const totalPurchase = +deal.total_purchase || 0;
-    const totalPaid     = (payments||[]).reduce((s,p)=>s+(+p.amount||0),0);
-    const totalExp      = (expenses||[]).reduce((s,e)=>s+(+e.amount||0),0);
-    const totalSales    = (sales||[]).reduce((s,s2)=>s+(+s2.sale_price||0),0);
-    const totalColl     = (collections||[]).reduce((s,c)=>s+(+c.amount||0),0);
-    const totalPayouts  = (payouts||[]).reduce((s,p)=>s+(+p.amount||0),0);
-    const profit        = totalSales - totalPurchase - totalExp;
+
+    // ✅ فلترة: المرحّلة فقط (posted أو null) — استثناء الملغية والمعلقة
+    const isActive  = r => r.post_status !== 'voided' && r.post_status !== 'draft';
+    const isSettled = r => isPosted(r) && r.post_status !== 'voided';
+
+    const totalPaid    = (payments||[]).filter(isActive).reduce((s,p)=>s+(+p.amount||0),0);
+    const totalExp     = (expenses||[]).filter(isSettled).reduce((s,e)=>s+(+e.amount||0),0);
+    const totalSales   = (sales||[]).filter(isSettled).reduce((s,s2)=>s+(+s2.sale_price||0),0);
+    const totalColl    = (collections||[]).filter(r=>r.paid_date && isSettled(r)).reduce((s,c)=>s+(+c.amount||0),0);
+    const totalPayouts = (payouts||[]).filter(isActive).reduce((s,p)=>s+(+p.amount||0),0);
+    const profit       = totalSales - totalPurchase - totalExp;
+
+    // عدد السجلات المعلقة/الملغية للتنبيه
+    const draftSales  = (sales||[]).filter(r=>r.post_status==='draft').length;
+    const draftExp    = (expenses||[]).filter(r=>r.post_status==='draft').length;
+    const voidedCount = (sales||[]).filter(r=>r.post_status==='voided').length
+                      + (expenses||[]).filter(r=>r.post_status==='voided').length;
 
     const entries = [
       { date:deal.po_date||deal.created_at, type:'شراء', icon:'📋', color:'var(--blue)',
         party:deal.supplier||'—', debit:0, credit:totalPurchase, _pl:true,
         desc:`سند شراء ${fn}${deal.po_no?' — PO: '+deal.po_no:''}`,
         extra:`${(vehicles||[]).length} سيارة` },
-      ...(payments||[]).map(p=>({ date:p.pay_date, type:'دفعة للمورد', icon:'💳', color:'var(--cyan)',
-        party:p.payer||'—', debit:+p.amount, credit:0, _pl:false,
+      // ✅ نُدرج فقط السجلات غير الملغية — الملغية تظهر بشفافية كمرجع
+      ...(payments||[]).filter(isActive).map(p=>({ date:p.pay_date, type:'دفعة للمورد', icon:'💳', color:'var(--cyan)',
+        party:p.payer||'—', debit:+p.amount, credit:0, _pl:false, _voided:false,
         desc:`دفعة من ${p.payer||'—'}`, extra:`${p.pay_method||''}${p.document?' · '+p.document:''}` })),
-      ...(expenses||[]).map(e=>({ date:e.exp_date||e.expense_date, type:'مصروف', icon:'💸', color:'var(--red)',
-        party:e.vendor||'—', debit:0, credit:+e.amount, _pl:true,
+      ...(expenses||[]).filter(isSettled).map(e=>({ date:e.exp_date||e.expense_date, type:'مصروف', icon:'💸', color:'var(--red)',
+        party:e.vendor||'—', debit:0, credit:+e.amount, _pl:true, _voided:false,
         desc:e.category||e.description||'مصروف', extra:`${e.pay_method||''}` })),
-      ...(sales||[]).map(s=>({ date:s.sale_date, type:'بيع', icon:'🤝', color:'var(--green)',
-        party:s.customer||'—', debit:+s.sale_price, credit:0, _pl:true,
+      ...(expenses||[]).filter(r=>r.post_status==='draft').map(e=>({ date:e.exp_date||e.expense_date, type:'مصروف (معلق)', icon:'⏳', color:'var(--accent)',
+        party:e.vendor||'—', debit:0, credit:+e.amount, _pl:false, _draft:true,
+        desc:e.category||e.description||'مصروف', extra:'في انتظار الموافقة' })),
+      ...(sales||[]).filter(isSettled).map(s=>({ date:s.sale_date, type:'بيع', icon:'🤝', color:'var(--green)',
+        party:s.customer||'—', debit:+s.sale_price, credit:0, _pl:true, _voided:false,
         desc:`بيع ${s.model||s.vin||'سيارة'} — ${s.customer||'—'}`,
         extra:`${s.vin?'شاصي: '+s.vin:''}${s.invoice_no?' · '+s.invoice_no:''}` })),
+      ...(sales||[]).filter(r=>r.post_status==='draft').map(s=>({ date:s.sale_date, type:'بيع (معلق)', icon:'⏳', color:'var(--accent)',
+        party:s.customer||'—', debit:+s.sale_price, credit:0, _pl:false, _draft:true,
+        desc:`بيع ${s.model||s.vin||'سيارة'} — ${s.customer||'—'}`, extra:'في انتظار الموافقة' })),
       // التحصيلات: معلوماتية فقط لا تدخل في الربح/الخسارة
-      ...(collections||[]).map(c=>({ date:c.paid_date, type:'تحصيل', icon:'💰', color:'var(--green)',
+      ...(collections||[]).filter(c=>c.paid_date && isSettled(c)).map(c=>({ date:c.paid_date, type:'تحصيل', icon:'💰', color:'var(--green)',
         party:c.customer||'—', debit:+c.amount, credit:0, _pl:false,
         desc:`تحصيل من ${c.customer||'—'}`, extra:`${c.pay_method||''}` })),
-      ...(payouts||[]).map(p=>({ date:p.pay_date, type:'صرف شريك', icon:'👥', color:'var(--purple)',
+      ...(payouts||[]).filter(isActive).map(p=>({ date:p.pay_date, type:'صرف شريك', icon:'👥', color:'var(--purple)',
         party:p.partner||'—', debit:0, credit:+p.amount, _pl:false,
         desc:`${p.payout_type||'صرف'} — ${p.partner||'—'}`, extra:`${p.pay_method||''}${p.notes?' · '+p.notes:''}` })),
     ].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
 
     window._dealStatementData = { fn, deal, entries, totalPurchase, totalPaid, totalExp, totalSales, totalColl, totalPayouts, profit, partners, payouts, vehicles };
 
-    const kpis = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px">
-      ${[['تكلفة الشراء',fmt(totalPurchase),'var(--blue)'],['المدفوع',fmt(totalPaid),'var(--cyan)'],
+    // تنبيه للمستخدم لو في عمليات معلقة
+    const draftAlert = (draftSales + draftExp) > 0
+      ? `<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:8px 14px;margin-bottom:10px;font-size:11px;color:var(--accent);font-weight:700">
+          ⚠️ يوجد ${draftSales+draftExp} عملية معلقة في انتظار الموافقة — الأرقام أعلاه للمرحّلة فقط
+        </div>`
+      : '';
+
+    const kpis = draftAlert + `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px">
+      ${[['تكلفة الشراء',fmt(totalPurchase),'var(--blue)'],['المدفوع للمورد',fmt(totalPaid),'var(--cyan)'],
          ['المصاريف',fmt(totalExp),'var(--red)'],['المبيعات',fmt(totalSales),'var(--green)'],
-         ['المحصّل',fmt(totalColl),'var(--green)'],['صافي الربح',fmt(Math.abs(profit)),profit>=0?'var(--green)':'var(--red)'],
+         ['المحصّل فعلاً',fmt(totalColl),'var(--green)'],['صافي الربح',fmt(Math.abs(profit)),profit>=0?'var(--green)':'var(--red)'],
       ].map(([l,v,c])=>`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px">
         <div style="font-size:10px;color:var(--text2);margin-bottom:4px">${l}</div>
         <div style="font-size:16px;font-weight:700;color:${c}">${v}</div></div>`).join('')}
@@ -470,14 +495,23 @@ async function loadDealStatement(fn, sys) {
       <div style="margin-top:16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
         <div style="font-weight:700;margin-bottom:12px;font-size:13px">👥 توزيع الأرباح على الشركاء</div>
         ${(partners||[]).map(p=>{
-          const paid = (payouts||[]).filter(py=>py.partner===p.partner).reduce((s,py)=>s+(+py.amount||0),0);
-          const share = profit*(+p.share_percent||0)/100;
+          const pctShare = (+p.share_percent||0) / 100;
+          // ما دفعه الشريك للمورد (رأس المال)
+          const capitalPaid  = (payments||[]).filter(py=>py.payer===p.partner && isActive(py)).reduce((s,py)=>s+(+py.amount||0),0);
+          // حصته في الربح
+          const profitShare  = profit * pctShare;
+          // ما استرده (كل payouts بغض النظر عن النوع)
+          const withdrawn    = (payouts||[]).filter(py=>py.partner===p.partner && isActive(py)).reduce((s,py)=>s+(+py.amount||0),0);
+          // ✅ المستحق الكامل = رأس المال المدفوع + حصة الربح - ما استرده
+          const totalDue     = capitalPaid + profitShare - withdrawn;
+          const dueColor     = totalDue > 0.01 ? 'var(--green)' : totalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
           return `<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
             <div style="flex:1;font-weight:700;min-width:100px">${p.partner}</div>
             <div style="font-size:12px;color:var(--text2)">حصة: <b>${p.share_percent}%</b></div>
-            <div style="font-size:12px;color:var(--green)">ربح مستحق: <b>${fmt(share)}</b></div>
-            <div style="font-size:12px;color:var(--accent)">مصروف: <b>${fmt(paid)}</b></div>
-            <div style="font-size:12px;font-weight:700;color:${share-paid>0?'var(--red)':'var(--green)'}">متبقي: <b>${fmt(share-paid)}</b></div>
+            <div style="font-size:12px;color:var(--blue)">رأس المال المدفوع: <b>${fmt(capitalPaid)}</b></div>
+            <div style="font-size:12px;color:var(--green)">ربح مستحق: <b>${fmt(profitShare)}</b></div>
+            <div style="font-size:12px;color:var(--accent)">تم الصرف: <b>${fmt(withdrawn)}</b></div>
+            <div style="font-size:12px;font-weight:700;color:${dueColor}">المستحق: <b>${fmt(totalDue)}</b></div>
           </div>`;
         }).join('')}
       </div>` : '';
@@ -506,11 +540,17 @@ function exportDealStatementExcel() {
   if (!d) { toast('افتح كشف الصفقة أولاً','err'); return; }
   const { fn, entries } = d;
   let running = 0;
-  const rows = [['التاريخ','النوع','البيان','الطرف','مدين','دائن','الرصيد']];
+  const rows = [['التاريخ','النوع','البيان','الطرف','مدين','دائن','الرصيد (ر/خ)','ملاحظة']];
   entries.forEach(e => {
-    if(e.debit>0) running+=e.debit; if(e.credit>0) running-=e.credit;
+    // ✅ الرصيد يُحدَّث فقط للصفوف التي تدخل في P&L (مطابق للعرض في الشاشة)
+    if (e._pl) {
+      if(e.debit>0) running+=e.debit;
+      if(e.credit>0) running-=e.credit;
+    }
     rows.push([e.date||'', e.type, e.desc+(e.extra?' — '+e.extra:''), e.party,
-      e.debit>0?e.debit:'', e.credit>0?e.credit:'', Math.abs(running)]);
+      e.debit>0?e.debit:'', e.credit>0?e.credit:'',
+      e._pl ? Math.abs(running) : '',
+      e._draft ? 'معلق - في انتظار الموافقة' : '']);
   });
   const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
@@ -775,26 +815,18 @@ async function submitEditPayment() {
     if (!old) { showFieldErr('epError','لم يُعثر على السجل'); return; }
 
     if (old.post_status === 'posted') {
-      // ── السجل مرحّل: Void القديم + إنشاء Draft جديد يذهب للمراجعة ──
-      // 1. قيد عكسي للقديم
-      await voidTransaction('payment', old);
-      // 2. إنشاء سجل جديد كـ draft
-      const newRec = {
-        system_type: old.system_type,
-        file_no:     old.file_no,
-        payer,
-        amount,
-        pay_method:  method,
-        pay_date:    date,
-        document:    doc || null,
-        notes:       `تعديل على ${old.ref_no||'#'+id}${notes?' — '+notes:''}`,
-        ref_no:      old.ref_no ? old.ref_no + '-E' : null,
-        post_status: 'draft',
-        supplier:    old.supplier || null,
-        po_no:       old.po_no || null,
-      };
-      await apiPost('payments', newRec);
-      await logAudit('EDIT_REQUEST','payments', old.file_no, old, newRec, `طلب تعديل دفعة ${old.ref_no||id} — تم إرسالها للمراجعة`);
+      // ── السجل مرحّل: تعديل in-place بدل void+new ──
+      // نحفظ القيم الجديدة في _edit_* ونضع post_status='pending_edit'
+      await apiPatch('payments', { id:`eq.${id}` }, {
+        post_status:   'pending_edit',
+        _edit_payer:   payer,
+        _edit_amount:  amount,
+        _edit_method:  method,
+        _edit_date:    date,
+        _edit_doc:     doc || null,
+        notes:         `طلب تعديل: ${payer} · ${amount} · ${date}${notes?' — '+notes:''} | أصل: ${old.payer} · ${old.amount} · ${old.pay_date}`,
+      });
+      await logAudit('EDIT_REQUEST','payments', old.file_no, old, {payer,amount,method,date}, `طلب تعديل دفعة ${old.ref_no||id}`);
       await updateApprovalBadge();
       markSaving('editPaymentModal'); closeModal('editPaymentModal');
       toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
@@ -949,23 +981,18 @@ async function submitEditExpense() {
     if (!old) { showFieldErr('eeError','لم يُعثر على السجل'); return; }
 
     if (old.post_status === 'posted') {
-      // Void القديم + Draft جديد للمراجعة
-      await voidTransaction('expense', old);
-      const newRec = {
-        system_type: old.system_type,
-        file_no:     old.file_no,
-        description: desc,
-        exp_type:    type,
-        amount,
-        exp_date:    date,
-        pay_method:  method,
-        document:    doc || null,
-        notes:       `تعديل على ${old.ref_no||'#'+id}${notes?' — '+notes:''}`,
-        ref_no:      old.ref_no ? old.ref_no + '-E' : null,
-        post_status: 'draft',
-      };
-      await apiPost('expenses', newRec);
-      await logAudit('EDIT_REQUEST','expenses', old.file_no, old, newRec, `طلب تعديل مصروف ${old.ref_no||id} — تم إرسالها للمراجعة`);
+      // ── تعديل in-place بدل void+new ──
+      await apiPatch('expenses', { id:`eq.${id}` }, {
+        post_status:   'pending_edit',
+        _edit_desc:    desc,
+        _edit_type:    type,
+        _edit_amount:  amount,
+        _edit_date:    date,
+        _edit_method:  method,
+        _edit_doc:     doc || null,
+        notes:         `طلب تعديل: ${desc} · ${amount} · ${date}${notes?' — '+notes:''} | أصل: ${old.description} · ${old.amount} · ${old.exp_date}`,
+      });
+      await logAudit('EDIT_REQUEST','expenses', old.file_no, old, {desc,type,amount,date}, `طلب تعديل مصروف ${old.ref_no||id}`);
       await updateApprovalBadge();
       markSaving('editExpenseModal'); closeModal('editExpenseModal');
       toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
@@ -1016,24 +1043,17 @@ async function submitEditCollection() {
     const old = oldData?.[0] || {};
 
     if (old.post_status === 'posted' && old.paid_date) {
-      // ── تحصيل مرحّل ومدفوع: Void القديم + Draft جديد للمراجعة ──
-      await voidTransaction('collection', old);
-      const newRec = {
-        system_type: old.system_type,
-        file_no:     old.file_no,
-        inv_no:      old.inv_no,
-        customer:    old.customer,
-        amount,
-        pay_method:  method,
-        due_date:    due || null,
-        paid_date:   paid || null,
-        document:    doc || null,
-        notes:       `تعديل على ${old.ref_no||'#'+id}${notes?' — '+notes:''}`,
-        ref_no:      old.ref_no ? old.ref_no + '-E' : null,
-        post_status: 'draft',
-      };
-      await apiPost('collections', newRec);
-      await logAudit('EDIT_REQUEST','collections', old.file_no, old, newRec, `طلب تعديل تحصيل ${old.ref_no||id} — تم إرسالها للمراجعة`);
+      // ── تعديل in-place بدل void+new ──
+      await apiPatch('collections', { id:`eq.${id}` }, {
+        post_status:   'pending_edit',
+        _edit_amount:  amount,
+        _edit_method:  method,
+        _edit_due:     due || null,
+        _edit_paid:    paid || null,
+        _edit_doc:     doc || null,
+        notes:         `طلب تعديل: ${amount} · ${paid||due||'—'}${notes?' — '+notes:''} | أصل: ${old.amount} · ${old.paid_date||'—'}`,
+      });
+      await logAudit('EDIT_REQUEST','collections', old.file_no, old, {amount,method,due,paid}, `طلب تعديل تحصيل ${old.ref_no||id}`);
       await updateApprovalBadge();
       markSaving('editCollectionModal'); closeModal('editCollectionModal');
       toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
