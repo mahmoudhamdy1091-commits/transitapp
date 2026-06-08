@@ -976,36 +976,10 @@ async function _proceedSubmitPayment() {
     const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
     if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo:fn,refId:payIns?.[0]?.id||null,supplierName,payerName:payer,method});
 
-    // ── لو الدافع شريك → سجّل في partner_payouts كرأس مال تلقائياً ──
-    try {
-      const partnersList = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
-      const isPartner = (partnersList||[]).some(p => p.partner === payer);
-      if (isPartner) {
-        // توليد pay_id للـ payout
-        let payoutId = `PAY-${fn}-001`;
-        try {
-          const existing = await apiGetAll('partner_payouts', { select:'pay_id', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, order:'created_at.desc' });
-          const lastNums = (existing||[]).map(p=>{ const m=(p.pay_id||'').match(/(\d+)$/); return m?parseInt(m[1]):0; });
-          const nextNum  = (lastNums.length ? Math.max(...lastNums) : 0) + 1;
-          payoutId = `PAY-${fn}-${String(nextNum).padStart(3,'0')}`;
-        } catch(e) { console.warn('payoutId gen:', e.message); }
-        const payoutData = {
-          system_type: state.system, file_no: fn,
-          partner: payer, amount, pay_method: method,
-          document: doc||null, pay_date: date,
-          payout_type: 'استرداد رأس مال',
-          capital_amount: amount, profit_amount: 0, advance_amount: 0,
-          notes: notes || `دفعة للمورد ${supplierName} — مسجّلة تلقائياً من دفعات المورد`,
-          post_status: entryStatus(),
-          pay_id: payoutId,
-        };
-        const poutIns = await apiPost('partner_payouts', payoutData);
-        if (entryStatus()==='posted') {
-          try { await je_payout({sys:state.system,date,amount,fileNo:fn,refId:poutIns?.[0]?.id||null,partner:payer,method}); }
-          catch(jeErr) { console.warn('je_payout after payment:', jeErr.message); }
-        }
-      }
-    } catch(e) { console.warn('partner_payouts auto-insert:', e.message); }
+    // ── ⛔ تم إلغاء الإنشاء التلقائي لـ partner_payouts عند دفع شريك ──
+    // كان يُنشئ سجل "استرداد رأس مال" تلقائياً بنفس مبلغ كل دفعة للمورد إذا كان
+    // الدافع شريكاً، مما تسبب في سجلات وهمية متكررة (تم تنظيفها يدوياً عبر cleanup.js).
+    // التسجيل الآن خطوة يدوية واعية يقوم بها المستخدم من شاشة "صرف شريك".
 
     markSaving('paymentModal'); closeModal('paymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
