@@ -133,6 +133,13 @@ async function voidTransaction(type, record) {
 }
 
 async function _jeNo(sys) {
+  // ✅ توليد ذرّي عبر RPC في Postgres (دالة + جدول عدّادات بقفل صفّي)
+  // يمنع تضارب entry_no بين عمليات ترحيل متزامنة (انظر next_je_no في قاعدة البيانات)
+  try {
+    const no = await apiRpc('next_je_no', { p_sys: sys });
+    if (no) return no;
+  } catch(e) { console.error('_jeNo: فشل next_je_no RPC —', e.message); }
+  // fallback غير ذرّي (يُستخدم فقط لو الدالة غير موجودة في القاعدة بعد)
   try {
     const r = await apiGet('journal_entries',{select:'id',system_type:`eq.${sys}`,order:'id.desc',limit:1});
     return `JE-${new Date().getFullYear()}-${String((r?.[0]?.id||0)+1).padStart(5,'0')}`;
@@ -209,47 +216,47 @@ async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
 }
 
 // تحصيل: نقد Dr / عميل Cr
-async function je_collection({sys,date,amount,fileNo,customer,invNo,method}) {
+async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method}) {
   if(!amount||amount<=0) return;
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
-  await postDoubleEntry({sys,date,fileNo,refTable:'collections',desc:`تحصيل ${invNo} — ${customer} — ملف ${fileNo}`,lines:[
+  await postDoubleEntry({sys,date,fileNo,refTable:'collections',refId,desc:`تحصيل ${invNo} — ${customer} — ملف ${fileNo}`,lines:[
     {acc:cashAcc, name:cashNm,           dr:amount, cr:0,     contact:null     },
     {acc:'1200',  name:`ذمم العملاء`,    dr:0,      cr:amount, contact:customer },
   ]});
 }
 
 // دفعة مورد: مورد Dr / نقد Cr
-async function je_payment({sys,date,amount,fileNo,supplier,supplierName,payer,payerName,method}) {
+async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,payer,payerName,method}) {
   if(!amount||amount<=0) return;
   const sup      = supplier || supplierName || 'مورد';
   const payerStr = payer || payerName || sup;
   const cashAcc  = method==='نقد'?'1110':'1120';
   const cashNm   = method==='نقد'?'النقد':'البنك';
-  await postDoubleEntry({sys,date,fileNo,refTable:'payments',desc:`دفعة للمورد ${sup} بواسطة ${payerStr} — ملف ${fileNo}`,lines:[
+  await postDoubleEntry({sys,date,fileNo,refTable:'payments',refId,desc:`دفعة للمورد ${sup} بواسطة ${payerStr} — ملف ${fileNo}`,lines:[
     {acc:'2100',  name:`ذمم الموردين`, dr:amount, cr:0,     contact:sup  },
     {acc:cashAcc, name:cashNm,         dr:0,      cr:amount, contact:null },
   ]});
 }
 
 // مصروف: مصروف Dr / نقد Cr
-async function je_expense({sys,date,amount,fileNo,desc,expType,method}) {
+async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method}) {
   if(!amount||amount<=0) return;
   const eAcc     = EXPENSE_ACCOUNT_MAP[expType]||'6500';
   const cashAcc  = method==='نقد'?'1110':'1120';
   const cashNm   = method==='نقد'?'النقد':'البنك';
-  await postDoubleEntry({sys,date,fileNo,refTable:'expenses',desc:`${desc} — ملف ${fileNo||'عام'}`,lines:[
+  await postDoubleEntry({sys,date,fileNo,refTable:'expenses',refId,desc:`${desc} — ملف ${fileNo||'عام'}`,lines:[
     {acc:eAcc,    name:expType||'مصروف', dr:amount, cr:0,     contact:null},
     {acc:cashAcc, name:cashNm,           dr:0,      cr:amount, contact:null},
   ]});
 }
 
 // صرف شريك: شريك Dr / نقد Cr
-async function je_payout({sys,date,amount,fileNo,partner,method}) {
+async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
   if(!amount||amount<=0) return;
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
-  await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
+  await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',refId,desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
     {acc:'2400',  name:`حسابات الشركاء`, dr:amount, cr:0,     contact:partner },
     {acc:cashAcc, name:cashNm,           dr:0,      cr:amount, contact:null    },
   ]});

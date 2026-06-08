@@ -1324,20 +1324,21 @@ async function approveItem(type, id) {
       try {
         // جيب القيد الأصلي المرتبط بالسجل
         const jeRows = await apiGetAll('journal_entries', {
-          select:'id,dr_amount,cr_amount,account_code',
+          select:'id,dr_amount,cr_amount,account_code,ref_id',
           system_type:`eq.${state.system}`,
           file_no:`eq.${item.file_no}`,
           ref_table:`eq.${tbl}`,
           post_status:'eq.posted',
           order:'id.desc', limit:20
         });
-        // ابحث عن القيد الأقرب للمبلغ القديم
+        // ابحث عن القيد المرتبط فعلياً عبر ref_id (الأدق)، وإن لم يوجد ارجع لتطابق المبلغ (بيانات قديمة بدون ref_id)
         const oldAmount = +item.amount || 0;
         const newAmount = +ed.amount || +ed.amount || oldAmount;
-        const matchJE = (jeRows||[]).find(j =>
-          Math.abs((+j.dr_amount||0) - oldAmount) < 0.001 ||
-          Math.abs((+j.cr_amount||0) - oldAmount) < 0.001
-        );
+        const matchJE = (jeRows||[]).find(j => String(j.ref_id) === String(item.id))
+          || (jeRows||[]).find(j => !j.ref_id && (
+            Math.abs((+j.dr_amount||0) - oldAmount) < 0.001 ||
+            Math.abs((+j.cr_amount||0) - oldAmount) < 0.001
+          ));
 
         if (matchJE && Math.abs(newAmount - oldAmount) > 0.001) {
           // تعديل مبالغ القيد مباشرة
@@ -1446,6 +1447,7 @@ async function approveItem(type, id) {
               date:     col.paid_date,
               amount:   +col.amount,
               fileNo:   col.file_no,
+              refId:    col.id || null,
               customer: col.customer || item.customer || '',
               invNo:    col.inv_no   || item.inv_no   || '',
               method:   col.pay_method || 'تحويل بنكي',
@@ -1458,22 +1460,22 @@ async function approveItem(type, id) {
       const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
       // القيد يُولَّد فقط إذا كان مدفوعاً فعلاً (paid_date موجود)
       if (item && item.paid_date) {
-        await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
+        await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
       }
       // FIX: إذا لا يوجد paid_date → التحصيل معلق — يظهر في قائمة "مستحق" ليُسجَّل الدفع لاحقاً
       // لا قيد يُنشأ الآن لأن المبلغ لم يُقبض بعد
     }
     if (type === 'payment') {
       const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
-      if (item) await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
+      if (item) await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
     }
     if (type === 'expense') {
       const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
-      if (item) await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'تحويل بنكي' });
+      if (item) await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'تحويل بنكي' });
     }
     if (type === 'payout') {
       const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
-      if (item) await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, partner:item.partner||'', method:item.pay_method||'تحويل بنكي' });
+      if (item) await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, partner:item.partner||'', method:item.pay_method||'تحويل بنكي' });
     }
     invalidateCache();
     toast('✅ تمت الموافقة','ok');
@@ -1614,18 +1616,18 @@ async function approveAll() {
               for (const col of (linkedCols||[])) {
                 if (!col.paid_date) continue;
                 await apiPatch('collections', { id:`eq.${col.id}` }, { post_status:'posted' });
-                await je_collection({ sys:state.system, date:col.paid_date, amount:+col.amount, fileNo:col.file_no, customer:col.customer||r.customer||'', invNo:col.inv_no||r.inv_no||'', method:col.pay_method||'تحويل بنكي' });
+                await je_collection({ sys:state.system, date:col.paid_date, amount:+col.amount, fileNo:col.file_no,refId:col.id||null, customer:col.customer||r.customer||'', invNo:col.inv_no||r.inv_no||'', method:col.pay_method||'تحويل بنكي' });
               }
             } catch(e) { console.warn(`approveAll auto-approve collections for ${r.inv_no}:`, e.message); }
           } else if (r._type === 'collection' && r.paid_date) {
             // FIX: القيد يُنشأ فقط إذا كان paid_date موجوداً (مدفوع فعلاً)
-            await je_collection({ sys:state.system, date:r.paid_date, amount:+r.amount||0, fileNo:r.file_no, customer:r.customer||'', invNo:r.inv_no||'', method:r.pay_method||'تحويل بنكي' });
+            await je_collection({ sys:state.system, date:r.paid_date, amount:+r.amount||0, fileNo:r.file_no,refId:r.id||null, customer:r.customer||'', invNo:r.inv_no||'', method:r.pay_method||'تحويل بنكي' });
           } else if (r._type === 'payment') {
-            await je_payment({ sys:state.system, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'تحويل بنكي' });
+            await je_payment({ sys:state.system, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no,refId:r.id||null, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'تحويل بنكي' });
           } else if (r._type === 'expense') {
-            await je_expense({ sys:state.system, date:r.exp_date||today(), amount:+r.amount||0, fileNo:r.file_no, desc:r.description||'مصروف', expType:r.exp_type||'أخرى', method:r.pay_method||'نقد' });
+            await je_expense({ sys:state.system, date:r.exp_date||today(), amount:+r.amount||0, fileNo:r.file_no,refId:r.id||null, desc:r.description||'مصروف', expType:r.exp_type||'أخرى', method:r.pay_method||'نقد' });
           } else if (r._type === 'payout') {
-            await je_payout({ sys:state.system, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no, partner:r.partner||'', method:r.pay_method||'نقد' });
+            await je_payout({ sys:state.system, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no,refId:r.id||null, partner:r.partner||'', method:r.pay_method||'نقد' });
           }
         } catch(jeErr) { console.warn(`approveAll je_ failed for ${r._type} ${r.id}:`, jeErr.message); }
       }
@@ -3392,7 +3394,7 @@ async function fixUnbalancedEntries() {
           const data = await apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           for (const p of (data||[]).filter(isPosted)) {
             if (+p.amount > 0)
-              await je_payment({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no, supplierName:p.supplier||'', payerName:p.payer||'', method:p.pay_method||'تحويل بنكي' });
+              await je_payment({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, supplierName:p.supplier||'', payerName:p.payer||'', method:p.pay_method||'تحويل بنكي' });
           }
 
         } else if (refTable === 'sales' && fileNo) {
@@ -3417,21 +3419,21 @@ async function fixUnbalancedEntries() {
           const data = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           for (const c of (data||[]).filter(c=>isPosted(c)&&c.paid_date)) {
             if (+c.amount > 0)
-              await je_collection({ sys, date:c.paid_date, amount:+c.amount, fileNo:c.file_no, customer:c.customer||'', invNo:c.inv_no||'', method:c.pay_method||'تحويل بنكي' });
+              await je_collection({ sys, date:c.paid_date, amount:+c.amount, fileNo:c.file_no,refId:c.id||null, customer:c.customer||'', invNo:c.inv_no||'', method:c.pay_method||'تحويل بنكي' });
           }
 
         } else if (refTable === 'expenses' && fileNo) {
           const data = await apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           for (const e of (data||[]).filter(isPosted)) {
             if (+e.amount > 0)
-              await je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no, desc:e.description||'مصروف', expType:e.exp_type||'أخرى', method:e.pay_method||'نقد' });
+              await je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no,refId:e.id||null, desc:e.description||'مصروف', expType:e.exp_type||'أخرى', method:e.pay_method||'نقد' });
           }
 
         } else if (refTable === 'partner_payouts' && fileNo) {
           const data = await apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           for (const p of (data||[]).filter(isPosted)) {
             if (+p.amount > 0)
-              await je_payout({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no, partner:p.partner||'', method:p.pay_method||'نقد' });
+              await je_payout({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, partner:p.partner||'', method:p.pay_method||'نقد' });
           }
 
         } else if (refTable === 'operating_expenses') {
@@ -3851,7 +3853,7 @@ async function runMigration() {
     _migLog(`💳 ${(payments||[]).filter(isPosted).length} دفعة مورد...`);
     for (const p of (payments||[]).filter(isPosted)) {
       if (!p.amount||!+p.amount) { skipped++; tick(); continue; }
-      await safe(`دفعة ${p.pay_id||p.id}`, () => je_payment({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no, supplierName:p.supplier||'', payerName:p.payer||'', method:p.pay_method||'تحويل بنكي' }));
+      await safe(`دفعة ${p.pay_id||p.id}`, () => je_payment({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, supplierName:p.supplier||'', payerName:p.payer||'', method:p.pay_method||'تحويل بنكي' }));
     }
 
     // ── الخطوة 5: المبيعات ──
@@ -3878,7 +3880,7 @@ async function runMigration() {
     _migLog(`💰 ${paidCols.length} تحصيل مدفوع...`);
     for (const c of paidCols) {
       if (!c.amount||!+c.amount) { skipped++; tick(); continue; }
-      await safe(`تحصيل ${c.ref_no||c.id}`, () => je_collection({ sys, date:c.paid_date, amount:+c.amount, fileNo:c.file_no, customer:c.customer||'', invNo:c.inv_no||'', method:c.pay_method||'تحويل بنكي' }));
+      await safe(`تحصيل ${c.ref_no||c.id}`, () => je_collection({ sys, date:c.paid_date, amount:+c.amount, fileNo:c.file_no,refId:c.id||null, customer:c.customer||'', invNo:c.inv_no||'', method:c.pay_method||'تحويل بنكي' }));
     }
     const pendingCount = (collections||[]).filter(c=>isPosted(c)&&!c.paid_date).length;
     if (pendingCount>0) _migLog(`ℹ️ ${pendingCount} تحصيل منتظر — سيُضاف قيده عند الدفع`, 'warn');
@@ -3888,11 +3890,11 @@ async function runMigration() {
     _migLog(`💸 ${(expenses||[]).filter(isPosted).length} مصروف + ${(payouts||[]).filter(isPosted).length} صرف شريك...`);
     for (const e of (expenses||[]).filter(isPosted)) {
       if (!e.amount||!+e.amount) { skipped++; tick(); continue; }
-      await safe(`مصروف ${e.ref_no||e.id}`, () => je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no, desc:e.description||e.category||'مصروف', expType:e.exp_type||e.category||'أخرى', method:e.pay_method||'نقد' }));
+      await safe(`مصروف ${e.ref_no||e.id}`, () => je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no,refId:e.id||null, desc:e.description||e.category||'مصروف', expType:e.exp_type||e.category||'أخرى', method:e.pay_method||'نقد' }));
     }
     for (const p of (payouts||[]).filter(isPosted)) {
       if (!p.amount||!+p.amount) { skipped++; tick(); continue; }
-      await safe(`صرف ${p.pay_id||p.id}`, () => je_payout({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no, partner:p.partner||'', method:p.pay_method||'نقد' }));
+      await safe(`صرف ${p.pay_id||p.id}`, () => je_payout({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, partner:p.partner||'', method:p.pay_method||'نقد' }));
     }
 
     // ── الخطوة 8: المصاريف التشغيلية ──

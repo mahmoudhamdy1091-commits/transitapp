@@ -507,7 +507,7 @@ async function submitNewFile() {
       // If partner paid something, record as payment
       if (p.paid > 0) {
         const pmtId = `PMT-${fileNo}-P${partners.indexOf(p)+1}`;
-        await apiPost('payments', {
+        const pmtIns = await apiPost('payments', {
           system_type: state.system, file_no: fileNo,
           pay_id: pmtId, ref_no: pmtId,
           po_no: poNo||null, payer: p.name,
@@ -518,7 +518,7 @@ async function submitNewFile() {
         // Ledger: partner paid (credit partner account)
         if (entryStatus()==='posted') {
           try {
-            await je_payment({sys:state.system,date:poDate||today(),amount:p.paid,fileNo,supplierName:supplier,payerName:p.name,method:p.method||'تحويل بنكي'});
+            await je_payment({sys:state.system,date:poDate||today(),amount:p.paid,fileNo,refId:pmtIns?.[0]?.id||null,supplierName:supplier,payerName:p.name,method:p.method||'تحويل بنكي'});
           } catch(jeErr) { toast(`⚠️ فشل قيد دفعة ${p.name}: ${jeErr.message}`,'warn'); }
         }
       }
@@ -899,9 +899,9 @@ async function submitExpense() {
         notes:       exp.notes || null,
         ref_no:      refNo
       , post_status:entryStatus()};
-      await apiPost('expenses', data);
+      const expIns = await apiPost('expenses', data);
       await logAudit('INSERT','expenses', expFileNo, null, data);
-      if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method});
+      if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,refId:expIns?.[0]?.id||null,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method});
     }
     markSaving('expenseModal'); closeModal('expenseModal');
     invalidateCache();
@@ -970,11 +970,11 @@ async function _proceedSubmitPayment() {
       document: doc||null, pay_date: date,
       notes: notes||null
     , post_status:entryStatus()};
-    await apiPost('payments', data);
+    const payIns = await apiPost('payments', data);
     await logAudit('INSERT','payments',fn,null,data);
     const poArr = await apiGetAll('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
-    if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo:fn,supplierName,payerName:payer,method});
+    if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo:fn,refId:payIns?.[0]?.id||null,supplierName,payerName:payer,method});
 
     // ── لو الدافع شريك → سجّل في partner_payouts كرأس مال تلقائياً ──
     try {
@@ -999,9 +999,9 @@ async function _proceedSubmitPayment() {
           post_status: entryStatus(),
           pay_id: payoutId,
         };
-        await apiPost('partner_payouts', payoutData);
+        const poutIns = await apiPost('partner_payouts', payoutData);
         if (entryStatus()==='posted') {
-          try { await je_payout({sys:state.system,date,amount,fileNo:fn,partner:payer,method}); }
+          try { await je_payout({sys:state.system,date,amount,fileNo:fn,refId:poutIns?.[0]?.id||null,partner:payer,method}); }
           catch(jeErr) { console.warn('je_payout after payment:', jeErr.message); }
         }
       }
@@ -1463,13 +1463,13 @@ async function submitSale() {
           notes: `باقي الفاتورة ${invNo}`, post_status: entryStatus(),
           ref_no: colRefNo2, pay_id: colRefNo2,
         };
-        await apiPost('collections', col1);
+        const col1Ins = await apiPost('collections', col1);
         await apiPost('collections', col2);
         await logAudit('INSERT','collections',fn,null,col1);
         if (customer) await ensureContact(customer, 'customer');
         if (isPostedNow) {
           try {
-            await je_collection({ sys:state.system, date:payDate, amount:payAmtInput, fileNo:fn, customer, invNo, method:payMethod });
+            await je_collection({ sys:state.system, date:payDate, amount:payAmtInput, fileNo:fn, refId:col1Ins?.[0]?.id||null, customer, invNo, method:payMethod });
           } catch(jeErr) { toast(`⚠️ فشل قيد التحصيل: ${jeErr.message}`,'warn'); }
         }
       } else {
@@ -1483,12 +1483,12 @@ async function submitSale() {
           notes: payNotes, post_status: entryStatus(),
           ref_no: colRefNo, pay_id: colRefNo,
         };
-        await apiPost('collections', colData);
+        const colDataIns = await apiPost('collections', colData);
         await logAudit('INSERT','collections',fn,null,colData);
         if (customer) await ensureContact(customer, 'customer');
         if (isPaid && isPostedNow) {
           try {
-            await je_collection({ sys:state.system, date:payDate, amount:grandTotal, fileNo:fn, customer, invNo, method:payMethod });
+            await je_collection({ sys:state.system, date:payDate, amount:grandTotal, fileNo:fn, refId:colDataIns?.[0]?.id||null, customer, invNo, method:payMethod });
           } catch(jeErr) { toast(`⚠️ فشل قيد التحصيل: ${jeErr.message}`,'warn'); }
         }
       }
@@ -1681,10 +1681,10 @@ async function submitCollection() {
       due_date: due||null, paid_date: (paid && isPostedNow) ? paid : null,
       notes: notes||null, ref_no: refNo, post_status: entryStatus(),
     };
-    await apiPost('collections', data);
+    const colIns = await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
     if (cust) await ensureContact(cust, 'customer');
-    if (isPostedNow && cust && paid) await je_collection({sys:state.system,date:paid,amount,fileNo:fn,customer:cust,invNo:invNo||'',method});
+    if (isPostedNow && cust && paid) await je_collection({sys:state.system,date:paid,amount,fileNo:fn,refId:colIns?.[0]?.id||null,customer:cust,invNo:invNo||'',method});
     markSaving('collectionModal'); closeModal('collectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     invalidateCache();
@@ -1917,9 +1917,9 @@ async function submitPayout() {
       pay_method: method, document: doc||null, pay_date: date, notes: notes||null,
       post_status: entryStatus()
     };
-    await apiPost('partner_payouts', data);
+    const poutDataIns = await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fn,null,data);
-    if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo:fn,partner,method});
+    if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo:fn,refId:poutDataIns?.[0]?.id||null,partner,method});
     markSaving('payoutModal'); closeModal('payoutModal');
     toast(`✅ تم تسجيل ${type} للشريك ${partner}`,'ok');
     invalidateCache();

@@ -298,6 +298,29 @@ async function apiPatch(table, matchParams, data) {
   return resBody;
 }
 
+async function apiRpc(fn, args = {}) {
+  const body = JSON.stringify(args);
+  let res = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: headers({'Content-Type':'application/json'}),
+    body
+  });
+  if (res.status === 401) {
+    const ok = await refreshAccessToken();
+    if (!ok) throw new Error('انتهت الجلسة، يرجى تسجيل الدخول مجدداً');
+    res = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: headers({'Content-Type':'application/json'}),
+      body
+    });
+  }
+  if (!res.ok) {
+    const e = await res.json().catch(()=>({}));
+    throw new Error(e.message || res.statusText);
+  }
+  return res.json();
+}
+
 async function logAudit(action, tableName, fileNo, oldVal, newVal, notes='') {
   try {
     await apiPost('audit_log', {

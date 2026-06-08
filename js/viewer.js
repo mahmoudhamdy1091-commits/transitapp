@@ -364,9 +364,9 @@ async function submitQuickCollection() {
       paid_date: isPostedNow ? paid : null,
       notes: notes||null, ref_no: refNo
     , post_status:entryStatus()};
-    await apiPost('collections', data);
+    const qcIns = await apiPost('collections', data);
     await logAudit('INSERT','collections', fileNo, null, data);
-    if (isPostedNow && customer) await je_collection({sys:state.system,date:paid||today(),amount,fileNo,customer,invNo,method});
+    if (isPostedNow && customer) await je_collection({sys:state.system,date:paid||today(),amount,fileNo,refId:qcIns?.[0]?.id||null,customer,invNo,method});
     markSaving('quickCollectionModal'); closeModal('quickCollectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     invalidateCache();
@@ -395,9 +395,9 @@ async function submitQuickExpense() {
       pay_id:refNo, exp_type:type, category:type, amount, pay_method:method, document:doc||null,
       exp_date: date, expense_date:date, notes:notes||null, ref_no:refNo,
       post_status:entryStatus() };
-    await apiPost('expenses', data);
+    const qeIns = await apiPost('expenses', data);
     await logAudit('INSERT','expenses',fileNo,null,data);
-    if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount,fileNo,desc,expType:type,method});
+    if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount,fileNo,refId:qeIns?.[0]?.id||null,desc,expType:type,method});
     markSaving('quickExpenseModal'); closeModal('quickExpenseModal');
     toast('✅ تم تسجيل المصروف بنجاح','ok');
     invalidateCache();
@@ -478,9 +478,9 @@ async function submitQuickPayment() {
       pay_id:refNo, ref_no:refNo,
       pay_method:method, document:doc||null, pay_date: date, notes:notes||null,
       post_status:entryStatus() };
-    await apiPost('payments', data);
+    const qpIns = await apiPost('payments', data);
     await logAudit('INSERT','payments', fileNo, null, data);
-    if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo,supplierName,payerName:payer,method});
+    if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo,refId:qpIns?.[0]?.id||null,supplierName,payerName:payer,method});
     markSaving('quickPaymentModal'); closeModal('quickPaymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
     loadJournal();
@@ -514,9 +514,9 @@ async function submitQuickPayout() {
     const data = { system_type:state.system, file_no:fileNo, partner,
       pay_id, payout_type:type, amount, pay_method:method, document:doc||null,
       pay_date: date, notes:notes||null, post_status:entryStatus() };
-    await apiPost('partner_payouts', data);
+    const qpoIns = await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
-    if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo,partner,method});
+    if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo,refId:qpoIns?.[0]?.id||null,partner,method});
     markSaving('quickPayoutModal'); closeModal('quickPayoutModal');
     invalidateCache();
     toast('✅ تم تسجيل الصرف بنجاح','ok');
