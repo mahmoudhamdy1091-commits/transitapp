@@ -16,11 +16,12 @@ window._exportStore = window._exportStore || {};
 function exportBtns(csvFn, printFn) {
   // نخزن الدوال مباشرة في window._exportStore — مش strings
   // عشان data وfn يكونوا في closure scope وقت الاستدعاء
+  if (typeof csvFn !== 'function' || typeof printFn !== 'function') {
+    console.error('exportBtns: csvFn/printFn يجب أن تكونا functions، لا نصوصاً');
+    return '';
+  }
   const key = '_exp_' + Math.random().toString(36).slice(2);
-  window._exportStore[key] = {
-    csv:   typeof csvFn   === 'function' ? csvFn   : () => eval(csvFn),
-    print: typeof printFn === 'function' ? printFn : () => eval(printFn),
-  };
+  window._exportStore[key] = { csv: csvFn, print: printFn };
   return `<div class="no-print" style="display:flex;gap:6px;margin-bottom:10px;justify-content:flex-end">
     <button class="btn btn-sm btn-secondary" onclick="_runExport('${key}','csv')" style="color:var(--green)">⬇️ Excel</button>
     <button class="btn btn-sm btn-secondary" onclick="_runExport('${key}','print')" style="color:var(--blue)">🖨️ PDF</button>
