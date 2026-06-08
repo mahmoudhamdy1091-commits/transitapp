@@ -18,18 +18,20 @@ async function inspectFileDraftLeftovers(fileNo, opts={}) {
   const suffix = opts.suffix || '-E';
 
   toast(`🔍 جاري فحص ${table} لملف ${fileNo}...`, 'ok');
-  const allDraft = await apiGetAll(table, {
-    select: '*', system_type: `eq.${sys}`, file_no: `eq.${fileNo}`, post_status: `eq.draft`,
+  // نجلب كل سجلات الملف بصرف النظر عن الحالة أولاً — لتشخيص الحالة الفعلية لـ"معلق"
+  const allForFile = await apiGetAll(table, {
+    select: '*', system_type: `eq.${sys}`, file_no: `eq.${fileNo}`,
   });
-  // عرض تشخيصي: اطبع كل سجلات draft للملف في الـ console بصرف النظر عن اللاحقة،
-  // لمعرفة الشكل الفعلي لـ ref_no/pay_id قبل تضييق الفلتر
-  console.log(`[cleanup] كل سجلات draft لملف ${fileNo} في ${table} (${allDraft.length}):`);
-  console.table(allDraft.map(r => ({ id:r.id, ref_no:r.ref_no, pay_id:r.pay_id, amount:r.amount, post_status:r.post_status, created_at:r.created_at })));
+  console.log(`[cleanup] كل سجلات ${table} لملف ${fileNo} (${allForFile.length}) — لاحظ عمود post_status:`);
+  console.table(allForFile.map(r => ({ id:r.id, ref_no:r.ref_no, pay_id:r.pay_id, amount:r.amount, post_status:r.post_status, created_at:r.created_at })));
+
+  const NOT_POSTED = new Set(['draft','pending_edit','pending_void','pending']);
+  const pending = allForFile.filter(r => NOT_POSTED.has(r.post_status) || !r.post_status);
   const matchesSuffix = (r) => (r.ref_no||'').endsWith(suffix) || (r.pay_id||'').endsWith(suffix);
-  let rows = allDraft.filter(matchesSuffix);
-  // لو الفلتر بالـ suffix لم يُطابق شيئاً، اعرض كل سجلات draft للملف بدلاً من قائمة فارغة
+  let rows = pending.filter(matchesSuffix);
   let suffixMatched = true;
-  if (!rows.length && allDraft.length) { rows = allDraft; suffixMatched = false; }
+  // لو الفلتر باللاحقة لم يُطابق شيئاً، اعرض كل السجلات غير المرحّلة لمراجعتها يدوياً
+  if (!rows.length && pending.length) { rows = pending; suffixMatched = false; }
 
   let html = `<div style="max-height:75vh;overflow:auto;font-size:13px;line-height:1.7">`;
   html += `<h3>🗑️ مخلّفات draft من النظام القديم — ${table} — ملف ${fileNo}</h3>`;
@@ -76,8 +78,9 @@ async function _cleanupDeleteDraft(tbl, id, btn) {
     const rows = await apiGetAll(tbl, { select:'*', id:`eq.${id}` });
     const record = rows?.[0];
     if (!record) { toast('السجل غير موجود (ربما حُذف بالفعل)','warn'); btn.textContent='غير موجود'; btn.disabled=true; return; }
-    if (record.post_status !== 'draft') {
-      toast('⛔ هذا السجل ليس draft — الحذف الفعلي ممنوع لسجلات مرحّلة (قد يكسر القيود المحاسبية)','err');
+    const DELETABLE = new Set(['draft','pending_edit','pending_void','pending']);
+    if (record.post_status && !DELETABLE.has(record.post_status)) {
+      toast(`⛔ السجل بحالة "${record.post_status}" — الحذف الفعلي ممنوع لسجلات مرحّلة (posted/voided) لأنها مرتبطة بقيود محاسبية`,'err');
       return;
     }
     if (!confirm(`⚠️ حذف نهائي (لا رجعة) للسجل #${id} من ${tbl}:\n\n${fmtRow(record)}\n\nمتابعة؟`)) return;
@@ -259,10 +262,8 @@ async function _cleanupApproveVoid(tbl, id, btn) {
     const rows = await apiGetAll(tbl, { select:'*', id:`eq.${id}` });
     const record = rows?.[0];
     if (!record || record.post_status !== 'pending_void') { toast('السجل لم يعد في حالة pending_void','warn'); return; }
-    // أعد الحالة مؤقتاً إلى posted لتفعيل مسار العكس الفعلي بدل إعادة الإرسال للمراجعة
-    await apiPatch(tbl, { id:`eq.${id}` }, { post_status:'posted' });
-    const fresh = await apiGetAll(tbl, { select:'*', id:`eq.${id}` });
-    await voidTransaction(typeMap[tbl], fresh?.[0]);
+    // force=true يتجاوز فحص وضع الـ draft وينفذ القيد العكسي فوراً (انظر إصلاح engine.js:28)
+    await voidTransaction(typeMap[tbl], record, true);
     toast(`✅ تم تنفيذ الإلغاء للسجل #${id}`, 'ok');
     btn.textContent = '✅ تم التنفيذ';
   } catch(e) {

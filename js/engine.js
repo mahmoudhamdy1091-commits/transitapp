@@ -17,7 +17,7 @@ const EXPENSE_ACCOUNT_MAP = {
 //   3. لا يُحذف أي بيانات — كل شيء يبقى في التاريخ
 // ════════════════════════════════════════════════════════════════
 
-async function voidTransaction(type, record) {
+async function voidTransaction(type, record, force=false) {
   const sys     = state.system;
   const today_  = today();
   const amount  = +record.amount || +record.sale_price || 0;
@@ -25,7 +25,9 @@ async function voidTransaction(type, record) {
   if (!amount || amount <= 0) throw new Error('المبلغ صفر — لا يوجد قيد لعكسه');
 
   // ── إذا كان النظام على draft mode → أرسل للمراجعة بدل تنفيذ فوري ──
-  if (typeof entryStatus === 'function' && entryStatus() === 'draft') {
+  // ✅ استثناء: عند التنفيذ من قائمة المراجعة (force=true) — السجل أصلاً pending_void
+  // والموافقة تعني "نفّذ الآن فعلياً"، فلا معنى لإعادة إرساله للمراجعة (كان يسبب حلقة عالقة)
+  if (!force && typeof entryStatus === 'function' && entryStatus() === 'draft') {
     const tableMap = { payment:'payments', expense:'expenses', collection:'collections', payout:'partner_payouts' };
     const tbl = tableMap[type];
     if (tbl) {

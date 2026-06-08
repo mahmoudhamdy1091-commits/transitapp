@@ -1391,7 +1391,7 @@ async function approveItem(type, id) {
     if (type === 'reversal') {
       const item = approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
       if (!item) { toast('لم يُعثر على طلب الإلغاء','err'); return; }
-      await voidTransaction(item._srcType, item);
+      await voidTransaction(item._srcType, item, true);
       invalidateCache();
       toast('✅ تم تنفيذ الإلغاء بقيد عكسي','ok');
       await loadApprovalQueue();
