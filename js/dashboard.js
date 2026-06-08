@@ -575,6 +575,8 @@ function filterDeals(status) {
 async function openViewer(fileNo) {
   state.currentFileNo = fileNo;
   state.currentTab = 0;
+  sessionStorage.setItem('tm_last_view', 'viewer:'+fileNo);
+  sessionStorage.setItem('tm_last_tab', '0');
 
   hideAllViews();
   el('viewerView').style.display = 'block';
@@ -620,6 +622,7 @@ async function openViewer(fileNo) {
 
 function switchTab(idx) {
   state.currentTab = idx;
+  sessionStorage.setItem('tm_last_tab', String(idx));
   document.querySelectorAll('.tabs .tab').forEach((t,i) => t.classList.toggle('active', i === idx));
   document.querySelectorAll('.tab-content').forEach((c,i) => c.classList.toggle('active', i === idx));
   loadViewerTab(idx);

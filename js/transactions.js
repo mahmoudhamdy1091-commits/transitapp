@@ -612,7 +612,20 @@ async function initApp() {
     else if (lastView === 'journal') showJournal();
     else if (lastView === 'activity') showActivityLog();
     else if (lastView === 'settings') showSettings();
+    else if (lastView === 'opex') showOpex();
+    else if (lastView === 'approval') showApprovalQueue();
+    else if (lastView === 'review') showReview();
+    else if (lastView === 'je-manager') showJEManager();
+    else if (lastView === 'warehouses') showWarehouses();
     else if (lastView && lastView.startsWith('report:')) showReport(lastView.split(':')[1]);
+    else if (lastView && lastView.startsWith('tx:')) showTransactions(lastView.split(':')[1]);
+    else if (lastView && lastView.startsWith('viewer:')) {
+      const fileNo = lastView.slice('viewer:'.length);
+      openViewer(fileNo).then(() => {
+        const tab = +(sessionStorage.getItem('tm_last_tab')||0);
+        if (tab) switchTab(tab);
+      });
+    }
     else showDashboard();
   });
   loadUserRoleFromDB();
