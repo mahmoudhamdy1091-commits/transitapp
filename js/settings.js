@@ -15,17 +15,64 @@ async function showActivityLog() {
   el('topBarTitle').textContent = 'سجل النشاط';
   navActive('nav-activity');
   sessionStorage.setItem('tm_last_view','activity');
-  await loadActivityLog();
+  if (!el('actFilter-from').value) setActivityPeriod('month');
+  else await loadActivityLog();
+}
+
+// ── فلتر الفترة السريعة — نفس آلية setTxPeriod المستخدمة في كل شاشات النظام ──
+function setActivityPeriod(period) {
+  document.querySelectorAll('[id^="actperiod-"]').forEach(b => b.classList.remove('active'));
+  el('actperiod-' + period)?.classList.add('active');
+  const customWrap = el('actCustomDateWrap');
+  const pad = n => String(n).padStart(2,'0');
+  const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const now = new Date();
+  const yr  = now.getFullYear();
+
+  if (period === 'custom') { customWrap.style.display = 'flex'; return; }
+  customWrap.style.display = 'none';
+
+  let from, to;
+  if (period === 'today') {
+    from = to = toDate(now);
+  } else if (period === 'week') {
+    const sun = new Date(now); sun.setDate(now.getDate() - now.getDay());
+    const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
+    from = toDate(sun); to = toDate(sat);
+  } else if (period === 'month') {
+    from = `${yr}-${pad(now.getMonth()+1)}-01`;
+    to   = toDate(new Date(yr, now.getMonth()+1, 0));
+  } else if (period === '3months') {
+    const f = new Date(now); f.setMonth(f.getMonth() - 3);
+    from = toDate(f); to = toDate(now);
+  } else if (period === 'year') {
+    from = `${yr}-01-01`; to = `${yr}-12-31`;
+  } else if (period === 'lastyear') {
+    from = `${yr-1}-01-01`; to = `${yr-1}-12-31`;
+  }
+
+  el('actFilter-from').value = from;
+  el('actFilter-to').value   = to;
+  loadActivityLog();
 }
 
 async function loadActivityLog() {
   el('activityTableWrap').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
-    const data = await apiGet('audit_log', {
-      select:'*', system_type:`eq.${state.system}`,
-      order:'id.desc', limit:200
-    });
-    _activityData = data || [];
+    const from = el('actFilter-from')?.value;
+    const to   = el('actFilter-to')?.value;
+
+    // ✅ فلتر الفترة على مستوى السيرفر — نفس نطاق ما يظهر في باقي شاشات النظام
+    // (PostgREST يحتاج and=(...) لتطبيق شرطي gte/lte معاً على نفس العمود created_at)
+    let url = `${SB_URL}/rest/v1/audit_log?select=*&system_type=eq.${encodeURIComponent(state.system)}&order=id.desc`;
+    if (from && to) url += `&and=(created_at.gte.${encodeURIComponent(from)},created_at.lte.${encodeURIComponent(to+'T23:59:59')})`;
+    else if (from)  url += `&created_at=gte.${encodeURIComponent(from)}`;
+    else if (to)    url += `&created_at=lte.${encodeURIComponent(to+'T23:59:59')}`;
+
+    const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
+    const res = await fetch(url, { headers: h, cache: 'no-store' });
+    if (!res.ok) throw new Error(res.statusText);
+    _activityData = await res.json() || [];
 
     // Populate user filter
     const users = [...new Set(_activityData.map(r => r.user_email).filter(Boolean))];
@@ -39,9 +86,9 @@ async function loadActivityLog() {
 }
 
 function clearActivityFilters() {
-  ['actFilter-action','actFilter-user','actFilter-table','actFilter-from','actFilter-to']
+  ['actFilter-action','actFilter-user','actFilter-table']
     .forEach(id => { const e = el(id); if(e) e.value = ''; });
-  renderActivityLog();
+  setActivityPeriod('month');
 }
 
 function renderActivityLog() {

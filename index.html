@@ -877,13 +877,34 @@
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
           <div>
             <div style="font-size:16px;font-weight:900">🕵️ سجل النشاط</div>
-            <div style="font-size:12px;color:var(--text2)" id="activity-subtitle">آخر 200 عملية</div>
+            <div style="font-size:12px;color:var(--text2)" id="activity-subtitle">جاري التحميل...</div>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="loadActivityLog()">🔄 تحديث</button>
         </div>
 
+        <!-- أزرار الفترة السريعة (نفس فلتر التاريخ المستخدم في كل شاشات النظام) -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <span style="font-size:13px;color:var(--text2);font-weight:500">الفترة:</span>
+          <div style="display:flex;background:var(--card2);border-radius:var(--radius-sm);padding:3px;gap:2px">
+            <button class="btn btn-sm journal-period-btn" id="actperiod-today"    onclick="setActivityPeriod('today')">اليوم</button>
+            <button class="btn btn-sm journal-period-btn" id="actperiod-week"     onclick="setActivityPeriod('week')">هذا الأسبوع</button>
+            <button class="btn btn-sm journal-period-btn active" id="actperiod-month"    onclick="setActivityPeriod('month')">هذا الشهر</button>
+            <button class="btn btn-sm journal-period-btn" id="actperiod-3months"  onclick="setActivityPeriod('3months')">آخر 3 أشهر</button>
+            <button class="btn btn-sm journal-period-btn" id="actperiod-year"     onclick="setActivityPeriod('year')">هذه السنة</button>
+            <button class="btn btn-sm journal-period-btn" id="actperiod-lastyear" onclick="setActivityPeriod('lastyear')">السنة السابقة</button>
+            <button class="btn btn-sm journal-period-btn" id="actperiod-custom"   onclick="setActivityPeriod('custom')">تاريخ محدد</button>
+          </div>
+        </div>
+
         <!-- Filters -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px">
+          <div id="actCustomDateWrap" style="display:none;align-items:center;gap:6px">
+            <input type="date" id="actFilter-from" onchange="loadActivityLog()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <span style="color:var(--text2);font-size:12px">—</span>
+            <input type="date" id="actFilter-to" onchange="loadActivityLog()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          </div>
           <select id="actFilter-action" onchange="renderActivityLog()"
             style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
             <option value="">كل العمليات</option>
@@ -906,11 +927,6 @@
             <option value="partner_payouts">صرف الشركاء</option>
             <option value="vehicles">السيارات</option>
           </select>
-          <input type="date" id="actFilter-from" onchange="renderActivityLog()"
-            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
-          <span style="color:var(--text2);font-size:12px">—</span>
-          <input type="date" id="actFilter-to" onchange="renderActivityLog()"
-            style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
           <button class="btn btn-secondary btn-sm" onclick="clearActivityFilters()">✕ مسح</button>
         </div>
 
