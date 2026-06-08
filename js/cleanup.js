@@ -8,6 +8,80 @@
 
 const CLEANUP_TABLES = ['payments','expenses','collections','partner_payouts'];
 
+// ── فحص ملف معيّن: مصاريف draft متبقية من النظام القديم (ref_no ينتهي بـ -E) ──
+// تشغيل: inspectFileDraftLeftovers('BOX-126')
+// هذه السجلات draft (لم تُرحَّل، لا قيد محاسبي مرتبط بها) — الحذف الفعلي آمن هنا
+// لأنه لا يكسر أي ميزان محاسبي، على عكس حذف قيود posted.
+async function inspectFileDraftLeftovers(fileNo, opts={}) {
+  const sys   = state.system;
+  const table = opts.table || 'expenses';
+  const suffix = opts.suffix || '-E';
+
+  toast(`🔍 جاري فحص ${table} لملف ${fileNo}...`, 'ok');
+  const rows = (await apiGetAll(table, {
+    select: '*', system_type: `eq.${sys}`, file_no: `eq.${fileNo}`, post_status: `eq.draft`,
+  })).filter(r => (r.ref_no||'').endsWith(suffix));
+
+  let html = `<div style="max-height:75vh;overflow:auto;font-size:13px;line-height:1.7">`;
+  html += `<h3>🗑️ مخلّفات draft من النظام القديم — ${table} — ملف ${fileNo}</h3>`;
+  html += `<p style="color:var(--text-dim)">سجلات بحالة <code>draft</code> و<code>ref_no</code> ينتهي بـ "${suffix}" — ناتجة عن تعديلات بالنظام القديم، لم تُرحَّل محاسبياً (لا قيد JE مرتبط)، لذا حذفها لا يكسر أي ميزان. راجع كل سجل وأكِّد يدوياً.</p>`;
+
+  if (!rows.length) {
+    html += `<p style="color:var(--green)">✅ لا توجد سجلات مطابقة.</p>`;
+  } else {
+    rows.forEach(r => {
+      html += `<div style="border:1px solid var(--border);border-radius:8px;padding:8px;margin:6px 0">
+        <code>${fmtRow(r)}</code><br>
+        <code style="color:var(--text-dim)">ref_no: ${r.ref_no||'—'} | created_at: ${r.created_at}</code><br>
+        <div style="margin-top:6px;display:flex;gap:6px">
+          <button class="btn btn-sm btn-danger" onclick="_cleanupDeleteDraft('${table}','${r.id}',this)">🗑️ حذف نهائي (draft فقط)</button>
+        </div>
+      </div>`;
+    });
+    html += `<p style="margin-top:10px;color:var(--text-dim)">إجمالي السجلات المعروضة: ${rows.length}</p>`;
+  }
+  html += `</div>`;
+
+  let overlay = document.getElementById('cleanupToolOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'cleanupToolOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML = `<div style="background:var(--card,#1e1e1e);border-radius:12px;padding:18px;max-width:900px;width:100%;position:relative">
+      <button onclick="document.getElementById('cleanupToolOverlay').remove()" style="position:absolute;top:10px;left:10px" class="btn btn-sm btn-secondary">✕ إغلاق</button>
+      <div id="cleanupToolBody"></div>
+    </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('cleanupToolBody').innerHTML = html;
+}
+
+// حذف فعلي — يُسمح به فقط لسجلات draft (غير مرحّلة، بلا قيد محاسبي)
+async function _cleanupDeleteDraft(tbl, id, btn) {
+  try {
+    const rows = await apiGetAll(tbl, { select:'*', id:`eq.${id}` });
+    const record = rows?.[0];
+    if (!record) { toast('السجل غير موجود (ربما حُذف بالفعل)','warn'); btn.textContent='غير موجود'; btn.disabled=true; return; }
+    if (record.post_status !== 'draft') {
+      toast('⛔ هذا السجل ليس draft — الحذف الفعلي ممنوع لسجلات مرحّلة (قد يكسر القيود المحاسبية)','err');
+      return;
+    }
+    if (!confirm(`⚠️ حذف نهائي (لا رجعة) للسجل #${id} من ${tbl}:\n\n${fmtRow(record)}\n\nمتابعة؟`)) return;
+
+    btn.disabled = true; btn.textContent = '...جارٍ الحذف';
+    const res = await fetch(`${SB_URL}/rest/v1/${tbl}?id=eq.${id}`, { method:'DELETE', headers: headers() });
+    if (!res.ok) { const t = await res.text().catch(()=>''); throw new Error(`${res.status}: ${t}`); }
+
+    await logAudit('DELETE_DRAFT_LEFTOVER', tbl, record.file_no, record, null, `حذف يدوي لمخلّف draft من النظام القديم — ref_no=${record.ref_no||'—'}`);
+    toast(`✅ تم حذف #${id}`, 'ok');
+    btn.textContent = '✅ تم الحذف';
+  } catch(e) {
+    toast('فشل الحذف: ' + e.message, 'err');
+    btn.disabled = false; btn.textContent = 'إعادة المحاولة';
+  }
+}
+
 // ── 1. دفعات/تحصيلات/مصاريف مكررة (voided + draft لنفس العملية تقريباً) ──
 // معيار التكرار: نفس file_no + نفس amount (±0.01) + تاريخ إنشاء قريب (≤ 48 ساعة)
 // وأحد السجلين voided والآخر draft (أو كلاهما draft/voided لنفس القيمة)
