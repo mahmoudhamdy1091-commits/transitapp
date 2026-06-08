@@ -301,12 +301,12 @@ function renderTxTable(rows, cfg, auditMap, type) {
     return `<tr ${rowClick} style="${rowStyle}">${cells}<td style="font-size:11px;color:var(--text2)">${shortUser}</td><td>${statusCell}</td><td style="text-align:center">${ctxBtn}</td></tr>`;
   }).join('');
 
-  const total = rows.filter(r=>r.post_status!=='voided').reduce((s,r)=>s+(+r[cfg.amountField]||0),0);
-  const totalPaidTX = type==='collections' ? rows.filter(r=>r.paid_date&&r.post_status!=='voided').reduce((s,r)=>s+(+r.amount||0),0) : 0;
-  const totalPendTX = type==='collections' ? rows.filter(r=>!r.paid_date&&r.post_status!=='voided').reduce((s,r)=>s+(+r.amount||0),0) : 0;
+  const total = rows.filter(isEffective).reduce((s,r)=>s+(+r[cfg.amountField]||0),0);
+  const totalPaidTX = type==='collections' ? rows.filter(r=>r.paid_date&&isEffective(r)).reduce((s,r)=>s+(+r.amount||0),0) : 0;
+  const totalPendTX = type==='collections' ? rows.filter(r=>!r.paid_date&&isEffective(r)).reduce((s,r)=>s+(+r.amount||0),0) : 0;
   const tfoot = type==='collections'
     ? `<tr style="background:var(--card2);font-weight:700">
-        <td colspan="${typeCols.length-1}">الإجمالي (${rows.filter(r=>r.post_status!=='voided').length} تحصيل)</td>
+        <td colspan="${typeCols.length-1}">الإجمالي (${rows.filter(isEffective).length} تحصيل)</td>
         <td class="mono text-blue">${fmt(total)}</td>
         <td style="font-size:11px;color:var(--text2)">
           ✅ محصّل: <span style="color:var(--green);font-weight:700">${fmt(totalPaidTX)}</span>

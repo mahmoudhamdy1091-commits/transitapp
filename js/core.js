@@ -116,11 +116,51 @@ function invalidateCache() {
 // CORE RULES
 // post_status = null → posted (بيانات قديمة قبل إضافة العمود)
 // ════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
+// STATUS FILTERS — المصدر الواحد لكل فلاتر post_status
+// عدّل هنا فقط — ينعكس على كل التطبيق
+//
+// post_status values:
+//   null          → بيانات قديمة (تُعامَل كـ posted)
+//   'posted'      → مرحّلة ومعتمدة
+//   'draft'       → في انتظار الموافقة
+//   'pending_edit'→ معتمدة + طلب تعديل معلق
+//   'pending_void'→ معتمدة + طلب إلغاء معلق
+//   'voided'      → ملغاة نهائياً
+//   'cancelled'   → مرفوضة
+// ════════════════════════════════════════════════════════════
+
+// isPosted: مرحّلة فعلاً (يشمل null للبيانات القديمة)
 function isPosted(row) {
   return !row.post_status || row.post_status === 'posted';
 }
+
+// isDraft: في انتظار الموافقة
 function isDraft(row) {
   return row.post_status === 'draft';
+}
+
+// isActive: تُحسب في الأرقام (posted + pending_edit)
+// pending_edit = عملية معتمدة قيمتها تحت المراجعة → تُحسب
+function isActive(row) {
+  return isPosted(row) || row.post_status === 'pending_edit';
+}
+
+// isEffective: تُحسب في الأرقام وليست ملغاة
+// الأكثر استخداماً في الإجماليات والتقارير
+function isEffective(row) {
+  return isActive(row) && row.post_status !== 'voided';
+}
+
+// isVisible: تظهر في الجداول (كل شيء إلا voided)
+// للعرض فقط — لا للحساب
+function isVisible(row) {
+  return row.post_status !== 'voided';
+}
+
+// isPending: طلب معلق (تعديل أو إلغاء)
+function isPending(row) {
+  return row.post_status === 'pending_edit' || row.post_status === 'pending_void';
 }
 
 // ════════════════════════════════════════

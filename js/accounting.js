@@ -1413,39 +1413,15 @@ async function loadViewerKpis(fn, sys) {
     const totalSales   = (sales||[]).filter(isPosted).reduce((s,s2)=>s+(+s2.sale_price||0),0);
     const totalColl    = (collections||[]).filter(isPosted).reduce((s,c)=>s+(+c.amount||0),0);
     // ✅ pending_edit = مرحّلة في طور التعديل → تُحسب كمدفوع
-    const totalPaid    = (payments||[]).filter(p => isPosted(p) || p.post_status === 'pending_edit').reduce((s,p)=>s+(+p.amount||0),0);
+    const totalPaid    = (payments||[]).filter(isEffective).reduce((s,p)=>s+(+p.amount||0),0);
     const profit       = totalSales - fullCost;
     const soldVins     = new Set((sales||[]).filter(isPosted).map(s=>s.vin));
     const unsold       = (vehicles||[]).filter(v=>!soldVins.has(v.vin)).length;
     const uncollected  = totalSales - totalColl;
     const supplierLeft = totalCost - totalPaid;
 
-    el('viewer-kpis').innerHTML = `
-      <div class="vkpi">
-        <div class="vkpi-label">💰 تكلفة الشراء</div>
-        <div class="vkpi-val text-blue">${fmt(totalCost)}</div>
-      </div>
-      <div class="vkpi">
-        <div class="vkpi-label">💸 المصاريف</div>
-        <div class="vkpi-val text-red">${fmt(totalExp)}</div>
-      </div>
-      <div class="vkpi">
-        <div class="vkpi-label">🤝 المبيعات</div>
-        <div class="vkpi-val text-green">${fmt(totalSales)}</div>
-      </div>
-      <div class="vkpi">
-        <div class="vkpi-label">${profit>=0?'📈 الربح':'📉 الخسارة'}</div>
-        <div class="vkpi-val" style="color:${profit>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(profit))}</div>
-      </div>
-      <div class="vkpi">
-        <div class="vkpi-label">🚗 سيارات</div>
-        <div class="vkpi-val">${(vehicles||[]).length} <span style="font-size:11px;color:var(--text2)">/ ${soldVins.size} مباع / ${unsold} متبقي</span></div>
-      </div>
-      <div class="vkpi">
-        <div class="vkpi-label">💳 متبقي للمورد</div>
-        <div class="vkpi-val" style="color:${supplierLeft>0?'var(--red)':'var(--green)'}">${fmt(supplierLeft)}</div>
-      </div>
-    `;
+    // ✅ viewer-kpis مُخفاة — الـ KPIs موجودة في تاب الملخص
+    if(el('viewer-kpis')) el('viewer-kpis').innerHTML = '';
   } catch(e) { console.warn('KPI strip error:', e.message); if(el('viewer-kpis')) el('viewer-kpis').innerHTML=''; }
 }
 
@@ -1512,7 +1488,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       const allPartnersCount = (allPartners||[]).length;
       // ✅ pending_edit = مرحّلة في طور التعديل → تُحسب
       const capitalPaid  = (payments||[])
-        .filter(p => (isPosted(p) || p.post_status === 'pending_edit') && p.post_status !== 'voided')
+        .filter(isEffective)
         .filter(p => allPartnersCount <= 1 || p.payer === partnerName)
         .reduce((s,p)=>s+(+p.amount||0),0);
 
@@ -1532,7 +1508,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
       // احسب ما دفعه كل شريك فعلاً — استثناء الملغية
       const paidByPartner = {};
-      (allPartnersPayments||[]).filter(p => p.post_status !== 'voided').forEach(p => {
+      (allPartnersPayments||[]).filter(isEffective).forEach(p => {
         paidByPartner[p.payer] = (paidByPartner[p.payer]||0) + (+p.amount||0);
       });
 

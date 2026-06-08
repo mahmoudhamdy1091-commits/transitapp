@@ -186,7 +186,7 @@ async function loadDashboard() {
         ? state.allPayments
         : await apiGetAll('payments', { select:'file_no,amount,post_status', system_type:`eq.${sys}` });
       const paidMap = {};
-      (allPayments||[]).filter(p => isPosted(p) || p.post_status === 'pending_edit').forEach(p => { paidMap[p.file_no] = (paidMap[p.file_no]||0) + (+p.amount||0); });
+      (allPayments||[]).filter(isEffective).forEach(p => { paidMap[p.file_no] = (paidMap[p.file_no]||0) + (+p.amount||0); });
       const duelist = (deals||[]).map(d => ({
         file_no: d.file_no, supplier: d.supplier||'—',
         total_purchase: +d.total_purchase||0,
@@ -675,7 +675,7 @@ async function loadSummaryTab(fn, sys) {
 
     // فصل posted من draft — null يُعامَل كـ posted (بيانات قديمة)
     // ✅ pending_edit = عملية مرحّلة في طور التعديل → تُحسب كـ posted
-    const isActive = r => isPosted(r) || r.post_status === 'pending_edit';
+    // isActive: معرّف في core.js
     const postedPay  = (payments||[]).filter(isActive);
     const postedExp  = (expenses||[]).filter(isActive);
     const postedSal  = (sales||[]).filter(isActive);
@@ -789,7 +789,7 @@ async function loadSummaryTab(fn, sys) {
       const share        = +p.share_percent || 0;
       const _pc = allPartnersCount <= 1;
       const capitalIn    = (payments||[])
-        .filter(px => (isPosted(px) || px.post_status === 'pending_edit') && px.post_status !== 'voided')
+        .filter(isEffective)
         .filter(px => _pc || px.payer === p.partner)
         .reduce((s,px)=>s+(+px.amount||0),0);
       const liability    = totalPurchase * (share/100);
@@ -946,7 +946,7 @@ async function loadPaymentsTab(fn, sys) {
     const data = await apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc,id.asc' });
     if (!data?.length) { el('paymentsTable').innerHTML = emptyHTML('💳','لا توجد دفعات'); return; }
     // ✅ الإجمالي يستثني الملغية
-    const total = data.filter(p=>p.post_status!=='voided').reduce((s,p)=>s+(+p.amount||0),0);
+    const total = data.filter(isEffective).reduce((s,p)=>s+(+p.amount||0),0);
 
     // كشف الدفعات المشبوهة (نفس المبلغ ونفس الدافع في نفس اليوم أو متقاربة)
     const dupKeys = new Set();
@@ -983,7 +983,7 @@ async function loadPaymentsTab(fn, sys) {
           <th>المستند</th><th>التاريخ</th><th>ملاحظات</th><th></th>
         </tr></thead>
         <tbody>
-          ${data.filter(p=>p.post_status!=='voided').map((p,i)=>{
+          ${data.filter(isVisible).map((p,i)=>{
             const isDup = dupKeys.has(p.id);
             const rowStyle = isDup ? 'background:var(--red-dim);' : '';
             const dupBadge = isDup ? '<span style="font-size:9px;background:var(--red);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">مكرر؟</span>' : '';
@@ -1019,7 +1019,7 @@ async function loadExpensesTab(fn, sys) {
     const data = await apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.asc,id.asc' });
     if (!data?.length) { el('expensesTable').innerHTML = emptyHTML('💸','لا توجد مصاريف'); return; }
     // ✅ الإجمالي يستثني الملغية
-    const total = data.filter(e=>e.post_status!=='voided').reduce((s,e)=>s+(+e.amount||0),0);
+    const total = data.filter(isEffective).reduce((s,e)=>s+(+e.amount||0),0);
 
     // كشف المصاريف المشبوهة
     const dupKeyCount = {};
@@ -1042,7 +1042,7 @@ async function loadExpensesTab(fn, sys) {
           <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th><th></th>
         </tr></thead>
         <tbody>
-          ${data.filter(e=>e.post_status!=='voided').map((e,i)=>{
+          ${data.filter(isVisible).map((e,i)=>{
             const isDup = dupIds.has(e.id);
             const dupBadge = isDup ? '<span style="font-size:9px;background:var(--red);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">مكرر؟</span>' : '';
             return `<tr style="${isDup?'background:var(--red-dim);':''}">
@@ -1206,7 +1206,7 @@ async function loadCollectionsTab(fn, sys) {
     if (!data?.length) { el('collectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
 
     // فصل المقبوض عن المنتظر — ✅ استثناء الملغية من كل الإجماليات
-    const activeData  = data.filter(c => c.post_status !== 'voided');
+    const activeData  = data.filter(isVisible);
     const paidData    = activeData.filter(c => c.paid_date);
     const pendingData = activeData.filter(c => !c.paid_date);
     const totalInvoiced = activeData.reduce((s,c)=>s+(+c.amount||0),0);
@@ -1278,7 +1278,7 @@ async function loadPayoutsTab(fn, sys) {
     const supplierName = poArr?.[0]?.supplier || '—';
     if (!data?.length) { el('payoutsTable').innerHTML = emptyHTML('👥','لا توجد صرف للشركاء بعد'); return; }
     // ✅ الإجماليات تستثني الملغية
-    const activePayouts = data.filter(p=>p.post_status!=='voided');
+    const activePayouts = data.filter(isVisible);
     const total     = activePayouts.reduce((s,p)=>s+(+p.amount||0),0);
     const capTotal  = activePayouts.reduce((s,p)=>s+(+p.capital_amount||0),0);
     const profTotal = activePayouts.reduce((s,p)=>s+(+p.profit_amount||0),0);

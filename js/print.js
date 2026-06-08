@@ -458,9 +458,9 @@ async function printPurchaseOrder(fileNo) {
     ]);
     const po        = poArr?.[0] || {};
     // ✅ فلترة: استثناء الملغية (voided) من الأرقام
-    const notVoided = r => r.post_status !== 'voided';
-    const totalPaid = (payments||[]).filter(notVoided).reduce((s,p)=>s+(+p.amount||0),0);
-    const totalExp  = (expenses||[]).filter(notVoided).reduce((s,e)=>s+(+e.amount||0),0);
+    // notVoided → استخدم isVisible من core.js
+    const totalPaid = (payments||[]).filter(isEffective).reduce((s,p)=>s+(+p.amount||0),0);
+    const totalExp  = (expenses||[]).filter(isEffective).reduce((s,e)=>s+(+e.amount||0),0);
     const remaining = (+po.total_purchase||0) - totalPaid;
     const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
 
@@ -475,10 +475,10 @@ async function printPurchaseOrder(fileNo) {
       <td class="num c-amber">${fmt2(v.purchase_price)}</td>
     </tr>`).join('');
     // ✅ استثناء الملغية من جدول الدفعات
-    const paymentRows  = (payments||[]).filter(notVoided).map(p => `<tr><td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td><td>${p.payer||'—'}</td><td class="num c-green">${fmt2(p.amount)}</td><td>${p.pay_method||'—'}</td><td style="direction:ltr">${p.document||'—'}</td><td>${p.pay_date||'—'}</td></tr>`).join('');
+    const paymentRows  = (payments||[]).filter(isEffective).map(p => `<tr><td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td><td>${p.payer||'—'}</td><td class="num c-green">${fmt2(p.amount)}</td><td>${p.pay_method||'—'}</td><td style="direction:ltr">${p.document||'—'}</td><td>${p.pay_date||'—'}</td></tr>`).join('');
     // ✅ استثناء الملغية من جدول المصاريف
-    const expenseRows  = (expenses||[]).filter(notVoided).map(e => `<tr><td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td><td>${e.description||'—'}</td><td>${e.exp_type||'—'}</td><td class="num c-red">${fmt2(e.amount)}</td><td>${e.pay_method||'—'}</td><td>${e.exp_date||e.expense_date||'—'}</td></tr>`).join('');
-    const partnerRows  = (partners||[]).map(p => { const _sp2=(partners||[]).length<=1; const paid=(payments||[]).filter(pm=>notVoided(pm)).filter(pm=>_sp2||pm.payer===p.partner).reduce((s,pm)=>s+(+pm.amount||0),0); const due=(+po.total_purchase||0)*(+p.share_percent||0)/100; return `<tr><td style="font-weight:700">${p.partner}</td><td style="text-align:center">${p.share_percent}%</td><td class="num c-blue">${fmt2(due)}</td><td class="num c-green">${fmt2(paid)}</td><td class="num ${(due-paid)>0.01?'c-red':'c-green'}" style="font-weight:700">${fmt2(due-paid)}</td></tr>`; }).join('');
+    const expenseRows  = (expenses||[]).filter(isEffective).map(e => `<tr><td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td><td>${e.description||'—'}</td><td>${e.exp_type||'—'}</td><td class="num c-red">${fmt2(e.amount)}</td><td>${e.pay_method||'—'}</td><td>${e.exp_date||e.expense_date||'—'}</td></tr>`).join('');
+    const partnerRows  = (partners||[]).map(p => { const _sp2=(partners||[]).length<=1; const paid=(payments||[]).filter(isEffective).filter(pm=>_sp2||pm.payer===p.partner).reduce((s,pm)=>s+(+pm.amount||0),0); const due=(+po.total_purchase||0)*(+p.share_percent||0)/100; return `<tr><td style="font-weight:700">${p.partner}</td><td style="text-align:center">${p.share_percent}%</td><td class="num c-blue">${fmt2(due)}</td><td class="num c-green">${fmt2(paid)}</td><td class="num ${(due-paid)>0.01?'c-red':'c-green'}" style="font-weight:700">${fmt2(due-paid)}</td></tr>`; }).join('');
 
     const fragment = `
     ${docHeader('سند شراء', 'Purchase Order', fileNo)}
@@ -676,10 +676,10 @@ async function printDealSummary(fn) {
 
     const { vehicles, payments, expenses, sales, collections, partners, payouts, po } = d;
     const totalPurchase  = +(po.total_purchase) || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
-    const postedPay      = (payments||[]).filter(p => isPosted(p) || p.post_status === 'pending_edit');
-    const postedExp      = (expenses||[]).filter(isPosted).filter(r=>r.post_status!=='voided');
-    const postedSal      = (sales||[]).filter(isPosted).filter(r=>r.post_status!=='voided');
-    const postedCol      = (collections||[]).filter(isPosted).filter(r=>r.post_status!=='voided');
+    const postedPay      = (payments||[]).filter(isEffective);
+    const postedExp      = (expenses||[]).filter(isEffective);
+    const postedSal      = (sales||[]).filter(isEffective);
+    const postedCol      = (collections||[]).filter(isEffective);
     const postedPout     = (payouts||[]).filter(isPosted);
 
     const totalPaid      = postedPay.reduce((s,p)=>s+(+p.amount||0),0);
@@ -763,7 +763,7 @@ async function printDealSummary(fn) {
       const share       = +p.share_percent||0;
       const _sp = (partners||[]).length <= 1;
       const capitalIn   = (payments||[])
-        .filter(px => (isPosted(px) || px.post_status === 'pending_edit') && px.post_status !== 'voided')
+        .filter(isEffective)
         .filter(px => _sp || px.payer === p.partner)
         .reduce((s,px)=>s+(+px.amount||0),0);
       const liability   = totalPurchase*(share/100);
@@ -898,7 +898,7 @@ function printVehiclesTab(data, fn) {
 
 // ── الدفعات ──
 function printPaymentsTab(data, fn) {
-  const active = (data||[]).filter(p=>p.post_status!=='voided');
+  const active = (data||[]).filter(isEffective);
   const cols = [
     {label:'#',              w:0.4, align:'center', format:(_,i)=>i+1},
     {label:'رقم الدفعة',    w:2.2, mono:true, format:p=>p.ref_no||'—'},

@@ -403,9 +403,9 @@ async function loadDealStatement(fn, sys) {
     const totalPurchase = +deal.total_purchase || 0;
 
     // ✅ فلترة: المرحّلة فقط (posted أو null) — استثناء الملغية والمعلقة
-    const isActive  = r => r.post_status !== 'voided' && r.post_status !== 'draft';
+    // isActive: معرّف في core.js
     // ✅ pending_edit = مرحّلة في طور التعديل
-    const isSettled = r => (isPosted(r) || r.post_status === 'pending_edit') && r.post_status !== 'voided';
+    const isSettled = isEffective;
 
     const totalPaid    = (payments||[]).filter(isActive).reduce((s,p)=>s+(+p.amount||0),0);
     const totalExp     = (expenses||[]).filter(isSettled).reduce((s,e)=>s+(+e.amount||0),0);
