@@ -67,7 +67,7 @@ const PRINT_CSS = `
 }
 .doc-logo        { width: 72px; height: 72px; border-radius: 14px; display: block; margin-bottom: 8px; }
 .doc-company     { font-size: 18px; font-weight: 800; }
-.doc-company-sub { font-size: 11px; color: #888; margin-top: 2px; }
+.doc-company-sub { font-size: 13px; color: #888; margin-top: 2px; }
 .doc-title       { font-size: 22px; font-weight: 800; }
 .doc-subtitle    { font-size: 12px; color: #666; margin-top: 3px; }
 .doc-ref         { font-size: 13px; font-weight: 700; color: #3C3834; margin-top: 4px; font-family: monospace, 'Cairo', Arial; }
@@ -82,12 +82,12 @@ const PRINT_CSS = `
   padding: 10px 14px; border: 1px solid #eee; vertical-align: top; width: 50%;
 }
 .info-cell-title {
-  font-size: 10px; font-weight: 700; color: #888;
+  font-size: 12px; font-weight: 700; color: #888;
   text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;
 }
 .info-row {
   display: table; width: 100%; table-layout: fixed;
-  padding: 3px 0; font-size: 11px; border-bottom: 1px solid #eee;
+  padding: 3px 0; font-size: 13px; border-bottom: 1px solid #eee;
 }
 .info-row:last-child { border-bottom: none; }
 .info-lbl { display: table-cell; color: #666; width: 55%; }
@@ -96,11 +96,11 @@ const PRINT_CSS = `
 /* ══ TABLES ════════════════════════════════════════════════ */
 .print-root table {
   width: 100%; border-collapse: collapse; margin: 10px 0;
-  font-size: 11px; table-layout: fixed;
+  font-size: 13px; table-layout: fixed;
 }
 .print-root thead              { display: table-header-group; }
 .print-root thead tr           { background: #1a1a1a; color: #fff; }
-.print-root thead th           { padding: 8px 10px; text-align: right; font-weight: 700; font-size: 11px; word-break: break-word; }
+.print-root thead th           { padding: 8px 10px; text-align: right; font-weight: 700; font-size: 13px; word-break: break-word; }
 .print-root tbody              { display: table-row-group; }
 .print-root tbody tr           { border-bottom: 1px solid #eee; page-break-inside: avoid; }
 .print-root tbody tr:nth-child(even) { background: #fafafa; }
@@ -121,7 +121,7 @@ const PRINT_CSS = `
   display: table-cell; background: #f8f9fa; border-radius: 6px;
   padding: 10px 14px; border-right: 3px solid #3C3834; vertical-align: top;
 }
-.kpi-label { font-size: 10px; color: #666; margin-bottom: 3px; }
+.kpi-label { font-size: 12px; color: #666; margin-bottom: 3px; }
 .kpi-val   { font-size: 15px; font-weight: 700; font-family: monospace, 'Cairo', Arial; }
 
 /* ══ SUMMARY ROW — table layout ════════════════════════════ */
@@ -130,16 +130,16 @@ const PRINT_CSS = `
   border-spacing: 8px 0; border-collapse: separate; margin-bottom: 14px;
 }
 .s-cell       { display: table-cell; background: #f8f9fa; border-radius: 8px; padding: 10px 16px; vertical-align: top; }
-.s-cell-label { font-size: 10px; color: #888; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.s-cell-label { font-size: 12px; color: #888; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
 .s-cell-val   { font-size: 15px; font-weight: 900; margin-top: 3px; font-family: monospace, 'Cairo', Arial; }
 
 /* ══ TOTAL BOX ══════════════════════════════════════════════ */
 .total-wrap   { text-align: left; margin-bottom: 20px; }
 .total-box    { display: inline-block; background: #1a1a1a; color: #fff; border-radius: 10px; padding: 16px 24px; min-width: 240px; text-align: center; }
-.total-label  { font-size: 11px; color: #aaa; margin-bottom: 3px; }
+.total-label  { font-size: 13px; color: #aaa; margin-bottom: 3px; }
 .total-amount { font-size: 24px; font-weight: 900; font-family: monospace, 'Cairo', Arial; }
 .total-cur    { font-size: 12px; color: #aaa; margin-top: 2px; }
-.total-sub    { display: table; width: 100%; table-layout: fixed; font-size: 11px; color: #aaa; padding: 3px 0; border-top: 1px solid #444; margin-top: 6px; padding-top: 6px; }
+.total-sub    { display: table; width: 100%; table-layout: fixed; font-size: 13px; color: #aaa; padding: 3px 0; border-top: 1px solid #444; margin-top: 6px; padding-top: 6px; }
 
 /* ══ SIGNATURE ROW — table layout ══════════════════════════ */
 .sig-row {
@@ -148,18 +148,18 @@ const PRINT_CSS = `
 }
 .sig-cell {
   display: table-cell; text-align: center; padding-top: 40px;
-  border-top: 1px solid #ccc; font-size: 11px; color: #888; vertical-align: top;
+  border-top: 1px solid #ccc; font-size: 13px; color: #888; vertical-align: top;
 }
 
 /* ══ UTILITY ════════════════════════════════════════════════ */
 .section-title { font-size: 13px; font-weight: 700; color: #1a1a1a; margin: 16px 0 6px; padding-bottom: 4px; border-bottom: 2px solid #3C3834; page-break-after: avoid; }
 .notes-box     { background: #f8f9fa; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; }
-.notes-title   { font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-.doc-footer    { text-align: center; font-size: 10px; color: #999; margin-top: 24px; padding-top: 10px; border-top: 1px solid #eee; }
-.contact-badge { display: inline-block; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700; margin-right: 6px; }
+.notes-title   { font-size: 12px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.doc-footer    { text-align: center; font-size: 12px; color: #999; margin-top: 24px; padding-top: 10px; border-top: 1px solid #eee; }
+.contact-badge { display: inline-block; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-weight: 700; margin-right: 6px; }
 .c-green { color: #16a34a; } .c-red  { color: #dc2626; }
 .c-blue  { color: #2563eb; } .c-amber{ color: #3C3834; }
-.c-ok    { font-size: 11px; color: #16a34a; }
+.c-ok    { font-size: 13px; color: #16a34a; }
 .no-print { /* hidden in print */ }
 /* إخفاء أزرار الإجراءات والـ ctx menu عند الطباعة */
 .btn-ctx-menu { display: none !important; }
@@ -175,8 +175,8 @@ const PRINT_CSS = `
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   .no-print { display: none !important; }
   .print-page { max-width: 100%; padding: 0; margin: 0; }
-  .print-root { font-size: 11px; }
-  .print-root table { font-size: 10px; table-layout: fixed; width: 100%; }
+  .print-root { font-size: 13px; }
+  .print-root table { font-size: 12px; table-layout: fixed; width: 100%; }
   .print-root tr    { page-break-inside: avoid; }
   .print-root thead { display: table-header-group; }
   .print-root tfoot { display: table-footer-group; }
@@ -280,7 +280,7 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
   const itemsHtml = items.map((item, i) => `
     <tr>
       <td style="text-align:center">${i+1}</td>
-      <td><div style="font-weight:600">${item.model||'—'}</div><div style="font-size:11px;color:#666">${item.color||''}${item.year?' · '+item.year:''}</div></td>
+      <td><div style="font-weight:600">${item.model||'—'}</div><div style="font-size:13px;color:#666">${item.color||''}${item.year?' · '+item.year:''}</div></td>
       <td style="direction:ltr;text-align:center;font-family:monospace;font-size:12px">${item.vin||'—'}</td>
       <td style="direction:ltr;text-align:center;font-family:monospace">${item.plate||'—'}</td>
       <td style="text-align:center">${item.engine?item.engine+' L':'—'}</td>
@@ -295,8 +295,8 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
 
   const extraRowsHtml = extraCharges.map(c => `
     <tr style="background:#fff8ec">
-      <td style="text-align:center;color:#3C3834;font-size:11px">+</td>
-      <td colspan="4" style="color:#3C3834;font-weight:600;padding:8px 12px">${c.desc}<span style="font-size:10px;background:#F0EEE9;color:#3C3834;padding:1px 7px;border-radius:10px;margin-right:8px;font-weight:700">مصروف إضافي</span></td>
+      <td style="text-align:center;color:#3C3834;font-size:13px">+</td>
+      <td colspan="4" style="color:#3C3834;font-weight:600;padding:8px 12px">${c.desc}<span style="font-size:12px;background:#F0EEE9;color:#3C3834;padding:1px 7px;border-radius:10px;margin-right:8px;font-weight:700">مصروف إضافي</span></td>
       <td class="num c-amber">${c.amount.toLocaleString('en-US',{minimumFractionDigits:2})}</td>
     </tr>`).join('');
 
@@ -467,7 +467,7 @@ async function printPurchaseOrder(fileNo) {
     const vehicleRows  = (vehicles||[]).map((v,i) => `<tr>
       <td style="text-align:center;font-weight:700">${i+1}</td>
       <td style="overflow:hidden;text-overflow:ellipsis">${v.vehicle_type||'—'} ${v.model||''}</td>
-      <td style="direction:ltr;font-family:monospace;font-size:10px;font-weight:700;overflow:hidden">${v.vin||'—'}</td>
+      <td style="direction:ltr;font-family:monospace;font-size:12px;font-weight:700;overflow:hidden">${v.vin||'—'}</td>
       <td style="direction:ltr;white-space:nowrap">${v.plate||'—'}</td>
       <td style="overflow:hidden;text-overflow:ellipsis">${v.color||'—'}</td>
       <td style="text-align:center;white-space:nowrap">${v.engine_size?v.engine_size+' L':'—'}</td>
@@ -475,9 +475,9 @@ async function printPurchaseOrder(fileNo) {
       <td class="num c-amber">${fmt2(v.purchase_price)}</td>
     </tr>`).join('');
     // ✅ استثناء الملغية من جدول الدفعات
-    const paymentRows  = (payments||[]).filter(isEffective).map(p => `<tr><td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td><td>${p.payer||'—'}</td><td class="num c-green">${fmt2(p.amount)}</td><td>${p.pay_method||'—'}</td><td style="direction:ltr">${p.document||'—'}</td><td>${p.pay_date||'—'}</td></tr>`).join('');
+    const paymentRows  = (payments||[]).filter(isEffective).map(p => `<tr><td style="font-size:12px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td><td>${p.payer||'—'}</td><td class="num c-green">${fmt2(p.amount)}</td><td>${p.pay_method||'—'}</td><td style="direction:ltr">${p.document||'—'}</td><td>${p.pay_date||'—'}</td></tr>`).join('');
     // ✅ استثناء الملغية من جدول المصاريف
-    const expenseRows  = (expenses||[]).filter(isEffective).map(e => `<tr><td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td><td>${e.description||'—'}</td><td>${e.exp_type||'—'}</td><td class="num c-red">${fmt2(e.amount)}</td><td>${e.pay_method||'—'}</td><td>${e.exp_date||e.expense_date||'—'}</td></tr>`).join('');
+    const expenseRows  = (expenses||[]).filter(isEffective).map(e => `<tr><td style="font-size:12px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td><td>${e.description||'—'}</td><td>${e.exp_type||'—'}</td><td class="num c-red">${fmt2(e.amount)}</td><td>${e.pay_method||'—'}</td><td>${e.exp_date||e.expense_date||'—'}</td></tr>`).join('');
     const partnerRows  = (partners||[]).map(p => { const _sp2=(partners||[]).length<=1; const paid=(payments||[]).filter(isEffective).filter(pm=>_sp2||pm.payer===p.partner).reduce((s,pm)=>s+(+pm.amount||0),0); const due=(+po.total_purchase||0)*(+p.share_percent||0)/100; return `<tr><td style="font-weight:700">${p.partner}</td><td style="text-align:center">${p.share_percent}%</td><td class="num c-blue">${fmt2(due)}</td><td class="num c-green">${fmt2(paid)}</td><td class="num ${(due-paid)>0.01?'c-red':'c-green'}" style="font-weight:700">${fmt2(due-paid)}</td></tr>`; }).join('');
 
     const fragment = `
@@ -556,7 +556,7 @@ function printVehiclesReport() {
   const list = vrState.filtered || vrState.all;
   if (!list.length) { toast('لا توجد بيانات','err'); return; }
   const rows = list.map(v => `<tr><td>${v._code}</td><td>${v.file_no||'—'}</td><td>${v._supplier}</td><td>${v.vehicle_type||'—'}</td><td>${v.model||'—'}</td><td>${v.year||'—'}</td><td style="direction:ltr">${v.vin||'—'}</td><td style="direction:ltr">${v.plate||'—'}</td><td>${v.color||'—'}</td><td>${v.engine_size||'—'}</td><td class="num">${(+v.purchase_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td><td>${v.license_expiry||'—'}</td><td>${v._sold?'مباع':'في المخزن'}</td><td>${v._warehouse||'—'}</td><td>${v._saleInfo?.customer||'—'}</td></tr>`).join('');
-  renderPrint(`${docHeader('تقرير السيارات','Vehicles Report','')}<table style="font-size:9px"><thead><tr><th>الكود</th><th>الملف</th><th>المورد</th><th>النوع</th><th>الموديل</th><th>السنة</th><th>VIN</th><th>اللوحة</th><th>اللون</th><th>الحجم</th><th style="text-align:left">السعر</th><th>انتهاء الرخصة</th><th>الحالة</th><th>المخزن</th><th>العميل</th></tr></thead><tbody>${rows}</tbody></table><div class="doc-footer">Transit International Company · تقرير السيارات · ${new Date().toLocaleDateString('en-GB')}</div>`, 'تقرير السيارات');
+  renderPrint(`${docHeader('تقرير السيارات','Vehicles Report','')}<table style="font-size:13px"><thead><tr><th>الكود</th><th>الملف</th><th>المورد</th><th>النوع</th><th>الموديل</th><th>السنة</th><th>VIN</th><th>اللوحة</th><th>اللون</th><th>الحجم</th><th style="text-align:left">السعر</th><th>انتهاء الرخصة</th><th>الحالة</th><th>المخزن</th><th>العميل</th></tr></thead><tbody>${rows}</tbody></table><div class="doc-footer">Transit International Company · تقرير السيارات · ${new Date().toLocaleDateString('en-GB')}</div>`, 'تقرير السيارات');
 }
 
 // ════════════════════════════════════════════════════════════
@@ -580,7 +580,7 @@ async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, tit
     const vDate  = date ? new Date(date).toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'}) : '—';
     const tDr    = (lines||[]).reduce((s,l)=>s+(+l.dr_amount||0),0);
     const tCr    = (lines||[]).reduce((s,l)=>s+(+l.cr_amount||0),0);
-    const linesHtml = (lines||[]).map((l,i) => `<tr><td style="text-align:center;color:#666;font-size:11px">${i+1}</td><td style="font-family:monospace;font-weight:700">${l.account_code||'—'}</td><td>${l.account_name||'—'}</td><td style="font-size:11px;color:#666">${l.description||'—'}</td><td class="num c-green">${+l.dr_amount>0?(+l.dr_amount).toLocaleString('en-US',{minimumFractionDigits:3}):'—'}</td><td class="num c-red">${+l.cr_amount>0?(+l.cr_amount).toLocaleString('en-US',{minimumFractionDigits:3}):'—'}</td></tr>`).join('');
+    const linesHtml = (lines||[]).map((l,i) => `<tr><td style="text-align:center;color:#666;font-size:13px">${i+1}</td><td style="font-family:monospace;font-weight:700">${l.account_code||'—'}</td><td>${l.account_name||'—'}</td><td style="font-size:13px;color:#666">${l.description||'—'}</td><td class="num c-green">${+l.dr_amount>0?(+l.dr_amount).toLocaleString('en-US',{minimumFractionDigits:3}):'—'}</td><td class="num c-red">${+l.cr_amount>0?(+l.cr_amount).toLocaleString('en-US',{minimumFractionDigits:3}):'—'}</td></tr>`).join('');
     const fragment = `
     ${docHeader(vTitle, '', entryNo||'—')}
     <div class="info-grid">
@@ -605,7 +605,7 @@ async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, tit
         <div class="total-label">إجمالي القيد / Total</div>
         <div class="total-amount">${(tDr||amount||0).toLocaleString('en-US',{minimumFractionDigits:3})}</div>
         <div class="total-cur">KWD / د.ك</div>
-        ${Math.abs(tDr-tCr)<0.01?'<div class="c-ok">✓ القيد متوازن</div>':'<div style="color:#f87171;font-size:11px">⚠ القيد غير متوازن</div>'}
+        ${Math.abs(tDr-tCr)<0.01?'<div class="c-ok">✓ القيد متوازن</div>':'<div style="color:#f87171;font-size:13px">⚠ القيد غير متوازن</div>'}
       </div>
     </div>
     <div class="sig-row">
@@ -708,11 +708,11 @@ async function printDealSummary(fn) {
     const mkKpi = (label, icon, val, sub, color) =>
       '<div style="background:#fff;border:1px solid #e4e0d8;border-radius:8px;padding:10px 12px;border-right:3px solid ' + color + '">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
-      '<span style="font-size:10px;color:#78716c;font-weight:600">' + label + '</span>' +
+      '<span style="font-size:12px;color:#78716c;font-weight:600">' + label + '</span>' +
       '<span style="font-size:13px">' + icon + '</span>' +
       '</div>' +
       '<div style="font-family:monospace;font-size:16px;font-weight:700;color:' + color + ';margin-bottom:3px">' + val + '</div>' +
-      '<div style="font-size:10px;color:#a8a49c">' + sub + '</div>' +
+      '<div style="font-size:12px;color:#a8a49c">' + sub + '</div>' +
       '</div>';
 
     const kpis = `
@@ -774,7 +774,7 @@ async function printDealSummary(fn) {
       const pc          = profitShare >= 0 ? '#15803d' : '#c0392b';
       const nc          = netDue >= 0 ? '#15803d' : '#c0392b';
       const rows = (label, val, bold, color) =>
-        '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px solid #f0ede8">' +
+        '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #f0ede8">' +
         '<span style="color:#57534e">' + label + '</span>' +
         '<span style="font-family:monospace;font-weight:' + (bold?'700':'500') + ';color:' + (color||'#1c1917') + '">' + val + '</span>' +
         '</div>';
@@ -792,7 +792,7 @@ async function printDealSummary(fn) {
 
       // رأس المال
       html += '<div style="padding:12px 14px;border-left:1px solid #e4e0d8;border-bottom:1px solid #e4e0d8">'
-            + '<div style="font-size:10px;color:#78716c;font-weight:700;margin-bottom:8px;letter-spacing:1px">رأس المال</div>'
+            + '<div style="font-size:12px;color:#78716c;font-weight:700;margin-bottom:8px;letter-spacing:1px">رأس المال</div>'
             + rows('حصته في التكلفة', f2(liability),  false, '#1d4ed8')
             + rows('دفع فعلاً',        f2(capitalIn),  false, '#15803d')
             + rows('المتبقي عليه',     remaining_ > 0.01 ? f2(remaining_)+' ⚠️' : 'صفر ✅', true, remaining_>0.01?'#c0392b':'#15803d')
@@ -800,7 +800,7 @@ async function printDealSummary(fn) {
 
       // الربح
       html += '<div style="padding:12px 14px;border-bottom:1px solid #e4e0d8">'
-            + '<div style="font-size:10px;color:#78716c;font-weight:700;margin-bottom:8px;letter-spacing:1px">الربح / الخسارة</div>'
+            + '<div style="font-size:12px;color:#78716c;font-weight:700;margin-bottom:8px;letter-spacing:1px">الربح / الخسارة</div>'
             + rows('إجمالي المبيعات', f2(totalSales), false, '#15803d')
             + rows('التكلفة الكاملة', f2(fullCost),   false, '#c0392b')
             + rows('حصته (' + share + '%)', (profitShare>=0?'+':'') + f2(profitShare), true, pc)
@@ -810,18 +810,18 @@ async function printDealSummary(fn) {
 
       // تنبيه صفقة مفتوحة
       if (isOpen) {
-        html += '<div style="background:#fef9ec;border-top:1px solid #e4e0d8;padding:8px 14px;font-size:11px;color:#92400e">'
+        html += '<div style="background:#fef9ec;border-top:1px solid #e4e0d8;padding:8px 14px;font-size:13px;color:#92400e">'
               + '⚠️ الصفقة مفتوحة — ' + (totalV-soldV) + ' سيارة في المخزن · الأرقام ستتغير عند اكتمال المبيعات'
               + '</div>';
       }
 
       // المستحق النهائي
       html += '<div style="background:#f9f8f6;padding:12px 16px;border-top:1px solid #e4e0d8">'
-            + '<div style="font-size:10px;color:#78716c;margin-bottom:6px">المستحق = رأس مال مدفوع + حصة الربح − مسحوبات</div>'
-            + '<div style="font-size:11px;color:#57534e;font-family:monospace;margin-bottom:10px">'
+            + '<div style="font-size:12px;color:#78716c;margin-bottom:6px">المستحق = رأس مال مدفوع + حصة الربح − مسحوبات</div>'
+            + '<div style="font-size:13px;color:#57534e;font-family:monospace;margin-bottom:10px">'
             + f2(capitalIn) + ' + (' + f2(profitShare) + ') − ' + f2(totalOut) + ' = <strong>' + f2(Math.abs(netDue)) + '</strong>'
             + '</div>'
-            + (totalOut > 0 ? '<div style="font-size:11px;color:#57534e;margin-bottom:8px">تم الصرف: <span style="font-family:monospace;color:#d97706;font-weight:600">' + f2(totalOut) + '</span></div>' : '')
+            + (totalOut > 0 ? '<div style="font-size:13px;color:#57534e;margin-bottom:8px">تم الصرف: <span style="font-family:monospace;color:#d97706;font-weight:600">' + f2(totalOut) + '</span></div>' : '')
             + '<div style="display:flex;justify-content:space-between;align-items:center">'
             + '<span style="font-size:12px;font-weight:700;color:#1c1917">المستحق' + (isOpen?' (تقديري)':'') + ':</span>'
             + '<span style="font-size:20px;font-weight:700;font-family:monospace;color:' + nc + '">' + f2(Math.abs(netDue)) + ' ' + (netDue>=0?'↑':'↓') + '</span>'
@@ -839,19 +839,19 @@ async function printDealSummary(fn) {
       <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
       <tbody>
         <tr>
-          <td style="padding:6px 12px;font-size:11px;color:#6b7280">رقم الملف</td>
+          <td style="padding:6px 12px;font-size:13px;color:#6b7280">رقم الملف</td>
           <td style="padding:6px 12px;font-size:12px;font-weight:700;color:#3C3834;font-family:monospace">${fn}</td>
         </tr>
         <tr style="background:#f8f9fa">
-          <td style="padding:6px 12px;font-size:11px;color:#6b7280">المورد</td>
+          <td style="padding:6px 12px;font-size:13px;color:#6b7280">المورد</td>
           <td style="padding:6px 12px;font-size:12px">${po.supplier||'—'}</td>
         </tr>
         <tr>
-          <td style="padding:6px 12px;font-size:11px;color:#6b7280">تاريخ الصفقة</td>
+          <td style="padding:6px 12px;font-size:13px;color:#6b7280">تاريخ الصفقة</td>
           <td style="padding:6px 12px;font-size:12px;font-family:monospace">${po.po_date||'—'}</td>
         </tr>
         <tr style="background:#f8f9fa">
-          <td style="padding:6px 12px;font-size:11px;color:#6b7280">الحالة</td>
+          <td style="padding:6px 12px;font-size:13px;color:#6b7280">الحالة</td>
           <td style="padding:6px 12px;font-size:12px;font-weight:700">${po.status||'—'}</td>
         </tr>
       </tbody>
@@ -1034,7 +1034,7 @@ function printLedgerStatement() {
   const finalBal    = opening + list.reduce((s,e)=>s+(+e.debit||0)-(+e.credit||0),0);
   let rows = '';
   if (opening!==0) rows+=`<tr style="background:#f8f9fa;font-weight:700"><td>—</td><td colspan="2">رصيد افتتاحي</td><td class="num c-green">${opening>0?fmt2(opening):'—'}</td><td class="num c-red">${opening<0?fmt2(Math.abs(opening)):'—'}</td><td class="num" style="font-weight:700">${fmt2(Math.abs(opening))}</td></tr>`;
-  list.forEach(e => { running+=(+e.debit||0)-(+e.credit||0); const desc=(e.desc||e.description||'—').replace(/<[^>]+>/g,''); rows+=`<tr style="background:${running<0?'#fff5f5':''}"><td style="white-space:nowrap">${e.date||e.entry_date||'—'}</td><td style="font-size:11px;line-height:1.6">${e.type?`<strong>[${e.type}]</strong> `:''} ${desc}</td><td style="font-family:monospace;font-size:11px;color:#666">${e.file_no||'—'}</td><td class="num c-green">${+e.debit?fmt2(e.debit):'—'}</td><td class="num c-red">${+e.credit?fmt2(e.credit):'—'}</td><td class="num" style="font-weight:700;color:${running>=0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(running))}</td></tr>`; });
+  list.forEach(e => { running+=(+e.debit||0)-(+e.credit||0); const desc=(e.desc||e.description||'—').replace(/<[^>]+>/g,''); rows+=`<tr style="background:${running<0?'#fff5f5':''}"><td style="white-space:nowrap">${e.date||e.entry_date||'—'}</td><td style="font-size:13px;line-height:1.6">${e.type?`<strong>[${e.type}]</strong> `:''} ${desc}</td><td style="font-family:monospace;font-size:13px;color:#666">${e.file_no||'—'}</td><td class="num c-green">${+e.debit?fmt2(e.debit):'—'}</td><td class="num c-red">${+e.credit?fmt2(e.credit):'—'}</td><td class="num" style="font-weight:700;color:${running>=0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(running))}</td></tr>`; });
   const pDate = new Date().toLocaleDateString('en-GB');
   const fragment = `
   <div class="doc-header">

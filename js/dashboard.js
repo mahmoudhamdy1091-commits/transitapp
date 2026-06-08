@@ -202,10 +202,10 @@ async function loadDashboard() {
         el('dash-supplier-due-list').innerHTML = duelist.length
           ? duelist.slice(0,3).map(d =>
               `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-                <span style="color:var(--text)">${d.supplier} <span style="color:var(--accent);font-family:monospace;font-size:10px">${d.file_no}</span></span>
+                <span style="color:var(--text)">${d.supplier} <span style="color:var(--accent);font-family:monospace;font-size:12px">${d.file_no}</span></span>
                 <span style="font-family:monospace;color:var(--red);font-weight:700">${fmt(d.due)}</span>
-              </div>`).join('') + (duelist.length > 3 ? `<div style="font-size:10px;color:var(--text2);margin-top:4px">+ ${duelist.length-3} صفقة أخرى</div>` : '')
-          : '<div style="color:var(--green);font-size:11px">✓ لا توجد مستحقات</div>';
+              </div>`).join('') + (duelist.length > 3 ? `<div style="font-size:12px;color:var(--text2);margin-top:4px">+ ${duelist.length-3} صفقة أخرى</div>` : '')
+          : '<div style="color:var(--green);font-size:13px">✓ لا توجد مستحقات</div>';
       }
     } catch(e) { console.warn('supplier due list:', e.message); }
 
@@ -223,10 +223,10 @@ async function loadDashboard() {
       el('dash-overdue-list').innerHTML = overdueItems.length
         ? overdueItems.slice(0,3).map(c =>
             `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-              <span style="color:var(--text)">${c.customer||'—'} <span style="color:var(--text2);font-size:10px">${c.due_date}</span></span>
+              <span style="color:var(--text)">${c.customer||'—'} <span style="color:var(--text2);font-size:12px">${c.due_date}</span></span>
               <span style="font-family:monospace;color:var(--accent);font-weight:700">${fmt(c.amount)}</span>
-            </div>`).join('') + (overdueItems.length > 3 ? `<div style="font-size:10px;color:var(--text2);margin-top:4px">+ ${overdueItems.length-3} فاتورة أخرى</div>` : '')
-        : '<div style="color:var(--green);font-size:11px">✓ لا توجد تحصيلات متأخرة</div>';
+            </div>`).join('') + (overdueItems.length > 3 ? `<div style="font-size:12px;color:var(--text2);margin-top:4px">+ ${overdueItems.length-3} فاتورة أخرى</div>` : '')
+        : '<div style="color:var(--green);font-size:13px">✓ لا توجد تحصيلات متأخرة</div>';
     }
 
     // ── Alerts ──
@@ -344,7 +344,7 @@ function renderDashPerfChart(sales, expenses, from, to, days, deals) {
 
   if (labelsWrap) {
     labelsWrap.innerHTML = buckets.map(b =>
-      `<div style="flex:1;text-align:center;font-size:9px;color:var(--text2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.label}</div>`
+      `<div style="flex:1;text-align:center;font-size:13px;color:var(--text2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.label}</div>`
     ).join('');
   }
 }
@@ -378,8 +378,8 @@ function renderDashAlerts(overdueList, upcomingList, stockVehicles, draftCount, 
     <div style="flex-shrink:0;background:var(--card);border:1px solid var(--border);border-right:3px solid ${a.color};border-radius:var(--radius-sm);padding:10px 14px;min-width:140px;cursor:pointer;transition:background .15s"
       onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background='var(--card)'">
       <div style="font-size:22px;font-weight:700;color:${a.color};font-family:var(--mono);line-height:1;margin-bottom:3px">${a.count}</div>
-      <div style="font-size:11px;font-weight:600;color:var(--text)">${a.label}</div>
-      <div style="font-size:10px;color:${a.color};margin-top:2px">${a.sub}</div>
+      <div style="font-size:13px;font-weight:600;color:var(--text)">${a.label}</div>
+      <div style="font-size:12px;color:${a.color};margin-top:2px">${a.sub}</div>
     </div>`).join('');
 }
 
@@ -402,11 +402,11 @@ function renderDashCollections(overdueList, upcomingList, today) {
     <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openViewer('${c.file_no||''}')">
       <div style="flex:1;min-width:0">
         <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.customer||'—'}</div>
-        <div style="font-size:10px;color:var(--text2)">${c.file_no||'—'} · ${c.inv_no||'—'}</div>
+        <div style="font-size:12px;color:var(--text2)">${c.file_no||'—'} · ${c.inv_no||'—'}</div>
       </div>
       <div style="text-align:left;flex-shrink:0;margin-right:8px">
         <div style="font-size:12px;font-weight:700;color:${color};font-family:monospace">${fmt(c.amount)}</div>
-        <div style="font-size:10px;color:${color}">${subText}</div>
+        <div style="font-size:12px;color:${color}">${subText}</div>
       </div>
     </div>`; }).join('');
 }
@@ -418,17 +418,17 @@ function renderDashExpBreakdown(expenses) {
   const byType = {};
   expenses.forEach(e => { const t = e.exp_type||e.category||'أخرى'; byType[t]=(byType[t]||0)+(+e.amount||0); });
   const total = Object.values(byType).reduce((s,v)=>s+v,0);
-  if (!total) { wrap.innerHTML = `<div style="font-size:11px;color:var(--text2)">لا توجد مصاريف</div>`; return; }
+  if (!total) { wrap.innerHTML = `<div style="font-size:13px;color:var(--text2)">لا توجد مصاريف</div>`; return; }
   const colors = ['var(--blue)','var(--purple)','var(--accent)','var(--cyan)','var(--green)'];
   wrap.innerHTML = Object.entries(byType).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([type,amt],i) => {
     const pct = Math.round((amt/total)*100);
     return `
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
-      <div style="font-size:11px;color:var(--text2);width:55px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${type}</div>
+      <div style="font-size:13px;color:var(--text2);width:55px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${type}</div>
       <div style="flex:1;height:5px;background:var(--card2);border-radius:3px;overflow:hidden">
         <div style="width:${pct}%;height:100%;background:${colors[i%colors.length]};border-radius:3px"></div>
       </div>
-      <div style="font-size:10px;font-weight:600;color:${colors[i%colors.length]};width:28px;text-align:left">${pct}%</div>
+      <div style="font-size:12px;font-weight:600;color:${colors[i%colors.length]};width:28px;text-align:left">${pct}%</div>
     </div>`;
   }).join('');
 }
@@ -473,17 +473,17 @@ function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
           ${can('delete') ? `<button onclick="event.stopPropagation();deleteOrphanDeal('${d.id||d.file_no}')"
             style="background:none;border:none;cursor:pointer;color:var(--red);font-size:12px;padding:1px 3px;border-radius:3px" title="حذف">🗑</button>` : ''}
         </div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">${fmtDate(d.po_date)}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px">${fmtDate(d.po_date)}</div>
       </td>
       <!-- المورد + ملاحظات -->
       <td>
         <div style="font-weight:600">${d.supplier||d.file||'—'}</div>
-        <div style="font-size:11px;color:var(--text2)">${d.notes||''}</div>
+        <div style="font-size:13px;color:var(--text2)">${d.notes||''}</div>
       </td>
       <!-- السيارات -->
       <td style="text-align:center">
         <div style="font-family:var(--mono);font-weight:700;font-size:13px">${d._vTotal||0}</div>
-        <div style="font-size:10px;color:var(--text2)">${d._vSold||0} مباع · ${d._vLeft||0} متبقي</div>
+        <div style="font-size:12px;color:var(--text2)">${d._vSold||0} مباع · ${d._vLeft||0} متبقي</div>
       </td>
       <!-- المشتريات -->
       <td>
@@ -496,7 +496,7 @@ function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
       <!-- التكلفة الكاملة -->
       <td>
         <div class="mono" style="font-weight:700;color:var(--accent)">${fmt(fullCost)}</div>
-        <div style="font-size:10px;color:var(--text2)">شراء ${fmt(purchase)} + مصاريف ${fmt(expenses)}</div>
+        <div style="font-size:12px;color:var(--text2)">شراء ${fmt(purchase)} + مصاريف ${fmt(expenses)}</div>
       </td>
       <!-- المبيعات -->
       <td>
@@ -508,7 +508,7 @@ function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
           <span style="font-size:12px">${profitArrow}</span>
           <span class="mono" style="font-weight:900;color:${profitColor};font-size:13px">${fmt(Math.abs(profit))}</span>
         </div>
-        ${profit!==0 && sales>0 ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;text-align:center">هامش ${sales>0?((profit/sales)*100).toFixed(1):0}%</div>` : ''}
+        ${profit!==0 && sales>0 ? `<div style="font-size:12px;color:var(--text2);margin-top:2px;text-align:center">هامش ${sales>0?((profit/sales)*100).toFixed(1):0}%</div>` : ''}
       </td>
       <!-- الحالة -->
       <td><span class="badge badge-${statusClass(d.status)}">${d.status||'—'}</span></td>
@@ -777,7 +777,7 @@ async function loadSummaryTab(fn, sys) {
           ${summRow('مباع','text-green',soldV)}
           ${summRow('في المخزن',unsoldV>0?'text-amber':'',unsoldV)}
           <div style="margin-top:8px">
-            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:4px"><span>نسبة البيع</span><span>${sellPct}%</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text2);margin-bottom:4px"><span>نسبة البيع</span><span>${sellPct}%</span></div>
             <div style="height:6px;background:var(--card2);border-radius:10px;overflow:hidden">
               <div style="width:${sellPct}%;height:100%;background:var(--green);border-radius:10px;transition:width .5s"></div>
             </div>
@@ -823,7 +823,7 @@ async function loadSummaryTab(fn, sys) {
 
           <!-- رأس المال -->
           <div style="padding:12px 14px;border-left:1px solid var(--border);border-bottom:1px solid var(--border)">
-            <div style="font-size:10px;color:var(--text2);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">رأس المال</div>
+            <div style="font-size:12px;color:var(--text2);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">رأس المال</div>
             ${summRow('حصته في التكلفة','text-blue',fmt(liability))}
             ${summRow('دفع فعلاً','text-green',fmt(capitalIn))}
             ${remainingLiab > 0.01
@@ -833,7 +833,7 @@ async function loadSummaryTab(fn, sys) {
 
           <!-- الربح / الخسارة -->
           <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
-            <div style="font-size:10px;color:var(--text2);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">الربح / الخسارة</div>
+            <div style="font-size:12px;color:var(--text2);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">الربح / الخسارة</div>
             ${summRow('إجمالي المبيعات','text-green',fmt(totalSales))}
             ${summRow('التكلفة الكاملة','text-red',fmt(fullCost))}
             ${summRow('حصته ('+share+'%)','',fmt(profitShare),true,pc)}
@@ -841,24 +841,24 @@ async function loadSummaryTab(fn, sys) {
         </div>
 
         <!-- تنبيه صفقة مفتوحة -->
-        ${isOpen ? `<div style="background:var(--accent-dim);border-top:1px solid var(--border);padding:8px 14px;font-size:11px;color:var(--accent);display:flex;align-items:center;gap:6px">
+        ${isOpen ? `<div style="background:var(--accent-dim);border-top:1px solid var(--border);padding:8px 14px;font-size:13px;color:var(--accent);display:flex;align-items:center;gap:6px">
           ⚠️ الصفقة مفتوحة — ${totalV-soldV} سيارة في المخزن · الأرقام ستتغير عند اكتمال المبيعات
         </div>` : ''}
 
         <!-- المستحق النهائي -->
         <div style="background:var(--card2);padding:12px 16px;border-top:1px solid var(--border)">
-          <div style="font-size:10px;color:var(--text2);margin-bottom:6px">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:6px">
             المستحق = رأس مال مدفوع + حصة الربح − مسحوبات
           </div>
-          <div style="font-size:11px;color:var(--text2);font-family:var(--mono);margin-bottom:10px">
+          <div style="font-size:13px;color:var(--text2);font-family:var(--mono);margin-bottom:10px">
             ${fmt(capitalIn)} + (${fmt(profitShare)}) − ${fmt(totalOut)} = <strong>${fmt(Math.abs(netDue))}</strong>
           </div>
-          ${totalOut > 0 ? `<div style="font-size:11px;color:var(--text2);margin-bottom:8px">تم الصرف: <strong style="color:var(--accent)">${fmt(totalOut)}</strong></div>` : ''}
+          ${totalOut > 0 ? `<div style="font-size:13px;color:var(--text2);margin-bottom:8px">تم الصرف: <strong style="color:var(--accent)">${fmt(totalOut)}</strong></div>` : ''}
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:12px;font-weight:700;color:var(--text)">المستحق${isOpen?' (تقديري)':''}:</span>
             <div style="text-align:left">
               <div style="font-size:20px;font-weight:700;color:${nc};font-family:var(--mono)">${fmt(Math.abs(netDue))} ${netDue>=0?'↑':'↓'}</div>
-              <div style="font-size:10px;color:var(--text2)">${netDue>=0?'مستحق له':'مدين عليه'}</div>
+              <div style="font-size:12px;color:var(--text2)">${netDue>=0?'مستحق له':'مدين عليه'}</div>
             </div>
           </div>
         </div>
@@ -866,15 +866,15 @@ async function loadSummaryTab(fn, sys) {
         <!-- أزرار -->
         <div style="padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap;background:var(--card)">
           <button onclick="event.stopPropagation();showPartnerStatement('${p.partner}','${fn}')"
-            style="background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+            style="background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:4px 10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
             📋 هذه الصفقة
           </button>
           <button onclick="event.stopPropagation();showPartnerStatement('${p.partner}')"
-            style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+            style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple);border-radius:6px;padding:4px 10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
             📊 كل الصفقات
           </button>
           <button onclick="event.stopPropagation();openPartnerAccountLedger('${p.partner}')"
-            style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+            style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);border-radius:6px;padding:4px 10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
             📒 جاري الشريك
           </button>
         </div>
@@ -989,19 +989,19 @@ async function loadPaymentsTab(fn, sys) {
           ${data.filter(isVisible).map((p,i)=>{
             const isDup = dupKeys.has(p.id);
             const rowStyle = isDup ? 'background:var(--red-dim);' : '';
-            const dupBadge = isDup ? '<span style="font-size:9px;background:var(--red);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">مكرر؟</span>' : '';
+            const dupBadge = isDup ? '<span style="font-size:13px;background:var(--red);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">مكرر؟</span>' : '';
             const isVoided = false;
             const voidedBadge = '';
             const trStyle = isDup ? 'background:var(--red-dim);' : '';
             return `<tr style="${trStyle}">
-              <td style="text-align:center;font-size:11px;color:var(--text3);font-weight:700">${i+1}</td>
-              <td class="mono" style="color:var(--cyan);font-weight:700;font-size:11px">${p.ref_no||'—'} ${voidedBadge}</td>
+              <td style="text-align:center;font-size:13px;color:var(--text3);font-weight:700">${i+1}</td>
+              <td class="mono" style="color:var(--cyan);font-weight:700;font-size:13px">${p.ref_no||'—'} ${voidedBadge}</td>
               <td>${p.payer||'—'}</td>
               <td class="mono text-blue" style="${isVoided?'text-decoration:line-through;':''}">${fmt(p.amount)} ${dupBadge}</td>
               <td>${p.pay_method||'—'}</td>
               <td class="mono">${p.document||'—'}</td>
               <td class="mono">${fmtDate(p.pay_date)}</td>
-              <td class="text-muted" style="font-size:11px">${p.notes||''}</td>
+              <td class="text-muted" style="font-size:13px">${p.notes||''}</td>
               <td style="text-align:center">
                 ${!isVoided ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxPayment(this)" data-id="${p.id}" data-fn="${fn}" title="إجراءات">⋮</button>` : ''}
               </td>
@@ -1048,10 +1048,10 @@ async function loadExpensesTab(fn, sys) {
         <tbody>
           ${data.filter(isVisible).map((e,i)=>{
             const isDup = dupIds.has(e.id);
-            const dupBadge = isDup ? '<span style="font-size:9px;background:var(--red);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">مكرر؟</span>' : '';
+            const dupBadge = isDup ? '<span style="font-size:13px;background:var(--red);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">مكرر؟</span>' : '';
             return `<tr style="${isDup?'background:var(--red-dim);':''}">
-              <td style="text-align:center;font-size:11px;color:var(--text3);font-weight:700">${i+1}</td>
-              <td class="mono" style="color:var(--red);font-weight:700;font-size:11px">${e.ref_no||'—'}</td>
+              <td style="text-align:center;font-size:13px;color:var(--text3);font-weight:700">${i+1}</td>
+              <td class="mono" style="color:var(--red);font-weight:700;font-size:13px">${e.ref_no||'—'}</td>
               <td>${e.description||'—'}</td>
               <td><span class="chip">${e.exp_type||'—'}</span></td>
               <td class="mono text-red">${fmt(e.amount)} ${dupBadge}</td>
@@ -1094,7 +1094,7 @@ async function loadSalesTab(fn, sys) {
       return `<tr>
         <td>
           <div class="mono text-amber" style="font-weight:700">${inv.inv_no||'—'}</div>
-          <div style="font-size:11px;color:var(--text2)">${fmtDate(inv.date)}</div>
+          <div style="font-size:13px;color:var(--text2)">${fmtDate(inv.date)}</div>
         </td>
         <td>
           <div style="font-weight:600">${inv.customer||'—'}</div>
@@ -1221,8 +1221,8 @@ async function loadCollectionsTab(fn, sys) {
     const csvHeaders = ['رقم التحصيل','رقم الفاتورة','العميل','الشاصي','المبلغ','طريقة الدفع','تاريخ الاستحقاق','تاريخ الدفع','الحالة'];
 
     const statusBadge = c => c.paid_date
-      ? `<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">✅ محصّل</span>`
-      : `<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">⏳ مستحق</span>`;
+      ? `<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">✅ محصّل</span>`
+      : `<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">⏳ مستحق</span>`;
 
     el('collectionsTable').innerHTML = `
       ${exportBtns(
@@ -1243,10 +1243,10 @@ async function loadCollectionsTab(fn, sys) {
         <tbody>
           ${data.map((c,i)=>{
             const isVoidedC = c.post_status === 'voided';
-            const voidedBadgeC = isVoidedC ? '<span style="font-size:9px;background:var(--text2);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">ملغى</span>' : '';
+            const voidedBadgeC = isVoidedC ? '<span style="font-size:13px;background:var(--text2);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">ملغى</span>' : '';
             return `<tr style="${isVoidedC?'opacity:.55;':''}">
-            <td style="text-align:center;font-size:11px;color:var(--text3);font-weight:700">${i+1}</td>
-            <td class="mono" style="color:var(--green);font-weight:700;font-size:11px">${c.ref_no||'—'} ${voidedBadgeC}</td>
+            <td style="text-align:center;font-size:13px;color:var(--text3);font-weight:700">${i+1}</td>
+            <td class="mono" style="color:var(--green);font-weight:700;font-size:13px">${c.ref_no||'—'} ${voidedBadgeC}</td>
             <td class="mono">${c.inv_no||'—'}</td>
             <td>${c.customer||'—'}</td>
             <td class="mono">${c.vin||'—'}</td>
@@ -1254,7 +1254,7 @@ async function loadCollectionsTab(fn, sys) {
             <td>${c.pay_method||'—'}</td>
             <td class="mono">${fmtDate(c.due_date)}</td>
             <td class="mono">${c.paid_date ? fmtDate(c.paid_date) : '—'}</td>
-            <td>${isVoidedC ? '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">ملغى</span>' : statusBadge(c)}</td>
+            <td>${isVoidedC ? '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">ملغى</span>' : statusBadge(c)}</td>
             <td style="text-align:center">
               ${!isVoidedC ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxCollection(this)" data-id="${c.id}" data-fn="${fn}" data-paid="${c.paid_date?'1':'0'}" title="إجراءات">⋮</button>` : ''}
             </td>
@@ -1262,7 +1262,7 @@ async function loadCollectionsTab(fn, sys) {
           <tr style="background:var(--card2);font-weight:700">
             <td colspan="4">الإجمالي</td>
             <td class="mono text-blue"><strong>${fmt(totalInvoiced)}</strong></td>
-            <td colspan="4" style="font-size:11px;color:var(--text2)">
+            <td colspan="4" style="font-size:13px;color:var(--text2)">
               محصّل: <span style="color:var(--green)">${fmt(totalPaid)}</span>
               ${totalPending>0?` · منتظر: <span style="color:var(--accent)">${fmt(totalPending)}</span>`:''}
             </td>
@@ -1291,21 +1291,21 @@ async function loadPayoutsTab(fn, sys) {
     const rows = data.map(p => {
       const hasSplit = (+p.capital_amount||0) + (+p.profit_amount||0) + (+p.advance_amount||0) > 0;
       const splitInfo = hasSplit ? `
-        <div style="font-size:10px;color:var(--text2);margin-top:2px;display:flex;gap:6px">
+        <div style="font-size:12px;color:var(--text2);margin-top:2px;display:flex;gap:6px">
           ${+p.capital_amount ? `<span style="color:var(--blue)">رأس مال: ${fmt(p.capital_amount)}</span>` : ''}
           ${+p.profit_amount  ? `<span style="color:${+p.profit_amount>=0?'var(--green)':'var(--red)'}">أرباح: ${fmt(p.profit_amount)}</span>` : ''}
           ${+p.advance_amount ? `<span style="color:var(--amber)">سلفة: ${fmt(p.advance_amount)}</span>` : ''}
         </div>` : '';
       return `<tr>
-        <td style="text-align:center;font-size:11px;color:var(--text3);font-weight:700">${data.indexOf(p)+1}</td>
-        <td class="mono" style="color:var(--accent);font-weight:700;font-size:11px">${p.pay_id||'—'}</td>
+        <td style="text-align:center;font-size:13px;color:var(--text3);font-weight:700">${data.indexOf(p)+1}</td>
+        <td class="mono" style="color:var(--accent);font-weight:700;font-size:13px">${p.pay_id||'—'}</td>
         <td><strong>${p.partner||'—'}</strong></td>
         <td>
           <span class="chip">${p.payout_type||'—'}</span>
           ${splitInfo}
         </td>
         <td class="mono" style="color:var(--purple);font-weight:700">${fmt(p.amount)}</td>
-        <td style="font-size:11px;color:var(--text2)">${supplierName}</td>
+        <td style="font-size:13px;color:var(--text2)">${supplierName}</td>
         <td>${p.pay_method||'—'}</td>
         <td class="mono text-muted">${p.document||'—'}</td>
         <td class="mono text-muted">${fmtDate(p.pay_date)}</td>

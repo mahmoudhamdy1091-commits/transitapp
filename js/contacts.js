@@ -105,12 +105,12 @@ function renderContactsList() {
           </div>
           <div>
             <div style="font-weight:700;font-size:13px">${c.name}</div>
-            ${c.phone ? `<div style="font-size:11px;color:var(--text3)">📞 ${c.phone}</div>` : ''}
+            ${c.phone ? `<div style="font-size:13px;color:var(--text3)">📞 ${c.phone}</div>` : ''}
           </div>
         </div>
       </td>
       <td style="padding:11px 14px">
-        <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;background:${typeDims[c.type]||'var(--card2)'};color:${typeColors[c.type]||'var(--text2)'}">
+        <span style="font-size:13px;font-weight:700;padding:3px 10px;border-radius:10px;background:${typeDims[c.type]||'var(--card2)'};color:${typeColors[c.type]||'var(--text2)'}">
           ${typeLabels[c.type]||c.type}
         </span>
       </td>
@@ -118,7 +118,7 @@ function renderContactsList() {
       <td style="padding:11px 14px;font-family:var(--mono);font-size:12px;color:var(--red);text-align:left">${fmt(c.totalCredit)}</td>
       <td style="padding:11px 14px;text-align:left">
         <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${balColor}">${bal!==0?fmt(Math.abs(bal)):'—'}</div>
-        <div style="font-size:10px;color:${balColor}">${balLabel}</div>
+        <div style="font-size:12px;color:${balColor}">${balLabel}</div>
       </td>
       <td style="padding:11px 14px;text-align:center;white-space:nowrap">
         <button onclick="showContactStatement('${safeName}','${c.type}')" title="كشف حساب"
@@ -138,13 +138,13 @@ function renderContactsList() {
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:var(--card2);border-bottom:1px solid var(--border)">
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:center">#</th>
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">الاسم</th>
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:right">النوع</th>
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:left">مدين</th>
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:left">دائن</th>
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:left">الرصيد</th>
-            <th style="padding:10px 14px;font-size:11px;color:var(--text3);font-weight:700;text-align:center">إجراءات</th>
+            <th style="padding:10px 14px;font-size:13px;color:var(--text3);font-weight:700;text-align:center">#</th>
+            <th style="padding:10px 14px;font-size:13px;color:var(--text3);font-weight:700;text-align:right">الاسم</th>
+            <th style="padding:10px 14px;font-size:13px;color:var(--text3);font-weight:700;text-align:right">النوع</th>
+            <th style="padding:10px 14px;font-size:13px;color:var(--text3);font-weight:700;text-align:left">مدين</th>
+            <th style="padding:10px 14px;font-size:13px;color:var(--text3);font-weight:700;text-align:left">دائن</th>
+            <th style="padding:10px 14px;font-size:13px;color:var(--text3);font-weight:700;text-align:left">الرصيد</th>
+            <th style="padding:10px 14px;font-size:13px;color:var(--text3);font-weight:700;text-align:center">إجراءات</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -160,7 +160,7 @@ async function showLedger(contactId, contactName, contactType) {
   el('ledgerView').style.display = 'block';
   el('topBarTitle').textContent = 'دفتر الأستاذ';
   el('ledger-contact-badge').innerHTML = `<span style="color:var(--text2);font-weight:400;font-size:13px">دفتر الأستاذ /</span> ${contactName}
-    <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--blue-dim);color:var(--blue);margin-right:6px">${typeLabels[contactType]||contactType}</span>`;
+    <span style="font-size:13px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--blue-dim);color:var(--blue);margin-right:6px">${typeLabels[contactType]||contactType}</span>`;
   navActive('nav-contacts');
   el('ledgerTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل من القيود...</div>';
 

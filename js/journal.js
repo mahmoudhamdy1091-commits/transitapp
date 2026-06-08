@@ -132,7 +132,7 @@ async function loadJournal() {
         const side = l.dr_amount > 0
           ? `<span style="color:var(--green)">مدين ${fmt(l.dr_amount)}</span>`
           : `<span style="color:var(--red)">دائن ${fmt(l.cr_amount)}</span>`;
-        return `<span style="font-size:10px;color:var(--text2);display:inline-block;margin-left:8px">${l.account_code||''} ${l.account_name||'—'}: ${side}</span>`;
+        return `<span style="font-size:12px;color:var(--text2);display:inline-block;margin-left:8px">${l.account_code||''} ${l.account_name||'—'}: ${side}</span>`;
       });
       return {
         type:    g.type, date: g.date,
@@ -188,10 +188,10 @@ function renderJournalKpis(entries) {
       onmouseout="this.style.background=''">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
         <div class="j-kpi-label">${c.icon} ${c.label}</div>
-        <div style="font-size:10px;color:var(--text2)">${groups[c.key].length} قيد</div>
+        <div style="font-size:12px;color:var(--text2)">${groups[c.key].length} قيد</div>
       </div>
       <div class="j-kpi-val" style="color:${c.color}">${fmt(totals[c.key])}</div>
-      <div style="font-size:9px;color:var(--text2);margin-top:3px">اضغط للتفاصيل</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:3px">اضغط للتفاصيل</div>
     </div>`).join('');
 
   // Detail panel
@@ -263,7 +263,7 @@ function filterJournalByType(filterVal, key) {
         <div style="display:flex;align-items:center;gap:12px">
           <span style="font-size:13px;font-weight:700;color:${cfg.color};font-family:monospace">${fmt(total)}</span>
           <button onclick="document.getElementById('jkpi-detail').style.display='none';document.getElementById('jkpi-detail')._activeKey=null;document.getElementById('jTypeFilter').value='all';renderJournalEntries()"
-            style="background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'Cairo',sans-serif;color:var(--text)">✕ إغلاق</button>
+            style="background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:13px;cursor:pointer;font-family:'Cairo',sans-serif;color:var(--text)">✕ إغلاق</button>
         </div>
       </div>
       <div id="jkpi-sale-detail-body"><div class="loading"><div class="spinner"></div></div></div>`;
@@ -283,7 +283,7 @@ function filterJournalByType(filterVal, key) {
       <div style="display:flex;align-items:center;gap:12px">
         <span style="font-size:13px;font-weight:700;color:${cfg.color};font-family:monospace">${fmt(total)}</span>
         <button onclick="document.getElementById('jkpi-detail').style.display='none';document.getElementById('jkpi-detail')._activeKey=null;document.getElementById('jTypeFilter').value='all';renderJournalEntries()"
-          style="background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'Cairo',sans-serif;color:var(--text)">✕ إغلاق</button>
+          style="background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:13px;cursor:pointer;font-family:'Cairo',sans-serif;color:var(--text)">✕ إغلاق</button>
       </div>
     </div>
     ${entries.length ? `
@@ -388,7 +388,7 @@ function renderJournalEntries() {
               ${e.status==='draft'?'<span class="draft-badge" style="margin-right:6px">مسودة</span>':''}
             </div>
             <div class="j-entry-meta">
-              <span style="background:var(--card2);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">${cfg.label}</span>
+              <span style="background:var(--card2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">${cfg.label}</span>
               ${metaFiltered}
             </div>
           </div>
@@ -522,13 +522,13 @@ async function _loadJournalSalesDetail(entries) {
           onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
           <td>
             <div class="mono text-amber" style="font-weight:700">${inv.inv_no||'—'}</div>
-            <div style="font-size:11px;color:var(--text2)">${fmtDate(inv.date)}</div>
+            <div style="font-size:13px;color:var(--text2)">${fmtDate(inv.date)}</div>
           </td>
           <td><div style="font-weight:600">${inv.customer||'—'}</div></td>
-          <td class="mono text-amber" style="font-size:11px">${inv.fn}</td>
+          <td class="mono text-amber" style="font-size:13px">${inv.fn}</td>
           <td style="font-size:12px;direction:ltr;color:var(--text2)">${vins}</td>
           <td style="text-align:center">
-            <span style="background:var(--blue-dim);color:var(--blue);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${inv.items.length}</span>
+            <span style="background:var(--blue-dim);color:var(--blue);padding:2px 8px;border-radius:10px;font-size:13px;font-weight:700">${inv.items.length}</span>
           </td>
           <td class="mono text-green" style="font-weight:700">${fmt(invTotal)}</td>
         </tr>`;

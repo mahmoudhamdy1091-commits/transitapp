@@ -78,8 +78,8 @@ async function loadOpex() {
         </tr></thead>
         <tbody>
           ${data.map(r => `<tr>
-            <td class="mono" style="font-size:11px;color:var(--purple);font-weight:700">${r.ref_no||'—'}</td>
-            <td><span style="background:var(--purple-dim);color:var(--purple);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap">${r.exp_type||'—'}</span></td>
+            <td class="mono" style="font-size:13px;color:var(--purple);font-weight:700">${r.ref_no||'—'}</td>
+            <td><span style="background:var(--purple-dim);color:var(--purple);padding:2px 10px;border-radius:20px;font-size:13px;font-weight:700;white-space:nowrap">${r.exp_type||'—'}</span></td>
             <td style="font-weight:600">${r.description||'—'}</td>
             <td style="color:var(--text2)">${r.beneficiary||'—'}</td>
             <td class="mono text-red" style="font-weight:700">${fmt(r.amount)}</td>
@@ -116,13 +116,13 @@ function renderOpexKpis(data) {
     <div class="vkpi" style="border-right:3px solid var(--purple)">
       <div class="vkpi-label">إجمالي التشغيلية</div>
       <div class="vkpi-val" style="color:var(--purple)">${fmt(total)}</div>
-      <div style="font-size:10px;color:var(--text2);margin-top:3px">${data.length} قيد</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:3px">${data.length} قيد</div>
     </div>
     ${Object.entries(byType).map(([type, amt]) => `
     <div class="vkpi" style="border-right:3px solid ${OPEX_COLORS[type]||'var(--text2)'}">
       <div class="vkpi-label">${type}</div>
       <div class="vkpi-val" style="color:${OPEX_COLORS[type]||'var(--text2)'}">${fmt(amt)}</div>
-      <div style="font-size:10px;color:var(--text2);margin-top:3px">${((amt/total)*100).toFixed(0)}% من الإجمالي</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:3px">${((amt/total)*100).toFixed(0)}% من الإجمالي</div>
     </div>`).join('')}`;
 }
 
@@ -341,8 +341,8 @@ async function loadOpexReport(from, to) {
         </tr></thead>
         <tbody>
           ${data.map(r=>`<tr>
-            <td class="mono" style="font-size:11px;color:var(--purple)">${r.ref_no||'—'}</td>
-            <td><span style="background:var(--purple-dim);color:var(--purple);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${r.exp_type||'—'}</span></td>
+            <td class="mono" style="font-size:13px;color:var(--purple)">${r.ref_no||'—'}</td>
+            <td><span style="background:var(--purple-dim);color:var(--purple);padding:2px 8px;border-radius:20px;font-size:13px;font-weight:700">${r.exp_type||'—'}</span></td>
             <td>${r.description||'—'}</td>
             <td style="color:var(--text2)">${r.beneficiary||'—'}</td>
             <td class="mono text-red">${fmt(r.amount)}</td>
@@ -448,7 +448,7 @@ function renderDrillDown(type) {
       ${sales.map(r=>`<tr onclick="openViewer('${r.file_no}')" style="cursor:pointer">
         <td class="mono">${fmtDate(r.sale_date)}</td>
         <td class="mono text-amber">${r.file_no||'—'}</td>
-        <td class="mono" style="font-size:11px">${r.vin||'—'}</td>
+        <td class="mono" style="font-size:13px">${r.vin||'—'}</td>
         <td>${r.customer||'—'}</td>
         <td class="mono text-green" style="font-weight:700">${fmt(r.sale_price)}</td>
       </tr>`).join('')}
@@ -485,7 +485,7 @@ function renderDrillDown(type) {
           <td class="mono">${c.inv_no||'—'}</td>
           <td>${c.customer||'—'}</td>
           <td class="mono" style="font-weight:700;color:var(--blue)">${fmt(c.amount)}</td>
-          <td><span style="background:${c.paid_date?'var(--green-dim)':isOverdue?'var(--red-dim)':'var(--accent-dim)'};color:${c.paid_date?'var(--green)':isOverdue?'var(--red)':'var(--accent)'};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">
+          <td><span style="background:${c.paid_date?'var(--green-dim)':isOverdue?'var(--red-dim)':'var(--accent-dim)'};color:${c.paid_date?'var(--green)':isOverdue?'var(--red)':'var(--accent)'};padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700">
             ${c.paid_date?'✓ مُحصَّل':isOverdue?'متأخر':'معلق'}</span></td>
         </tr>`;
       }).join('')}
@@ -512,7 +512,7 @@ function renderDrillDown(type) {
         <td class="mono">${fmtDate(e.exp_date||e.expense_date)}</td>
         <td class="mono text-amber">${e.file_no||'—'}</td>
         <td>${e.description||'—'}</td>
-        <td><span style="background:var(--red-dim);color:var(--red);padding:2px 8px;border-radius:10px;font-size:10px">${e.exp_type||'—'}</span></td>
+        <td><span style="background:var(--red-dim);color:var(--red);padding:2px 8px;border-radius:10px;font-size:12px">${e.exp_type||'—'}</span></td>
         <td>${e.pay_method||'—'}</td>
         <td class="mono text-red" style="font-weight:700">${fmt(e.amount)}</td>
       </tr>`).join('')}
@@ -621,10 +621,10 @@ function renderDrillDown(type) {
         return `<tr onclick="openViewer('${v.file_no}')" style="cursor:pointer">
           <td class="mono text-amber">${v.file_no||'—'}</td>
           <td style="font-weight:600">${v.model||v.make||'—'} ${v.year||''}</td>
-          <td class="mono" style="font-size:11px">${v.vin||'—'}</td>
+          <td class="mono" style="font-size:13px">${v.vin||'—'}</td>
           <td class="mono">${fmt(v.purchase_price)}</td>
-          <td><span style="background:${bg};color:${color};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${days} يوم</span></td>
-          <td><span style="font-size:10px;color:${color}">${days>60?'⚠️ راكدة':days>30?'تنبه':'جيدة'}</span></td>
+          <td><span style="background:${bg};color:${color};padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700">${days} يوم</span></td>
+          <td><span style="font-size:12px;color:${color}">${days>60?'⚠️ راكدة':days>30?'تنبه':'جيدة'}</span></td>
         </tr>`;
       }).join('')}
       </tbody></table>` : emptyHTML('🚗','المخزن فارغ');
@@ -721,8 +721,8 @@ function renderDrillDown(type) {
           <td class="mono text-blue" style="text-align:left">${fmt(r.total)}</td>
           <td class="mono text-green" style="text-align:left">${fmt(r._collected)}</td>
           <td class="mono" style="text-align:left;font-weight:900;color:var(--accent)">${fmt(r._remaining)}</td>
-          <td class="mono" style="font-size:11px">${r._due||'---'}</td>
-          <td><span style="background:${db};color:${dc};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${dl}</span></td>
+          <td class="mono" style="font-size:13px">${r._due||'---'}</td>
+          <td><span style="background:${db};color:${dc};padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700">${dl}</span></td>
         </tr>`;
       }).join('')}
       </tbody></table>` : emptyHTML('💰','لا توجد تحصيلات مستحقة');
@@ -757,14 +757,14 @@ function renderDrillDown(type) {
         <th>العميل</th><th>المبلغ</th><th>الاستحقاق</th><th>تاريخ الدفع</th><th>الحالة</th>
       </tr></thead><tbody>
       ${allRows.map(c=>`<tr onclick="openViewer('${c.file_no||''}')" style="cursor:pointer">
-        <td class="mono" style="font-size:11px;color:var(--text2)">${c.ref_no||'—'}</td>
+        <td class="mono" style="font-size:13px;color:var(--text2)">${c.ref_no||'—'}</td>
         <td class="mono" style="color:var(--blue)">${c.inv_no||'—'}</td>
         <td class="mono text-amber" style="font-weight:700">${c.file_no||'—'}</td>
         <td>${c.customer||'—'}</td>
         <td class="mono" style="color:${c._status==='paid'?'var(--green)':'var(--accent)'};font-weight:700">${fmt(c.amount)}</td>
-        <td class="mono" style="font-size:11px">${c.due_date||'—'}</td>
-        <td class="mono" style="font-size:11px;color:var(--green)">${c.paid_date||'—'}</td>
-        <td><span style="background:${c._status==='paid'?'var(--green-dim)':'#fef3c7'};color:${c._status==='paid'?'var(--green)':'#92400e'};padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">
+        <td class="mono" style="font-size:13px">${c.due_date||'—'}</td>
+        <td class="mono" style="font-size:13px;color:var(--green)">${c.paid_date||'—'}</td>
+        <td><span style="background:${c._status==='paid'?'var(--green-dim)':'#fef3c7'};color:${c._status==='paid'?'var(--green)':'#92400e'};padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">
           ${c._status==='paid'?'✅ محصّل':'⏳ مستحق'}</span></td>
       </tr>`).join('')}
       </tbody></table>` : emptyHTML('💰','لا توجد تحصيلات في هذه الفترة');
@@ -797,7 +797,7 @@ function renderDrillDown(type) {
         return `<tr onclick="openViewer('${r.file_no}')" style="cursor:pointer">
           <td class="mono text-amber" style="font-weight:700">${r.file_no}</td>
           <td style="font-weight:600">${r.supplier}</td>
-          <td class="mono" style="font-size:11px">${r.po_date||'---'}</td>
+          <td class="mono" style="font-size:13px">${r.po_date||'---'}</td>
           <td class="mono text-blue" style="text-align:left">${fmt(r.total_purchase)}</td>
           <td class="mono text-green" style="text-align:left">${fmt(r.paid)}</td>
           <td class="mono" style="text-align:left;font-weight:900;color:var(--red)">${fmt(r.due)}</td>
@@ -805,7 +805,7 @@ function renderDrillDown(type) {
             <div style="width:40px;height:5px;background:var(--card2);border-radius:3px;overflow:hidden">
               <div style="width:${pct}%;height:100%;background:${bc};border-radius:3px"></div>
             </div>
-            <span style="font-size:10px;color:${bc}">${pct}%</span>
+            <span style="font-size:12px;color:${bc}">${pct}%</span>
           </div></td>
           <td><span class="badge badge-${statusClass(r.status)}">${r.status}</span></td>
         </tr>`;
@@ -836,7 +836,7 @@ function renderDDChart(entries, color) {
     </div>`;
   }).join('');
   labelsWrap.innerHTML = entries.slice(0,10).map(([label])=>`
-    <div style="flex:1;text-align:center;font-size:9px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;padding-top:4px">${label}</div>`).join('');
+    <div style="flex:1;text-align:center;font-size:13px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;padding-top:4px">${label}</div>`).join('');
 }
 
 // ── Regenerate file number ──
@@ -1052,7 +1052,7 @@ function renderApprovalList() {
           ${fmtDate(r._date)}
           ${r._file ? `· <span style="color:var(--accent);font-family:monospace">${r._file}</span>` : ''}
           · <span style="color:var(--text2)">${r.ref_no||r.pay_id||r.inv_no||r.file_no||'—'}</span>
-          ${approvalState.auditUsers?.[String(r.id)] ? `· <span style="color:var(--blue);font-size:10px;font-weight:600">👤 ${approvalState.auditUsers[String(r.id)]}</span>` : ''}
+          ${approvalState.auditUsers?.[String(r.id)] ? `· <span style="color:var(--blue);font-size:12px;font-weight:600">👤 ${approvalState.auditUsers[String(r.id)]}</span>` : ''}
         </div>
       </div>
       <div class="approval-row-amount" style="color:${color}">${fmt(r._amount)}</div>
@@ -1103,10 +1103,10 @@ async function openApprovalDetail(type, id) {
   el('ad-body').innerHTML = `
     <div style="background:${cfg.color}11;border:1px solid ${cfg.color}33;border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
       <div>
-        <div style="font-size:11px;color:${cfg.color};font-weight:700">${cfg.label}</div>
+        <div style="font-size:13px;color:${cfg.color};font-weight:700">${cfg.label}</div>
         <div style="font-size:12px;color:var(--text2);margin-top:2px">${item._desc}</div>
-        ${approvalState.auditUsers?.[String(item.id)]?`<div style="font-size:11px;color:var(--blue);margin-top:3px">👤 أُدخل بواسطة: ${approvalState.auditUsers[String(item.id)]}</div>`:''}
-        ${item._file?`<div style="font-size:11px;color:var(--accent);font-family:monospace;margin-top:2px">${item._file}</div>`:''}
+        ${approvalState.auditUsers?.[String(item.id)]?`<div style="font-size:13px;color:var(--blue);margin-top:3px">👤 أُدخل بواسطة: ${approvalState.auditUsers[String(item.id)]}</div>`:''}
+        ${item._file?`<div style="font-size:13px;color:var(--accent);font-family:monospace;margin-top:2px">${item._file}</div>`:''}
       </div>
       <div style="font-size:22px;font-weight:900;color:${cfg.color};font-family:monospace">${fmt(item._amount)}</div>
     </div>
@@ -1823,14 +1823,14 @@ async function loadPartnerAccountLedger() {
       <div class="j-kpi" style="border-right:3px solid var(--blue)">
         <div class="j-kpi-label">إجمالي ما دفع للمورد</div>
         <div class="j-kpi-val" style="color:var(--blue)">${fmt(totalPaid)}</div>
-        <div style="font-size:10px;color:${liabilityColor};font-weight:700">
+        <div style="font-size:12px;color:${liabilityColor};font-weight:700">
           ${netLiability > 0.01 ? `⚠️ متبقي عليه ${fmt(netLiability)}` : '✅ سوّى كامل التكلفة'}
         </div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--green)">
         <div class="j-kpi-label">حصته في الأرباح</div>
         <div class="j-kpi-val" style="color:${totalProfit>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(totalProfit))}</div>
-        <div style="font-size:10px;color:var(--text2)">${totalProfit>=0?'ربح صافي':'خسارة'}</div>
+        <div style="font-size:12px;color:var(--text2)">${totalProfit>=0?'ربح صافي':'خسارة'}</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--accent)">
         <div class="j-kpi-label">إجمالي الصرف السابق</div>
@@ -1839,7 +1839,7 @@ async function loadPartnerAccountLedger() {
       <div class="j-kpi" style="border-right:3px solid var(--purple);background:var(--purple-dim)">
         <div class="j-kpi-label">إجمالي المستحق له</div>
         <div class="j-kpi-val" style="color:${dueColor};font-size:20px;font-weight:900">${fmt(Math.abs(totalDue))}</div>
-        <div style="font-size:10px;color:${dueColor};font-weight:700">
+        <div style="font-size:12px;color:${dueColor};font-weight:700">
           ${totalDue > 0.01 ? '← رأس مال + أرباح' : totalDue < -0.01 ? '← مدين عليه' : '← تسوية كاملة'}
         </div>
       </div>`;
@@ -1887,14 +1887,14 @@ function renderPartnerAccountLedger() {
     <div class="j-kpi" style="border-right:3px solid var(--blue)">
       <div class="j-kpi-label">ما دفع للمورد${filterLabel}</div>
       <div class="j-kpi-val" style="color:var(--blue)">${fmt(kpiPaid)}</div>
-      <div style="font-size:10px;color:${liabColor};font-weight:700">
+      <div style="font-size:12px;color:${liabColor};font-weight:700">
         ${kpiNetLiab > 0.01 ? `⚠️ متبقي عليه ${fmt(kpiNetLiab)}` : '✅ سوّى كامل التكلفة'}
       </div>
     </div>
     <div class="j-kpi" style="border-right:3px solid var(--green)">
       <div class="j-kpi-label">حصته في الأرباح</div>
       <div class="j-kpi-val" style="color:${kpiProfit>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(kpiProfit))}</div>
-      <div style="font-size:10px;color:var(--text2)">${kpiProfit>=0?'ربح':'خسارة'}</div>
+      <div style="font-size:12px;color:var(--text2)">${kpiProfit>=0?'ربح':'خسارة'}</div>
     </div>
     <div class="j-kpi" style="border-right:3px solid var(--accent)">
       <div class="j-kpi-label">إجمالي الصرف السابق</div>
@@ -1903,7 +1903,7 @@ function renderPartnerAccountLedger() {
     <div class="j-kpi" style="border-right:3px solid var(--purple);background:var(--purple-dim)">
       <div class="j-kpi-label">إجمالي المستحق له</div>
       <div class="j-kpi-val" style="color:${balColor};font-size:20px;font-weight:900">${fmt(Math.abs(kpiTotalDue))}</div>
-      <div style="font-size:10px;color:${balColor};font-weight:700">
+      <div style="font-size:12px;color:${balColor};font-weight:700">
         ${kpiTotalDue > 0.01 ? '← رأس مال + أرباح' : kpiTotalDue < -0.01 ? '← مدين عليه' : '← تسوية كاملة'}
       </div>
     </div>`;
@@ -1948,21 +1948,21 @@ function renderPartnerAccountLedger() {
     const color = typeColors[type] || 'var(--text2)';
     const date  = e.entry_date||e.pay_date||e.created_at?.split('T')[0]||'—';
     return `<tr>
-      <td class="mono" style="font-size:11px;color:var(--text2)">${fmtDate(date)}</td>
+      <td class="mono" style="font-size:13px;color:var(--text2)">${fmtDate(date)}</td>
       <td>
-        <span style="background:${color}22;color:${color};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">
+        <span style="background:${color}22;color:${color};padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700">
           ${typeLabels[type]||type}
         </span>
       </td>
       <td style="font-size:12px">${e.description||'—'}</td>
-      <td class="mono text-amber" style="font-size:11px">${e.file_no||'—'}</td>
+      <td class="mono text-amber" style="font-size:13px">${e.file_no||'—'}</td>
       <td class="mono" style="color:${sign>0?'var(--green)':'var(--red)'};font-weight:700">
         ${sign>0?'+':'−'}${fmt(amount)}
       </td>
       <td class="mono" style="font-weight:700;color:${balance>=0?'var(--blue)':'var(--red)'}">
         ${fmt(balance)}
       </td>
-      <td style="font-size:11px;color:var(--text2)">${e.document||e.notes||'—'}</td>
+      <td style="font-size:13px;color:var(--text2)">${e.document||e.notes||'—'}</td>
     </tr>`;
   }).join('');
 
@@ -1993,7 +1993,7 @@ function exportPartnerAccountPDF() {
         <div>
           <div class="doc-title">كشف حساب شريك</div>
           <div style="font-size:13px;font-weight:700;margin-top:4px">${partnerName}</div>
-          <div style="font-size:11px;color:#666">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-KW')}</div>
+          <div style="font-size:13px;color:#666">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-KW')}</div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
@@ -2224,10 +2224,10 @@ async function loadDealNotes() {
             <div style="flex:1">
               <!-- نوع + تاريخ الملاحظة -->
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-                <span style="background:${st.bg};color:${st.color};border:1px solid ${st.border};padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">
+                <span style="background:${st.bg};color:${st.color};border:1px solid ${st.border};padding:2px 10px;border-radius:20px;font-size:13px;font-weight:700">
                   ${st.icon} ${noteType}
                 </span>
-                ${noteDate ? `<span style="font-size:11px;color:var(--text2);font-family:monospace">📅 ${noteDate}</span>` : ''}
+                ${noteDate ? `<span style="font-size:13px;color:var(--text2);font-family:monospace">📅 ${noteDate}</span>` : ''}
               </div>
               <!-- نص الملاحظة -->
               <div style="font-size:13px;line-height:1.7;color:var(--text);white-space:pre-wrap">${(n.notes||'').replace(/</g,'&lt;')}</div>
@@ -2235,11 +2235,11 @@ async function loadDealNotes() {
             <!-- حذف -->
             ${can('delete') ? `
             <button onclick="deleteDealNote(${n.id})"
-              style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;font-family:'Cairo',sans-serif;flex-shrink:0"
+              style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:6px;padding:4px 8px;font-size:13px;cursor:pointer;font-family:'Cairo',sans-serif;flex-shrink:0"
               title="حذف الملاحظة">🗑</button>` : ''}
           </div>
           <!-- معلومات التسجيل -->
-          <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px;font-size:11px;color:var(--text2)">
+          <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px;font-size:13px;color:var(--text2)">
             <span>👤 ${author}</span>
             <span>🕐 ${createdAt}</span>
           </div>
@@ -2330,7 +2330,7 @@ async function checkDbStructure() {
     <div style="font-size:13px;font-weight:700;margin-bottom:12px;color:var(--text)">نتيجة فحص قاعدة البيانات</div>
 
     <div style="margin-bottom:14px">
-      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">جدول journal_entries</div>
+      <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">جدول journal_entries</div>
       <div style="background:var(--card2);border-radius:6px;padding:10px 12px;font-size:12px">
         ${statusIcon(je?.exists)} موجود: ${je?.exists ? 'نعم' : 'لا — يجب إنشاؤه'}
         ${je?.exists ? `<br>${statusIcon(jeMissing.length===0)} الأعمدة المطلوبة: ${jeMissing.length===0 ? 'كلها موجودة ✓' : 'ناقص: ' + jeMissing.join(', ')}` : ''}
@@ -2339,7 +2339,7 @@ async function checkDbStructure() {
     </div>
 
     <div style="margin-bottom:14px">
-      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">البيانات التي تحتاج قيوداً</div>
+      <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">البيانات التي تحتاج قيوداً</div>
       <div style="background:var(--card2);border-radius:6px;padding:10px 12px;font-size:12px">
         ${counts.map(c => `${statusIcon(c.count > 0)} ${c.table}: <strong>${c.count}</strong> سجل`).join('<br>')}
         <br><br>
@@ -2352,7 +2352,7 @@ async function checkDbStructure() {
     </div>
 
     <div style="margin-bottom:14px">
-      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">كل الجداول</div>
+      <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">كل الجداول</div>
       <div style="background:var(--card2);border-radius:6px;padding:10px 12px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:4px">
         ${results.map(r => `${statusIcon(r.exists)} ${r.table}${r.exists ? ` (${r.cols?.length||0} عمود)` : ': غير موجود'}`).join('')}
       </div>
@@ -2654,11 +2654,11 @@ async function runAllReviewChecks() {
             ❌ فشل: <strong style="color:var(--red)">${failCount}</strong>
             &nbsp;·&nbsp; إجمالي: ${checks.length} فحص
           </div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">${from} — ${to} · نظام ${sys}</div>
+          <div style="font-size:13px;color:var(--text2);margin-top:2px">${from} — ${to} · نظام ${sys}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-sm" onclick="runAllReviewChecks()" style="font-size:11px">🔄 إعادة الفحص</button>
-          <button class="btn btn-primary btn-sm" onclick="switchReviewTab(1)" style="font-size:11px">📋 قائمة المراجعة</button>
+          <button class="btn btn-sm" onclick="runAllReviewChecks()" style="font-size:13px">🔄 إعادة الفحص</button>
+          <button class="btn btn-primary btn-sm" onclick="switchReviewTab(1)" style="font-size:13px">📋 قائمة المراجعة</button>
         </div>
       </div>`;
 
@@ -2680,7 +2680,7 @@ async function runAllReviewChecks() {
       return `<div style="margin-bottom:16px">
         <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px;padding:6px 10px;background:var(--card2);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center">
           <span>${catLabels2[cat]||cat}</span>
-          <span style="font-size:11px">${catIcon} ${catFail>0?catFail+' فشل':''}${catWarn>0?' '+catWarn+' تحذير':''}</span>
+          <span style="font-size:13px">${catIcon} ${catFail>0?catFail+' فشل':''}${catWarn>0?' '+catWarn+' تحذير':''}</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">${catChecks.map(renderCheckItem).join('')}</div>
       </div>`;
@@ -2703,11 +2703,11 @@ function renderCheckItem(c) {
   // جدول التفاصيل مع زر تنقل لكل صف
   const detailRows = c.rows?.length ? `
     <div style="margin-top:8px;overflow-x:auto;border-radius:4px;overflow:hidden">
-      <table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--card)">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;background:var(--card)">
         <tbody>${c.rows.map(r=>`<tr>
           ${r.cols.map(v=>`<td style="padding:5px 8px;border-bottom:1px solid var(--border)">${v}</td>`).join('')}
           <td style="padding:5px 8px;border-bottom:1px solid var(--border);white-space:nowrap">
-            ${r.action ? `<button class="btn btn-sm" onclick="closeModal&&closeModal();${r.action}" style="font-size:10px;padding:2px 8px;background:var(--card2)">${r.actionLabel||'🔍 فتح'}</button>` : ''}
+            ${r.action ? `<button class="btn btn-sm" onclick="closeModal&&closeModal();${r.action}" style="font-size:12px;padding:2px 8px;background:var(--card2)">${r.actionLabel||'🔍 فتح'}</button>` : ''}
           </td>
         </tr>`).join('')}</tbody>
       </table>
@@ -2718,13 +2718,13 @@ function renderCheckItem(c) {
       <span style="font-size:16px;flex-shrink:0">${st.icon}</span>
       <div style="flex:1;min-width:120px">
         <div style="font-size:12px;font-weight:700;color:var(--text)">${c.label}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:1px">${c.detail}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:1px">${c.detail}</div>
       </div>
       <div style="text-align:left;flex-shrink:0">
         <div style="font-size:13px;font-weight:700;color:${st.border};font-family:var(--mono)">${c.value}</div>
-        <div style="font-size:10px;color:var(--text2)">${st.lbl}</div>
+        <div style="font-size:12px;color:var(--text2)">${st.lbl}</div>
       </div>
-      ${c.action ? `<button class="btn btn-sm" onclick="${c.action.fn}" style="font-size:10px;padding:4px 10px;flex-shrink:0;white-space:nowrap">${c.action.label}</button>` : ''}
+      ${c.action ? `<button class="btn btn-sm" onclick="${c.action.fn}" style="font-size:12px;padding:4px 10px;flex-shrink:0;white-space:nowrap">${c.action.label}</button>` : ''}
     </div>${detailRows}
   </div>`;
 }
@@ -2752,7 +2752,7 @@ function renderReviewChecklist() {
     <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px">
       <div style="font-size:13px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px">
         📋 قائمة التحقق اليدوي
-        <span style="font-size:11px;font-weight:400;color:var(--text2)">— يجب إكمالها بعد الفحص التلقائي قبل إغلاق الفترة</span>
+        <span style="font-size:13px;font-weight:400;color:var(--text2)">— يجب إكمالها بعد الفحص التلقائي قبل إغلاق الفترة</span>
       </div>
       ${REVIEW_CHECKLIST.map(item=>`
       <label style="display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:var(--radius-sm);margin-bottom:6px;cursor:pointer;border:1px solid var(--border);background:var(--card2);transition:background .15s"
@@ -2763,8 +2763,8 @@ function renderReviewChecklist() {
         <div style="flex:1">
           <div style="font-size:12px;font-weight:600;color:var(--text)">${item.label}</div>
           <div style="display:flex;gap:8px;margin-top:3px">
-            <span style="font-size:10px;color:var(--text2)">${item.cat}</span>
-            <span style="font-size:10px;font-weight:700;color:${riskColor[item.risk]}">${riskLabel[item.risk]}</span>
+            <span style="font-size:12px;color:var(--text2)">${item.cat}</span>
+            <span style="font-size:12px;font-weight:700;color:${riskColor[item.risk]}">${riskLabel[item.risk]}</span>
           </div>
         </div>
         <span id="cl-tick-${item.id}" style="display:none;color:var(--green);font-size:16px;flex-shrink:0">✓</span>
@@ -2823,7 +2823,7 @@ function renderSignoff() {
           placeholder="أي ملاحظات أو تحفظات أو بنود للمتابعة في الدورة القادمة..."
           style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;width:100%;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;resize:vertical"></textarea>
       </div>
-      <div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 14px;font-size:11px;color:var(--text);margin-bottom:14px;line-height:1.6">
+      <div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;color:var(--text);margin-bottom:14px;line-height:1.6">
         ⚠️ <strong>تنبيه:</strong> بالضغط على "حفظ وإغلاق الفترة" أنت تؤكد رسمياً أنك راجعت كل البنود المذكورة أعلاه، وأن الأرقام مطابقة للواقع لهذه الفترة. سيتم تسجيل هذا الإقرار باسمك وتاريخه.
       </div>
       <button id="review-save-btn" class="btn btn-primary" onclick="saveReviewSignoff()" disabled style="opacity:0.5;width:100%;padding:12px">
@@ -2918,7 +2918,7 @@ async function loadReconciliations() {
     });
 
     const tblStyle='width:100%;border-collapse:collapse';
-    const thStyle='background:var(--card2);padding:8px 12px;font-size:11px;font-weight:700;text-align:right;border-bottom:2px solid var(--border)';
+    const thStyle='background:var(--card2);padding:8px 12px;font-size:13px;font-weight:700;text-align:right;border-bottom:2px solid var(--border)';
     const tdStyle='padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px';
 
     wrap.innerHTML = `
@@ -2926,7 +2926,7 @@ async function loadReconciliations() {
       <div style="margin-bottom:20px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <div style="padding:12px 16px;border-bottom:2px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <span style="font-size:13px;font-weight:700">💰 تسوية التحصيلات — فاتورة بفاتورة</span>
-          <div style="display:flex;gap:12px;font-size:11px">
+          <div style="display:flex;gap:12px;font-size:13px">
             <span>مُفوتَر: <b>${fmt(tInv)}</b></span>
             <span style="color:var(--green)">محصّل: <b>${fmt(tCol)}</b></span>
             <span style="color:${tOut>0?'var(--red)':'var(--green)'}">متبقي: <b>${fmt(tOut)}</b></span>
@@ -2936,7 +2936,7 @@ async function loadReconciliations() {
           <table style="${tblStyle}">
             <thead><tr><th style="${thStyle}">الفاتورة</th><th style="${thStyle}">الملف</th><th style="${thStyle}">العميل</th><th style="${thStyle}">المُفوتَر</th><th style="${thStyle}">المحصّل</th><th style="${thStyle}">المتبقي</th><th style="${thStyle}">الحالة</th></tr></thead>
             <tbody>${invRows.map(r=>{ const sc=r.outstanding<0.01?'var(--green)':r.outstanding<r.invoiced?'var(--accent)':'var(--red)'; const si=r.outstanding<0.01?'✅ مكتمل':r.outstanding<r.invoiced?'⚡ جزئي':'⏳ مستحق';
-              return `<tr><td style="${tdStyle}" class="mono text-amber">${r.inv_no||'—'}</td><td style="${tdStyle}" class="mono">${r.file_no||'—'}</td><td style="${tdStyle}">${r.customer||'—'}</td><td style="${tdStyle}" class="mono">${fmt(r.invoiced)}</td><td style="${tdStyle}" class="mono text-green">${fmt(r.collected)}</td><td style="${tdStyle}" class="mono" style="color:${sc};font-weight:700">${fmt(r.outstanding)}</td><td style="${tdStyle}"><span style="font-size:10px;color:${sc};font-weight:700">${si}</span></td></tr>`;
+              return `<tr><td style="${tdStyle}" class="mono text-amber">${r.inv_no||'—'}</td><td style="${tdStyle}" class="mono">${r.file_no||'—'}</td><td style="${tdStyle}">${r.customer||'—'}</td><td style="${tdStyle}" class="mono">${fmt(r.invoiced)}</td><td style="${tdStyle}" class="mono text-green">${fmt(r.collected)}</td><td style="${tdStyle}" class="mono" style="color:${sc};font-weight:700">${fmt(r.outstanding)}</td><td style="${tdStyle}"><span style="font-size:12px;color:${sc};font-weight:700">${si}</span></td></tr>`;
             }).join('')}</tbody>
             <tfoot><tr style="background:var(--card2);font-weight:700"><td colspan="3" style="${tdStyle}">الإجمالي</td><td style="${tdStyle}" class="mono">${fmt(tInv)}</td><td style="${tdStyle}" class="mono text-green">${fmt(tCol)}</td><td style="${tdStyle}" class="mono" style="color:${tOut>0?'var(--red)':'var(--green)'}">${fmt(tOut)}</td><td style="${tdStyle}"></td></tr></tfoot>
           </table>
@@ -2947,7 +2947,7 @@ async function loadReconciliations() {
       <div style="margin-bottom:20px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <div style="padding:12px 16px;border-bottom:2px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <span style="font-size:13px;font-weight:700">🏭 تسوية الموردين — صفقة بصفقة</span>
-          <div style="display:flex;gap:12px;font-size:11px">
+          <div style="display:flex;gap:12px;font-size:13px">
             <span>إجمالي: <b>${fmt(tDC)}</b></span>
             <span style="color:var(--green)">مدفوع: <b>${fmt(tPD)}</b></span>
             <span style="color:${tDD>0?'var(--accent)':'var(--green)'}">مستحق: <b>${fmt(tDD)}</b></span>
@@ -2957,7 +2957,7 @@ async function loadReconciliations() {
           <table style="${tblStyle}">
             <thead><tr><th style="${thStyle}">الملف</th><th style="${thStyle}">المورد</th><th style="${thStyle}">قيمة الصفقة</th><th style="${thStyle}">المدفوع</th><th style="${thStyle}">المستحق</th><th style="${thStyle}">الحالة</th></tr></thead>
             <tbody>${dealRows.map(r=>{ const sc=r.outstanding<0.01?'var(--green)':r.outstanding>0?'var(--accent)':'var(--red)'; const si=r.outstanding<0.01?'✅ مسدّد':r.outstanding>0?'⏳ متبقي':'⚠️ زيادة';
-              return `<tr><td style="${tdStyle}" class="mono text-amber" onclick="openViewer('${r.file_no}')" style="cursor:pointer">${r.file_no}</td><td style="${tdStyle}">${r.supplier}</td><td style="${tdStyle}" class="mono">${fmt(r.total)}</td><td style="${tdStyle}" class="mono text-green">${fmt(r.paid)}</td><td style="${tdStyle}" class="mono" style="font-weight:700;color:${sc}">${fmt(Math.abs(r.outstanding))}</td><td style="${tdStyle}"><span style="font-size:10px;color:${sc};font-weight:700">${si}</span></td></tr>`;
+              return `<tr><td style="${tdStyle}" class="mono text-amber" onclick="openViewer('${r.file_no}')" style="cursor:pointer">${r.file_no}</td><td style="${tdStyle}">${r.supplier}</td><td style="${tdStyle}" class="mono">${fmt(r.total)}</td><td style="${tdStyle}" class="mono text-green">${fmt(r.paid)}</td><td style="${tdStyle}" class="mono" style="font-weight:700;color:${sc}">${fmt(Math.abs(r.outstanding))}</td><td style="${tdStyle}"><span style="font-size:12px;color:${sc};font-weight:700">${si}</span></td></tr>`;
             }).join('')}</tbody>
             <tfoot><tr style="background:var(--card2);font-weight:700"><td colspan="2" style="${tdStyle}">الإجمالي</td><td style="${tdStyle}" class="mono">${fmt(tDC)}</td><td style="${tdStyle}" class="mono text-green">${fmt(tPD)}</td><td style="${tdStyle}" class="mono" style="color:${tDD>0?'var(--accent)':'var(--green)'}">${fmt(tDD)}</td><td style="${tdStyle}"></td></tr></tfoot>
           </table>
@@ -2967,7 +2967,7 @@ async function loadReconciliations() {
       <!-- 3. تسوية الشركاء -->
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <div style="padding:12px 16px;border-bottom:2px solid var(--border);font-size:13px;font-weight:700">👥 تسوية حسابات الشركاء
-          <span style="font-size:11px;font-weight:400;color:var(--text2);margin-right:8px">— الأرباح المحققة من الصفقات المغلقة فقط</span>
+          <span style="font-size:13px;font-weight:400;color:var(--text2);margin-right:8px">— الأرباح المحققة من الصفقات المغلقة فقط</span>
         </div>
         <div style="overflow-x:auto">
           <table style="${tblStyle}">
@@ -2985,10 +2985,10 @@ async function loadReconciliations() {
                 <td style="${tdStyle}" style="font-weight:700">${r.name}</td>
                 <td style="${tdStyle}" class="mono text-blue">${fmt(r.capPaid)}</td>
                 <td style="${tdStyle}" class="mono" style="color:${r.profitDue>=0?'var(--green)':'var(--red)'}">${fmt(r.profitDue)}</td>
-                <td style="${tdStyle}" class="mono text-muted" style="font-size:11px">${fmt(r.profitPending||0)} <span style="font-size:9px;color:var(--text2)">(تقديري)</span></td>
+                <td style="${tdStyle}" class="mono text-muted" style="font-size:13px">${fmt(r.profitPending||0)} <span style="font-size:13px;color:var(--text2)">(تقديري)</span></td>
                 <td style="${tdStyle}" class="mono text-amber">${fmt(r.withdrawn)}</td>
                 <td style="${tdStyle}" class="mono" style="font-weight:900;color:${sc}">${fmt(r.balance)}</td>
-                <td style="${tdStyle}"><span style="font-size:10px;color:${sc};font-weight:700">${si}</span></td>
+                <td style="${tdStyle}"><span style="font-size:12px;color:${sc};font-weight:700">${si}</span></td>
               </tr>`;
             }).join('')}</tbody>
           </table>
@@ -3032,9 +3032,9 @@ async function loadReviewHistory() {
           </div>
           <div style="flex:1;min-width:120px">
             <div style="font-size:13px;font-weight:700;margin-bottom:3px">${data.period_from||'—'} — ${data.period_to||'—'}</div>
-            <div style="font-size:11px;color:var(--text2)">✅ ${passed} · ⚠️ ${warned} · ❌ ${failed} &nbsp;|&nbsp; 👤 ${reviewer} &nbsp;|&nbsp; 🕐 ${dt}</div>
-            <div style="font-size:11px;color:${sc};font-weight:700;margin-top:3px">${label}</div>
-            ${r.notes?`<div style="font-size:11px;color:var(--text2);margin-top:3px;font-style:italic">"${r.notes}"</div>`:''}
+            <div style="font-size:13px;color:var(--text2)">✅ ${passed} · ⚠️ ${warned} · ❌ ${failed} &nbsp;|&nbsp; 👤 ${reviewer} &nbsp;|&nbsp; 🕐 ${dt}</div>
+            <div style="font-size:13px;color:${sc};font-weight:700;margin-top:3px">${label}</div>
+            ${r.notes?`<div style="font-size:13px;color:var(--text2);margin-top:3px;font-style:italic">"${r.notes}"</div>`:''}
           </div>
         </div>`;
       }).join('')}`;
@@ -3186,7 +3186,7 @@ async function loadJEManager() {
           <div style="background:var(--red-dim);border:2px solid var(--red);border-radius:var(--radius-sm);padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <div style="flex:1;min-width:200px">
               <div style="font-size:12px;font-weight:700;color:var(--red)">❌ فرق ${fmt(diff)} بين المدين والدائن — يؤثر على ميزان المراجعة!</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:3px">${unbalanced.length} قيد غير متوازن — السبب: فشل جزئي أثناء الترحيل أو الإدخال</div>
+              <div style="font-size:13px;color:var(--text2);margin-top:3px">${unbalanced.length} قيد غير متوازن — السبب: فشل جزئي أثناء الترحيل أو الإدخال</div>
             </div>
             <button class="btn btn-sm" onclick="fixUnbalancedEntries()" style="background:var(--red);color:#fff;border:none;font-weight:700;white-space:nowrap">🔧 إصلاح تلقائي</button>
             <button class="btn btn-secondary btn-sm" onclick="showUnbalancedDetail()" style="white-space:nowrap">🔍 تفاصيل</button>
@@ -3253,12 +3253,12 @@ function renderJEManagerTable() {
 
     const linesHtml = g.lines.map(l => `
       <tr style="background:var(--card2)">
-        <td style="padding:5px 12px 5px 28px;font-size:11px">
+        <td style="padding:5px 12px 5px 28px;font-size:13px">
           <span class="mono" style="color:var(--text2)">${l.account_code||'—'}</span>
         </td>
-        <td style="padding:5px 12px;font-size:11px;color:var(--text2)">${l.account_name||'—'}</td>
-        <td style="padding:5px 12px;text-align:left;font-family:var(--mono);font-size:11px;color:var(--green)">${+l.dr_amount>0?fmt(l.dr_amount):'—'}</td>
-        <td style="padding:5px 12px;text-align:left;font-family:var(--mono);font-size:11px;color:var(--red)">${+l.cr_amount>0?fmt(l.cr_amount):'—'}</td>
+        <td style="padding:5px 12px;font-size:13px;color:var(--text2)">${l.account_name||'—'}</td>
+        <td style="padding:5px 12px;text-align:left;font-family:var(--mono);font-size:13px;color:var(--green)">${+l.dr_amount>0?fmt(l.dr_amount):'—'}</td>
+        <td style="padding:5px 12px;text-align:left;font-family:var(--mono);font-size:13px;color:var(--red)">${+l.cr_amount>0?fmt(l.cr_amount):'—'}</td>
         <td></td>
       </tr>`).join('');
 
@@ -3269,15 +3269,15 @@ function renderJEManagerTable() {
     return `
       <tr class="je-entry-row" onclick="toggleJELines(this)" style="cursor:pointer">
         <td style="padding:10px 12px">
-          <div style="font-size:11px;font-weight:700;font-family:var(--mono);color:var(--accent)">${g.no}</div>
-          <div style="font-size:10px;color:var(--text2);margin-top:1px">${g.date||'—'}</div>
+          <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--accent)">${g.no}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:1px">${g.date||'—'}</div>
         </td>
         <td style="padding:10px 12px">
           <div style="font-size:12px;font-weight:600">${g.desc||'—'}</div>
-          ${g.file_no?`<div style="font-size:10px;color:var(--text2);margin-top:1px">ملف: ${g.file_no}</div>`:''}
+          ${g.file_no?`<div style="font-size:12px;color:var(--text2);margin-top:1px">ملف: ${g.file_no}</div>`:''}
         </td>
         <td style="padding:10px 12px">
-          <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${srcColor}22;color:${srcColor}">${srcLabel}</span>
+          <span style="font-size:13px;font-weight:700;padding:2px 8px;border-radius:10px;background:${srcColor}22;color:${srcColor}">${srcLabel}</span>
         </td>
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green)">${fmt(g.totalDr)}</td>
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--red)">${fmt(g.totalCr)}</td>
@@ -3288,10 +3288,10 @@ function renderJEManagerTable() {
         <td colspan="7" style="padding:0;background:var(--card2)">
           <table style="width:100%;border-collapse:collapse">
             <thead><tr style="background:var(--card);border-bottom:1px solid var(--border)">
-              <th style="padding:5px 12px 5px 28px;font-size:10px;color:var(--text3);text-align:right">الكود</th>
-              <th style="padding:5px 12px;font-size:10px;color:var(--text3);text-align:right">الحساب</th>
-              <th style="padding:5px 12px;font-size:10px;color:var(--green);text-align:left">مدين</th>
-              <th style="padding:5px 12px;font-size:10px;color:var(--red);text-align:left">دائن</th>
+              <th style="padding:5px 12px 5px 28px;font-size:12px;color:var(--text3);text-align:right">الكود</th>
+              <th style="padding:5px 12px;font-size:12px;color:var(--text3);text-align:right">الحساب</th>
+              <th style="padding:5px 12px;font-size:12px;color:var(--green);text-align:left">مدين</th>
+              <th style="padding:5px 12px;font-size:12px;color:var(--red);text-align:left">دائن</th>
               <th></th>
             </tr></thead>
             <tbody>${linesHtml}</tbody>
@@ -3301,7 +3301,7 @@ function renderJEManagerTable() {
   }).join('');
 
   wrap.innerHTML = `
-    <div style="font-size:11px;color:var(--text2);margin-bottom:6px">${entries.length} قيد · اضغط على أي صف لعرض الأسطر</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:6px">${entries.length} قيد · اضغط على أي صف لعرض الأسطر</div>
     <div style="overflow-x:auto">
     <table class="data-table" style="min-width:700px">
       <thead><tr>
@@ -3328,9 +3328,9 @@ function showUnbalancedDetail() {
     const esc = v => String(v||'—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     return `<tr style="background:var(--red-dim)">
       <td class="mono" style="color:var(--accent);font-weight:700;padding:8px 12px">${esc(g.no)}</td>
-      <td style="padding:8px 12px;font-size:11px">${esc(g.desc)}</td>
-      <td style="padding:8px 12px;font-size:11px">${esc(g.ref_table||'manual')}</td>
-      <td style="padding:8px 12px;font-size:11px">${esc(g.file_no)}</td>
+      <td style="padding:8px 12px;font-size:13px">${esc(g.desc)}</td>
+      <td style="padding:8px 12px;font-size:13px">${esc(g.ref_table||'manual')}</td>
+      <td style="padding:8px 12px;font-size:13px">${esc(g.file_no)}</td>
       <td class="mono" style="padding:8px 12px;color:var(--green)">${fmt(g.totalDr)}</td>
       <td class="mono" style="padding:8px 12px;color:var(--red)">${fmt(g.totalCr)}</td>
       <td class="mono" style="padding:8px 12px;font-weight:700;color:var(--red)">${diff>0?'+':''}${fmt(diff)}</td>
@@ -3355,7 +3355,7 @@ function showUnbalancedDetail() {
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <div style="margin-top:10px;font-size:11px;color:var(--text2)">اضغط "إصلاح" لحذف هذه القيود وإعادة ترحيل بياناتها</div>`,
+    <div style="margin-top:10px;font-size:13px;color:var(--text2)">اضغط "إصلاح" لحذف هذه القيود وإعادة ترحيل بياناتها</div>`,
     () => fixUnbalancedEntries()
   );
 }
@@ -3535,7 +3535,7 @@ function renderJELines() {
           oninput="_jeLines[${i}].cr=parseFloat(this.value)||0;_jeLines[${i}].dr=0;updateJETotals()">
       </td>
       <td style="padding:4px 6px;text-align:center">
-        ${_jeLines.length > 2 ? `<button onclick="removeJELine(${i})" class="btn btn-sm" style="background:var(--red-dim);color:var(--red);border:none;padding:3px 8px;font-size:11px">✕</button>` : ''}
+        ${_jeLines.length > 2 ? `<button onclick="removeJELine(${i})" class="btn btn-sm" style="background:var(--red-dim);color:var(--red);border:none;padding:3px 8px;font-size:13px">✕</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -4051,14 +4051,14 @@ function renderWhTable(transfers, soldVins) {
     return `<tr>
       <td><span style="font-weight:700;color:var(--purple)">🏪 ${t.location_name||'—'}</span></td>
       <td class="mono text-accent" style="cursor:pointer;font-weight:700" onclick="openViewer('${t.file_no}')">${t.file_no||'—'}</td>
-      <td class="mono" style="direction:ltr;font-size:11px">${t.vin||'—'}</td>
+      <td class="mono" style="direction:ltr;font-size:13px">${t.vin||'—'}</td>
       <td>${t.model||'—'}</td>
       <td>${t.transfer_date||'—'}</td>
       <td>${t.transfer_ref||'—'}</td>
-      <td><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'✅ مباع':'📦 في المخزن'}</span></td>
+      <td><span style="font-size:12px;font-weight:700;padding:2px 8px;border-radius:10px;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'✅ مباع':'📦 في المخزن'}</span></td>
       <td>
-        <button class="btn btn-sm" onclick="openViewer('${t.file_no}')" style="padding:2px 8px;font-size:10px">📂</button>
-        ${t.id ? `<button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" style="padding:2px 8px;font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>` : ''}
+        <button class="btn btn-sm" onclick="openViewer('${t.file_no}')" style="padding:2px 8px;font-size:12px">📂</button>
+        ${t.id ? `<button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" style="padding:2px 8px;font-size:12px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -4082,17 +4082,17 @@ function renderWhTransfersTable(transfers, soldVins) {
   const rows = transfers.map(t => {
     const isSold = soldVins.has(t.vin);
     return `<tr>
-      <td class="mono text-muted" style="font-size:11px">${t.transfer_date||'—'}</td>
+      <td class="mono text-muted" style="font-size:13px">${t.transfer_date||'—'}</td>
       <td><span style="font-weight:700;color:var(--purple)">${t.location_name||'—'}</span></td>
       <td class="mono text-amber" style="cursor:pointer;font-weight:700" onclick="openViewer('${t.file_no}')">${t.file_no||'—'}</td>
-      <td class="mono" style="direction:ltr;font-size:11px">${t.vin||'—'}</td>
+      <td class="mono" style="direction:ltr;font-size:13px">${t.vin||'—'}</td>
       <td>${t.model||'—'}</td>
-      <td class="mono text-muted" style="font-size:11px">${t.transfer_ref||'—'}</td>
-      <td><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'✅ مباع':'📦 في المخزن'}</span></td>
-      <td style="font-size:11px;color:var(--text2)">${t.notes||'—'}</td>
+      <td class="mono text-muted" style="font-size:13px">${t.transfer_ref||'—'}</td>
+      <td><span style="font-size:12px;font-weight:700;padding:2px 8px;border-radius:10px;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'✅ مباع':'📦 في المخزن'}</span></td>
+      <td style="font-size:13px;color:var(--text2)">${t.notes||'—'}</td>
       <td>
-        <button class="btn btn-sm" onclick="openViewer('${t.file_no}')" style="padding:2px 8px;font-size:10px">📂</button>
-        <button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" style="padding:2px 8px;font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>
+        <button class="btn btn-sm" onclick="openViewer('${t.file_no}')" style="padding:2px 8px;font-size:12px">📂</button>
+        <button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" style="padding:2px 8px;font-size:12px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>
       </td>
     </tr>`;
   }).join('');
@@ -4155,7 +4155,7 @@ async function refreshWhList() {
   wrap.innerHTML = names.map(n => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;background:var(--card2)">
       <span style="font-weight:600">🏪 ${n}</span>
-      <button class="btn btn-sm" onclick="deleteWarehouse('${n.replace(/'/g,"\\'")}',this)" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red);padding:2px 8px;font-size:11px">🗑 حذف</button>
+      <button class="btn btn-sm" onclick="deleteWarehouse('${n.replace(/'/g,"\\'")}',this)" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red);padding:2px 8px;font-size:13px">🗑 حذف</button>
     </div>`).join('');
   // تحديث قائمة select في موديل التحويل
   refreshWhSelect();
@@ -4241,16 +4241,16 @@ async function loadVehiclesForTransfer(fileNo) {
       const inWh       = transferMap[v.vin];
       const disabled   = isSold ? 'opacity:0.4;pointer-events:none' : '';
       const badge      = isSold
-        ? `<span style="font-size:10px;color:var(--green);font-weight:700">✅ مباع</span>`
+        ? `<span style="font-size:12px;color:var(--green);font-weight:700">✅ مباع</span>`
         : inWh
-          ? `<span style="font-size:10px;color:var(--purple);font-weight:700">🏪 ${inWh}</span>`
-          : `<span style="font-size:10px;color:var(--text2)">المخزن الرئيسي</span>`;
+          ? `<span style="font-size:12px;color:var(--purple);font-weight:700">🏪 ${inWh}</span>`
+          : `<span style="font-size:12px;color:var(--text2)">المخزن الرئيسي</span>`;
       return `<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;cursor:pointer;border-bottom:1px solid var(--border);${disabled}">
         <input type="checkbox" value="${v.vin}" ${isSold?'disabled':''} onchange="toggleVinSelect(this)"
           style="width:16px;height:16px;accent-color:var(--purple);flex-shrink:0">
         <div style="flex:1;min-width:0">
-          <div style="font-size:11px;font-family:monospace;direction:ltr;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.vin||'—'}</div>
-          <div style="font-size:10px;color:var(--text2)">${v.model||''} ${v.year||''} ${v.color||''}</div>
+          <div style="font-size:13px;font-family:monospace;direction:ltr;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.vin||'—'}</div>
+          <div style="font-size:12px;color:var(--text2)">${v.model||''} ${v.year||''} ${v.color||''}</div>
         </div>
         ${badge}
       </label>`;
@@ -4404,11 +4404,11 @@ async function loadVehiclesTab(fn, sys) {
           const isSold  = soldVins.has(v.vin);
           const loc     = locMap[v.vin];
           const locBadge = loc
-            ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--purple-dim);color:var(--purple);cursor:pointer" onclick="showWarehouses()" title="في مخزن ${loc}">🏪 ${loc}</span>`
-            : `<span style="font-size:10px;color:var(--text2)">المخزن الرئيسي</span>`;
+            ? `<span style="font-size:12px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--purple-dim);color:var(--purple);cursor:pointer" onclick="showWarehouses()" title="في مخزن ${loc}">🏪 ${loc}</span>`
+            : `<span style="font-size:12px;color:var(--text2)">المخزن الرئيسي</span>`;
           return `<tr>
-            <td style="overflow:hidden;text-overflow:ellipsis"><span class="mono text-amber" style="font-size:11px">${code}</span></td>
-            <td style="overflow:hidden;text-overflow:ellipsis"><span class="mono" style="direction:ltr;font-size:11px">${v.vin||'—'}</span></td>
+            <td style="overflow:hidden;text-overflow:ellipsis"><span class="mono text-amber" style="font-size:13px">${code}</span></td>
+            <td style="overflow:hidden;text-overflow:ellipsis"><span class="mono" style="direction:ltr;font-size:13px">${v.vin||'—'}</span></td>
             <td style="overflow:hidden;text-overflow:ellipsis">${v.vehicle_type||'—'}</td>
             <td style="overflow:hidden;text-overflow:ellipsis">${v.model||'—'}</td>
             <td style="text-align:center">${v.year||'—'}</td>
@@ -4524,16 +4524,16 @@ async function loadContactStatement() {
       const balLabel = running > 0 ? 'مدين' : running < 0 ? 'دائن' : 'تسوية';
 
       return `<tr>
-        <td class="mono text-muted" style="font-size:11px;white-space:nowrap">${(r.entry_date||'').split('T')[0]}</td>
-        <td><span style="font-size:11px;font-weight:700;font-family:monospace;color:var(--accent)">${r.entry_no||'—'}</span></td>
-        <td><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${srcColor}22;color:${srcColor}">${srcLabel}</span></td>
-        <td style="font-size:11px;max-width:220px">${r.description||'—'}</td>
-        <td class="mono text-muted" style="font-size:11px">${r.file_no||'—'}</td>
+        <td class="mono text-muted" style="font-size:13px;white-space:nowrap">${(r.entry_date||'').split('T')[0]}</td>
+        <td><span style="font-size:13px;font-weight:700;font-family:monospace;color:var(--accent)">${r.entry_no||'—'}</span></td>
+        <td><span style="font-size:12px;font-weight:700;padding:2px 7px;border-radius:10px;background:${srcColor}22;color:${srcColor}">${srcLabel}</span></td>
+        <td style="font-size:13px;max-width:220px">${r.description||'—'}</td>
+        <td class="mono text-muted" style="font-size:13px">${r.file_no||'—'}</td>
         <td class="mono text-green" style="text-align:left;font-weight:700">${dr>0?fmt(dr):'—'}</td>
         <td class="mono text-red"   style="text-align:left;font-weight:700">${cr>0?fmt(cr):'—'}</td>
         <td style="text-align:left;white-space:nowrap">
           <span class="mono" style="font-weight:900;color:${balColor}">${fmt(Math.abs(running))}</span>
-          <span style="font-size:10px;color:${balColor};margin-right:4px">${balLabel}</span>
+          <span style="font-size:12px;color:${balColor};margin-right:4px">${balLabel}</span>
         </td>
       </tr>`;
     }).join('');
@@ -4571,7 +4571,7 @@ async function loadContactStatement() {
                 <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalDr)}</td>
                 <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalCr)}</td>
                 <td style="padding:10px 16px;font-weight:900;color:${balColor};text-align:left">
-                  ${fmt(Math.abs(balance))} <span style="font-size:11px">${balLabel}</span>
+                  ${fmt(Math.abs(balance))} <span style="font-size:13px">${balLabel}</span>
                 </td>
               </tr>
             </tfoot>
@@ -4727,8 +4727,8 @@ function selectImportType(type) {
     el('imp-cols-list').innerHTML = schema.cols.map(c =>
       `<div style="padding:2px 0"><span style="color:${c.req?'var(--red)':'var(--text2)'};font-weight:700;font-family:monospace;margin-left:8px">${c.key}</span>
        <span>${c.label}</span>
-       ${c.req?'<span style="color:var(--red);font-size:10px"> (مطلوب)</span>':''}
-       <span style="color:var(--text2);font-size:10px"> — مثال: ${c.example}</span>
+       ${c.req?'<span style="color:var(--red);font-size:12px"> (مطلوب)</span>':''}
+       <span style="color:var(--text2);font-size:12px"> — مثال: ${c.example}</span>
       </div>`
     ).join('');
   }
@@ -4874,26 +4874,26 @@ function renderImportPreview(parsed, errors, schema) {
   const errHtml = errors.length ? `
     <div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:12px;max-height:150px;overflow-y:auto">
       <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:6px">⚠️ ${errors.length} خطأ في البيانات:</div>
-      ${errors.slice(0,20).map(e=>`<div style="font-size:11px;color:var(--red)">${e}</div>`).join('')}
-      ${errors.length>20?`<div style="font-size:11px;color:var(--text2)">... و ${errors.length-20} خطأ آخر</div>`:''}
+      ${errors.slice(0,20).map(e=>`<div style="font-size:13px;color:var(--red)">${e}</div>`).join('')}
+      ${errors.length>20?`<div style="font-size:13px;color:var(--text2)">... و ${errors.length-20} خطأ آخر</div>`:''}
     </div>` : '';
 
   const previewCols = schema.cols.slice(0,6);
-  const tableRows   = parsed.slice(0,10).map(row => `<tr>${previewCols.map(c=>`<td style="padding:6px 10px;font-size:11px;border-bottom:1px solid var(--border)">${row[c.key]||'—'}</td>`).join('')}</tr>`).join('');
+  const tableRows   = parsed.slice(0,10).map(row => `<tr>${previewCols.map(c=>`<td style="padding:6px 10px;font-size:13px;border-bottom:1px solid var(--border)">${row[c.key]||'—'}</td>`).join('')}</tr>`).join('');
 
   wrap.innerHTML = `
     ${errHtml}
     <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px">
       <div style="font-size:13px;font-weight:700;margin-bottom:10px">
         📊 معاينة البيانات — ${parsed.length} صف
-        ${errors.length?`<span style="color:var(--red);font-size:11px"> (${errors.length} سطر فيه أخطاء)</span>`:'<span style="color:var(--green);font-size:11px"> ✅ كل البيانات صحيحة</span>'}
+        ${errors.length?`<span style="color:var(--red);font-size:13px"> (${errors.length} سطر فيه أخطاء)</span>`:'<span style="color:var(--green);font-size:13px"> ✅ كل البيانات صحيحة</span>'}
       </div>
       <div style="overflow-x:auto;max-height:240px;overflow-y:auto;margin-bottom:12px">
         <table style="width:100%;border-collapse:collapse">
-          <thead><tr style="background:var(--card2)">${previewCols.map(c=>`<th style="padding:6px 10px;font-size:11px;text-align:right">${c.label}</th>`).join('')}</tr></thead>
+          <thead><tr style="background:var(--card2)">${previewCols.map(c=>`<th style="padding:6px 10px;font-size:13px;text-align:right">${c.label}</th>`).join('')}</tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
-        ${parsed.length>10?`<div style="font-size:11px;color:var(--text2);padding:6px 10px">... و ${parsed.length-10} صف آخر</div>`:''}
+        ${parsed.length>10?`<div style="font-size:13px;color:var(--text2);padding:6px 10px">... و ${parsed.length-10} صف آخر</div>`:''}
       </div>
     </div>
 
@@ -4928,7 +4928,7 @@ async function runImport() {
     <div style="height:8px;background:var(--border);border-radius:6px;overflow:hidden;margin-bottom:6px">
       <div id="imp-prog-bar" style="height:100%;background:var(--accent);border-radius:6px;transition:width .3s;width:0%"></div>
     </div>
-    <div id="imp-prog-label" style="font-size:11px;color:var(--text2)">0 / ${rows.length}</div>
+    <div id="imp-prog-label" style="font-size:13px;color:var(--text2)">0 / ${rows.length}</div>
   </div>`;
 
   for (let i=0; i<rows.length; i+=BATCH) {

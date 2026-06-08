@@ -259,8 +259,8 @@ function renderTxTable(rows, cfg, auditMap, type) {
   const typeCols = cols[type] || [];
 
   const statusBadge = r => {
-    if (!r.post_status || r.post_status==='posted') return '<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">✅ مرحَّل</span>';
-    return '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">⏳ معلق</span>';
+    if (!r.post_status || r.post_status==='posted') return '<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">✅ مرحَّل</span>';
+    return '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">⏳ معلق</span>';
   };
 
   const thead = `<tr>${typeCols.map(c=>`<th>${c.t}</th>`).join('')}<th>بواسطة</th><th>الحالة</th><th></th></tr>`;
@@ -284,12 +284,12 @@ function renderTxTable(rows, cfg, auditMap, type) {
     const isVoided = r.post_status === 'voided';
     if (type === 'collections') {
       if (isVoided) {
-        statusCell = '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">🚫 ملغى</span>';
+        statusCell = '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">🚫 ملغى</span>';
         rowStyle = 'opacity:.5;';
       } else if (r.paid_date) {
-        statusCell = '<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">✅ محصّل</span>';
+        statusCell = '<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">✅ محصّل</span>';
       } else {
-        statusCell = '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">⏳ مستحق</span>';
+        statusCell = '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">⏳ مستحق</span>';
         rowStyle = 'background:var(--accent-dim);';
       }
     }
@@ -298,7 +298,7 @@ function renderTxTable(rows, cfg, auditMap, type) {
     const ctxBtn = !isVoided && type !== 'deals' && type !== 'opex'
       ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxTx(this,'${type}')" data-id="${r.id}" data-fn="${fn}" data-paid="${r.paid_date?'1':'0'}" title="إجراءات">⋮</button>`
       : (type === 'opex' ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxOpex(this)" data-id="${r.id}" title="إجراءات">⋮</button>` : '');
-    return `<tr ${rowClick} style="${rowStyle}">${cells}<td style="font-size:11px;color:var(--text2)">${shortUser}</td><td>${statusCell}</td><td style="text-align:center">${ctxBtn}</td></tr>`;
+    return `<tr ${rowClick} style="${rowStyle}">${cells}<td style="font-size:13px;color:var(--text2)">${shortUser}</td><td>${statusCell}</td><td style="text-align:center">${ctxBtn}</td></tr>`;
   }).join('');
 
   const total = rows.filter(isEffective).reduce((s,r)=>s+(+r[cfg.amountField]||0),0);
@@ -308,7 +308,7 @@ function renderTxTable(rows, cfg, auditMap, type) {
     ? `<tr style="background:var(--card2);font-weight:700">
         <td colspan="${typeCols.length-1}">الإجمالي (${rows.filter(isEffective).length} تحصيل)</td>
         <td class="mono text-blue">${fmt(total)}</td>
-        <td style="font-size:11px;color:var(--text2)">
+        <td style="font-size:13px;color:var(--text2)">
           ✅ محصّل: <span style="color:var(--green);font-weight:700">${fmt(totalPaidTX)}</span>
           ${totalPendTX>0?` · ⏳ مستحق: <span style="color:var(--accent);font-weight:700">${fmt(totalPendTX)}</span>`:''}
         </td>
@@ -364,16 +364,16 @@ function renderSalesInvoices(rows, cfg, auditMap) {
   const tbody = invoices.map(inv => `
     <tr onclick="openInvoiceModal(${JSON.stringify(inv.inv_no).replace(/"/g,'&quot;')})" style="cursor:pointer"
       onmouseover="this.style.background='var(--accent-dim)'" onmouseout="this.style.background=''">
-      <td class="mono text-muted" style="font-size:11px;white-space:nowrap">${fmtDate(inv.sale_date)}</td>
+      <td class="mono text-muted" style="font-size:13px;white-space:nowrap">${fmtDate(inv.sale_date)}</td>
       <td class="mono text-amber" style="font-weight:700">${inv.file_no}</td>
       <td><span style="font-weight:700;color:var(--green);font-family:monospace">${inv.inv_no}</span></td>
       <td style="font-weight:600">${inv.customer}</td>
       <td style="text-align:center">
-        <span style="background:var(--blue-dim);color:var(--blue);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${inv.vehicles.length} سيارة</span>
+        <span style="background:var(--blue-dim);color:var(--blue);padding:2px 8px;border-radius:10px;font-size:13px;font-weight:700">${inv.vehicles.length} سيارة</span>
       </td>
       <td><span class="mono" style="color:var(--green);font-weight:900;font-size:14px">${fmt(inv.total)}</span></td>
       <td>
-        <span style="background:${(inv.post_status==='posted'||!inv.post_status)?'var(--green-dim)':'#fef3c7'};color:${(inv.post_status==='posted'||!inv.post_status)?'var(--green)':'#92400e'};padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">
+        <span style="background:${(inv.post_status==='posted'||!inv.post_status)?'var(--green-dim)':'#fef3c7'};color:${(inv.post_status==='posted'||!inv.post_status)?'var(--green)':'#92400e'};padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">
           ${(inv.post_status==='posted'||!inv.post_status)?'✅ مرحّلة':'⏳ معلقة'}
         </span>
       </td>
@@ -389,7 +389,7 @@ function renderSalesInvoices(rows, cfg, auditMap) {
   </tr>`;
 
   el('tx-table').innerHTML = `
-    <div style="font-size:11px;color:var(--text2);margin-bottom:6px">اضغط على أي فاتورة لعرض تفاصيلها وطباعتها</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:6px">اضغط على أي فاتورة لعرض تفاصيلها وطباعتها</div>
     <table class="data-table" id="tx-data-table">
       <thead><tr>
         <th>التاريخ</th><th>الملف</th><th>رقم الفاتورة</th>
@@ -457,11 +457,11 @@ async function openInvoiceModal(invNo) {
       <!-- Info -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
         <div style="background:#f8fafc;border-radius:8px;padding:14px 16px">
-          <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:700">بيانات العميل</div>
+          <div style="font-size:13px;color:#888;margin-bottom:6px;font-weight:700">بيانات العميل</div>
           <div style="font-size:16px;font-weight:800">${customer}</div>
         </div>
         <div style="background:#f8fafc;border-radius:8px;padding:14px 16px">
-          <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:700">بيانات الفاتورة</div>
+          <div style="font-size:13px;color:#888;margin-bottom:6px;font-weight:700">بيانات الفاتورة</div>
           <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
             <span style="color:#666">رقم الملف</span><strong>${fileNo}</strong>
           </div>

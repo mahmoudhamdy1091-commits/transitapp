@@ -81,22 +81,22 @@ function renderActivityLog() {
     <tr onclick="${hasDetail ? `showActivityDetail('${r.id}')` : ''}"
       style="cursor:${hasDetail?'pointer':'default'};transition:background .1s"
       onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
-      <td style="padding:9px 12px;font-size:11px;color:var(--text2);white-space:nowrap">${dt}</td>
+      <td style="padding:9px 12px;font-size:13px;color:var(--text2);white-space:nowrap">${dt}</td>
       <td style="padding:9px 12px">
         <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:var(--accent);flex-shrink:0">${initials}</div>
+          <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:var(--accent);flex-shrink:0">${initials}</div>
           <span style="font-size:12px">${email}</span>
         </div>
       </td>
       <td style="padding:9px 12px">
-        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:${actionBg[r.action]||'var(--card2)'};color:${actionColors[r.action]||'var(--text2)'}">
+        <span style="font-size:13px;font-weight:700;padding:2px 8px;border-radius:6px;background:${actionBg[r.action]||'var(--card2)'};color:${actionColors[r.action]||'var(--text2)'}">
           ${actionLabels[r.action]||r.action}
         </span>
       </td>
       <td style="padding:9px 12px;font-size:12px;color:var(--text2)">${tableLabels[r.table_name]||r.table_name||'—'}</td>
       <td style="padding:9px 12px;font-size:12px;font-weight:700;color:var(--accent);font-family:monospace">${r.file_no||'—'}</td>
-      <td style="padding:9px 12px;font-size:11px;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.notes||'—'}</td>
-      <td style="padding:9px 12px">${hasDetail ? '<span style="font-size:10px;color:var(--blue)">تفاصيل ←</span>' : ''}</td>
+      <td style="padding:9px 12px;font-size:13px;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.notes||'—'}</td>
+      <td style="padding:9px 12px">${hasDetail ? '<span style="font-size:12px;color:var(--blue)">تفاصيل ←</span>' : ''}</td>
     </tr>`;
   }).join('');
 
@@ -122,19 +122,19 @@ function showActivityDetail(id) {
   let detailHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
       <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">المستخدم</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">المستخدم</div>
         <div style="font-weight:600">${r.user_email||'—'}</div>
       </div>
       <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">الوقت</div>
-        <div style="font-weight:600;font-size:11px">${r.created_at ? new Date(r.created_at).toLocaleString('en-US') : '—'}</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">الوقت</div>
+        <div style="font-weight:600;font-size:13px">${r.created_at ? new Date(r.created_at).toLocaleString('en-US') : '—'}</div>
       </div>
       <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">العملية</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">العملية</div>
         <div style="font-weight:700;color:${actionColors[r.action]||'var(--text)'}">${actionLabels[r.action]||r.action}</div>
       </div>
       <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-        <div style="font-size:10px;color:var(--text2);margin-bottom:3px">الملف</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">الملف</div>
         <div style="font-weight:700;color:var(--accent);font-family:monospace">${r.file_no||'—'}</div>
       </div>
     </div>`;
@@ -142,7 +142,7 @@ function showActivityDetail(id) {
   if (r.notes) {
     detailHTML += `
     <div style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">ملاحظات</div>
+      <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">ملاحظات</div>
       <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px;font-size:12px">${r.notes}</div>
     </div>`;
   }
@@ -153,12 +153,12 @@ function showActivityDetail(id) {
       const old = typeof r.old_value === 'string' ? JSON.parse(r.old_value) : r.old_value;
       detailHTML += `
       <div style="margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px">القيمة قبل التعديل</div>
-        <div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px;font-family:monospace;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">
+        <div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:6px">القيمة قبل التعديل</div>
+        <div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px;font-family:monospace;font-size:13px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">
           ${JSON.stringify(old, null, 2)}
         </div>
       </div>`;
-    } catch(e) { detailHTML += `<div style="margin-bottom:12px;font-size:11px;color:var(--text2)">القيمة القديمة: ${r.old_value}</div>`; }
+    } catch(e) { detailHTML += `<div style="margin-bottom:12px;font-size:13px;color:var(--text2)">القيمة القديمة: ${r.old_value}</div>`; }
   }
 
   if (r.new_value) {
@@ -166,12 +166,12 @@ function showActivityDetail(id) {
       const nw = typeof r.new_value === 'string' ? JSON.parse(r.new_value) : r.new_value;
       detailHTML += `
       <div>
-        <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:6px">البيانات المضافة / بعد التعديل</div>
-        <div style="background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:10px;font-family:monospace;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">
+        <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:6px">البيانات المضافة / بعد التعديل</div>
+        <div style="background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:10px;font-family:monospace;font-size:13px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">
           ${JSON.stringify(nw, null, 2)}
         </div>
       </div>`;
-    } catch(e) { detailHTML += `<div style="font-size:11px;color:var(--text2)">البيانات: ${r.new_value}</div>`; }
+    } catch(e) { detailHTML += `<div style="font-size:13px;color:var(--text2)">البيانات: ${r.new_value}</div>`; }
   }
 
   el('act-detail-title').textContent = `🕵️ تفاصيل — ${r.table_name||'—'} — ${r.file_no||'—'}`;
@@ -275,7 +275,7 @@ async function loadUserRoles() {
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px">
             ${u.email}
-            ${isSelf ? '<span style="font-size:10px;background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-weight:700">أنت</span>' : ''}
+            ${isSelf ? '<span style="font-size:12px;background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-weight:700">أنت</span>' : ''}
           </div>
           <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;align-items:center">
             <span class="sett-role-badge sett-badge-${u.role}">${roleLabel[u.role]||u.role}</span>
@@ -455,7 +455,7 @@ async function loadDealStatement(fn, sys) {
 
     // تنبيه للمستخدم لو في عمليات معلقة
     const draftAlert = (draftSales + draftExp) > 0
-      ? `<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:8px 14px;margin-bottom:10px;font-size:11px;color:var(--accent);font-weight:700">
+      ? `<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:8px 14px;margin-bottom:10px;font-size:13px;color:var(--accent);font-weight:700">
           ⚠️ يوجد ${draftSales+draftExp} عملية معلقة في انتظار الموافقة — الأرقام أعلاه للمرحّلة فقط
         </div>`
       : '';
@@ -465,7 +465,7 @@ async function loadDealStatement(fn, sys) {
          ['المصاريف',fmt(totalExp),'var(--red)'],['المبيعات',fmt(totalSales),'var(--green)'],
          ['المحصّل فعلاً',fmt(totalColl),'var(--green)'],['صافي الربح',fmt(Math.abs(profit)),profit>=0?'var(--green)':'var(--red)'],
       ].map(([l,v,c])=>`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px">
-        <div style="font-size:10px;color:var(--text2);margin-bottom:4px">${l}</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">${l}</div>
         <div style="font-size:16px;font-weight:700;color:${c}">${v}</div></div>`).join('')}
     </div>`;
 
@@ -477,12 +477,12 @@ async function loadDealStatement(fn, sys) {
         if (e.credit>0) running -= e.credit;
       }
       const infoTag = !e._pl
-        ? `<span style="font-size:9px;background:var(--card2);color:var(--text2);padding:1px 5px;border-radius:6px;margin-right:4px">معلوماتي</span>`
+        ? `<span style="font-size:13px;background:var(--card2);color:var(--text2);padding:1px 5px;border-radius:6px;margin-right:4px">معلوماتي</span>`
         : '';
       return `<tr onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
-        <td style="padding:10px 12px;font-size:11px;color:var(--text3);white-space:nowrap">${e.date||'—'}</td>
-        <td style="padding:10px 12px"><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:${e.color}22;color:${e.color}">${e.icon} ${e.type}</span>${infoTag}</td>
-        <td style="padding:10px 12px"><div style="font-size:12px;font-weight:600">${e.desc}</div>${e.extra?`<div style="font-size:10px;color:var(--text3)">${e.extra}</div>`:''}</td>
+        <td style="padding:10px 12px;font-size:13px;color:var(--text3);white-space:nowrap">${e.date||'—'}</td>
+        <td style="padding:10px 12px"><span style="font-size:13px;font-weight:700;padding:2px 8px;border-radius:8px;background:${e.color}22;color:${e.color}">${e.icon} ${e.type}</span>${infoTag}</td>
+        <td style="padding:10px 12px"><div style="font-size:12px;font-weight:600">${e.desc}</div>${e.extra?`<div style="font-size:12px;color:var(--text3)">${e.extra}</div>`:''}</td>
         <td style="padding:10px 12px;font-size:12px;color:var(--text2)">${e.party}</td>
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--green)">${e.debit>0?fmt(e.debit):'—'}</td>
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--red)">${e.credit>0?fmt(e.credit):'—'}</td>
@@ -523,12 +523,12 @@ async function loadDealStatement(fn, sys) {
 
     wrap.innerHTML = kpis + `
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-        <div style="padding:8px 14px;background:var(--card2);border-bottom:1px solid var(--border);font-size:11px;color:var(--text2)">
+        <div style="padding:8px 14px;background:var(--card2);border-bottom:1px solid var(--border);font-size:13px;color:var(--text2)">
           📊 الرصيد الجاري = صافي ربح/خسارة الصفقة (مبيعات − تكلفة شراء − مصاريف) · الصفوف المعلّمة "معلوماتي" لا تدخل في الحساب
         </div>
         <table style="width:100%;border-collapse:collapse">
           <thead><tr style="background:var(--card2);border-bottom:1px solid var(--border)">
-            ${['التاريخ','النوع','البيان','الطرف','مدين','دائن','الرصيد (ر/خ)'].map((h,i)=>`<th style="padding:10px 12px;font-size:11px;color:var(--text3);font-weight:700;text-align:${i>=4?'left':'right'}">${h}</th>`).join('')}
+            ${['التاريخ','النوع','البيان','الطرف','مدين','دائن','الرصيد (ر/خ)'].map((h,i)=>`<th style="padding:10px 12px;font-size:13px;color:var(--text3);font-weight:700;text-align:${i>=4?'left':'right'}">${h}</th>`).join('')}
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -626,15 +626,15 @@ async function acSearch(type, inputId) {
         onmousedown="event.preventDefault();acSelect('${inputId}','${safeName}')">
         <span style="font-size:14px">${_acTypeIcons[c.type]||'👤'}</span>
         <span class="ac-item-name" style="font-weight:600">${c.name}</span>
-        <span class="ac-item-badge ${_acTypeBadges[c.type]||''}" style="font-size:10px;padding:1px 7px;border-radius:10px">${_acTypeLabels2[c.type]||c.type}</span>
-        ${c.phone ? `<span style="font-size:10px;color:var(--text3);margin-right:auto">${c.phone}</span>` : ''}
+        <span class="ac-item-badge ${_acTypeBadges[c.type]||''}" style="font-size:12px;padding:1px 7px;border-radius:10px">${_acTypeLabels2[c.type]||c.type}</span>
+        ${c.phone ? `<span style="font-size:12px;color:var(--text3);margin-right:auto">${c.phone}</span>` : ''}
       </div>
       <div style="display:flex;gap:2px;padding:4px 6px;flex-shrink:0;border-right:1px solid var(--border)">
         <button onmousedown="event.preventDefault();event.stopPropagation();acEditContact(${c.id})"
-          style="background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;font-family:Cairo,sans-serif;line-height:1.2"
+          style="background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);border-radius:4px;padding:2px 6px;font-size:13px;cursor:pointer;font-family:Cairo,sans-serif;line-height:1.2"
           title="تعديل">✏️</button>
         <button onmousedown="event.preventDefault();event.stopPropagation();acDeleteContact(${c.id},'${inputId}')"
-          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;font-family:Cairo,sans-serif;line-height:1.2"
+          style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);border-radius:4px;padding:2px 6px;font-size:13px;cursor:pointer;font-family:Cairo,sans-serif;line-height:1.2"
           title="حذف">🗑</button>
       </div>
     </div>`;

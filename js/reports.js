@@ -150,32 +150,32 @@ async function runReport() {
         <div class="j-kpi" style="border-right:3px solid var(--green)">
           <div class="j-kpi-label">إجمالي المبيعات</div>
           <div class="j-kpi-val text-green">${fmt(ts)}</div>
-          <div style="font-size:10px;color:var(--text2);margin-top:2px">من حساب 4100</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">من حساب 4100</div>
         </div>
         <div class="j-kpi" style="border-right:3px solid var(--blue)">
           <div class="j-kpi-label">تكلفة المخزون المباع</div>
           <div class="j-kpi-val text-blue">${fmt(tCOGS)}</div>
-          <div style="font-size:10px;color:var(--text2);margin-top:2px">من حساب 5100</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">من حساب 5100</div>
         </div>
         <div class="j-kpi" style="border-right:3px solid var(--red)">
           <div class="j-kpi-label">مصاريف الصفقات</div>
           <div class="j-kpi-val text-red">${fmt(tDealExp)}</div>
-          <div style="font-size:10px;color:var(--text2);margin-top:2px">من حسابات 6xxx</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">من حسابات 6xxx</div>
         </div>
         <div class="j-kpi" style="border-right:3px solid var(--accent);background:var(--accent-dim)">
           <div class="j-kpi-label">ربح الصفقات</div>
           <div class="j-kpi-val" style="color:${dealProfit>=0?'var(--green)':'var(--red)'};font-size:20px">${fmt(dealProfit)}</div>
-          <div style="font-size:10px;color:var(--text2);margin-top:2px">مبيعات - COGS - مصاريف</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">مبيعات - COGS - مصاريف</div>
         </div>
         <div class="j-kpi" style="border-right:3px solid var(--purple)">
           <div class="j-kpi-label">المصاريف التشغيلية</div>
           <div class="j-kpi-val text-purple">${fmt(tOpex)}</div>
-          <div style="font-size:10px;color:var(--text2);margin-top:2px">إيجار، رواتب، إلخ</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">إيجار، رواتب، إلخ</div>
         </div>
         <div class="j-kpi" style="border-right:3px solid ${netProfit>=0?'var(--green)':'var(--red)'};background:${netProfit>=0?'var(--green-dim)':'var(--red-dim)'}">
           <div class="j-kpi-label">صافي ربح الشركة</div>
           <div class="j-kpi-val" style="color:${netProfit>=0?'var(--green)':'var(--red)'};font-size:20px;font-weight:900">${fmt(netProfit)}</div>
-          <div style="font-size:10px;color:var(--text2);margin-top:2px">بعد خصم التشغيلية · من القيود</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">بعد خصم التشغيلية · من القيود</div>
         </div>`;
 
       // ── بناء rows_data للجدول التفصيلي ──
@@ -380,17 +380,17 @@ async function runCashFlowReport(from, to, sys) {
       <div class="j-kpi" style="border-right:3px solid var(--green);background:var(--green-dim)">
         <div class="j-kpi-label">💚 إجمالي الداخل</div>
         <div class="j-kpi-val text-green" style="font-size:20px;font-weight:900">${fmt(totalIn)}</div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">قيود نقدية مدينة — ${inflows.length} سطر</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">قيود نقدية مدينة — ${inflows.length} سطر</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--red);background:var(--red-dim)">
         <div class="j-kpi-label">❤️ إجمالي الخارج</div>
         <div class="j-kpi-val text-red" style="font-size:20px;font-weight:900">${fmt(totalOut)}</div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">قيود نقدية دائنة — ${outflows.length} سطر</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">قيود نقدية دائنة — ${outflows.length} سطر</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid ${net>=0?'var(--green)':'var(--red)'};background:${net>=0?'var(--green-dim)':'var(--red-dim)'}">
         <div class="j-kpi-label">💵 صافي التدفق</div>
         <div class="j-kpi-val" style="color:${net>=0?'var(--green)':'var(--red)'};font-size:22px;font-weight:900">${net>=0?'+':''}${fmt(net)}</div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px">من القيود المحاسبية ${from} — ${to}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">من القيود المحاسبية ${from} — ${to}</div>
       </div>`;
 
     // تفصيل الداخل والخارج
@@ -398,8 +398,8 @@ async function runCashFlowReport(from, to, sys) {
       <tr><td><div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:18px">${srcIcons[src]||'📌'}</span>
         <div><div style="font-weight:600">${srcLabels[src]||src}</div>
-        <div style="font-size:11px;color:var(--text2)">${d.count} قيد</div></div></div></td>
-      <td><span style="background:var(--green-dim);color:var(--green);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">↑ داخل</span></td>
+        <div style="font-size:13px;color:var(--text2)">${d.count} قيد</div></div></div></td>
+      <td><span style="background:var(--green-dim);color:var(--green);padding:2px 8px;border-radius:10px;font-size:13px;font-weight:700">↑ داخل</span></td>
       <td class="mono text-green" style="font-weight:700">${fmt(d.amount)}</td>
       <td><div style="background:var(--card2);border-radius:4px;height:8px;overflow:hidden;min-width:80px"><div style="width:${totalIn>0?Math.round(d.amount/totalIn*100):0}%;height:100%;background:var(--green);border-radius:4px"></div></div></td></tr>`).join('');
 
@@ -407,8 +407,8 @@ async function runCashFlowReport(from, to, sys) {
       <tr><td><div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:18px">${srcIcons[src]||'📌'}</span>
         <div><div style="font-weight:600">${srcLabels[src]||src}</div>
-        <div style="font-size:11px;color:var(--text2)">${d.count} قيد</div></div></div></td>
-      <td><span style="background:var(--red-dim);color:var(--red);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">↓ خارج</span></td>
+        <div style="font-size:13px;color:var(--text2)">${d.count} قيد</div></div></div></td>
+      <td><span style="background:var(--red-dim);color:var(--red);padding:2px 8px;border-radius:10px;font-size:13px;font-weight:700">↓ خارج</span></td>
       <td class="mono text-red" style="font-weight:700">${fmt(d.amount)}</td>
       <td><div style="background:var(--card2);border-radius:4px;height:8px;overflow:hidden;min-width:80px"><div style="width:${totalOut>0?Math.round(d.amount/totalOut*100):0}%;height:100%;background:var(--red);border-radius:4px"></div></div></td></tr>`).join('');
 
@@ -439,7 +439,7 @@ async function runCashFlowReport(from, to, sys) {
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px">
         <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px;display:flex;justify-content:space-between">
           <span>📊 تفصيل التدفقات النقدية (من القيود)</span>
-          <span style="font-size:11px;color:var(--text2)">${from} — ${to}</span>
+          <span style="font-size:13px;color:var(--text2)">${from} — ${to}</span>
         </div>
         <table class="data-table">
           <thead><tr><th>البند</th><th style="text-align:center">الاتجاه</th><th>المبلغ</th><th style="min-width:100px">النسبة</th></tr></thead>
@@ -528,17 +528,17 @@ async function runInventoryReport(sys) {
       <div class="j-kpi" style="border-right:3px solid var(--blue)">
         <div class="j-kpi-label">🏭 في المخزن</div>
         <div class="j-kpi-val text-blue" style="font-size:22px;font-weight:900">${inStock.length}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">قيمة: ${fmt(stockValue)}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px">قيمة: ${fmt(stockValue)}</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--purple)">
         <div class="j-kpi-label">🏪 المخازن</div>
         <div class="j-kpi-val text-purple" style="font-size:22px;font-weight:900">${warehouseNames.length}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">${inWarehouse} سيارة محوّلة</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px">${inWarehouse} سيارة محوّلة</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--green)">
         <div class="j-kpi-label">✅ مباعة</div>
         <div class="j-kpi-val text-green" style="font-size:22px;font-weight:900">${sold.length}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">إيراد: ${fmt(soldRevenue)} · مصاريف موزّعة: ${fmt(soldExpenses)}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px">إيراد: ${fmt(soldRevenue)} · مصاريف موزّعة: ${fmt(soldExpenses)}</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid ${soldProfit>=0?'var(--green)':'var(--red)'}">
         <div class="j-kpi-label">💰 ربح المبيعات</div>
@@ -581,7 +581,7 @@ async function runInventoryReport(sys) {
       const days   = Math.floor((Date.now() - new Date(v.created_at || Date.now())) / 864e5);
       const whName = vinLocationMap[v.vin] || '';
       return `<tr>
-        <td class="mono" style="direction:ltr;font-size:11px">${v.vin || '—'}</td>
+        <td class="mono" style="direction:ltr;font-size:13px">${v.vin || '—'}</td>
         <td>${v.model || v.vehicle_type || '—'} ${v.year || ''}</td>
         <td>${v.color || '—'}</td>
         <td class="mono text-accent" onclick="openViewer('${v.file_no}')" style="cursor:pointer;font-weight:700">${v.file_no || '—'}</td>
@@ -589,18 +589,18 @@ async function runInventoryReport(sys) {
         <td class="mono text-blue">${fmt(v.purchase_price)}</td>
         <td>
           ${isSold
-            ? `<span style="background:var(--green-dim);color:var(--green);padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">✅ مباعة</span>`
-            : `<span style="background:var(--blue-dim);color:var(--blue);padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">🏭 مخزن (${days}د)</span>`}
+            ? `<span style="background:var(--green-dim);color:var(--green);padding:2px 10px;border-radius:10px;font-size:13px;font-weight:700">✅ مباعة</span>`
+            : `<span style="background:var(--blue-dim);color:var(--blue);padding:2px 10px;border-radius:10px;font-size:13px;font-weight:700">🏭 مخزن (${days}د)</span>`}
         </td>
         <td>
           ${whName
-            ? `<span style="background:var(--purple-dim,#f3e8ff);color:var(--purple,#7c3aed);padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700">🏪 ${whName}</span>`
-            : `<span style="color:var(--text2);font-size:11px">—</span>`}
+            ? `<span style="background:var(--purple-dim,#f3e8ff);color:var(--purple,#7c3aed);padding:2px 10px;border-radius:10px;font-size:13px;font-weight:700">🏪 ${whName}</span>`
+            : `<span style="color:var(--text2);font-size:13px">—</span>`}
         </td>
         ${isSold ? `
           <td class="mono text-green">${fmt(sale.sale_price)}</td>
           <td class="mono" style="color:${profit>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(profit)}</td>
-          <td style="font-size:11px;color:var(--text2)">${sale.customer || '—'}</td>
+          <td style="font-size:13px;color:var(--text2)">${sale.customer || '—'}</td>
         ` : `<td>—</td><td>—</td><td>—</td>`}
       </tr>`;
     }).join('');
@@ -621,11 +621,11 @@ async function runInventoryReport(sys) {
           onclick="filterInventoryByWarehouse('${wh.replace(/'/g,"\'")}')" >
           <div>
             <div style="font-weight:700;font-size:13px">🏪 ${wh}</div>
-            <div style="font-size:11px;color:var(--text2);margin-top:2px">${d.count} سيارة في المخزن</div>
+            <div style="font-size:13px;color:var(--text2);margin-top:2px">${d.count} سيارة في المخزن</div>
           </div>
           <div style="text-align:left">
             <div style="font-family:monospace;font-weight:900;color:var(--purple)">${fmt(d.value)}</div>
-            <div style="font-size:10px;color:var(--text2)">قيمة المخزون</div>
+            <div style="font-size:12px;color:var(--text2)">قيمة المخزون</div>
           </div>
         </div>`).join('');
       whSummaryHtml = `

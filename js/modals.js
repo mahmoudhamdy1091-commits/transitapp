@@ -359,7 +359,7 @@ function updatePartnerSummary() {
       paidSum  += paid;
       lines.push(`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)">
         <span style="font-weight:600">${name}</span>
-        <span style="font-size:11px;color:var(--text2)">حصة: ${share}% = <span style="color:var(--accent)">${fmt(due)}</span> | دفع: <span style="color:var(--green)">${fmt(paid)}</span> | متبقي: <span style="color:${remaining>0?'var(--red)':'var(--green)'}">${fmt(remaining)}</span></span>
+        <span style="font-size:13px;color:var(--text2)">حصة: ${share}% = <span style="color:var(--accent)">${fmt(due)}</span> | دفع: <span style="color:var(--green)">${fmt(paid)}</span> | متبقي: <span style="color:${remaining>0?'var(--red)':'var(--green)'}">${fmt(remaining)}</span></span>
       </div>`);
     }
     if (name && share) valid = true;
@@ -371,7 +371,7 @@ function updatePartnerSummary() {
     summary.innerHTML = lines.join('') +
       `<div style="display:flex;justify-content:space-between;margin-top:6px;font-weight:700">
         <span>الإجمالي</span>
-        <span style="font-size:11px">الحصص: ${fmt(shareSum)}% | مدفوع: <span style="color:var(--green)">${fmt(paidSum)}</span> | متبقي: <span style="color:var(--red)">${fmt(total-paidSum)}</span></span>
+        <span style="font-size:13px">الحصص: ${fmt(shareSum)}% | مدفوع: <span style="color:var(--green)">${fmt(paidSum)}</span> | متبقي: <span style="color:var(--red)">${fmt(total-paidSum)}</span></span>
       </div>`;
   } else { summary.style.display = 'none'; }
 }
@@ -1107,7 +1107,7 @@ async function renderSaleVehiclePicker(fn, sys) {
         <td style="padding:6px 8px">
           <div style="font-weight:600;font-size:13px">${v.model||v.vehicle_type||'—'} ${v.year||''}</div>
           <div class="sale-vin-text" style="font-family:monospace;font-size:13px;font-weight:700;color:var(--blue);direction:ltr;letter-spacing:.8px;margin:2px 0">${v.vin||'—'}</div>
-          <div style="font-size:11px;color:var(--text2)">${v.color||''}${v.plate?' · '+v.plate:''}</div>
+          <div style="font-size:13px;color:var(--text2)">${v.color||''}${v.plate?' · '+v.plate:''}</div>
         </td>
         <td style="padding:6px 8px;text-align:center">
           <span style="color:var(--blue);font-family:monospace;font-size:12px;font-weight:600">${fmt(v.purchase_price)}</span>
@@ -1741,39 +1741,39 @@ async function onPayoutPartnerChange() {
     card.innerHTML = `
       <div style="font-weight:800;font-size:13px;color:var(--purple);margin-bottom:10px;display:flex;align-items:center;gap:6px">
         👤 ${partner}
-        <span style="background:var(--purple);color:#fff;border-radius:20px;padding:2px 10px;font-size:11px">${shareP}% حصة</span>
+        <span style="background:var(--purple);color:#fff;border-radius:20px;padding:2px 10px;font-size:13px">${shareP}% حصة</span>
       </div>
-      <div style="font-size:10px;font-weight:700;color:var(--text2);letter-spacing:.5px;margin-bottom:6px">تفاصيل الصفقة الكاملة</div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);letter-spacing:.5px;margin-bottom:6px">تفاصيل الصفقة الكاملة</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">
         <div style="background:var(--card2);border-radius:6px;padding:8px 10px;border-right:3px solid var(--blue)">
-          <div style="font-size:9px;color:var(--text2);font-weight:700">رأس المال (شراء)</div>
+          <div style="font-size:13px;color:var(--text2);font-weight:700">رأس المال (شراء)</div>
           <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--blue)">${fmt2(s._totalCost)}</div>
         </div>
         <div style="background:var(--card2);border-radius:6px;padding:8px 10px;border-right:3px solid var(--red)">
-          <div style="font-size:9px;color:var(--text2);font-weight:700">المصاريف</div>
+          <div style="font-size:13px;color:var(--text2);font-weight:700">المصاريف</div>
           <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--red)">${fmt2(s._totalExp)}</div>
         </div>
         <div style="background:var(--card2);border-radius:6px;padding:8px 10px;border-right:3px solid var(--green)">
-          <div style="font-size:9px;color:var(--text2);font-weight:700">المبيعات</div>
+          <div style="font-size:13px;color:var(--text2);font-weight:700">المبيعات</div>
           <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--green)">${fmt2(s._totalSales)}</div>
         </div>
       </div>
-      <div style="font-size:10px;font-weight:700;color:var(--text2);letter-spacing:.5px;margin-bottom:6px">حصة الشريك (${shareP}%)</div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);letter-spacing:.5px;margin-bottom:6px">حصة الشريك (${shareP}%)</div>
       <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px">
         <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
-          <div style="font-size:9px;color:var(--text2);font-weight:700">رأس المال المدفوع</div>
+          <div style="font-size:13px;color:var(--text2);font-weight:700">رأس المال المدفوع</div>
           <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--blue)">${fmt2(s.capitalPaid)}</div>
         </div>
         <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
-          <div style="font-size:9px;color:var(--text2);font-weight:700">الربح المستحق</div>
+          <div style="font-size:13px;color:var(--text2);font-weight:700">الربح المستحق</div>
           <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:${s.profit>=0?'var(--green)':'var(--red)'}">${fmt2(Math.abs(s.profit))}</div>
         </div>
         <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
-          <div style="font-size:9px;color:var(--text2);font-weight:700">إجمالي المسحوبات</div>
+          <div style="font-size:13px;color:var(--text2);font-weight:700">إجمالي المسحوبات</div>
           <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--amber)">${fmt2(s.totalWithdrawn)}</div>
         </div>
         <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
-          <div style="font-size:9px;color:var(--text2);font-weight:700">صافي الربح (حصتي)</div>
+          <div style="font-size:13px;color:var(--text2);font-weight:700">صافي الربح (حصتي)</div>
           <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:${s.dealProfit>=0?'var(--green)':'var(--red)'}">${fmt2(s.dealProfit * s.share)}</div>
         </div>
       </div>

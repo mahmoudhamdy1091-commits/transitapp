@@ -563,9 +563,9 @@ async function searchVinDropdown(q) {
           onmouseenter="this.style.background='var(--card2)'" onmouseleave="this.style.background=''">
           <div>
             <div style="font-family:monospace;font-weight:700;color:var(--accent);font-size:13px;direction:ltr">${v.vin}</div>
-            <div style="font-size:11px;color:var(--text2);margin-top:2px">${label||'—'}</div>
+            <div style="font-size:13px;color:var(--text2);margin-top:2px">${label||'—'}</div>
           </div>
-          <span style="font-size:11px;background:var(--accent-dim);color:var(--accent);padding:2px 8px;border-radius:10px;font-family:monospace;flex-shrink:0;margin-right:8px">${v.file_no||'—'}</span>
+          <span style="font-size:13px;background:var(--accent-dim);color:var(--accent);padding:2px 8px;border-radius:10px;font-family:monospace;flex-shrink:0;margin-right:8px">${v.file_no||'—'}</span>
         </div>`;
       }).join('');
 
@@ -634,7 +634,7 @@ async function searchVin(q) {
         <!-- Header -->
         <div style="background:${isSold?'var(--green)':'var(--purple)'};padding:16px 20px;display:flex;align-items:center;justify-content:space-between">
           <div>
-            <div style="font-size:11px;color:#ffffff99;margin-bottom:2px">${isSold?'✅ مباعة':'🏭 في المخزن'}</div>
+            <div style="font-size:13px;color:#ffffff99;margin-bottom:2px">${isSold?'✅ مباعة':'🏭 في المخزن'}</div>
             <div style="font-size:18px;font-weight:700;color:#fff;font-family:monospace">${v.vin||'—'}</div>
           </div>
           <button onclick="document.getElementById('vin-card-overlay').remove()"
@@ -647,19 +647,19 @@ async function searchVin(q) {
           <!-- Vehicle info -->
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
             <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-              <div style="font-size:10px;color:var(--text2);margin-bottom:3px">الموديل</div>
+              <div style="font-size:12px;color:var(--text2);margin-bottom:3px">الموديل</div>
               <div style="font-size:14px;font-weight:700">${v.model||v.make||'—'} ${v.year||''}</div>
             </div>
             <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-              <div style="font-size:10px;color:var(--text2);margin-bottom:3px">رقم الملف</div>
+              <div style="font-size:12px;color:var(--text2);margin-bottom:3px">رقم الملف</div>
               <div style="font-size:14px;font-weight:700;color:var(--accent)">${v.file_no||'—'}</div>
             </div>
             <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-              <div style="font-size:10px;color:var(--text2);margin-bottom:3px">تكلفة الشراء</div>
+              <div style="font-size:12px;color:var(--text2);margin-bottom:3px">تكلفة الشراء</div>
               <div style="font-size:14px;font-weight:700;color:var(--blue);font-family:monospace">${fmt(v.purchase_price)}</div>
             </div>
             <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-              <div style="font-size:10px;color:var(--text2);margin-bottom:3px">${isSold?'سعر البيع':'في المخزن منذ'}</div>
+              <div style="font-size:12px;color:var(--text2);margin-bottom:3px">${isSold?'سعر البيع':'في المخزن منذ'}</div>
               <div style="font-size:14px;font-weight:700;color:${isSold?'var(--green)':'var(--accent)'};font-family:monospace">
                 ${isSold ? fmt(sale.sale_price) : days+' يوم'}
               </div>
@@ -669,7 +669,7 @@ async function searchVin(q) {
           <!-- Sale info if sold -->
           ${isSold ? `
           <div style="background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:12px;margin-bottom:16px">
-            <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">تفاصيل البيع</div>
+            <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:8px">تفاصيل البيع</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
               <div><span style="color:var(--text2)">العميل: </span><span style="font-weight:600">${sale.customer||'—'}</span></div>
               <div><span style="color:var(--text2)">تاريخ البيع: </span><span style="font-weight:600">${fmtDate(sale.sale_date)}</span></div>

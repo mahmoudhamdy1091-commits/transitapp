@@ -178,13 +178,13 @@ function renderTrialBalance() {
       onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
       <td class="mono" style="color:var(--accent);font-weight:700">${c.code}</td>
       <td style="font-weight:600">${c.name}</td>
-      <td><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${TC[c.type]||'var(--card2)'}22;color:${TC[c.type]||'var(--text2)'}">${TAL[c.type]||c.type}</span></td>
+      <td><span style="font-size:13px;font-weight:700;padding:2px 8px;border-radius:10px;background:${TC[c.type]||'var(--card2)'}22;color:${TC[c.type]||'var(--text2)'}">${TAL[c.type]||c.type}</span></td>
       <td class="mono text-green" style="text-align:left">${fmt(c.dr)}</td>
       <td class="mono text-red"   style="text-align:left">${fmt(c.cr)}</td>
-      <td style="text-align:left"><span class="mono" style="font-weight:900;color:${bc}">${fmt(Math.abs(bal))}</span> <span style="font-size:10px;color:${bc}">${bal>0?'مدين':bal<0?'دائن':'صفر'}</span></td>
+      <td style="text-align:left"><span class="mono" style="font-weight:900;color:${bc}">${fmt(Math.abs(bal))}</span> <span style="font-size:12px;color:${bc}">${bal>0?'مدين':bal<0?'دائن':'صفر'}</span></td>
     </tr>`;
   }).join('');
-  el('trialTable').innerHTML=`<div style="font-size:11px;color:var(--text2);margin-bottom:6px">اضغط على أي حساب لعرض حركاته في دفتر الأستاذ</div>
+  el('trialTable').innerHTML=`<div style="font-size:13px;color:var(--text2);margin-bottom:6px">اضغط على أي حساب لعرض حركاته في دفتر الأستاذ</div>
     <table class="data-table">
     <thead><tr><th>الكود</th><th>اسم الحساب</th><th>النوع</th>
     <th style="color:var(--green);text-align:left">مدين</th><th style="color:var(--red);text-align:left">دائن</th><th style="text-align:left">الرصيد</th></tr></thead>
@@ -277,28 +277,28 @@ function renderLedgerTable() {
     running+=e.debit-e.credit;
     const rc=running>=0?'var(--green)':'var(--red)';
     const src=SL[e.type]||e.type||'قيد', sc=SC[e.type]||'var(--text2)';
-    const sb=e.status==='draft'?`<span style="font-size:9px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:6px;font-weight:700">مسودة</span>`:'';
+    const sb=e.status==='draft'?`<span style="font-size:13px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:6px;font-weight:700">مسودة</span>`:'';
     return `<tr style="${i%2?'background:var(--card2)':''}"
       onmouseover="this.style.background='var(--accent-dim)'" onmouseout="this.style.background='${i%2?'var(--card2)':''}'"
       onclick="openJEDetail('${e.ref}')">
-      <td class="mono" style="padding:8px 12px;font-size:11px;color:var(--text2);white-space:nowrap;cursor:default">${e.date||'—'}</td>
+      <td class="mono" style="padding:8px 12px;font-size:13px;color:var(--text2);white-space:nowrap;cursor:default">${e.date||'—'}</td>
       <td style="padding:8px 12px;cursor:default">
-        <span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;background:${sc}22;color:${sc}">${src}</span> ${sb}
+        <span style="font-size:12px;font-weight:700;padding:1px 7px;border-radius:10px;background:${sc}22;color:${sc}">${src}</span> ${sb}
       </td>
       <td style="padding:8px 12px">
         <div style="font-size:12px">${e.desc}</div>
-        ${e.file_no?`<div style="font-size:10px;color:var(--accent);font-family:monospace;cursor:pointer" onclick="event.stopPropagation();openViewer('${e.file_no}')">${e.file_no}</div>`:''}
-        ${e.contact?`<div style="font-size:10px;color:var(--text2)">${e.contact}</div>`:''}
+        ${e.file_no?`<div style="font-size:12px;color:var(--accent);font-family:monospace;cursor:pointer" onclick="event.stopPropagation();openViewer('${e.file_no}')">${e.file_no}</div>`:''}
+        ${e.contact?`<div style="font-size:12px;color:var(--text2)">${e.contact}</div>`:''}
       </td>
-      <td class="mono" style="padding:8px 12px;font-size:11px;color:var(--text2)">${e.ref||'—'}</td>
+      <td class="mono" style="padding:8px 12px;font-size:13px;color:var(--text2)">${e.ref||'—'}</td>
       <td class="mono text-green" style="padding:8px 12px;font-weight:700;text-align:left">${e.debit>0?fmt(e.debit):'—'}</td>
       <td class="mono text-red"   style="padding:8px 12px;font-weight:700;text-align:left">${e.credit>0?fmt(e.credit):'—'}</td>
       <td class="mono" style="padding:8px 12px;font-weight:900;color:${rc};text-align:left">${fmt(Math.abs(running))}</td>
-      <td style="padding:8px 12px;text-align:center"><button class="btn btn-sm" onclick="event.stopPropagation();openJEDetail('${e.ref}')" title="تفاصيل القيد" style="padding:2px 7px;font-size:11px">🔍</button></td>
+      <td style="padding:8px 12px;text-align:center"><button class="btn btn-sm" onclick="event.stopPropagation();openJEDetail('${e.ref}')" title="تفاصيل القيد" style="padding:2px 7px;font-size:13px">🔍</button></td>
     </tr>`;
   }).join('');
   el('ledgerTable').innerHTML=`
-    <div style="font-size:11px;color:var(--text2);margin-bottom:6px">اضغط على أي حركة لعرض تفاصيل القيد والمرفقات</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:6px">اضغط على أي حركة لعرض تفاصيل القيد والمرفقات</div>
     <table class="data-table" style="min-width:700px">
     <thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>رقم القيد</th>
     <th style="color:var(--green);text-align:left">مدين</th>
@@ -349,7 +349,7 @@ async function openJEDetail(entryNo) {
     const lineRows=lines.map(l=>`<tr>
       <td class="mono" style="color:var(--accent)">${l.account_code||'—'}</td>
       <td>${l.account_name||'—'}</td>
-      <td style="font-size:11px;color:var(--text2)">${l.contact_name||'—'}</td>
+      <td style="font-size:13px;color:var(--text2)">${l.contact_name||'—'}</td>
       <td class="mono text-green" style="text-align:left">${+l.dr_amount>0?fmt(l.dr_amount):'—'}</td>
       <td class="mono text-red"   style="text-align:left">${+l.cr_amount>0?fmt(l.cr_amount):'—'}</td>
     </tr>`).join('');
@@ -364,7 +364,7 @@ async function openJEDetail(entryNo) {
           <td class="mono text-red"   style="text-align:left;font-weight:900;padding:7px 12px">${fmt(totalCr)}</td>
         </tr></tfoot>
       </table>
-      <div style="font-size:11px;font-weight:700;color:${balanced?'var(--green)':'var(--red)'};padding:4px 0">${balanced?'✅ القيد متوازن':'❌ القيد غير متوازن!'}</div>`;
+      <div style="font-size:13px;font-weight:700;color:${balanced?'var(--green)':'var(--red)'};padding:4px 0">${balanced?'✅ القيد متوازن':'❌ القيد غير متوازن!'}</div>`;
     renderJEAttachments(attachments||[],entryNo);
     window._currentJEEntryNo=entryNo;
   } catch(e){el('je-detail-info').innerHTML=errHTML('خطأ: '+e.message);}
@@ -379,11 +379,11 @@ function renderJEAttachments(attachments,entryNo) {
       <span style="font-size:18px">${DI[a.doc_type]||'📎'}</span>
       <div style="flex:1;min-width:0">
         <div style="font-size:12px;font-weight:700">${a.file_name||'—'}</div>
-        <div style="font-size:10px;color:var(--text2)">${a.doc_type||'—'} · ${(a.created_at||'').split('T')[0]}</div>
-        ${a.notes?`<div style="font-size:10px;color:var(--text2);font-style:italic">${a.notes}</div>`:''}
+        <div style="font-size:12px;color:var(--text2)">${a.doc_type||'—'} · ${(a.created_at||'').split('T')[0]}</div>
+        ${a.notes?`<div style="font-size:12px;color:var(--text2);font-style:italic">${a.notes}</div>`:''}
       </div>
-      ${a.file_url?`<a href="${a.file_url}" target="_blank" class="btn btn-secondary btn-sm" style="font-size:11px;padding:3px 8px">🔗 فتح</a>`:''}
-      <button class="btn btn-sm" onclick="deleteJEAttachment(${a.id},'${entryNo}')" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red);padding:2px 7px;font-size:11px">🗑</button>
+      ${a.file_url?`<a href="${a.file_url}" target="_blank" class="btn btn-secondary btn-sm" style="font-size:13px;padding:3px 8px">🔗 فتح</a>`:''}
+      <button class="btn btn-sm" onclick="deleteJEAttachment(${a.id},'${entryNo}')" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red);padding:2px 7px;font-size:13px">🗑</button>
     </div>`).join('');
 }
 
@@ -482,16 +482,16 @@ async function loadChartOfAccountsView() {
             <span style="font-size:12px">${hasC?'📂':'📄'}</span>
             <span class="mono" style="color:var(--accent);font-weight:700;font-size:12px">${a.account_code}</span>
             <span style="font-weight:${hasC?700:600};flex:1;cursor:pointer" onclick="showAccountLedger('${a.account_code}','${a.account_name.replace(/'/g,"\\'")}','${a.account_type}')">${a.account_name}</span>
-            <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${tc}22;color:${tc}">${tl}</span>
-            <button class="btn btn-sm" onclick="showAccountLedger('${a.account_code}','${a.account_name.replace(/'/g,"\\'")}','${a.account_type}')" style="padding:2px 7px;font-size:10px;color:var(--blue)">📖</button>
-            <button class="btn btn-sm" onclick="openEditAccountModal(${a.id})" style="padding:2px 7px;font-size:10px">✏️</button>
-            <button class="btn btn-sm" onclick="deleteAccount(${a.id},'${a.account_code}')" style="padding:2px 7px;font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>
+            <span style="font-size:12px;font-weight:700;padding:2px 7px;border-radius:10px;background:${tc}22;color:${tc}">${tl}</span>
+            <button class="btn btn-sm" onclick="showAccountLedger('${a.account_code}','${a.account_name.replace(/'/g,"\\'")}','${a.account_type}')" style="padding:2px 7px;font-size:12px;color:var(--blue)">📖</button>
+            <button class="btn btn-sm" onclick="openEditAccountModal(${a.id})" style="padding:2px 7px;font-size:12px">✏️</button>
+            <button class="btn btn-sm" onclick="deleteAccount(${a.id},'${a.account_code}')" style="padding:2px 7px;font-size:12px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>
           </div>
           ${hasC?renderNode(a.account_code,depth+1):''}
         </div>`;
       }).join('');
     }
-    wrap.innerHTML=`<div style="font-size:11px;color:var(--text2);margin-bottom:10px">اضغط على اسم الحساب أو 📖 لفتح دفتر الأستاذ</div>${renderNode('root')}`;
+    wrap.innerHTML=`<div style="font-size:13px;color:var(--text2);margin-bottom:10px">اضغط على اسم الحساب أو 📖 لفتح دفتر الأستاذ</div>${renderNode('root')}`;
   } catch(e){wrap.innerHTML=errHTML('خطأ: '+e.message);}
 }
 
@@ -1110,7 +1110,7 @@ async function loadJournalDrafts() {
         <span style="font-size:18px">${cfg.icon}</span>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600">${d.description || d.entry_type}</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">
+          <div style="font-size:13px;color:var(--text2);margin-top:2px">
             ${d.file_no ? `ملف: ${d.file_no} · ` : ''}${fmtDate(d.entry_date)} · ${fmt(d.amount)}
           </div>
         </div>
@@ -1341,7 +1341,7 @@ function filterVehiclesReport(status) {
     const expired = v.license_expiry && new Date(v.license_expiry) < new Date();
     const expiringSoon = v.license_expiry && !expired && (new Date(v.license_expiry)-new Date())/86400000 < 30;
     const whDisplay = v._warehouse
-      ? `<span style="background:var(--purple-dim,#f3e8ff);color:var(--purple,#7c3aed);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">🏪 ${v._warehouse}</span>`
+      ? `<span style="background:var(--purple-dim,#f3e8ff);color:var(--purple,#7c3aed);padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700">🏪 ${v._warehouse}</span>`
       : '—';
     return `<tr ${v._sold?'style="opacity:.7"':''}>
       <td><span class="mono text-amber" style="font-size:13px">${v._code}</span></td>
@@ -1362,7 +1362,7 @@ function filterVehiclesReport(status) {
           : `<span class="badge badge-open">في المخزن</span>`}
       </td>
       <td>${whDisplay}</td>
-      ${v._sold ? `<td style="font-size:11px;color:var(--text2)">${v._saleInfo?.customer||''}</td>` : '<td></td>'}
+      ${v._sold ? `<td style="font-size:13px;color:var(--text2)">${v._saleInfo?.customer||''}</td>` : '<td></td>'}
     </tr>`;
   }).join('');
 
@@ -1567,8 +1567,8 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         <div style="background:#1a1a2e;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
           <div style="display:flex;align-items:center;gap:12px">
             <span style="font-size:16px;font-weight:900;font-family:monospace">${d.fn}</span>
-            <span style="background:#ffffff22;padding:2px 10px;border-radius:20px;font-size:11px">${d.supplier}</span>
-            <span style="background:${statusColor(d.status)}33;color:${statusColor(d.status)};border:1px solid ${statusColor(d.status)}55;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${statusLabel(d.status)}</span>
+            <span style="background:#ffffff22;padding:2px 10px;border-radius:20px;font-size:13px">${d.supplier}</span>
+            <span style="background:${statusColor(d.status)}33;color:${statusColor(d.status)};border:1px solid ${statusColor(d.status)}55;padding:2px 10px;border-radius:20px;font-size:13px;font-weight:700">${statusLabel(d.status)}</span>
           </div>
           <div style="font-size:12px;opacity:.7">${d.poDate ? 'تاريخ الصفقة: '+d.poDate.split('T')[0] : ''}</div>
         </div>
@@ -1577,7 +1577,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
           <!-- شركاء الصفقة -->
           <div style="margin-bottom:14px">
-            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">شركاء الصفقة</div>
+            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">شركاء الصفقة</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               ${d.allPartners.map(p=>`
                 <div style="background:${p.partner===partnerName?'#fef3c7':'#f1f5f9'};border:1px solid ${p.partner===partnerName?'#f59e0b':'#e2e8f0'};border-radius:8px;padding:6px 12px;font-size:12px">
@@ -1589,7 +1589,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
           <!-- السيارات -->
           <div style="margin-bottom:14px">
-            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
               السيارات (${d.vehicles.length} سيارة)
             </div>
             <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -1609,13 +1609,13 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   return `<tr style="border-bottom:1px solid #f1f5f9">
                     <td style="padding:7px 10px;color:#94a3b8">${i+1}</td>
                     <td style="padding:7px 10px;font-weight:600">${v.model||v.make||'—'} ${v.year||''}</td>
-                    <td style="padding:7px 10px;font-family:monospace;color:#2563eb;font-size:11px">${v.vin||'—'}</td>
+                    <td style="padding:7px 10px;font-family:monospace;color:#2563eb;font-size:13px">${v.vin||'—'}</td>
                     <td style="padding:7px 10px;font-family:monospace;font-weight:600">${fmt2(v.purchase_price)}</td>
                     <td style="padding:7px 10px;font-family:monospace;color:#d97706">${fmt2((+v.purchase_price||0)*d.share)}</td>
                     <td style="padding:7px 10px">
                       ${sold
-                        ? `<span style="background:#f0fdf4;color:#16a34a;border:1px solid #86efac;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">✓ مباع — ${fmt2(sold.sale_price)}</span>`
-                        : `<span style="background:#fef9ec;color:#d97706;border:1px solid #fcd34d;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">في المخزن</span>`}
+                        ? `<span style="background:#f0fdf4;color:#16a34a;border:1px solid #86efac;padding:2px 8px;border-radius:20px;font-size:12px;font-weight:700">✓ مباع — ${fmt2(sold.sale_price)}</span>`
+                        : `<span style="background:#fef9ec;color:#d97706;border:1px solid #fcd34d;padding:2px 8px;border-radius:20px;font-size:12px;font-weight:700">في المخزن</span>`}
                     </td>
                   </tr>`;
                 }).join('')}
@@ -1632,7 +1632,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
           <!-- المصاريف -->
           ${d.expenses.length ? `
           <div style="margin-bottom:14px">
-            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
               المصاريف (${d.expenses.length} بند)
             </div>
             <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -1649,7 +1649,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                 ${d.expenses.map(e=>`
                 <tr style="border-bottom:1px solid #fff1f2">
                   <td style="padding:6px 10px">${e.description||'—'}</td>
-                  <td style="padding:6px 10px"><span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:10px;font-size:10px">${e.exp_type||e.category||'—'}</span></td>
+                  <td style="padding:6px 10px"><span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:10px;font-size:12px">${e.exp_type||e.category||'—'}</span></td>
                   <td style="padding:6px 10px;color:#94a3b8">${(e.expense_date||e.exp_date||'').split('T')[0]||'—'}</td>
                   <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2(e.amount)}</td>
                   <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2((+e.amount||0)*d.share)}</td>
@@ -1666,7 +1666,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
           <!-- المبيعات -->
           ${d.sales.length ? `
           <div style="margin-bottom:14px">
-            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
               المبيعات (${d.sales.length} فاتورة)
             </div>
             <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -1682,7 +1682,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
               <tbody>
                 ${d.sales.map(s=>`
                 <tr style="border-bottom:1px solid #f0fdf4">
-                  <td style="padding:6px 10px;font-family:monospace;color:#2563eb;font-size:11px">${s.vin||'—'}</td>
+                  <td style="padding:6px 10px;font-family:monospace;color:#2563eb;font-size:13px">${s.vin||'—'}</td>
                   <td style="padding:6px 10px">${s.customer||'—'}</td>
                   <td style="padding:6px 10px;color:#94a3b8">${(s.sale_date||'').split('T')[0]||'—'}</td>
                   <td style="padding:6px 10px;font-family:monospace;color:#16a34a;font-weight:700">${fmt2(s.sale_price)}</td>
@@ -1699,28 +1699,28 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
           <!-- ملخص الصفقة للشريك -->
           <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:14px">
-            <div style="font-size:11px;font-weight:700;color:#888;margin-bottom:10px">ملخص الصفقة — حصة ${partnerName} (${fmtP(d.share)})</div>
+            <div style="font-size:13px;font-weight:700;color:#888;margin-bottom:10px">ملخص الصفقة — حصة ${partnerName} (${fmtP(d.share)})</div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
               <div style="background:#fff;border-radius:8px;padding:10px;text-align:center;border:1px solid #e2e8f0">
-                <div style="font-size:10px;color:#888;margin-bottom:4px">حصته من تكلفة الشراء</div>
+                <div style="font-size:12px;color:#888;margin-bottom:4px">حصته من تكلفة الشراء</div>
                 <div style="font-family:monospace;font-weight:700;color:#2563eb">${fmt2(d.myPurchase)}</div>
               </div>
               <div style="background:#fff;border-radius:8px;padding:10px;text-align:center;border:1px solid #e2e8f0">
-                <div style="font-size:10px;color:#888;margin-bottom:4px">حصته من المصاريف</div>
+                <div style="font-size:12px;color:#888;margin-bottom:4px">حصته من المصاريف</div>
                 <div style="font-family:monospace;font-weight:700;color:#dc2626">${fmt2(d.myExpenses)}</div>
               </div>
               <div style="background:#fff;border-radius:8px;padding:10px;text-align:center;border:1px solid #e2e8f0">
-                <div style="font-size:10px;color:#888;margin-bottom:4px">حصته من المبيعات</div>
+                <div style="font-size:12px;color:#888;margin-bottom:4px">حصته من المبيعات</div>
                 <div style="font-family:monospace;font-weight:700;color:#16a34a">${fmt2(d.mySales)}</div>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
               <div style="background:${d.myProfit>=0?'#f0fdf4':'#fff1f2'};border-radius:8px;padding:10px;text-align:center;border:1px solid ${d.myProfit>=0?'#86efac':'#fca5a5'}">
-                <div style="font-size:10px;color:#888;margin-bottom:4px">ربح / خسارة الشريك</div>
+                <div style="font-size:12px;color:#888;margin-bottom:4px">ربح / خسارة الشريك</div>
                 <div style="font-family:monospace;font-weight:900;font-size:16px;color:${d.myProfit>=0?'#16a34a':'#dc2626'}">${d.myProfit>=0?'+':''}${fmt2(d.myProfit)}</div>
               </div>
               <div style="background:#f0fdf4;border-radius:8px;padding:10px;text-align:center;border:1px solid #86efac">
-                <div style="font-size:10px;color:#888;margin-bottom:4px">ربح الصفقة الكلي</div>
+                <div style="font-size:12px;color:#888;margin-bottom:4px">ربح الصفقة الكلي</div>
                 <div style="font-family:monospace;font-weight:700;color:${d.dealProfit>=0?'#16a34a':'#dc2626'}">${fmt2(d.dealProfit)}</div>
               </div>
             </div>
@@ -1729,7 +1729,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
           <!-- ديون بين الشركاء -->
           ${d.partnerDebts && d.partnerDebts.length ? `
           <div style="margin-bottom:14px">
-            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">⚖️ تسوية بين الشركاء</div>
+            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">⚖️ تسوية بين الشركاء</div>
             <div style="background:#f8fafc;border-radius:8px;padding:12px;border:1px solid #e2e8f0">
               <table style="width:100%;border-collapse:collapse;font-size:12px">
                 <thead>
@@ -1756,10 +1756,10 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                       </td>
                       <td style="padding:7px 10px">
                         ${diff > 0.001 
-                          ? `<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">دفع زيادة — يستحق ${fmt2(diff)}</span>`
+                          ? `<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700">دفع زيادة — يستحق ${fmt2(diff)}</span>`
                           : diff < -0.001
-                          ? `<span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">مدين بـ ${fmt2(Math.abs(diff))}</span>`
-                          : `<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">✓ مسوّى</span>`}
+                          ? `<span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700">مدين بـ ${fmt2(Math.abs(diff))}</span>`
+                          : `<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700">✓ مسوّى</span>`}
                       </td>
                     </tr>`;
                   }).join('')}
@@ -1784,7 +1784,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
           <!-- الحركات المالية للشريك -->
           <div>
-            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">الحركات المالية</div>
+            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">الحركات المالية</div>
             <table style="width:100%;border-collapse:collapse;font-size:12px">
               <thead>
                 <tr style="background:#1e293b;color:#fff">
@@ -1806,7 +1806,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   <td style="padding:7px 10px;text-align:center;color:#94a3b8">—</td>
                   <td style="padding:7px 10px;text-align:center;color:#94a3b8">—</td>
                   <td style="padding:7px 10px;text-align:center;color:#94a3b8">—</td>
-                  <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#94a3b8">${p.document||p.ref_no||'—'}</td>
+                  <td style="padding:7px 10px;font-family:monospace;font-size:13px;color:#94a3b8">${p.document||p.ref_no||'—'}</td>
                 </tr>`).join('')}
                 ${d.payouts.map(p=>`
                 <tr style="border-bottom:1px solid #f1f5f9">
@@ -1816,7 +1816,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${+p.capital_amount?'#d97706':'#94a3b8'}">${+p.capital_amount?fmt2(p.capital_amount):'—'}</td>
                   <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${+p.profit_amount?'#16a34a':'#94a3b8'}">${+p.profit_amount?fmt2(p.profit_amount):'—'}</td>
                   <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${+p.advance_amount?'#dc2626':'#94a3b8'}">${+p.advance_amount?fmt2(p.advance_amount):'—'}</td>
-                  <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#94a3b8">${p.document||p.pay_id||'—'}</td>
+                  <td style="padding:7px 10px;font-family:monospace;font-size:13px;color:#94a3b8">${p.document||p.pay_id||'—'}</td>
                 </tr>`).join('')}
               </tbody>
               <tfoot>
@@ -1835,8 +1835,8 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
             <div style="margin-top:10px;background:${d.netDue>=0?'#f0fdf4':'#fff1f2'};border:2px solid ${d.netDue>=0?'#86efac':'#fca5a5'};border-radius:10px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
               <div>
                 <div style="font-size:12px;color:#64748b;margin-bottom:2px">الرصيد المستحق للشريك من هذه الصفقة</div>
-                <div style="font-size:10px;color:#94a3b8">رأس مال مدفوع + أرباح - إجمالي المسحوبات</div>
-                <div style="font-size:10px;color:#94a3b8">${fmt2(d.capitalPaid)} + ${fmt2(d.myProfit)} - ${fmt2(d.totalWithdrawn)}</div>
+                <div style="font-size:12px;color:#94a3b8">رأس مال مدفوع + أرباح - إجمالي المسحوبات</div>
+                <div style="font-size:12px;color:#94a3b8">${fmt2(d.capitalPaid)} + ${fmt2(d.myProfit)} - ${fmt2(d.totalWithdrawn)}</div>
               </div>
               <div style="font-size:24px;font-weight:900;font-family:monospace;color:${d.netDue>=0?'#16a34a':'#dc2626'}">${d.netDue>=0?'+':''}${fmt2(d.netDue)}</div>
             </div>
@@ -1862,34 +1862,34 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px">
           ${dealDetails.map(d=>`
           <div style="background:#ffffff11;border-radius:8px;padding:10px;border-right:3px solid ${d.netDue>=0?'#4ade80':'#f87171'}">
-            <div style="font-size:11px;opacity:.7;margin-bottom:4px">${d.fn} — ${d.supplier}</div>
+            <div style="font-size:13px;opacity:.7;margin-bottom:4px">${d.fn} — ${d.supplier}</div>
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <span style="font-size:11px;opacity:.6">حصة ${fmtP(d.share)}</span>
+              <span style="font-size:13px;opacity:.6">حصة ${fmtP(d.share)}</span>
               <span style="font-family:monospace;font-weight:700;color:${d.netDue>=0?'#4ade80':'#f87171'}">${d.netDue>=0?'+':''}${fmt2(d.netDue)}</span>
             </div>
           </div>`).join('')}
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;border-top:1px solid #ffffff22;padding-top:14px">
           <div style="text-align:center">
-            <div style="font-size:10px;opacity:.6;margin-bottom:4px">إجمالي رأس المال</div>
+            <div style="font-size:12px;opacity:.6;margin-bottom:4px">إجمالي رأس المال</div>
             <div style="font-family:monospace;font-size:16px;font-weight:700;color:#60a5fa">${fmt2(grandCapital)}</div>
           </div>
           <div style="text-align:center">
-            <div style="font-size:10px;opacity:.6;margin-bottom:4px">إجمالي الأرباح</div>
+            <div style="font-size:12px;opacity:.6;margin-bottom:4px">إجمالي الأرباح</div>
             <div style="font-family:monospace;font-size:16px;font-weight:700;color:${grandMyProfit>=0?'#4ade80':'#f87171'}">${fmt2(grandMyProfit)}</div>
           </div>
           <div style="text-align:center">
-            <div style="font-size:10px;opacity:.6;margin-bottom:4px">إجمالي المسحوبات</div>
+            <div style="font-size:12px;opacity:.6;margin-bottom:4px">إجمالي المسحوبات</div>
             <div style="font-family:monospace;font-size:16px;font-weight:700;color:#fbbf24">${fmt2(grandWithdrawn)}</div>
           </div>
           <div style="text-align:center;background:${grandNetDue>=0?'#16a34a33':'#dc262633'};border-radius:8px;padding:8px">
-            <div style="font-size:10px;opacity:.8;margin-bottom:4px">الرصيد الكلي المستحق</div>
+            <div style="font-size:12px;opacity:.8;margin-bottom:4px">الرصيد الكلي المستحق</div>
             <div style="font-family:monospace;font-size:20px;font-weight:900;color:${grandNetDue>=0?'#4ade80':'#f87171'}">${grandNetDue>=0?'+':''}${fmt2(grandNetDue)}</div>
           </div>
         </div>
         ${(totalOverpaid > 0.001 || totalUnderpaid > 0.001) ? `
         <div style="margin-top:12px;border-top:1px solid #ffffff22;padding-top:12px">
-          <div style="font-size:11px;opacity:.7;margin-bottom:8px">⚖️ وضع التسوية مع الشركاء</div>
+          <div style="font-size:13px;opacity:.7;margin-bottom:8px">⚖️ وضع التسوية مع الشركاء</div>
           ${totalOverpaid > 0.001 ? `
           <div style="background:#16a34a22;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:6px">
             <span style="color:#4ade80;font-weight:700">${partnerName}</span>
@@ -1904,7 +1904,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
             <span style="font-family:monospace;font-weight:900;color:#f87171">${fmt2(totalUnderpaid)}</span>
           </div>` : ''}
         </div>` : `
-        <div style="margin-top:10px;border-top:1px solid #ffffff22;padding-top:10px;text-align:center;font-size:11px;opacity:.6">
+        <div style="margin-top:10px;border-top:1px solid #ffffff22;padding-top:10px;text-align:center;font-size:13px;opacity:.6">
           ✓ التسوية مع الشركاء مكتملة
         </div>`}
       </div>` : '';
@@ -2109,8 +2109,8 @@ async function loadAllCollections() {
     const pendingAmt    = total - collectedAmt;
     const rows = data.map(r=>{
       const statusBadge = r.paid_date
-        ? `<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">✅ محصّل</span>`
-        : `<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700">⏳ مستحق</span>`;
+        ? `<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">✅ محصّل</span>`
+        : `<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">⏳ مستحق</span>`;
       return `<tr onclick="openViewer('${r.file_no}')" style="cursor:pointer">
         <td class="mono text-muted">${fmtDate(r.due_date||'—')}</td>
         <td class="mono text-muted">${r.paid_date ? fmtDate(r.paid_date) : '—'}</td>
@@ -2178,7 +2178,7 @@ function _renderInventoryTable(list) {
   const rows = list.map(v=>`<tr>
     <td><span class="file-badge">${v.file_no||'—'}</span></td><td>${v._supplier}</td>
     <td>${v.vehicle_type||'—'}</td><td>${v.model||'—'} ${v.year||''}</td>
-    <td style="direction:ltr;font-family:monospace;font-size:11px">${v.vin||'—'}</td>
+    <td style="direction:ltr;font-family:monospace;font-size:13px">${v.vin||'—'}</td>
     <td>${v.color||'—'}</td><td class="mono">${fmt(v.purchase_price)}</td>
     <td>${v._warehouse}</td>
     <td><span class="status-badge ${v._sold?'closed':'open'}">${v._sold?'مباع':'في المخزن'}</span></td>
