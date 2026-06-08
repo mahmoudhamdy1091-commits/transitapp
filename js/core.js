@@ -273,7 +273,13 @@ async function apiPost(table, data) {
     });
   }
   const resBody = await res.json();
-  if (!res.ok) throw new Error(resBody.message || resBody.error || res.statusText);
+  if (!res.ok) {
+    const msg = resBody.message || resBody.error || res.statusText || '';
+    if (/duplicate key value violates unique constraint "uniq_(expense|payment)_active"/.test(msg)) {
+      throw new Error('⚠️ يوجد بالفعل بند بنفس المبلغ والوصف/الدافع والتاريخ لهذا الملف — تأكد إن هذا ليس تكراراً قبل المتابعة');
+    }
+    throw new Error(msg);
+  }
   return resBody;
 }
 
