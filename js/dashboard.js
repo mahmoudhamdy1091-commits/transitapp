@@ -1023,8 +1023,9 @@ async function loadExpensesTab(fn, sys) {
 
     // كشف المصاريف المشبوهة
     const dupKeyCount = {};
-    data.forEach(e => { const k=`${e.amount}__${e.description}__${e.exp_date}`; dupKeyCount[k]=(dupKeyCount[k]||0)+1; });
-    const dupIds = new Set(data.filter(e=>dupKeyCount[`${e.amount}__${e.description}__${e.exp_date}`]>1).map(e=>e.id));
+    const effectiveExpenses = data.filter(isEffective);
+    effectiveExpenses.forEach(e => { const k=`${e.amount}__${e.description}__${e.exp_date}`; dupKeyCount[k]=(dupKeyCount[k]||0)+1; });
+    const dupIds = new Set(effectiveExpenses.filter(e=>dupKeyCount[`${e.amount}__${e.description}__${e.exp_date}`]>1).map(e=>e.id));
     const dupWarning = dupIds.size ? `<div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--red);display:flex;align-items:center;gap:8px">⚠️ <span>يوجد <strong>${dupIds.size}</strong> مصروف مشبوه بنفس المبلغ والبيان والتاريخ — مُعلَّم بالأحمر</span></div>` : '';
 
     const csvRows = data.map(e=>[e.ref_no||'—', e.description||'—', e.exp_type||'—', +e.amount||0, e.pay_method||'—', e.document||'—', e.exp_date||'—']);
