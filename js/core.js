@@ -212,11 +212,13 @@ async function apiGet(table, params = {}) {
   const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
   // ✅ Audit fix: رُفع الحد من 9999 إلى 49999 لمنع قطع البيانات الصامت
   const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
-  let res = await fetch(url, { headers: h });
+  // ✅ منع الكاش المتصفح/HTTP لطلبات GET — كان يسبب عرض بيانات قديمة
+  // مباشرة بعد عمليات التعديل (مثال: طلب إلغاء يبقى ظاهراً في قائمة الانتظار رغم تنفيذه)
+  let res = await fetch(url, { headers: h, cache: 'no-store' });
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (!ok) throw new Error('انتهت الجلسة، يرجى تسجيل الدخول مجدداً');
-    res = await fetch(url, { headers: h });
+    res = await fetch(url, { headers: h, cache: 'no-store' });
   }
   // ✅ Audit fix: HTTP 206 = Supabase أعاد بيانات جزئية فقط (تجاوز الحد)
   // نُسجّل تحذيراً في الـ console بدلاً من قبول النتيجة بصمت
