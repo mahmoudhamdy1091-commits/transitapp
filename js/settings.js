@@ -64,15 +64,27 @@ async function loadActivityLog() {
 
     // ✅ فلتر الفترة على مستوى السيرفر — نفس نطاق ما يظهر في باقي شاشات النظام
     // (PostgREST يحتاج and=(...) لتطبيق شرطي gte/lte معاً على نفس العمود created_at)
-    let url = `${SB_URL}/rest/v1/audit_log?select=*&system_type=eq.${encodeURIComponent(state.system)}&order=id.desc`;
-    if (from && to) url += `&and=(created_at.gte.${encodeURIComponent(from)},created_at.lte.${encodeURIComponent(to+'T23:59:59')})`;
-    else if (from)  url += `&created_at=gte.${encodeURIComponent(from)}`;
-    else if (to)    url += `&created_at=lte.${encodeURIComponent(to+'T23:59:59')}`;
+    let dateFilter = '';
+    if (from && to) dateFilter = `&and=(created_at.gte.${encodeURIComponent(from)},created_at.lte.${encodeURIComponent(to+'T23:59:59')})`;
+    else if (from)  dateFilter = `&created_at=gte.${encodeURIComponent(from)}`;
+    else if (to)    dateFilter = `&created_at=lte.${encodeURIComponent(to+'T23:59:59')}`;
 
     const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
-    const res = await fetch(url, { headers: h, cache: 'no-store' });
-    if (!res.ok) throw new Error(res.statusText);
-    _activityData = await res.json() || [];
+    // ✅ نجلب أيضاً السجلات القديمة التي بلا system_type (بيانات قديمة قبل إضافة الحقل) — نفس نمط apiGetAll
+    const base = `${SB_URL}/rest/v1/audit_log?select=*&order=id.desc${dateFilter}`;
+    const [r1, r2] = await Promise.all([
+      fetch(`${base}&system_type=eq.${encodeURIComponent(state.system)}`, { headers: h, cache: 'no-store' }),
+      fetch(`${base}&system_type=is.null`,                                 { headers: h, cache: 'no-store' }),
+    ]);
+    if (!r1.ok && !r2.ok) throw new Error(r1.statusText || r2.statusText);
+    const [d1, d2] = await Promise.all([r1.ok ? r1.json() : [], r2.ok ? r2.json() : []]);
+    const seen = new Set(); const merged = [];
+    [...(d1||[]), ...(d2||[])].forEach(r => {
+      const key = r.id ?? JSON.stringify(r);
+      if (!seen.has(key)) { seen.add(key); merged.push(r); }
+    });
+    merged.sort((a,b) => (b.id||0) - (a.id||0));
+    _activityData = merged;
 
     // Populate user filter
     const users = [...new Set(_activityData.map(r => r.user_email).filter(Boolean))];
