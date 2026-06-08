@@ -18,13 +18,26 @@ async function inspectFileDraftLeftovers(fileNo, opts={}) {
   const suffix = opts.suffix || '-E';
 
   toast(`🔍 جاري فحص ${table} لملف ${fileNo}...`, 'ok');
-  const rows = (await apiGetAll(table, {
+  const allDraft = await apiGetAll(table, {
     select: '*', system_type: `eq.${sys}`, file_no: `eq.${fileNo}`, post_status: `eq.draft`,
-  })).filter(r => (r.ref_no||'').endsWith(suffix));
+  });
+  // عرض تشخيصي: اطبع كل سجلات draft للملف في الـ console بصرف النظر عن اللاحقة،
+  // لمعرفة الشكل الفعلي لـ ref_no/pay_id قبل تضييق الفلتر
+  console.log(`[cleanup] كل سجلات draft لملف ${fileNo} في ${table} (${allDraft.length}):`);
+  console.table(allDraft.map(r => ({ id:r.id, ref_no:r.ref_no, pay_id:r.pay_id, amount:r.amount, post_status:r.post_status, created_at:r.created_at })));
+  const matchesSuffix = (r) => (r.ref_no||'').endsWith(suffix) || (r.pay_id||'').endsWith(suffix);
+  let rows = allDraft.filter(matchesSuffix);
+  // لو الفلتر بالـ suffix لم يُطابق شيئاً، اعرض كل سجلات draft للملف بدلاً من قائمة فارغة
+  let suffixMatched = true;
+  if (!rows.length && allDraft.length) { rows = allDraft; suffixMatched = false; }
 
   let html = `<div style="max-height:75vh;overflow:auto;font-size:13px;line-height:1.7">`;
   html += `<h3>🗑️ مخلّفات draft من النظام القديم — ${table} — ملف ${fileNo}</h3>`;
-  html += `<p style="color:var(--text-dim)">سجلات بحالة <code>draft</code> و<code>ref_no</code> ينتهي بـ "${suffix}" — ناتجة عن تعديلات بالنظام القديم، لم تُرحَّل محاسبياً (لا قيد JE مرتبط)، لذا حذفها لا يكسر أي ميزان. راجع كل سجل وأكِّد يدوياً.</p>`;
+  if (suffixMatched) {
+    html += `<p style="color:var(--text-dim)">سجلات بحالة <code>draft</code> و<code>ref_no</code>/<code>pay_id</code> ينتهي بـ "${suffix}" — ناتجة عن تعديلات بالنظام القديم، لم تُرحَّل محاسبياً (لا قيد JE مرتبط)، لذا حذفها لا يكسر أي ميزان. راجع كل سجل وأكِّد يدوياً.</p>`;
+  } else if (rows.length) {
+    html += `<p style="color:#f59e0b">⚠️ لم يُطابق أي سجل اللاحقة "${suffix}" — المعروض أدناه <b>كل</b> سجلات draft لهذا الملف (${rows.length}) لمراجعتها يدوياً وتحديد الصحيح من الخطأ. افحص عمود ref_no/pay_id في الجدول المطبوع بالـ console أيضاً.</p>`;
+  }
 
   if (!rows.length) {
     html += `<p style="color:var(--green)">✅ لا توجد سجلات مطابقة.</p>`;
