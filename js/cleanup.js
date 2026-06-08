@@ -98,6 +98,87 @@ async function _cleanupDeleteDraft(tbl, id, btn) {
   }
 }
 
+// ── فحص "المصاريف المشبوهة" المرحَّلة (posted) لملف معيّن — بنفس معيار البانر الأحمر تماماً ──
+// المعيار (مطابق لـ dashboard.js loadExpensesTab): amount + description + exp_date متطابقة
+// هذه السجلات posted فعلياً (مرتبطة بقيود محاسبية) — لا يجوز حذفها، الحل الوحيد الآمن
+// هو عكسها بقيد عكسي عبر voidTransaction (يحافظ على توازن دفتر الأستاذ والتاريخ المحاسبي).
+// تشغيل: inspectFileExpenseDuplicates('BOX-126 - Lot 4  new')
+async function inspectFileExpenseDuplicates(fileNo) {
+  const sys = state.system;
+  toast(`🔍 جاري فحص المصاريف المشبوهة لملف ${fileNo}...`, 'ok');
+  const data = await apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+
+  const groups = {};
+  data.forEach(e => {
+    const k = `${e.amount}__${e.description}__${e.exp_date}`;
+    (groups[k] = groups[k] || []).push(e);
+  });
+  const dupGroups = Object.entries(groups).filter(([,rows]) => rows.length > 1);
+
+  console.log(`[cleanup] مجموعات مصاريف مشبوهة لملف ${fileNo}:`, dupGroups);
+
+  let html = `<div style="max-height:75vh;overflow:auto;font-size:13px;line-height:1.7">`;
+  html += `<h3>⚠️ مصاريف مشبوهة (مكررة) — ملف ${fileNo}</h3>`;
+  html += `<p style="color:var(--text-dim)">المعيار: نفس <code>المبلغ + الوصف + التاريخ</code> — تماماً كما يُعلَّم بالأحمر في شاشة المصاريف. هذه السجلات <b>مرحَّلة (posted)</b> ومرتبطة بقيود محاسبية فعلية، لذا <b>لا يجوز حذفها</b> — الإجراء الآمن الوحيد هو عكسها بقيد عكسي (Void) يحافظ على توازن الدفاتر. اختر يدوياً أيهما الخطأ من كل مجموعة قبل الضغط.</p>`;
+
+  if (!dupGroups.length) {
+    html += `<p style="color:var(--green)">✅ لا توجد مجموعات مكررة مطابقة لمعيار البانر.</p>`;
+  } else {
+    dupGroups.forEach(([key, rows], gi) => {
+      html += `<div style="border:1px solid var(--red);border-radius:8px;padding:8px;margin:8px 0">
+        <b>مجموعة ${gi+1}</b> — تطابق: ${key.split('__').join(' | ')}<br>`;
+      rows.forEach(r => {
+        const isVoided = r.post_status === 'voided';
+        html += `<div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+          <code style="${isVoided?'opacity:.5;text-decoration:line-through':''}">${fmtRow(r)} | ref_no: ${r.ref_no||'—'}</code>
+          ${isVoided
+            ? `<span style="color:var(--text-dim)">— مُلغى بالفعل</span>`
+            : `<button class="btn btn-sm btn-secondary" onclick="_cleanupVoidExpense('${r.id}',this)">🔄 عكس (Void) بقيد عكسي</button>`}
+        </div>`;
+      });
+      html += `</div>`;
+    });
+  }
+  html += `</div>`;
+
+  let overlay = document.getElementById('cleanupToolOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'cleanupToolOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML = `<div style="background:var(--card,#1e1e1e);border-radius:12px;padding:18px;max-width:900px;width:100%;position:relative">
+      <button onclick="document.getElementById('cleanupToolOverlay').remove()" style="position:absolute;top:10px;left:10px" class="btn btn-sm btn-secondary">✕ إغلاق</button>
+      <div id="cleanupToolBody"></div>
+    </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('cleanupToolBody').innerHTML = html;
+}
+
+async function _cleanupVoidExpense(id, btn) {
+  try {
+    const rows = await apiGetAll('expenses', { select:'*', id:`eq.${id}` });
+    const record = rows?.[0];
+    if (!record) { toast('السجل غير موجود','err'); return; }
+    if (record.post_status === 'voided') { toast('مُلغى بالفعل','warn'); return; }
+    if (!confirm(`⚠️ سيُسجَّل قيد عكسي فوراً (تنفيذ مباشر يتجاوز قائمة المراجعة) ويُعلَّم هذا المصروف كـ"ملغى" (لن يُحذف):\n\n${fmtRow(record)}\n\nمتابعة؟`)) return;
+
+    btn.disabled = true; btn.textContent = '...جارٍ التنفيذ';
+    if (record.post_status === 'posted') {
+      await voidTransaction('expense', record, true);
+    } else {
+      // draft/pending* — المسار العادي (سيُرسل للمراجعة أو يُلغى مباشرة بحسب الإعداد)
+      await voidTransaction('expense', record);
+    }
+    toast(`✅ تم عكس المصروف #${id}`, 'ok');
+    btn.textContent = '✅ تم العكس';
+  } catch(e) {
+    toast('فشل العكس: ' + e.message, 'err');
+    btn.disabled = false; btn.textContent = 'إعادة المحاولة';
+  }
+}
+
 // ── 1. دفعات/تحصيلات/مصاريف مكررة (voided + draft لنفس العملية تقريباً) ──
 // معيار التكرار: نفس file_no + نفس amount (±0.01) + تاريخ إنشاء قريب (≤ 48 ساعة)
 // وأحد السجلين voided والآخر draft (أو كلاهما draft/voided لنفس القيمة)

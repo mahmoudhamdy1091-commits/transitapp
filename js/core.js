@@ -323,6 +323,16 @@ async function apiRpc(fn, args = {}) {
   return res.json();
 }
 
+// ✅ يحدّ من طول old_value/new_value — سجلات قديمة بها notes متراكمة من خلل سابق
+// كانت تُنتج JSON ضخماً يتجاوز حد عمود audit_log فيرفضه PostgREST بـ 400
+const AUDIT_VALUE_MAX = 8000;
+function _safeAuditJSON(val) {
+  if (!val) return null;
+  let s;
+  try { s = JSON.stringify(val); } catch(e) { return null; }
+  return s.length > AUDIT_VALUE_MAX ? s.slice(0, AUDIT_VALUE_MAX) + '…[truncated]' : s;
+}
+
 async function logAudit(action, tableName, fileNo, oldVal, newVal, notes='') {
   try {
     await apiPost('audit_log', {
@@ -330,12 +340,12 @@ async function logAudit(action, tableName, fileNo, oldVal, newVal, notes='') {
       action,
       table_name: tableName,
       file_no: fileNo,
-      old_value: oldVal ? JSON.stringify(oldVal) : null,
-      new_value: newVal ? JSON.stringify(newVal) : null,
+      old_value: _safeAuditJSON(oldVal),
+      new_value: _safeAuditJSON(newVal),
       notes,
       user_email: state.user?.email || 'unknown'
     });
-  } catch(e) { /* silent */ }
+  } catch(e) { console.error(`[audit] فشل تسجيل ${action} على ${tableName}:`, e.message); }
 }
 
 // ════════════════════════════════════════
