@@ -474,9 +474,11 @@ async function printPurchaseOrder(fileNo) {
       <td style="text-align:center">${v.year||'—'}</td>
       <td class="num c-amber">${fmt2(v.purchase_price)}</td>
     </tr>`).join('');
-    const paymentRows  = (payments||[]).map(p => `<tr><td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td><td>${p.payer||'—'}</td><td class="num c-green">${fmt2(p.amount)}</td><td>${p.pay_method||'—'}</td><td style="direction:ltr">${p.document||'—'}</td><td>${p.pay_date||'—'}</td></tr>`).join('');
-    const expenseRows  = (expenses||[]).map(e => `<tr><td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td><td>${e.description||'—'}</td><td>${e.exp_type||'—'}</td><td class="num c-red">${fmt2(e.amount)}</td><td>${e.pay_method||'—'}</td><td>${e.exp_date||e.expense_date||'—'}</td></tr>`).join('');
-    const partnerRows  = (partners||[]).map(p => { const paid=(payments||[]).filter(pm=>pm.payer===p.partner&&notVoided(pm)).reduce((s,pm)=>s+(+pm.amount||0),0); const due=(+po.total_purchase||0)*(+p.share_percent||0)/100; return `<tr><td style="font-weight:700">${p.partner}</td><td style="text-align:center">${p.share_percent}%</td><td class="num c-blue">${fmt2(due)}</td><td class="num c-green">${fmt2(paid)}</td><td class="num ${(due-paid)>0.01?'c-red':'c-green'}" style="font-weight:700">${fmt2(due-paid)}</td></tr>`; }).join('');
+    // ✅ استثناء الملغية من جدول الدفعات
+    const paymentRows  = (payments||[]).filter(notVoided).map(p => `<tr><td style="font-size:10px;color:#2563eb;font-weight:700">${p.ref_no||'—'}</td><td>${p.payer||'—'}</td><td class="num c-green">${fmt2(p.amount)}</td><td>${p.pay_method||'—'}</td><td style="direction:ltr">${p.document||'—'}</td><td>${p.pay_date||'—'}</td></tr>`).join('');
+    // ✅ استثناء الملغية من جدول المصاريف
+    const expenseRows  = (expenses||[]).filter(notVoided).map(e => `<tr><td style="font-size:10px;color:#dc2626;font-weight:700">${e.ref_no||'—'}</td><td>${e.description||'—'}</td><td>${e.exp_type||'—'}</td><td class="num c-red">${fmt2(e.amount)}</td><td>${e.pay_method||'—'}</td><td>${e.exp_date||e.expense_date||'—'}</td></tr>`).join('');
+    const partnerRows  = (partners||[]).map(p => { const _sp2=(partners||[]).length<=1; const paid=(payments||[]).filter(pm=>notVoided(pm)).filter(pm=>_sp2||pm.payer===p.partner).reduce((s,pm)=>s+(+pm.amount||0),0); const due=(+po.total_purchase||0)*(+p.share_percent||0)/100; return `<tr><td style="font-weight:700">${p.partner}</td><td style="text-align:center">${p.share_percent}%</td><td class="num c-blue">${fmt2(due)}</td><td class="num c-green">${fmt2(paid)}</td><td class="num ${(due-paid)>0.01?'c-red':'c-green'}" style="font-weight:700">${fmt2(due-paid)}</td></tr>`; }).join('');
 
     const fragment = `
     ${docHeader('سند شراء', 'Purchase Order', fileNo)}
@@ -674,7 +676,7 @@ async function printDealSummary(fn) {
 
     const { vehicles, payments, expenses, sales, collections, partners, payouts, po } = d;
     const totalPurchase  = +(po.total_purchase) || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
-    const postedPay      = (payments||[]).filter(isPosted);
+    const postedPay      = (payments||[]).filter(p => isPosted(p) || p.post_status === 'pending_edit');
     const postedExp      = (expenses||[]).filter(isPosted).filter(r=>r.post_status!=='voided');
     const postedSal      = (sales||[]).filter(isPosted).filter(r=>r.post_status!=='voided');
     const postedCol      = (collections||[]).filter(isPosted).filter(r=>r.post_status!=='voided');
@@ -759,7 +761,11 @@ async function printDealSummary(fn) {
     const isOpen = (totalV - soldV) > 0;
     const partnersTable = (partners||[]).length > 0 ? (partners||[]).map(p => {
       const share       = +p.share_percent||0;
-      const capitalIn   = (payments||[]).filter(px=>isPosted(px)&&px.payer===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
+      const _sp = (partners||[]).length <= 1;
+      const capitalIn   = (payments||[])
+        .filter(px => (isPosted(px) || px.post_status === 'pending_edit') && px.post_status !== 'voided')
+        .filter(px => _sp || px.payer === p.partner)
+        .reduce((s,px)=>s+(+px.amount||0),0);
       const liability   = totalPurchase*(share/100);
       const remaining_  = Math.max(liability - capitalIn, 0);
       const profitShare = profit*(share/100);

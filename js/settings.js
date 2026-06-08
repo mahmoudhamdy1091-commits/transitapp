@@ -498,7 +498,11 @@ async function loadDealStatement(fn, sys) {
         ${(partners||[]).map(p=>{
           const pctShare = (+p.share_percent||0) / 100;
           // ما دفعه الشريك للمورد (رأس المال)
-          const capitalPaid  = (payments||[]).filter(py=>py.payer===p.partner && isActive(py)).reduce((s,py)=>s+(+py.amount||0),0);
+          const _singlePartner = (partners||[]).length <= 1;
+          const capitalPaid  = (payments||[])
+            .filter(py => isActive(py))
+            .filter(py => _singlePartner || py.payer === p.partner)
+            .reduce((s,py)=>s+(+py.amount||0),0);
           // حصته في الربح
           const profitShare  = profit * pctShare;
           // ما استرده (كل payouts بغض النظر عن النوع)

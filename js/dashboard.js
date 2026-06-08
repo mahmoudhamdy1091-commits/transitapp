@@ -186,7 +186,7 @@ async function loadDashboard() {
         ? state.allPayments
         : await apiGetAll('payments', { select:'file_no,amount,post_status', system_type:`eq.${sys}` });
       const paidMap = {};
-      (allPayments||[]).filter(isPosted).forEach(p => { paidMap[p.file_no] = (paidMap[p.file_no]||0) + (+p.amount||0); });
+      (allPayments||[]).filter(p => isPosted(p) || p.post_status === 'pending_edit').forEach(p => { paidMap[p.file_no] = (paidMap[p.file_no]||0) + (+p.amount||0); });
       const duelist = (deals||[]).map(d => ({
         file_no: d.file_no, supplier: d.supplier||'—',
         total_purchase: +d.total_purchase||0,
@@ -728,6 +728,7 @@ async function loadSummaryTab(fn, sys) {
           {label:'المصاريف',        icon:'💸', val:fmt(totalExp),       sub:(postedExp.length)+' بند مصروف',                     cls:'kpi-red'},
           {label:'التكلفة الكاملة', icon:'🏷️', val:fmt(fullCost),       sub:'شراء + مصاريف',                                     cls:'kpi-amber'},
           {label:'المبيعات',        icon:'💹', val:fmt(totalSales),     sub:soldV+' من '+totalV+' سيارة · '+sellPct+'%',         cls:'kpi-green'},
+          {label:'المخزون',          icon:'🚛', val:(totalV-soldV)+' سيارة', sub:'مباع: '+soldV+' · إجمالي: '+totalV,                  cls:'kpi-blue'},
           {label:'صافي الربح',      icon:profit>=0?'📈':'📉', val:fmt(Math.abs(profit)), sub:(profit>=0?'ربح':'خسارة')+' · هامش '+margin+'%', cls:profit>=0?'kpi-green':'kpi-red'},
           {label:'غير محصّل',       icon:'⏳', val:fmt(uncollected),    sub:uncollected>0?'فواتير مستحقة':'✅ كل شيء محصّل',     cls:uncollected>0?'kpi-amber':'kpi-green'},
           {label:'المدفوع للمورد',  icon:'💳', val:fmt(totalPaid),      sub:'من '+fmt(totalPurchase),                            cls:'kpi-cyan'},
@@ -783,9 +784,14 @@ async function loadSummaryTab(fn, sys) {
 
     // ── Partners — بطاقة مفصّلة ──
     const isOpen = (totalV - soldV) > 0;
+    const allPartnersCount = (partners||[]).length;
     const partnersHtml = (partners||[]).map((p,i) => {
       const share        = +p.share_percent || 0;
-      const capitalIn    = (payments||[]).filter(px=>isPosted(px)&&px.payer===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
+      const _pc = allPartnersCount <= 1;
+      const capitalIn    = (payments||[])
+        .filter(px => (isPosted(px) || px.post_status === 'pending_edit') && px.post_status !== 'voided')
+        .filter(px => _pc || px.payer === p.partner)
+        .reduce((s,px)=>s+(+px.amount||0),0);
       const liability    = totalPurchase * (share/100);
       const remainingLiab= Math.max(liability - capitalIn, 0);
       const profitShare  = profit * (share/100);
@@ -977,13 +983,13 @@ async function loadPaymentsTab(fn, sys) {
           <th>المستند</th><th>التاريخ</th><th>ملاحظات</th><th></th>
         </tr></thead>
         <tbody>
-          ${data.map((p,i)=>{
+          ${data.filter(p=>p.post_status!=='voided').map((p,i)=>{
             const isDup = dupKeys.has(p.id);
             const rowStyle = isDup ? 'background:var(--red-dim);' : '';
             const dupBadge = isDup ? '<span style="font-size:9px;background:var(--red);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">مكرر؟</span>' : '';
-            const isVoided = p.post_status === 'voided';
-            const voidedBadge = isVoided ? '<span style="font-size:9px;background:var(--text2);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">ملغى</span>' : '';
-            const trStyle = isVoided ? 'opacity:.55;' : (isDup ? 'background:var(--red-dim);' : '');
+            const isVoided = false;
+            const voidedBadge = '';
+            const trStyle = isDup ? 'background:var(--red-dim);' : '';
             return `<tr style="${trStyle}">
               <td style="text-align:center;font-size:11px;color:var(--text3);font-weight:700">${i+1}</td>
               <td class="mono" style="color:var(--cyan);font-weight:700;font-size:11px">${p.ref_no||'—'} ${voidedBadge}</td>
@@ -1036,22 +1042,20 @@ async function loadExpensesTab(fn, sys) {
           <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th><th></th>
         </tr></thead>
         <tbody>
-          ${data.map((e,i)=>{
+          ${data.filter(e=>e.post_status!=='voided').map((e,i)=>{
             const isDup = dupIds.has(e.id);
             const dupBadge = isDup ? '<span style="font-size:9px;background:var(--red);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">مكرر؟</span>' : '';
-            const isVoidedE = e.post_status === 'voided';
-            const voidedBadgeE = isVoidedE ? '<span style="font-size:9px;background:var(--text2);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">ملغى</span>' : '';
-            return `<tr style="${isVoidedE?'opacity:.55;':(isDup?'background:var(--red-dim);':'')}">
+            return `<tr style="${isDup?'background:var(--red-dim);':''}">
               <td style="text-align:center;font-size:11px;color:var(--text3);font-weight:700">${i+1}</td>
-              <td class="mono" style="color:var(--red);font-weight:700;font-size:11px">${e.ref_no||'—'} ${voidedBadgeE}</td>
+              <td class="mono" style="color:var(--red);font-weight:700;font-size:11px">${e.ref_no||'—'}</td>
               <td>${e.description||'—'}</td>
               <td><span class="chip">${e.exp_type||'—'}</span></td>
-              <td class="mono text-red" style="${isVoidedE?'text-decoration:line-through;':''}">${fmt(e.amount)} ${dupBadge}</td>
+              <td class="mono text-red">${fmt(e.amount)} ${dupBadge}</td>
               <td>${e.pay_method||'—'}</td>
               <td class="mono">${e.document||'—'}</td>
               <td class="mono">${fmtDate(e.exp_date)}</td>
               <td style="text-align:center">
-                ${!isVoidedE ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxExpense(this)" data-id="${e.id}" data-fn="${fn}" title="إجراءات">⋮</button>` : ''}
+                <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxExpense(this)" data-id="${e.id}" data-fn="${fn}" title="إجراءات">⋮</button>
               </td>
             </tr>`;
           }).join('')}
