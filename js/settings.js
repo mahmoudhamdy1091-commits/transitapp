@@ -804,6 +804,20 @@ async function openEditPaymentModal(paymentId) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
+// طلب تعديل لسجل مُرحَّل: يحفظ القيم الجديدة في حقول _edit_* ويضع السجل قيد المراجعة
+// بدل تعديله مباشرة — مشترك بين تعديل الدفعات والمصاريف (نفس النمط بالضبط).
+async function requestPostedEdit({ table, old, editFields, summary, auditLabel, modalId }) {
+  await apiPatch(table, { id:`eq.${old.id}` }, {
+    post_status: 'pending_edit',
+    ...editFields,
+    notes: summary,
+  });
+  await logAudit('EDIT_REQUEST', table, old.file_no, old, editFields, auditLabel);
+  await updateApprovalBadge();
+  markSaving(modalId); closeModal(modalId);
+  toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
+}
+
 async function submitEditPayment() {
   const id     = el('ep-id').value;
   const payer  = el('ep-payer').value;
@@ -821,20 +835,12 @@ async function submitEditPayment() {
 
     if (old.post_status === 'posted') {
       // ── السجل مرحّل: تعديل in-place بدل void+new ──
-      // نحفظ القيم الجديدة في _edit_* ونضع post_status='pending_edit'
-      await apiPatch('payments', { id:`eq.${id}` }, {
-        post_status:   'pending_edit',
-        _edit_payer:   payer,
-        _edit_amount:  amount,
-        _edit_method:  method,
-        _edit_date:    date,
-        _edit_doc:     doc || null,
-        notes:         `طلب تعديل: ${payer} · ${amount} · ${date}${notes?' — '+notes:''} | أصل: ${old.payer} · ${old.amount} · ${old.pay_date}`,
+      await requestPostedEdit({
+        table: 'payments', old, modalId: 'editPaymentModal',
+        editFields: { _edit_payer:payer, _edit_amount:amount, _edit_method:method, _edit_date:date, _edit_doc:doc||null },
+        summary: `طلب تعديل: ${payer} · ${amount} · ${date}${notes?' — '+notes:''} | أصل: ${old.payer} · ${old.amount} · ${old.pay_date}`,
+        auditLabel: `طلب تعديل دفعة ${old.ref_no||id}`,
       });
-      await logAudit('EDIT_REQUEST','payments', old.file_no, old, {payer,amount,method,date}, `طلب تعديل دفعة ${old.ref_no||id}`);
-      await updateApprovalBadge();
-      markSaving('editPaymentModal'); closeModal('editPaymentModal');
-      toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
     } else {
       // ── السجل draft: تعديل مباشر ──
       await apiPatch('payments', { id:`eq.${id}` }, { payer, amount, pay_method:method, pay_date:date, document:doc||null, notes:notes||null });
@@ -987,20 +993,12 @@ async function submitEditExpense() {
 
     if (old.post_status === 'posted') {
       // ── تعديل in-place بدل void+new ──
-      await apiPatch('expenses', { id:`eq.${id}` }, {
-        post_status:   'pending_edit',
-        _edit_desc:    desc,
-        _edit_type:    type,
-        _edit_amount:  amount,
-        _edit_date:    date,
-        _edit_method:  method,
-        _edit_doc:     doc || null,
-        notes:         `طلب تعديل: ${desc} · ${amount} · ${date}${notes?' — '+notes:''} | أصل: ${old.description} · ${old.amount} · ${old.exp_date}`,
+      await requestPostedEdit({
+        table: 'expenses', old, modalId: 'editExpenseModal',
+        editFields: { _edit_desc:desc, _edit_type:type, _edit_amount:amount, _edit_date:date, _edit_method:method, _edit_doc:doc||null },
+        summary: `طلب تعديل: ${desc} · ${amount} · ${date}${notes?' — '+notes:''} | أصل: ${old.description} · ${old.amount} · ${old.exp_date}`,
+        auditLabel: `طلب تعديل مصروف ${old.ref_no||id}`,
       });
-      await logAudit('EDIT_REQUEST','expenses', old.file_no, old, {desc,type,amount,date}, `طلب تعديل مصروف ${old.ref_no||id}`);
-      await updateApprovalBadge();
-      markSaving('editExpenseModal'); closeModal('editExpenseModal');
-      toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
     } else {
       await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null });
       markSaving('editExpenseModal'); closeModal('editExpenseModal');

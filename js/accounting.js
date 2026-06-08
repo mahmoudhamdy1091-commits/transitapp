@@ -3,6 +3,10 @@
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
 
+// ── خرائط تسميات وألوان مصادر القيود (موحّدة — كانت مكررة في عدة دوال) ──
+const SOURCE_LABELS = {purchase_orders:'شراء',sales:'بيع',collections:'تحصيل',payments:'دفعة مورد',expenses:'مصروف',partner_payouts:'صرف شريك',operating_expenses:'مصروف تشغيلي',manual:'يدوي',reversal:'🔄 قيد عكسي'};
+const SOURCE_COLORS = {purchase_orders:'var(--accent)',sales:'var(--green)',collections:'var(--blue)',payments:'var(--cyan)',expenses:'var(--red)',partner_payouts:'var(--purple)',operating_expenses:'var(--purple)',manual:'var(--text)',reversal:'var(--text2)'};
+
 // ── State objects ──
 const trialState  = { data:[], typeFilter:'all', from:null, to:null, period:'year' };
 const ledgerState = { accountCode:null, accountName:null, from:null, to:null, period:'year' };
@@ -262,8 +266,7 @@ function renderLedgerTable() {
     ['عدد الحركات',list.length,'var(--blue)'],
   ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c}">${v}</div></div>`).join('');
   if(!list.length&&!opening){el('ledgerTable').innerHTML=emptyHTML('📖','لا توجد حركات');return;}
-  const SL={purchase_orders:'شراء',sales:'بيع',collections:'تحصيل',payments:'دفعة مورد',expenses:'مصروف',partner_payouts:'صرف شريك',operating_expenses:'مصروف تشغيلي',manual:'يدوي',reversal:'🔄 قيد عكسي'};
-  const SC={purchase_orders:'var(--accent)',sales:'var(--green)',collections:'var(--blue)',payments:'var(--cyan)',expenses:'var(--red)',partner_payouts:'var(--purple)',operating_expenses:'var(--purple)',manual:'var(--text)',reversal:'var(--text2)'};
+  const SL=SOURCE_LABELS, SC=SOURCE_COLORS;
   let running=opening, rows='';
   if(opening&&!fileFilter) rows+=`<tr style="background:var(--card2)">
     <td colspan="4" style="padding:8px 14px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
@@ -332,7 +335,7 @@ async function openJEDetail(entryNo) {
     const totalCr=lines.reduce((s,l)=>s+(+l.cr_amount||0),0);
     const balanced=Math.abs(totalDr-totalCr)<0.01;
     const statusC=first.post_status==='posted'?'var(--green)':'var(--accent)';
-    const SL={purchase_orders:'شراء',sales:'بيع',collections:'تحصيل',payments:'دفعة مورد',expenses:'مصروف',partner_payouts:'صرف شريك',operating_expenses:'مصروف تشغيلي',manual:'يدوي',reversal:'🔄 قيد عكسي'};
+    const SL=SOURCE_LABELS;
     el('je-detail-info').innerHTML=`
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
         <div class="j-kpi"><div class="j-kpi-label">التاريخ</div><div class="j-kpi-val" style="font-size:14px">${(first.entry_date||'').split('T')[0]}</div></div>
