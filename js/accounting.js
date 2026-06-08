@@ -1344,18 +1344,18 @@ function filterVehiclesReport(status) {
       ? `<span style="background:var(--purple-dim,#f3e8ff);color:var(--purple,#7c3aed);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">🏪 ${v._warehouse}</span>`
       : '—';
     return `<tr ${v._sold?'style="opacity:.7"':''}>
-      <td><span class="mono text-amber" style="font-size:11px">${v._code}</span></td>
-      <td><span class="mono text-amber" style="font-size:11px">${v.file_no||'—'}</span></td>
-      <td style="font-size:11px;color:var(--text2)">${v._supplier}</td>
+      <td><span class="mono text-amber" style="font-size:13px">${v._code}</span></td>
+      <td><span class="mono text-amber" style="font-size:13px">${v.file_no||'—'}</span></td>
+      <td style="font-size:13px;color:var(--text2)">${v._supplier}</td>
       <td>${v.vehicle_type||'—'}</td>
       <td>${v.model||'—'}</td>
       <td>${v.year||'—'}</td>
-      <td><span class="mono" style="direction:ltr;font-size:11px">${v.vin||'—'}</span></td>
-      <td><span class="mono" style="direction:ltr">${v.plate||'—'}</span></td>
+      <td><span class="mono" style="direction:ltr;font-size:13px">${v.vin||'—'}</span></td>
+      <td><span class="mono" style="direction:ltr;font-size:13px">${v.plate||'—'}</span></td>
       <td>${v.color||'—'}</td>
       <td>${v.engine_size||'—'}</td>
       <td class="mono text-blue">${fmt(v.purchase_price)}</td>
-      <td class="${expired?'text-red':expiringSoon?'text-amber':''}" style="font-size:11px">${v.license_expiry||'—'}</td>
+      <td class="${expired?'text-red':expiringSoon?'text-amber':''}" style="font-size:13px">${v.license_expiry||'—'}</td>
       <td>
         ${v._sold
           ? `<span class="badge badge-closed">مباع</span>`
