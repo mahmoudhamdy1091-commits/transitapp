@@ -255,18 +255,30 @@ async function showAccountLedger(accountCode, accountName, accountType) {
   } catch(e){el('ledgerTable').innerHTML=errHTML('خطأ: '+e.message);}
 }
 
+// ضغط على اسم عميل/مورد → فلترة فورية
+function filterLedgerByContact(name) {
+  const inp = el('ledger-contact-filter');
+  if (!inp) return;
+  inp.value = name;
+  renderLedgerTable();
+  inp.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  inp.focus();
+}
+
 function renderLedgerTable() {
   const fileFilter=el('ledger-file-filter')?.value||'';
   const postFilter=el('ledger-post-filter')?.value||'posted';
+  const contactQ=(el('ledger-contact-filter')?.value||'').trim().toLowerCase();
   const from=el('ldg-from')?.value||null;
   const to=el('ldg-to')?.value||null;
   let list=window._ledgerAllEntries||[];
   const opening=window._ledgerOpening||0;
-  if(fileFilter) list=list.filter(e=>e.file_no===fileFilter);
+  if(fileFilter)  list=list.filter(e=>e.file_no===fileFilter);
   if(postFilter==='posted') list=list.filter(e=>e.status==='posted');
   if(postFilter==='draft')  list=list.filter(e=>e.status==='draft');
   if(from) list=list.filter(e=>e.date>=from);
   if(to)   list=list.filter(e=>e.date<=to);
+  if(contactQ)    list=list.filter(e=>(e.contact||'').toLowerCase().includes(contactQ)||(e.desc||'').toLowerCase().includes(contactQ));
   const totalDr=list.reduce((s,e)=>s+(+e.debit||0),0);
   const totalCr=list.reduce((s,e)=>s+(+e.credit||0),0);
   const finalBal=opening+totalDr-totalCr;
@@ -299,7 +311,8 @@ function renderLedgerTable() {
       <td style="padding:8px 12px">
         <div style="font-size:12px">${e.desc}</div>
         ${e.file_no?`<div style="font-size:12px;color:var(--accent);font-family:monospace;cursor:pointer" onclick="event.stopPropagation();openViewer('${e.file_no}')">${e.file_no}</div>`:''}
-        ${e.contact?`<div style="font-size:12px;color:var(--text2)">${e.contact}</div>`:''}
+        ${e.contact?`<div style="font-size:12px;color:var(--blue);cursor:pointer;text-decoration:underline dotted"
+          onclick="event.stopPropagation();filterLedgerByContact('${e.contact.replace(/'/g,"\\'")}')">👤 ${e.contact}</div>`:''}
       </td>
       <td class="mono" style="padding:8px 12px;font-size:13px;color:var(--text2)">${e.ref||'—'}</td>
       <td class="mono text-green" style="padding:8px 12px;font-weight:700;text-align:left">${e.debit>0?fmt(e.debit):'—'}</td>

@@ -709,6 +709,13 @@
               style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
               <option value="">كل الصفقات</option>
             </select>
+            <div style="position:relative">
+              <input id="ledger-contact-filter" type="text" placeholder="🔍 بحث باسم العميل / المورد..."
+                oninput="renderLedgerTable()"
+                style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 32px 5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;min-width:190px">
+              <button onclick="el('ledger-contact-filter').value='';renderLedgerTable()" title="مسح"
+                style="position:absolute;left:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text2);font-size:13px;padding:0">✕</button>
+            </div>
             <button class="btn btn-secondary btn-sm" onclick="exportLedgerCSV()">📥 CSV</button>
             <button class="btn btn-secondary btn-sm" onclick="printLedgerStatement()">🖨️</button>
           </div>
