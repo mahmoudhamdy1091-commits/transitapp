@@ -84,11 +84,11 @@ async function gsSearch(q) {
     // نستخدم apiGet مباشرة (لا apiGetAll) — البحث لنظام محدد فقط، مع limit
     const [vehicles, pos, sales, expenses, contacts, collections] = await Promise.all([
 
-      // السيارات: شاصي، موديل، لون، ملف
+      // السيارات: شاصي، موديل، لون
       apiGet('vehicles', {
-        select: 'id,vin,model,make,year,color,file_no,purchase_price,post_status',
+        select: 'id,vin,model,year,color,file_no,purchase_price,post_status',
         system_type: `eq.${sys}`,
-        or: or('vin','model','make','color','file_no'),
+        or: or('vin','model','color'),
         limit: 8, order: 'id.desc',
       }),
 
@@ -102,17 +102,17 @@ async function gsSearch(q) {
 
       // المبيعات: العميل، رقم الفاتورة، الشاصي
       apiGet('sales', {
-        select: 'id,inv_no,invoice_no,customer,vin,sale_price,sale_date,file_no,post_status',
+        select: 'id,inv_no,customer,vin,sale_price,sale_date,file_no,post_status',
         system_type: `eq.${sys}`,
-        or: or('customer','inv_no','invoice_no','vin'),
+        or: or('customer','inv_no','vin'),
         limit: 6, order: 'id.desc',
       }),
 
-      // المصاريف: الوصف، المورد، رقم المرجع
+      // المصاريف: الوصف، المستفيد، رقم المرجع
       apiGet('expenses', {
-        select: 'id,ref_no,description,exp_type,vendor,amount,file_no,exp_date,post_status',
+        select: 'id,ref_no,description,exp_type,beneficiary,amount,file_no,exp_date,post_status',
         system_type: `eq.${sys}`,
-        or: or('description','vendor','ref_no'),
+        or: or('description','beneficiary','ref_no'),
         limit: 5, order: 'id.desc',
       }),
 
@@ -179,7 +179,7 @@ function gsRender(q, r) {
         <div class="gs-item" onclick="gsNavigate('vehicle','${v.file_no}','${v.vin}')">
           <div class="gs-item-icon" style="background:${sold?'var(--green-dim)':'var(--blue-dim)'}">🚗</div>
           <div class="gs-item-body">
-            <div class="gs-item-title">${hl(v.vin||'—')} — ${hl([v.make,v.model,v.year].filter(Boolean).join(' '))}</div>
+            <div class="gs-item-title">${hl(v.vin||'—')} — ${hl([v.model,v.year].filter(Boolean).join(' '))}</div>
             <div class="gs-item-meta">ملف: ${v.file_no||'—'} · ${fmt(v.purchase_price)} KWD${v.color?' · '+v.color:''}</div>
           </div>
           <span class="gs-item-badge" style="background:${sold?'var(--green-dim)':'var(--blue-dim)'};color:${sold?'var(--green)':'var(--blue)'}">
@@ -193,7 +193,7 @@ function gsRender(q, r) {
   if (r.sales?.length) {
     sections.push(`<div class="gs-group-header">🤝 المبيعات والفواتير</div>`);
     r.sales.forEach(s => {
-      const invNo = s.inv_no || s.invoice_no || '—';
+      const invNo = s.inv_no || '—';
       sections.push(`
         <div class="gs-item" onclick="gsNavigate('sale','${s.file_no}','${invNo}')">
           <div class="gs-item-icon" style="background:var(--green-dim)">🤝</div>
