@@ -29,6 +29,71 @@ const EXPENSE_ACCOUNT_MAP = {
 };
 
 // ════════════════════════════════════════════════════════════════
+// IN-PLACE JE UPDATE HELPER
+// يُحدِّث أسطر القيد الأصلي مباشرة دون إنشاء قيد جديد
+// الاستخدام: updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch })
+// ════════════════════════════════════════════════════════════════
+async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null }) {
+  const amountChanged  = Math.abs((+oldAmount||0) - (+newAmount||0)) > 0.001;
+  const contactChanged = contactPatch != null;
+  if (!amountChanged && !contactChanged) return;
+
+  try {
+    // جيب كل الأسطر المرتبطة بهذا القيد
+    const filter = {
+      select: 'id,entry_no,dr_amount,cr_amount,contact_name',
+      system_type: `eq.${sys}`,
+      ref_table: `eq.${refTable}`,
+      post_status: 'eq.posted',
+      order: 'id.desc',
+      limit: 40,
+    };
+    if (fileNo) filter.file_no = `eq.${fileNo}`;
+
+    const jeLines = await apiGetAll('journal_entries', filter);
+    if (!jeLines?.length) return;
+
+    // ابحث عن entry_no المناسب — أولاً بـ ref_id، ثم بالمبلغ كاحتياط
+    let entryNo = null;
+    const byRefId = (jeLines).find(j => String(j.ref_id||'') === String(refId||''));
+    if (byRefId) {
+      entryNo = byRefId.entry_no;
+    } else if (amountChanged) {
+      const amt = +oldAmount;
+      const fallback = (jeLines).find(j =>
+        Math.abs((+j.dr_amount||0) - amt) < 0.001 ||
+        Math.abs((+j.cr_amount||0) - amt) < 0.001
+      );
+      if (fallback) entryNo = fallback.entry_no;
+    }
+    if (!entryNo) return;
+
+    // جيب كل أسطر هذا القيد بالـ entry_no
+    const allLines = await apiGetAll('journal_entries', {
+      select: 'id,dr_amount,cr_amount,contact_name',
+      system_type: `eq.${sys}`,
+      entry_no: `eq.${entryNo}`,
+    });
+
+    for (const line of (allLines||[])) {
+      const patch = {};
+      if (amountChanged) {
+        if ((+line.dr_amount||0) > 0) patch.dr_amount = +newAmount;
+        if ((+line.cr_amount||0) > 0) patch.cr_amount = +newAmount;
+      }
+      if (contactChanged && contactPatch && (line.contact_name || (+line.cr_amount||0) > 0)) {
+        patch.contact_name = contactPatch;
+      }
+      if (Object.keys(patch).length) {
+        await apiPatch('journal_entries', { id: `eq.${line.id}` }, patch);
+      }
+    }
+  } catch(e) {
+    console.warn(`updateJEInPlace [${refTable}]:`, e.message);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
 // REVERSAL ENGINE — إلغاء العمليات بقيد عكسي
 // المبدأ:
 //   1. يُضيف قيد عكسي (Dr↔Cr معكوسة) بتاريخ اليوم

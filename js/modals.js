@@ -67,6 +67,9 @@ async function openNewFileModal(editFileNo = null) {
       ]);
 
       const d = deals?.[0] || {};
+      // حفظ القيم الأصلية للمقارنة عند الحفظ
+      _originalPOTotal    = +(d.total_purchase||0);
+      _originalPOSupplier = d.supplier || '';
       el('nf-fileNo').value       = d.file_no       || editFileNo;
       el('nf-poDate').value       = d.po_date        || '';
       el('nf-notes').value        = d.notes          || '';
@@ -79,6 +82,9 @@ async function openNewFileModal(editFileNo = null) {
       el('nf-supplier').value = d.supplier || '';
       // pre-cache supplier contacts silently
       acGetContacts('supplier').catch(()=>{});
+
+      // حفظ IDs الأصلية للمقارنة عند الحفظ (للكشف عن المحذوفة)
+      _originalVehicleIds = (vList||[]).map(v => v.id).filter(Boolean);
 
       // Load vehicles
       el('vehiclesContainer').innerHTML = '';
@@ -612,7 +618,22 @@ async function submitEditFileFull() {
         notes:notes||null }
     );
 
-    // 2. Update vehicles — update existing, insert new
+    // 2a. حذف السيارات التي أزالها المستخدم من الجدول
+    const remainingVids = new Set(vehicles.filter(v=>v.vid).map(v=>v.vid));
+    const deletedVids   = (_originalVehicleIds||[]).filter(id => !remainingVids.has(id));
+    for (const vid of deletedVids) {
+      try {
+        // جيب VIN قبل الحذف لتنظيف المخزون
+        const vRow = await apiGet('vehicles', { select:'vin', id:`eq.${vid}` });
+        const vin  = vRow?.[0]?.vin;
+        await apiDelete('vehicles', { id:`eq.${vid}` });
+        if (vin) {
+          await apiDelete('stock_locations', { system_type:`eq.${state.system}`, vin:`eq.${vin}` });
+        }
+      } catch(delErr) { console.warn('delete removed vehicle:', delErr.message); }
+    }
+
+    // 2b. Update/insert remaining vehicles
     for (const v of vehicles) {
       if (v.vid) {
         await apiPatch('vehicles', { id:`eq.${v.vid}` }, {
@@ -624,14 +645,13 @@ async function submitEditFileFull() {
           file_no: newFileNo
         });
       } else {
-        await apiPost('vehicles', {
+        const newV = await apiPost('vehicles', {
           system_type:state.system, file_no:newFileNo,
           po_no:poNo||null, vin:v.vin||null,
           vehicle_type:v.type||v.model||null, model:v.model||v.type||null,
           plate:v.plate||null, color:v.color||null,
           purchase_price:v.price||0, purchase_date:poDate||null, notes:v.notes||null
         });
-        // تسجيل تلقائي في مخزن الكويت
         if (v.vin) {
           try {
             await apiPost('stock_locations', {
@@ -642,7 +662,7 @@ async function submitEditFileFull() {
               transfer_ref:'إدخال أولي', notes:'مخزن أساسي',
               transferred_by:state.user?.email||null,
             });
-          } catch(e) { /* تجاهل لو VIN مكرر */ }
+          } catch(e) {}
         }
       }
     }
@@ -672,11 +692,26 @@ async function submitEditFileFull() {
       }
     }
 
-    // 4. Update ledger entry for supplier if total changed
-    await logAudit('UPDATE','purchase_orders',oldFileNo,null,{newFileNo,supplier,finalTotal});
+    // 4. تحديث القيد المحاسبي في مكانه (كل أسطر القيد)
+    await updateJEInPlace({
+      sys: state.system, fileNo: oldFileNo,
+      refTable: 'purchase_orders', refId: null,
+      oldAmount: _originalPOTotal || finalTotal,
+      newAmount: finalTotal,
+      contactPatch: supplier !== _originalPOSupplier ? supplier : null,
+    });
+
+    // 5. تحديث حالة الصفقة → pending_edit للموافقة
+    await apiPatch('purchase_orders',
+      { system_type:`eq.${state.system}`, file_no:`eq.${newFileNo}` },
+      { post_status: 'pending_edit' }
+    );
+
+    await logAudit('EDIT','purchase_orders',oldFileNo,null,{newFileNo,supplier,finalTotal}, `تعديل سند الشراء ${oldFileNo}`);
+    await updateApprovalBadge();
 
     markSaving('newFileModal'); closeModal('newFileModal');
-    toast(`✅ تم تعديل الصفقة ${newFileNo}`,'ok');
+    toast(`⚠️ تم تعديل الصفقة ${newFileNo} والقيد — في انتظار الموافقة`,'warn');
     await loadDashboard();
     if (state.currentFileNo === oldFileNo || state.currentFileNo === newFileNo) {
       state.currentFileNo = newFileNo;

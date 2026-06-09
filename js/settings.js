@@ -892,14 +892,30 @@ async function submitEditPayment() {
     const old = oldData?.[0];
     if (!old) { showFieldErr('epError','لم يُعثر على السجل'); return; }
 
-    if (old.post_status === 'posted') {
-      // ── السجل مرحّل: تعديل in-place بدل void+new ──
-      await requestPostedEdit({
-        table: 'payments', old, modalId: 'editPaymentModal',
-        editFields: { _edit_payer:payer, _edit_amount:amount, _edit_method:method, _edit_date:date, _edit_doc:doc||null },
-        summary: `طلب تعديل: ${payer} · ${amount} · ${date}${notes?' — '+notes:''} | أصل: ${old.payer} · ${old.amount} · ${old.pay_date}`,
-        auditLabel: `طلب تعديل دفعة ${old.ref_no||id}`,
+    if (old.post_status === 'posted' || old.post_status === 'pending_edit') {
+      // ── السجل مرحّل: تعديل مباشر في السجل + القيد الأصلي + إرسال للموافقة ──
+      const oldAmount = +old.amount;
+      const oldPayer  = old.payer;
+
+      // 1. تحديث السجل مباشرة
+      await apiPatch('payments', { id:`eq.${id}` }, {
+        payer, amount, pay_method:method, pay_date:date,
+        document: doc||null, notes: notes||null,
+        post_status: 'pending_edit',
       });
+
+      // 2. تحديث القيد المحاسبي في مكانه
+      await updateJEInPlace({
+        sys: state.system, fileNo: old.file_no,
+        refTable: 'payments', refId: id,
+        oldAmount, newAmount: amount,
+        contactPatch: payer !== oldPayer ? payer : null,
+      });
+
+      await logAudit('EDIT', 'payments', old.file_no, old, {payer,amount,method,date,doc}, `تعديل دفعة ${old.ref_no||id}`);
+      await updateApprovalBadge();
+      markSaving('editPaymentModal'); closeModal('editPaymentModal');
+      toast('⚠️ تم تعديل الدفعة والقيد — في انتظار الموافقة', 'warn');
     } else {
       // ── السجل draft: تعديل مباشر ──
       await apiPatch('payments', { id:`eq.${id}` }, { payer, amount, pay_method:method, pay_date:date, document:doc||null, notes:notes||null });
@@ -1050,14 +1066,28 @@ async function submitEditExpense() {
     const old = oldData?.[0];
     if (!old) { showFieldErr('eeError','لم يُعثر على السجل'); return; }
 
-    if (old.post_status === 'posted') {
-      // ── تعديل in-place بدل void+new ──
-      await requestPostedEdit({
-        table: 'expenses', old, modalId: 'editExpenseModal',
-        editFields: { _edit_desc:desc, _edit_type:type, _edit_amount:amount, _edit_date:date, _edit_method:method, _edit_doc:doc||null },
-        summary: `طلب تعديل: ${desc} · ${amount} · ${date}${notes?' — '+notes:''} | أصل: ${old.description} · ${old.amount} · ${old.exp_date}`,
-        auditLabel: `طلب تعديل مصروف ${old.ref_no||id}`,
+    if (old.post_status === 'posted' || old.post_status === 'pending_edit') {
+      // ── تعديل مباشر في السجل + القيد الأصلي + إرسال للموافقة ──
+      const oldAmount = +old.amount;
+
+      // 1. تحديث السجل
+      await apiPatch('expenses', { id:`eq.${id}` }, {
+        description:desc, exp_type:type, amount, exp_date:date,
+        pay_method:method, document:doc||null, notes:notes||null,
+        post_status: 'pending_edit',
       });
+
+      // 2. تحديث القيد في مكانه
+      await updateJEInPlace({
+        sys: state.system, fileNo: old.file_no,
+        refTable: 'expenses', refId: id,
+        oldAmount, newAmount: amount,
+      });
+
+      await logAudit('EDIT', 'expenses', old.file_no, old, {desc,type,amount,date,method,doc}, `تعديل مصروف ${old.ref_no||id}`);
+      await updateApprovalBadge();
+      markSaving('editExpenseModal'); closeModal('editExpenseModal');
+      toast('⚠️ تم تعديل المصروف والقيد — في انتظار الموافقة', 'warn');
     } else {
       await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null });
       markSaving('editExpenseModal'); closeModal('editExpenseModal');
@@ -1104,21 +1134,29 @@ async function submitEditCollection() {
     const oldData = await apiGetAll('collections', { select:'*', id:`eq.${id}` });
     const old = oldData?.[0] || {};
 
-    if (old.post_status === 'posted' && old.paid_date) {
-      // ── تعديل in-place بدل void+new ──
+    if ((old.post_status === 'posted' || old.post_status === 'pending_edit') && old.paid_date) {
+      // ── تعديل مباشر في السجل + القيد الأصلي + إرسال للموافقة ──
+      const oldAmount = +old.amount;
+
+      // 1. تحديث السجل
       await apiPatch('collections', { id:`eq.${id}` }, {
-        post_status:   'pending_edit',
-        _edit_amount:  amount,
-        _edit_method:  method,
-        _edit_due:     due || null,
-        _edit_paid:    paid || null,
-        _edit_doc:     doc || null,
-        notes:         `طلب تعديل: ${amount} · ${paid||due||'—'}${notes?' — '+notes:''} | أصل: ${old.amount} · ${old.paid_date||'—'}`,
+        amount, pay_method:method,
+        due_date: due||null, paid_date: paid||old.paid_date,
+        document: doc||null, notes: notes||null,
+        post_status: 'pending_edit',
       });
-      await logAudit('EDIT_REQUEST','collections', old.file_no, old, {amount,method,due,paid}, `طلب تعديل تحصيل ${old.ref_no||id}`);
+
+      // 2. تحديث القيد في مكانه
+      await updateJEInPlace({
+        sys: state.system, fileNo: old.file_no,
+        refTable: 'collections', refId: id,
+        oldAmount, newAmount: amount,
+      });
+
+      await logAudit('EDIT', 'collections', old.file_no, old, {amount,method,due,paid}, `تعديل تحصيل ${old.ref_no||id}`);
       await updateApprovalBadge();
       markSaving('editCollectionModal'); closeModal('editCollectionModal');
-      toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
+      toast('⚠️ تم تعديل التحصيل والقيد — في انتظار الموافقة', 'warn');
       invalidateCache();
       if (state.currentTab === 5) loadCollectionsTab(state.currentFileNo, state.system);
       if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);

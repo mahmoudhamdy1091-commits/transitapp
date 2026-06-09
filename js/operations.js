@@ -271,13 +271,34 @@ async function submitEditOpex() {
     return;
   }
   try {
+    // ── 1. جلب السجل القديم لمعرفة المبلغ القديم ──
+    const oldRows = await apiGet('operating_expenses', { select:'*', id:`eq.${id}` });
+    const old = oldRows?.[0];
+
+    // 1. تحديث السجل
     await apiPatch('operating_expenses', { id:`eq.${id}` }, {
       exp_type: finalType, description: desc, amount,
       exp_date: date, pay_method: method,
-      document: doc||null, beneficiary: beneficiary||null, notes: notes||null
+      document: doc||null, beneficiary: beneficiary||null, notes: notes||null,
+      post_status: old?.post_status === 'posted' ? 'pending_edit' : (old?.post_status || 'pending_edit'),
     });
-    markSaving('opexModal'); closeModal('opexModal');
-    toast('✅ تم تعديل المصروف','ok');
+
+    // 2. تحديث القيد في مكانه
+    await updateJEInPlace({
+      sys: state.system, fileNo: old?.file_no || null,
+      refTable: 'operating_expenses', refId: id,
+      oldAmount: +old?.amount||0, newAmount: amount,
+    });
+
+    // 3. إرسال للموافقة فقط إذا كان مرحّلاً
+    if (old?.post_status === 'posted' || old?.post_status === 'pending_edit') {
+      await updateApprovalBadge();
+      markSaving('opexModal'); closeModal('opexModal');
+      toast('⚠️ تم تعديل المصروف التشغيلي والقيد — في انتظار الموافقة','warn');
+    } else {
+      markSaving('opexModal'); closeModal('opexModal');
+      toast('✅ تم تعديل المصروف','ok');
+    }
     await loadOpex();
   } catch(e) { showFieldErr('opexError','خطأ: '+e.message); }
 }
@@ -927,9 +948,13 @@ const APPROVAL_CONFIG = {
   payout:    { icon:'👥', label:'صرف شريك',    color:'var(--purple)', table:'partner_payouts',  amountField:'amount',         dateField:'pay_date',   descFields:['partner','payout_type','file_no'] },
   reversal:      { icon:'🔄', label:'طلب إلغاء',        color:'var(--orange,#f97316)', table:null,          amountField:'amount', dateField:'created_at', descFields:['ref_type','ref_desc','file_no'] },
   // ✅ طلبات التعديل — in-place edit requests
-  payment_edit:    { icon:'✏️', label:'تعديل دفعة',      color:'var(--cyan)',   table:'payments',         amountField:'_edit_amount', dateField:'created_at', descFields:['payer','_edit_payer','file_no'] },
-  expense_edit:    { icon:'✏️', label:'تعديل مصروف',     color:'var(--red)',    table:'expenses',         amountField:'_edit_amount', dateField:'created_at', descFields:['description','_edit_desc','file_no'] },
-  collection_edit: { icon:'✏️', label:'تعديل تحصيل',     color:'var(--blue)',   table:'collections',      amountField:'_edit_amount', dateField:'created_at', descFields:['inv_no','customer','file_no'] },
+  payment_edit:    { icon:'✏️', label:'تعديل دفعة',      color:'var(--cyan)',   table:'payments',         amountField:'amount',      dateField:'pay_date',   descFields:['payer','file_no'] },
+  expense_edit:    { icon:'✏️', label:'تعديل مصروف',     color:'var(--red)',    table:'expenses',         amountField:'amount',      dateField:'exp_date',   descFields:['description','file_no'] },
+  collection_edit: { icon:'✏️', label:'تعديل تحصيل',     color:'var(--blue)',   table:'collections',      amountField:'amount',      dateField:'paid_date',  descFields:['inv_no','customer','file_no'] },
+  purchase_edit:   { icon:'✏️', label:'تعديل سند شراء',  color:'var(--purple)', table:'purchase_orders',  amountField:'total_purchase', dateField:'updated_at', descFields:['file_no','supplier'] },
+  payout_edit:     { icon:'✏️', label:'تعديل صرف شريك', color:'var(--purple)', table:'partner_payouts',  amountField:'amount',      dateField:'pay_date',   descFields:['partner','file_no'] },
+  opex_edit:       { icon:'✏️', label:'تعديل مصروف تشغيلي', color:'var(--orange,#f97316)', table:'operating_expenses', amountField:'amount', dateField:'exp_date', descFields:['description','file_no'] },
+  sale_edit:       { icon:'✏️', label:'تعديل فاتورة بيع',  color:'var(--green)',  table:'sales',              amountField:'sale_price', dateField:'sale_date', descFields:['inv_no','customer','file_no'] },
 };
 
 async function showApprovalQueue() {
@@ -952,7 +977,7 @@ async function loadApprovalQueue() {
     // جيب كل البنود المعلقة من كل الجداول بالتوازي
     const [purchases, sales, expenses, collections, payments, payouts,
            voidPay, voidExp, voidCol, voidPayout,
-           editPay, editExp, editCol] = await Promise.all([
+           editPay, editExp, editCol, editPO, editPayout, editOpex] = await Promise.all([
       apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
       apiGetAll('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
       apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
@@ -964,10 +989,23 @@ async function loadApprovalQueue() {
       apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_void`, order:'created_at.desc' }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_void`, order:'created_at.desc' }),
       // ✅ pending_edit — تعديلات في انتظار الموافقة
-      apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
-      apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
-      apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
+      apiGetAll('payments',            { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
+      apiGetAll('expenses',            { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
+      apiGetAll('collections',         { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
+      apiGetAll('purchase_orders',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
+      apiGetAll('partner_payouts',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
+      apiGetAll('operating_expenses',  { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
     ]);
+
+    // فواتير البيع pending_edit — نجمّع بـ inv_no لتفادي التكرار
+    const editSalesRaw = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' });
+    const editSalesMap = {};
+    (editSalesRaw||[]).forEach(r => {
+      const k = r.inv_no || r.id;
+      if (!editSalesMap[k]) editSalesMap[k] = { ...r, _totalSale: 0 };
+      editSalesMap[k]._totalSale += +r.sale_price||0;
+    });
+    const editSales = Object.values(editSalesMap);
 
     // دمج كل البنود مع نوعها
     // جيب المستخدمين من audit_log
@@ -1007,9 +1045,13 @@ async function loadApprovalQueue() {
       }[srcType],
     });
     const editItems = [
-      ...(editPay||[]).map(r => buildEditItem(r, 'payment',    r => `${r.payer||'—'} → ${r._edit_payer||'—'} · ${r.file_no||'—'}`)),
-      ...(editExp||[]).map(r => buildEditItem(r, 'expense',    r => `${r.description||'—'} → ${r._edit_desc||'—'} · ${r.file_no||'—'}`)),
-      ...(editCol||[]).map(r => buildEditItem(r, 'collection', r => `${r.inv_no||'—'} · ${r.amount||0} → ${r._edit_amount||0}`)),
+      ...(editPay   ||[]).map(r => ({...r, _type:'payment_edit',    _amount:+r.amount||0,          _date:r.pay_date,  _desc:`تعديل دفعة — ${r.payer||'—'} · ${fmt(r.amount)} · ${r.file_no||'—'}`, _file:r.file_no })),
+      ...(editExp   ||[]).map(r => ({...r, _type:'expense_edit',    _amount:+r.amount||0,          _date:r.exp_date,  _desc:`تعديل مصروف — ${r.description||'—'} · ${fmt(r.amount)} · ${r.file_no||'—'}`, _file:r.file_no })),
+      ...(editCol   ||[]).map(r => ({...r, _type:'collection_edit', _amount:+r.amount||0,          _date:r.paid_date, _desc:`تعديل تحصيل — ${r.inv_no||'—'} · ${fmt(r.amount)} · ${r.file_no||'—'}`, _file:r.file_no })),
+      ...(editPO    ||[]).map(r => ({...r, _type:'purchase_edit',   _amount:+r.total_purchase||0,  _date:r.po_date,   _desc:`تعديل سند شراء — ${r.file_no||'—'} · ${r.supplier||'—'} · ${fmt(r.total_purchase)}`, _file:r.file_no })),
+      ...(editPayout||[]).map(r => ({...r, _type:'payout_edit',     _amount:+r.amount||0,          _date:r.pay_date,  _desc:`تعديل صرف شريك — ${r.partner||'—'} · ${fmt(r.amount)} · ${r.file_no||'—'}`, _file:r.file_no })),
+      ...(editOpex  ||[]).map(r => ({...r, _type:'opex_edit',       _amount:+r.amount||0,          _date:r.exp_date,  _desc:`تعديل مصروف تشغيلي — ${r.description||'—'} · ${fmt(r.amount)}`, _file:r.file_no||null })),
+      ...(editSales ||[]).map(r => ({...r, _type:'sale_edit',       _amount:r._totalSale||+r.sale_price||0, _date:r.sale_date, _desc:`تعديل فاتورة — ${r.inv_no||'—'} · ${r.customer||'—'} · ${fmt(r._totalSale||r.sale_price)}`, _file:r.file_no })),
     ];
 
     approvalState.all = [
@@ -1227,29 +1269,81 @@ async function openEditSaleApproval(saleId, fileNo, invNo) {
       if (el('sale-customer')) el('sale-customer').value = firstItem.customer || '';
       if (el('sale-notes'))    el('sale-notes').value    = firstItem.notes || '';
 
-      // امسح الصف الافتراضي وحط صفوف الفاتورة الحقيقية
-      el('saleVehiclesContainer').innerHTML = '';
-      for (const item of allSaleItems) {
-        addSaleVehicleRow();
-        const rows = el('saleVehiclesContainer').querySelectorAll('tr.sale-v-row');
-        const row  = rows[rows.length - 1];
-        if (!row) continue;
-        // حدد السيارة في الـ select بالـ VIN
-        const vehicleSel = row.querySelector('[name="sv-vehicle"]');
-        if (vehicleSel && item.vin) {
-          Array.from(vehicleSel.options).forEach(opt => {
-            if (opt.dataset?.vin === item.vin) vehicleSel.value = opt.value;
-          });
-          // trigger change لتحديث VIN display
-          onSaleRowVehicleChange(vehicleSel);
-        }
-        const vinInp   = row.querySelector('[name="sv-vin"]');
-        const priceInp = row.querySelector('[name="sv-price"]');
-        const notesInp = row.querySelector('[name="sv-notes"]');
-        if (vinInp)   vinInp.value   = item.vin || '';
-        if (priceInp) priceInp.value = item.sale_price || '';
-        if (notesInp) notesInp.value = item.notes || '';
-      }
+      // ── بناء صفوف السيارات في وضع التعديل ──
+      // نجلب: كل سيارات الملف + السيارات المتاحة (غير مباعة في فواتير أخرى)
+      let allFileVehicles = [];
+      try {
+        allFileVehicles = await apiGetAll('vehicles', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
+      } catch(e) {}
+
+      // السيارات المباعة في فواتير أخرى (مش هذه الفاتورة)
+      let otherSoldVins = new Set();
+      try {
+        const otherSales = await apiGetAll('sales', {
+          select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`,
+          post_status:'not.eq.cancelled'
+        });
+        (otherSales||[]).forEach(s => {
+          // استثنِ سيارات هذه الفاتورة
+          if (!allSaleItems.find(si => si.vin === s.vin)) otherSoldVins.add(s.vin);
+        });
+      } catch(e) {}
+
+      // خريطة بيانات هذه الفاتورة بالـ VIN
+      const thisSaleMap = {};
+      allSaleItems.forEach(si => { if(si.vin) thisSaleMap[si.vin] = si; });
+
+      const s  = 'width:100%;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text);font-family:monospace;font-size:12px';
+      const sn = 'width:100%;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px';
+
+      el('saleVehiclesContainer').innerHTML = (allFileVehicles||[]).map(v => {
+        const inThisInv  = !!thisSaleMap[v.vin];
+        const inOtherInv = otherSoldVins.has(v.vin);
+        if (inOtherInv) return ''; // مباعة في فاتورة أخرى — لا تظهر
+
+        const saleRecord = thisSaleMap[v.vin] || {};
+        const rowBg      = inThisInv ? 'background:rgba(16,185,129,.07)' : '';
+        const label      = inThisInv ? '' : `<span style="font-size:10px;background:var(--card2);color:var(--text2);border-radius:3px;padding:1px 5px;margin-right:4px">متاح للإضافة</span>`;
+
+        return `<tr class="sale-v-row"
+          data-vehicle-id="${v.id||''}"
+          data-vin="${(v.vin||'').replace(/"/g,'&quot;')}"
+          data-model="${(v.model||v.vehicle_type||'').replace(/"/g,'&quot;')}"
+          data-plate="${(v.plate||'').replace(/"/g,'&quot;')}"
+          data-color="${(v.color||'').replace(/"/g,'&quot;')}"
+          data-year="${v.year||''}"
+          data-engine="${v.engine_size||''}"
+          style="${rowBg}">
+          <td style="padding:6px 8px;text-align:center;width:36px">
+            <input type="checkbox" class="sv-check" ${inThisInv?'checked':''}
+              onchange="onSaleVehicleCheck(this)"
+              style="width:16px;height:16px;cursor:pointer;accent-color:var(--green)">
+          </td>
+          <td style="padding:6px 8px">
+            <div style="font-weight:600;font-size:13px">${label}${v.model||v.vehicle_type||v.vin||'—'} ${v.year||''}</div>
+            <div style="font-family:monospace;font-size:13px;font-weight:700;color:var(--blue);direction:ltr;letter-spacing:.8px;margin:2px 0">${v.vin||'—'}</div>
+            <div style="font-size:13px;color:var(--text2)">${v.color||''}${v.plate?' · '+v.plate:''}</div>
+          </td>
+          <td style="padding:6px 8px;text-align:center">
+            <span style="color:var(--blue);font-family:monospace;font-size:12px;font-weight:600">${fmt(v.purchase_price||0)}</span>
+          </td>
+          <td style="padding:6px 8px">
+            <input type="number" name="sv-price"
+              value="${inThisInv ? (saleRecord.sale_price||'') : ''}"
+              placeholder="سعر البيع *" min="0" step="0.001"
+              ${inThisInv ? '' : 'disabled'}
+              oninput="updateSaleTotal()"
+              style="${s}${inThisInv ? '' : ';opacity:.4;cursor:not-allowed'}">
+          </td>
+          <td style="padding:6px 8px">
+            <input type="text" name="sv-notes"
+              value="${inThisInv ? (saleRecord.notes||'').replace(/"/g,'&quot;') : ''}"
+              placeholder="ملاحظة"
+              ${inThisInv ? '' : 'disabled'}
+              style="${sn}${inThisInv ? '' : ';opacity:.4;cursor:not-allowed'}">
+          </td>
+        </tr>`;
+      }).join('');
       updateSaleTotal();
 
       // ── استرجاع المصاريف الإضافية من sale_charges ──
@@ -1264,71 +1358,103 @@ async function openEditSaleApproval(saleId, fileNo, invNo) {
         }
       } catch(e) { console.warn('load sale_charges:', e.message); }
 
-      // Override زرار الحفظ — يعكس القيود القديمة ويحفظ الجديد كـ Draft
+      // Override زرار الحفظ — تعديل in-place + إرسال للموافقة
       const submitBtn = el('saleSubmitBtn');
-      submitBtn._editMode = true;
+      submitBtn._editMode  = true;
       submitBtn._editInvNo = invNo;
-      submitBtn._editFileNo = fileNo;
+      submitBtn._editFileNo= fileNo;
       submitBtn.onclick = async () => {
         try {
           const sys = state.system;
-          // ── 1. عكس القيود المحاسبية للفاتورة القديمة (لو كانت posted) ──
+          // جيب السجلات القديمة
           const oldSales = await apiGetAll('sales', {
-            select: '*',
-            system_type: `eq.${sys}`,
-            file_no: `eq.${fileNo}`,
-            inv_no: `eq.${invNo}`,
+            select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}`
           });
-          const wasPosted = (oldSales||[]).some(s => s.post_status === 'posted');
-          if (wasPosted) {
-            // عكس قيد البيع عن طريق قيد عكسي في journal_entries
-            const totalOld = (oldSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
-            if (totalOld > 0) {
-              try {
-                const _vRows = await apiGetAll('vehicles', { select:'vin,purchase_price', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
-                const _vCost = {}; (_vRows||[]).forEach(v=>{ if(v.vin) _vCost[v.vin]=+v.purchase_price||0; });
-                const totalOldCOGS = (oldSales||[]).reduce((s,r)=>s+(_vCost[r.vin]||0),0);
-                const firstSale = oldSales[0];
-                // قيد عكسي يدوي للبيع
-                await postDoubleEntry({
-                  sys,
-                  date: today(),
-                  fileNo,
-                  refTable: 'reversal',
-                  refId: firstSale?.id || null,
-                  desc: `عكس فاتورة ${invNo} — تعديل`,
-                  lines: [
-                    { acc:'4100', name:'إيراد المبيعات',       dr: totalOld,     cr: 0,            contact: null },
-                    { acc:'1200', name:'ذمم العملاء',          dr: 0,            cr: totalOld,     contact: firstSale?.customer||null },
-                    ...(totalOldCOGS > 0 ? [
-                      { acc:'1300', name:'المخزون — سيارات',    dr: totalOldCOGS, cr: 0,            contact: null },
-                      { acc:'5100', name:'تكلفة المخزون المباع',dr: 0,            cr: totalOldCOGS, contact: null },
-                    ] : []),
-                  ],
-                });
-              } catch(jeErr) { console.warn('editSale reversal JE:', jeErr.message); }
-            }
-          }
+          const totalOld     = (oldSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
+          const oldCustomer  = oldSales?.[0]?.customer || '';
+          const wasPosted    = (oldSales||[]).some(s => s.post_status === 'posted' || s.post_status === 'pending_edit');
 
-          // ── 2. Soft cancel السجلات القديمة (بدل Hard Delete) ──
-          for (const s of (oldSales||[])) {
-            try { await apiPatch('sales', { id:`eq.${s.id}` }, { post_status:'cancelled', notes:`${s.notes||''} | مُستبدل بتعديل ${today()}`.trim() }); } catch(e) {}
-          }
-          // إلغاء الـ collections غير المدفوعة
-          try {
-            const pendingCols = await apiGetAll('collections', {
-              select:'id', system_type:`eq.${sys}`, inv_no:`eq.${invNo}`, paid_date:'is.null'
+          // ── 1. حساب الإجمالي الجديد من الـ form ──
+          const rows = el('saleVehiclesContainer').querySelectorAll('tr.sale-v-row');
+          let totalNew = 0;
+          rows.forEach(row => {
+            const cb = row.querySelector('.sv-check');
+            if (cb && !cb.checked) return;
+            totalNew += parseFloat(row.querySelector('[name="sv-price"]')?.value)||0;
+          });
+          const newCustomer = el('sale-customer')?.value?.trim() || oldCustomer;
+
+          // ── 2. تصنيف السيارات: محدودة / مزالة / جديدة ──
+          const newDate  = el('sale-date')?.value || firstItem.sale_date;
+          const newNotes = el('sale-notes')?.value?.trim() || '';
+          const oldVinSet = new Set((oldSales||[]).map(s=>s.vin));
+          const checkedRows = Array.from(rows).filter(r => r.querySelector('.sv-check')?.checked);
+          const checkedVins = new Set(checkedRows.map(r => r.dataset?.vin).filter(Boolean));
+
+          // أ) سيارات مزالة (كانت في الفاتورة والآن unchecked) → إلغاء
+          const removedSales = (oldSales||[]).filter(s => !checkedVins.has(s.vin));
+          for (const s of removedSales) {
+            await apiPatch('sales', { id:`eq.${s.id}` }, {
+              post_status: 'cancelled',
+              notes: `${s.notes||''} | حُذفت من الفاتورة ${invNo} بتاريخ ${today()}`.trim()
             });
-            for (const c of (pendingCols||[])) {
-              await apiPatch('collections', { id:`eq.${c.id}` }, { post_status:'cancelled' });
-            }
-          } catch(e) { console.warn('editSale cancel pending collections:', e.message); }
+          }
 
-        } catch(e) { console.warn('edit sale cleanup:', e.message); }
-        // إعادة تعيين الـ onclick للأصل وبعدين submit
-        submitBtn.onclick = () => submitSale();
-        submitBtn._editMode = false;
-        await submitSale();
+          // ب) سيارات موجودة في الفاتورة → تحديث
+          const keptSales = (oldSales||[]).filter(s => checkedVins.has(s.vin));
+          for (const s of keptSales) {
+            const matchRow = checkedRows.find(r => r.dataset?.vin === s.vin);
+            const newPrice = parseFloat(matchRow?.querySelector('[name="sv-price"]')?.value) || s.sale_price;
+            const rowNotes = matchRow?.querySelector('[name="sv-notes"]')?.value?.trim() || s.notes;
+            await apiPatch('sales', { id:`eq.${s.id}` }, {
+              customer: newCustomer, sale_date: newDate,
+              sale_price: newPrice, notes: rowNotes||null,
+              post_status: 'pending_edit',
+            });
+          }
+
+          // ج) سيارات جديدة (checked لكن لم تكن في الفاتورة) → إضافة
+          const addedRows = checkedRows.filter(r => !oldVinSet.has(r.dataset?.vin));
+          for (const row of addedRows) {
+            const vin      = row.dataset?.vin || '';
+            const newPrice = parseFloat(row.querySelector('[name="sv-price"]')?.value) || 0;
+            const rowNotes = row.querySelector('[name="sv-notes"]')?.value?.trim() || '';
+            if (!newPrice) continue;
+            const newSaleData = {
+              system_type: sys, file_no: fileNo,
+              inv_no: invNo, vin,
+              customer: newCustomer,
+              sale_price: newPrice, sale_date: newDate,
+              notes: rowNotes||null,
+              post_status: 'pending_edit',
+            };
+            await apiPost('sales', newSaleData);
+          }
+
+          // إعادة حساب الإجماليات للقيد
+          totalNew = checkedRows.reduce((s,r) => s + (parseFloat(r.querySelector('[name="sv-price"]')?.value)||0), 0);
+
+          // ── 3. تحديث القيد في مكانه ──
+          if (wasPosted && (Math.abs(totalOld - totalNew) > 0.001 || newCustomer !== oldCustomer)) {
+            await updateJEInPlace({
+              sys, fileNo, refTable:'sales', refId: oldSales?.[0]?.id||null,
+              oldAmount: totalOld, newAmount: totalNew,
+              contactPatch: newCustomer !== oldCustomer ? newCustomer : null,
+            });
+          }
+
+          await logAudit('EDIT','sales', fileNo, {invNo,totalOld,oldCustomer}, {totalNew,newCustomer}, `تعديل فاتورة ${invNo}`);
+          await updateApprovalBadge();
+          submitBtn.onclick  = () => submitSale();
+          submitBtn._editMode= false;
+          closeModal('saleModal');
+          toast('⚠️ تم تعديل الفاتورة والقيد — في انتظار الموافقة','warn');
+          invalidateCache();
+          if (typeof loadSalesTab === 'function') await loadSalesTab(fileNo, sys);
+        } catch(e) {
+          toast('خطأ في حفظ التعديل: '+e.message,'err');
+          console.error(e);
+        }
       };
 
       toast('✏️ جاهز للتعديل — عدّل ثم اضغط حفظ', 'ok');
@@ -1369,78 +1495,36 @@ async function approveItem(type, id) {
     const cfg = APPROVAL_CONFIG[type];
     if (!cfg) { toast('نوع غير معروف','err'); return; }
 
-    // ── معالجة طلبات التعديل (pending_edit) ──
-    if (type === 'payment_edit' || type === 'expense_edit' || type === 'collection_edit') {
+    // ── معالجة طلبات التعديل (pending_edit) — القيد اتحدث مسبقاً، نكتفي بالموافقة ──
+    const EDIT_TYPES = {
+      payment_edit:    { table:'payments',           label:'دفعة' },
+      expense_edit:    { table:'expenses',           label:'مصروف' },
+      collection_edit: { table:'collections',        label:'تحصيل' },
+      purchase_edit:   { table:'purchase_orders',    label:'سند شراء' },
+      payout_edit:     { table:'partner_payouts',    label:'صرف شريك' },
+      opex_edit:       { table:'operating_expenses', label:'مصروف تشغيلي' },
+      sale_edit:       { table:'sales',              label:'فاتورة بيع' },
+    };
+    if (EDIT_TYPES[type]) {
+      const cfg  = EDIT_TYPES[type];
       const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
       if (!item) { toast('لم يُعثر على طلب التعديل','err'); return; }
-      const srcType = type.replace('_edit','');
-      const ed = item._editData || {};
-      const tableMap = { payment:'payments', expense:'expenses', collection:'collections' };
-      const tbl = tableMap[srcType];
 
-      // ── 1. تحديث القيد المحاسبي الأصلي ──
-      try {
-        // جيب القيد الأصلي المرتبط بالسجل
-        const jeRows = await apiGetAll('journal_entries', {
-          select:'id,dr_amount,cr_amount,account_code,ref_id',
-          system_type:`eq.${state.system}`,
-          file_no:`eq.${item.file_no}`,
-          ref_table:`eq.${tbl}`,
-          post_status:'eq.posted',
-          order:'id.desc', limit:20
-        });
-        // ابحث عن القيد المرتبط فعلياً عبر ref_id (الأدق)، وإن لم يوجد ارجع لتطابق المبلغ (بيانات قديمة بدون ref_id)
-        const oldAmount = +item.amount || 0;
-        const newAmount = +ed.amount || +ed.amount || oldAmount;
-        const matchJE = (jeRows||[]).find(j => String(j.ref_id) === String(item.id))
-          || (jeRows||[]).find(j => !j.ref_id && (
-            Math.abs((+j.dr_amount||0) - oldAmount) < 0.001 ||
-            Math.abs((+j.cr_amount||0) - oldAmount) < 0.001
-          ));
+      // القيد اتحدث عند التعديل — نكتفي بتغيير الحالة لـ posted
+      const cleanPatch = { post_status: 'posted' };
 
-        if (matchJE && Math.abs(newAmount - oldAmount) > 0.001) {
-          // تعديل مبالغ القيد مباشرة
-          const isDr = (+matchJE.dr_amount||0) > 0;
-          await apiPatch('journal_entries', { id:`eq.${matchJE.id}` }, {
-            dr_amount: isDr ? newAmount : 0,
-            cr_amount: isDr ? 0 : newAmount,
-          });
-        }
-      } catch(e) { console.warn('approveItem edit JE update:', e.message); }
-
-      // ── 2. تطبيق التعديلات على السجل الأصلي ──
-      let patchData = { post_status: 'posted' };
-      if (srcType === 'payment') {
-        if (ed.payer)  patchData.payer      = ed.payer;
-        if (ed.amount) patchData.amount     = +ed.amount;
-        if (ed.method) patchData.pay_method = ed.method;
-        if (ed.date)   patchData.pay_date   = ed.date;
-        if (ed.doc !== undefined) patchData.document = ed.doc;
-      } else if (srcType === 'expense') {
-        if (ed.desc)   patchData.description = ed.desc;
-        if (ed.type)   patchData.exp_type    = ed.type;
-        if (ed.amount) patchData.amount      = +ed.amount;
-        if (ed.date)   patchData.exp_date    = ed.date;
-        if (ed.method) patchData.pay_method  = ed.method;
-        if (ed.doc !== undefined) patchData.document = ed.doc;
-      } else if (srcType === 'collection') {
-        if (ed.amount) patchData.amount     = +ed.amount;
-        if (ed.method) patchData.pay_method = ed.method;
-        if (ed.due !== undefined)  patchData.due_date  = ed.due;
-        if (ed.paid !== undefined) patchData.paid_date = ed.paid;
-        if (ed.doc !== undefined)  patchData.document  = ed.doc;
+      if (type === 'sale_edit' && item.inv_no) {
+        // فواتير البيع: تحديث كل سجلات الفاتورة بالـ inv_no
+        await apiPatch('sales',
+          { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, post_status:`eq.pending_edit` },
+          cleanPatch
+        );
+      } else {
+        await apiPatch(cfg.table, { id:`eq.${id}` }, cleanPatch);
       }
-
-      // حذف حقول _edit_* المؤقتة
-      ['_edit_payer','_edit_amount','_edit_method','_edit_date','_edit_doc',
-       '_edit_desc','_edit_type','_edit_due','_edit_paid'].forEach(f => {
-        patchData[f] = null;
-      });
-
-      await apiPatch(tbl, { id:`eq.${id}` }, patchData);
-      await logAudit('EDIT_APPROVED', tbl, item.file_no, item, patchData, `موافقة تعديل ${srcType} ${item.ref_no||id}`);
+      await logAudit('EDIT_APPROVED', cfg.table, item.file_no, item, {}, `موافقة تعديل ${cfg.label} ${item.ref_no||item.file_no||item.inv_no||id}`);
       invalidateCache();
-      toast('✅ تم تطبيق التعديل','ok');
+      toast(`✅ تمت الموافقة على تعديل ${cfg.label}`,'ok');
       await loadApprovalQueue();
       return;
     }

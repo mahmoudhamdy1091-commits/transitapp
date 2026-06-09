@@ -1393,21 +1393,51 @@ async function openEditPayoutModal(payoutId) {
     } else {
       el('pout-amount').value = p.amount || '';
     }
-    // Override submit — Void القديم + Draft جديد للمراجعة (لو posted)
+    // Override submit — تعديل in-place + إرسال للموافقة
     el('poutSubmitBtn').onclick = async () => {
-      if (p.post_status === 'posted') {
-        // Void القديم بقيد عكسي
-        await voidTransaction('payout', p);
-        // submit كـ draft جديد
-        el('poutSubmitBtn').onclick = () => submitPayout();
-        await submitPayout();
-        toast('📋 تم إرسال التعديل للمراجعة', 'ok');
-      } else {
-        // draft: مسح وإعادة إنشاء مباشرة
-        await deletePayoutEntry(payoutId, p.file_no, true);
-        el('poutSubmitBtn').onclick = () => submitPayout();
-        await submitPayout();
-      }
+      try {
+        const newType   = el('pout-type').value;
+        const newDate   = el('pout-date').value;
+        const newMethod = el('pout-method').value;
+        const newDoc    = el('pout-doc').value.trim();
+        const newNotes  = el('pout-notes').value.trim();
+        const newPartner= el('pout-partner').value;
+        let newAmount   = 0, newCapital = 0, newProfit = 0;
+        if (newType === 'رأس مال + أرباح') {
+          newCapital = parseFloat(el('pout-capital').value)||0;
+          newProfit  = parseFloat(el('pout-profit').value)||0;
+          newAmount  = newCapital + newProfit;
+        } else {
+          newAmount = parseFloat(el('pout-amount').value)||0;
+        }
+        if (!newAmount) { showFieldErr('poutError','يرجى إدخال المبلغ'); return; }
+
+        // 1. تحديث السجل مباشرة
+        await apiPatch('partner_payouts', { id:`eq.${payoutId}` }, {
+          partner: newPartner, payout_type: newType, pay_date: newDate,
+          pay_method: newMethod, document: newDoc||null, notes: newNotes||null,
+          amount: newAmount,
+          capital_amount: newCapital||null, profit_amount: newProfit||null,
+          post_status: 'pending_edit',
+        });
+
+        // 2. تحديث القيد في مكانه
+        if (p.post_status === 'posted' || p.post_status === 'pending_edit') {
+          await updateJEInPlace({
+            sys: state.system, fileNo: p.file_no,
+            refTable: 'partner_payouts', refId: payoutId,
+            oldAmount: +p.amount||0, newAmount,
+            contactPatch: newPartner !== p.partner ? newPartner : null,
+          });
+        }
+
+        await logAudit('EDIT','partner_payouts', p.file_no, p, {newPartner,newAmount,newType}, `تعديل صرف شريك ${p.ref_no||payoutId}`);
+        await updateApprovalBadge();
+        closeModal('payoutModal');
+        toast('⚠️ تم تعديل الصرف والقيد — في انتظار الموافقة','warn');
+        invalidateCache();
+        loadPartnersTab(state.currentFileNo, state.system);
+      } catch(err) { showFieldErr('poutError','خطأ: '+err.message); }
     };
     el('pout-balance-card').style.display = 'none';
     openModal('payoutModal');
@@ -1425,6 +1455,9 @@ let nfPriceMode = 'equal';
 // Edit mode state
 let _nfEditMode = false;
 let _nfEditFileNo = null;
+let _originalPOTotal = 0;
+let _originalPOSupplier = '';
+let _originalVehicleIds = [];   // IDs of all vehicles loaded at edit open time
 
 // Add vehicle row pre-filled with existing data
 function addVehicleRowWithData(v) {
