@@ -1082,12 +1082,21 @@ async function loadExpensesTab(fn, sys) {
 
 async function loadSalesTab(fn, sys) {
   try {
-    const data = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' });
+    const [data, charges] = await Promise.all([
+      apiGetAll('sales',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
+      apiGetAll('sale_charges', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+    ]);
     state.currentSales = data || [];
     if (!data?.length) { el('salesTable').innerHTML = emptyHTML('🤝','لا توجد مبيعات'); return; }
-    const total = data.reduce((s,v)=>s+(+v.sale_price||0),0);
 
-    // Group by invoice number
+    // فهرسة المصاريف الإضافية بـ inv_no
+    const chargesMap = {};
+    (charges||[]).forEach(c => {
+      if (!chargesMap[c.inv_no]) chargesMap[c.inv_no] = [];
+      chargesMap[c.inv_no].push(c);
+    });
+
+    // تجميع بالفاتورة
     const invoices = {};
     (data||[]).forEach(s => {
       const k = s.inv_no || '__no_inv__';
@@ -1095,35 +1104,46 @@ async function loadSalesTab(fn, sys) {
       invoices[k].items.push(s);
     });
 
+    const totalCars    = data.reduce((s,v)=>s+(+v.sale_price||0),0);
+    const totalCharges = (charges||[]).reduce((s,c)=>s+(+c.amount||0),0);
+    const total        = totalCars + totalCharges;
+
     const rows = Object.values(invoices).map(inv => {
-      const invTotal = inv.items.reduce((s,i)=>s+(+i.sale_price||0),0);
-      const vins = inv.items.map(i=>i.vin||'—').join('، ');
+      const carsTotal   = inv.items.reduce((s,i)=>s+(+i.sale_price||0),0);
+      const invCharges  = chargesMap[inv.inv_no] || [];
+      const chargesTotal= invCharges.reduce((s,c)=>s+(+c.amount||0),0);
+      const grandTotal  = carsTotal + chargesTotal;
+      const vins        = inv.items.map(i=>i.vin||'—').join('، ');
+      const chargesBadge= invCharges.length
+        ? `<div style="font-size:11px;color:var(--accent);margin-top:2px" title="${invCharges.map(c=>c.description+': '+fmt(c.amount)).join(' | ')}">+ ${invCharges.length} مصروف إضافي (${fmt(chargesTotal)})</div>`
+        : '';
       return `<tr>
         <td>
           <div class="mono text-amber" style="font-weight:700">${inv.inv_no||'—'}</div>
           <div style="font-size:13px;color:var(--text2)">${fmtDate(inv.date)}</div>
         </td>
-        <td>
-          <div style="font-weight:600">${inv.customer||'—'}</div>
-        </td>
+        <td><div style="font-weight:600">${inv.customer||'—'}</div></td>
         <td style="font-size:12px;direction:ltr">${vins}</td>
         <td style="text-align:center">${inv.items.length}</td>
-        <td class="mono text-green" style="font-weight:700">${fmt(invTotal)}</td>
+        <td class="mono text-green" style="font-weight:700">
+          ${fmt(grandTotal)}
+          ${chargesBadge}
+        </td>
         <td style="text-align:center">
           <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxSale(this)" data-inv="${inv.inv_no}" data-fn="${fn}" data-id="${inv.items[0]?.id||''}" title="إجراءات">⋮</button>
         </td>
       </tr>`;
     }).join('');
 
-    const salesCsvRows = Object.values(invoices).map(inv=>[
-      inv.inv_no||'—', inv.customer||'—',
-      inv.items.map(i=>i.vin||'').join(' | '),
-      inv.items.length,
-      inv.items.reduce((s,i)=>s+(+i.sale_price||0),0)
-    ]);
+    const salesCsvRows = Object.values(invoices).map(inv=>{
+      const carsT   = inv.items.reduce((s,i)=>s+(+i.sale_price||0),0);
+      const chargesT= (chargesMap[inv.inv_no]||[]).reduce((s,c)=>s+(+c.amount||0),0);
+      return [inv.inv_no||'—', inv.customer||'—', inv.items.map(i=>i.vin||'').join(' | '), inv.items.length, carsT, chargesT, carsT+chargesT];
+    });
+
     el('salesTable').innerHTML = `
       ${exportBtns(
-        () => exportCSV(['رقم الفاتورة','العميل','VINs','عدد السيارات','الإجمالي'], salesCsvRows, 'مبيعات_'+fn),
+        () => exportCSV(['رقم الفاتورة','العميل','VINs','عدد السيارات','سعر السيارات','مصاريف إضافية','الإجمالي'], salesCsvRows, 'مبيعات_'+fn),
         () => printSalesTab(invoices, total, fn)
       )}
       <table class="data-table">
@@ -1187,6 +1207,7 @@ async function deleteSaleInvoice(invNo, fileNo) {
       try {
         await apiDelete('sales', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
         try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` }); } catch(e) { console.warn('deleteSale cleanup collections:', e.message); }
+        try { await apiDelete('sale_charges', { system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` }); } catch(e) { console.warn('deleteSale cleanup sale_charges:', e.message); }
         // تحديث حالة الصفقة
         try {
           const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });

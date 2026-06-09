@@ -1252,6 +1252,18 @@ async function openEditSaleApproval(saleId, fileNo, invNo) {
       }
       updateSaleTotal();
 
+      // ── استرجاع المصاريف الإضافية من sale_charges ──
+      try {
+        const charges = await apiGetAll('sale_charges', {
+          select: '*', system_type: `eq.${state.system}`, inv_no: `eq.${invNo}`
+        });
+        if (charges?.length) {
+          if (el('extraChargesContainer')) el('extraChargesContainer').innerHTML = '';
+          charges.forEach(c => addExtraChargeRow(c.description, c.amount));
+          updateSaleTotal();
+        }
+      } catch(e) { console.warn('load sale_charges:', e.message); }
+
       // Override زرار الحفظ — يعكس القيود القديمة ويحفظ الجديد كـ Draft
       const submitBtn = el('saleSubmitBtn');
       submitBtn._editMode = true;

@@ -1378,6 +1378,19 @@ async function submitSale() {
       await logAudit('INSERT','sales', item.fileNo||fn, null, data);
     }
     if (customer) await ensureContact(customer, 'customer');
+
+    // ── حفظ المصاريف الإضافية في sale_charges ──
+    // عند التعديل: احذف القديمة أولاً ثم أعد الحفظ
+    if (el('saleSubmitBtn')._editMode) {
+      try { await apiDelete('sale_charges', { system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` }); } catch(e) {}
+    }
+    for (const ec of extraCharges) {
+      await apiPost('sale_charges', {
+        system_type: state.system, file_no: fn,
+        inv_no: invNo, description: ec.desc, amount: ec.amount,
+      });
+    }
+
     if (entryStatus()==='posted') {
       try {
         // ✅ A01 COGS fix: حساب تكلفة السيارات المباعة من state._saleAvailableVehicles
