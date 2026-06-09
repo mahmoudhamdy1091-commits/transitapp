@@ -727,16 +727,20 @@ async function loadSummaryTab(fn, sys) {
       </div>` + draftBanner + `
       <div id="kpiGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
         ${[
+          // ── التكاليف ──
           {label:'تكلفة الشراء',    icon:'📋', val:fmt(totalPurchase), sub:'+ '+fmt(totalExp)+' مصاريف = '+fmt(fullCost),       cls:'kpi-blue'},
           {label:'المصاريف',        icon:'💸', val:fmt(totalExp),       sub:(postedExp.length)+' بند مصروف',                     cls:'kpi-red'},
           {label:'التكلفة الكاملة', icon:'🏷️', val:fmt(fullCost),       sub:'شراء + مصاريف',                                     cls:'kpi-amber'},
+          // ── الإيرادات والربح ──
           {label:'المبيعات',        icon:'💹', val:fmt(totalSales),     sub:soldV+' من '+totalV+' سيارة · '+sellPct+'%',         cls:'kpi-green'},
-          {label:'المخزون',          icon:'🚛', val:(totalV-soldV)+' سيارة', sub:'مباع: '+soldV+' · إجمالي: '+totalV,                  cls:'kpi-blue'},
+          {label:'مقبوض فعلاً',     icon:'💰', val:fmt(totalCollected), sub:'من '+fmt(totalSales)+' إجمالي الفواتير',            cls:'kpi-purple'},
           {label:'صافي الربح',      icon:profit>=0?'📈':'📉', val:fmt(Math.abs(profit)), sub:(profit>=0?'ربح':'خسارة')+' · هامش '+margin+'%', cls:profit>=0?'kpi-green':'kpi-red'},
-          {label:'غير محصّل',       icon:'⏳', val:fmt(uncollected),    sub:uncollected>0?'فواتير مستحقة':'✅ كل شيء محصّل',     cls:uncollected>0?'kpi-amber':'kpi-green'},
+          // ── المورد والذمم ──
           {label:'المدفوع للمورد',  icon:'💳', val:fmt(totalPaid),      sub:'من '+fmt(totalPurchase),                            cls:'kpi-cyan'},
           {label:'المتبقي للمورد',  icon:remaining>0?'⚠️':'✅', val:fmt(Math.abs(remaining)), sub:remaining>0?'يحتاج سداد':'مسدد كامل', cls:remaining>0?'kpi-red':'kpi-green'},
-          {label:'مقبوض فعلاً',     icon:'💰', val:fmt(totalCollected), sub:'من '+fmt(totalSales)+' إجمالي الفواتير',            cls:'kpi-purple'},
+          {label:'غير محصّل',       icon:'⏳', val:fmt(uncollected),    sub:uncollected>0?'فواتير مستحقة':'✅ كل شيء محصّل',     cls:uncollected>0?'kpi-amber':'kpi-green'},
+          // ── المخزون ──
+          {label:'المخزون',         icon:'🚛', val:(totalV-soldV)+' سيارة', sub:'مباع: '+soldV+' · إجمالي: '+totalV,            cls:'kpi-blue'},
         ].map(k => `<div class="kpi-card ${k.cls}">
           <div class="kpi-top"><span class="kpi-label">${k.label}</span><div class="kpi-icon">${k.icon}</div></div>
           <div class="kpi-val">${k.val}</div>
