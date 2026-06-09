@@ -24,7 +24,14 @@ LEFT JOIN LATERAL (
 WHERE p.post_status IN ('posted','pending_edit') AND p.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.ref_table = 'payments' AND j.ref_id = p.id::text AND j.dr_amount > 0
+    WHERE j.ref_table = 'payments' AND j.dr_amount > 0
+      AND (
+        j.ref_id = p.id::text
+        OR (j.ref_id IS NULL AND j.entry_no NOT LIKE 'BF-%'
+            AND j.file_no    = p.file_no
+            AND j.entry_date = COALESCE(p.pay_date, p.created_at::date, CURRENT_DATE)
+            AND j.dr_amount  = p.amount)
+      )
   );
 
 INSERT INTO journal_entries
@@ -62,7 +69,14 @@ LEFT JOIN LATERAL (
 WHERE p.post_status IN ('posted','pending_edit') AND p.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.ref_table = 'payments' AND j.ref_id = p.id::text AND j.cr_amount > 0
+    WHERE j.ref_table = 'payments' AND j.cr_amount > 0
+      AND (
+        j.ref_id = p.id::text
+        OR (j.ref_id IS NULL AND j.entry_no NOT LIKE 'BF-%'
+            AND j.file_no    = p.file_no
+            AND j.entry_date = COALESCE(p.pay_date, p.created_at::date, CURRENT_DATE)
+            AND j.cr_amount  = p.amount)
+      )
   );
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
