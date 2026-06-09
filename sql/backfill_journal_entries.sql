@@ -5,6 +5,7 @@ BEGIN
 -- 1. PAYMENTS  DR 2100 / CR 2400 or 1120 or 1110
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+-- سطر مدين — يُدرج لو لا يوجد أي سطر بهذا ref_id
 INSERT INTO journal_entries
   (system_type, entry_no, entry_date, entry_type,
    account_code, account_name, dr_amount, cr_amount,
@@ -25,9 +26,10 @@ LEFT JOIN LATERAL (
 WHERE p.post_status IN ('posted','pending_edit') AND p.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.entry_no = 'BF-PAY-' || p.id::text AND j.dr_amount > 0
+    WHERE j.ref_table = 'payments' AND j.ref_id = p.id::text AND j.dr_amount > 0
   );
 
+-- سطر دائن — يُدرج لو لا يوجد سطر دائن بهذا ref_id
 INSERT INTO journal_entries
   (system_type, entry_no, entry_date, entry_type,
    account_code, account_name, dr_amount, cr_amount,
@@ -63,7 +65,7 @@ LEFT JOIN LATERAL (
 WHERE p.post_status IN ('posted','pending_edit') AND p.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.entry_no = 'BF-PAY-' || p.id::text AND j.cr_amount > 0
+    WHERE j.ref_table = 'payments' AND j.ref_id = p.id::text AND j.cr_amount > 0
   );
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -91,7 +93,7 @@ FROM expenses e
 WHERE e.post_status IN ('posted','pending_edit') AND e.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.entry_no = 'BF-EXP-' || e.id::text AND j.dr_amount > 0
+    WHERE j.ref_table = 'expenses' AND j.ref_id = e.id::text AND j.dr_amount > 0
   );
 
 INSERT INTO journal_entries
@@ -111,7 +113,7 @@ FROM expenses e
 WHERE e.post_status IN ('posted','pending_edit') AND e.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.entry_no = 'BF-EXP-' || e.id::text AND j.cr_amount > 0
+    WHERE j.ref_table = 'expenses' AND j.ref_id = e.id::text AND j.cr_amount > 0
   );
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -133,7 +135,8 @@ FROM sales s
 WHERE s.post_status IN ('posted','pending_edit') AND s.sale_price > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.entry_no = 'BF-SAL-' || s.id::text AND j.dr_amount > 0
+    WHERE j.system_type = s.system_type AND j.file_no = s.file_no
+      AND j.account_code = '1200' AND j.dr_amount = s.sale_price
   );
 
 INSERT INTO journal_entries
@@ -151,7 +154,8 @@ FROM sales s
 WHERE s.post_status IN ('posted','pending_edit') AND s.sale_price > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.entry_no = 'BF-SAL-' || s.id::text AND j.cr_amount > 0
+    WHERE j.system_type = s.system_type AND j.file_no = s.file_no
+      AND j.account_code = '4100' AND j.cr_amount = s.sale_price
   );
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -175,7 +179,7 @@ FROM collections c
 WHERE c.post_status IN ('posted','pending_edit') AND c.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.entry_no = 'BF-COL-' || c.id::text AND j.dr_amount > 0
+    WHERE j.ref_table = 'collections' AND j.ref_id = c.id::text AND j.dr_amount > 0
   );
 
 INSERT INTO journal_entries
@@ -193,7 +197,7 @@ FROM collections c
 WHERE c.post_status IN ('posted','pending_edit') AND c.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.entry_no = 'BF-COL-' || c.id::text AND j.cr_amount > 0
+    WHERE j.ref_table = 'collections' AND j.ref_id = c.id::text AND j.cr_amount > 0
   );
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -215,7 +219,7 @@ FROM partner_payouts pp
 WHERE pp.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.entry_no = 'BF-POUT-' || pp.id::text AND j.dr_amount > 0
+    WHERE j.ref_table = 'partner_payouts' AND j.ref_id = pp.id::text AND j.dr_amount > 0
   );
 
 INSERT INTO journal_entries
@@ -235,7 +239,7 @@ FROM partner_payouts pp
 WHERE pp.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.entry_no = 'BF-POUT-' || pp.id::text AND j.cr_amount > 0
+    WHERE j.ref_table = 'partner_payouts' AND j.ref_id = pp.id::text AND j.cr_amount > 0
   );
 
 END $$;
