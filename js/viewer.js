@@ -311,12 +311,8 @@ async function submitQuickSale() {
     await apiPost('sales', data);
     await logAudit('INSERT','sales',fileNo,null,data);
     if (entryStatus()==='posted') {
-      // ✅ A01 COGS fix: جلب purchase_price بالـ VIN من جدول vehicles
-      let _qsCOGS = 0;
-      try {
-        const _vRows = await apiGetAll('vehicles', { select:'purchase_price', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, vin:`eq.${vin}` });
-        _qsCOGS = +(_vRows?.[0]?.purchase_price) || 0;
-      } catch(e) { console.warn('A01 quickSale COGS:', e.message); }
+      // COGS = (إجمالي الشراء + المصاريف) ÷ عدد السيارات × 1 (سيارة واحدة في البيع السريع)
+      const _qsCOGS = await calcCOGS(state.system, fileNo, 1);
       await je_sale({sys:state.system,date,amount:price,cost:_qsCOGS,fileNo,customer,invNo:invNo||'QS'});
     }
     markSaving('quickSaleModal'); closeModal('quickSaleModal');

@@ -278,6 +278,28 @@ async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}
   }
 }
 
+// ── حساب تكلفة المخزون المباع (COGS) لعدد من السيارات المباعة في ملف ──
+// المعادلة: (إجمالي الشراء + إجمالي المصاريف المرحّلة) ÷ عدد السيارات الكلي × عدد السيارات المباعة
+// soldCount: عدد السيارات في الفاتورة الحالية
+async function calcCOGS(sys, fileNo, soldCount) {
+  if (!soldCount || soldCount <= 0) return 0;
+  try {
+    const [poRows, vehRows, expRows] = await Promise.all([
+      apiGetAll('purchase_orders', { select:'total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('vehicles',        { select:'id',             system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('expenses',        { select:'amount',         system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
+    ]);
+    const totalPurchase = +((poRows||[])[0]?.total_purchase || 0);
+    const totalExp      = (expRows||[]).reduce((s,e) => s + (+e.amount||0), 0);
+    const vehCount      = (vehRows||[]).length || 1;
+    const costPerVeh    = (totalPurchase + totalExp) / vehCount;
+    return Math.round(costPerVeh * soldCount * 100) / 100;
+  } catch(e) {
+    console.warn('calcCOGS error:', e.message);
+    return 0;
+  }
+}
+
 // شراء: مخزون Dr / مورد Cr
 async function je_purchase({sys,date,amount,fileNo,supplier}) {
   if(!amount||amount<=0) return;

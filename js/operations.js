@@ -1599,10 +1599,7 @@ async function approveItem(type, id) {
             inv_no:`eq.${item.inv_no}`,
           });
           const totalInvAmount = (allInvSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
-          const _vRows = await apiGetAll('vehicles', { select:'vin,purchase_price', system_type:`eq.${state.system}`, file_no:`eq.${item.file_no}` });
-          const _vCost = {};
-          (_vRows||[]).forEach(v => { if (v.vin) _vCost[v.vin] = +v.purchase_price||0; });
-          const totalCOGS = (allInvSales||[]).reduce((s,r)=>s+(_vCost[r.vin]||0),0);
+          const totalCOGS = await calcCOGS(state.system, item.file_no, (allInvSales||[]).length);
           if (totalInvAmount > 0) {
             await je_sale({ sys:state.system, date:item.sale_date||today(), amount:totalInvAmount, cost:totalCOGS, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'' });
           }
@@ -1791,9 +1788,7 @@ async function approveAll() {
           } else if (r._type === 'sale' && r.inv_no && r.file_no) {
             const allInvSales = await apiGetAll('sales', { select:'sale_price,vin', system_type:`eq.${state.system}`, file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}` });
             const totalAmt = (allInvSales||[]).reduce((s,x)=>s+(+x.sale_price||0),0);
-            const _vRows = await apiGetAll('vehicles', { select:'vin,purchase_price', system_type:`eq.${state.system}`, file_no:`eq.${r.file_no}` });
-            const _vCost = {}; (_vRows||[]).forEach(v=>{ if(v.vin) _vCost[v.vin]=+v.purchase_price||0; });
-            const cogs = (allInvSales||[]).reduce((s,x)=>s+(_vCost[x.vin]||0),0);
+            const cogs = await calcCOGS(state.system, r.file_no, (allInvSales||[]).length);
             if (totalAmt > 0) await je_sale({ sys:state.system, date:r.sale_date||today(), amount:totalAmt, cost:cogs, fileNo:r.file_no, customer:r.customer||'', invNo:r.inv_no||'' });
             // OPTION B: وافق تلقائياً على collections مرتبطة بهذه الفاتورة draft + paid_date
             try {
@@ -3587,20 +3582,19 @@ async function fixUnbalancedEntries() {
 
         } else if (refTable === 'sales' && fileNo) {
           const data = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
-          // ✅ A01 COGS fix: جلب تكاليف السيارات لهذا الملف مرة واحدة
-          const _vData = await apiGetAll('vehicles', { select:'vin,purchase_price', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
-          const _vCost = {};
-          (_vData||[]).forEach(v => { if (v.vin) _vCost[v.vin] = +v.purchase_price || 0; });
+          // COGS = (إجمالي الشراء + المصاريف) ÷ عدد السيارات × عدد سيارات الفاتورة
           const byInv = {};
           (data||[]).filter(isPosted).forEach(s => {
             const k=`${s.file_no}__${s.inv_no||s.id}`;
-            if(!byInv[k]) byInv[k]={...s,total:0,cogs:0};
-            byInv[k].total += +s.sale_price||0;
-            byInv[k].cogs  += _vCost[s.vin] || 0;
+            if(!byInv[k]) byInv[k]={...s,total:0,soldCount:0};
+            byInv[k].total     += +s.sale_price||0;
+            byInv[k].soldCount += 1;
           });
           for (const s of Object.values(byInv)) {
-            if (s.total > 0)
-              await je_sale({ sys, date:s.sale_date||today(), amount:s.total, cost:s.cogs, fileNo:s.file_no, customer:s.customer||'', invNo:s.inv_no||'' });
+            if (s.total > 0) {
+              const cogs = await calcCOGS(sys, s.file_no, s.soldCount);
+              await je_sale({ sys, date:s.sale_date||today(), amount:s.total, cost:cogs, fileNo:s.file_no, customer:s.customer||'', invNo:s.inv_no||'' });
+            }
           }
 
         } else if (refTable === 'collections' && fileNo) {
@@ -4046,15 +4040,33 @@ async function runMigration() {
 
     // ── الخطوة 5: المبيعات ──
     _migProgress(38, 'الخطوة 5/8: قيود المبيعات...');
-    const _allVehicles = await apiGetAll('vehicles', { select:'vin,purchase_price,file_no', system_type:`eq.${sys}` });
-    const _vinCostMap = {};
-    (_allVehicles||[]).forEach(v => { if (v.vin) _vinCostMap[v.vin] = +v.purchase_price || 0; });
+    // ── بناء خريطة تكلفة/سيارة لكل ملف: (إجمالي الشراء + المصاريف) ÷ عدد السيارات ──
+    const _allVehicles = await apiGetAll('vehicles', { select:'id,file_no', system_type:`eq.${sys}` });
+    const _vehCountByFile = {};
+    (_allVehicles||[]).forEach(v => { if (v.file_no) _vehCountByFile[v.file_no] = (_vehCountByFile[v.file_no]||0) + 1; });
+
+    const _poCostByFile = {};
+    (deals||[]).forEach(d => { if (d.file_no) _poCostByFile[d.file_no] = +d.total_purchase || 0; });
+
+    const _expCostByFile = {};
+    (expenses||[]).filter(isPosted).forEach(e => {
+      if (e.file_no) _expCostByFile[e.file_no] = (_expCostByFile[e.file_no]||0) + (+e.amount||0);
+    });
+
+    // costPerVehicle[fileNo] = (totalPurchase + totalExp) / vehicleCount
+    const _costPerVehicle = {};
+    Object.keys(_poCostByFile).forEach(fn => {
+      const vCount = _vehCountByFile[fn] || 1;
+      _costPerVehicle[fn] = (_poCostByFile[fn] + (_expCostByFile[fn]||0)) / vCount;
+    });
+
     const salesByInv = {};
     (sales||[]).filter(isPosted).forEach(s => {
       const k = `${s.file_no}__${s.inv_no||s.id}`;
-      if (!salesByInv[k]) salesByInv[k] = { ...s, total:0, cogs:0 };
-      salesByInv[k].total += +s.sale_price||0;
-      salesByInv[k].cogs  += _vinCostMap[s.vin] || 0;
+      if (!salesByInv[k]) salesByInv[k] = { ...s, total:0, cogs:0, soldCount:0 };
+      salesByInv[k].total     += +s.sale_price||0;
+      salesByInv[k].soldCount += 1;
+      salesByInv[k].cogs      += _costPerVehicle[s.file_no] || 0;
     });
     _migLog(`🤝 ${Object.keys(salesByInv).length} فاتورة بيع...`);
     for (const s of Object.values(salesByInv)) {

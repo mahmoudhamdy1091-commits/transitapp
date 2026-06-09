@@ -1428,12 +1428,8 @@ async function submitSale() {
 
     if (entryStatus()==='posted') {
       try {
-        // ✅ A01 COGS fix: حساب تكلفة السيارات المباعة من state._saleAvailableVehicles
-        // المصدر: loadAvailableVehicles تحمل select:'*' → purchase_price متاح في الذاكرة
-        const _avail = state._saleAvailableVehicles || [];
-        const _costMap = {};
-        _avail.forEach(v => { if (v.vin) _costMap[v.vin] = +v.purchase_price || 0; });
-        const totalCOGS = saleItems.reduce((s, item) => s + (_costMap[item.vin] || 0), 0);
+        // ✅ COGS = (إجمالي الشراء + المصاريف المرحّلة) ÷ عدد السيارات × عدد المباعة في الفاتورة
+        const totalCOGS = await calcCOGS(state.system, fn, saleItems.length);
         // ✅ القيد يستخدم grandTotal (شامل extra charges) لتطابق قيمة التحصيل
         await je_sale({sys:state.system, date, amount:grandTotal, cost:totalCOGS, fileNo:fn, customer, invNo});
       } catch(jeErr) { toast(`⚠️ تم حفظ الفاتورة لكن فشل قيد البيع: ${jeErr.message}`,'warn'); }
