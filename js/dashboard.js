@@ -470,10 +470,6 @@ function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
       <td>
         <div style="display:flex;align-items:center;gap:5px">
           <span class="mono text-amber" style="font-weight:700;font-size:13px">${fileNoDisplay}</span>
-          ${canOpen ? `<button onclick="event.stopPropagation();openNewFileModal('${d.file_no}')"
-            style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:12px;padding:1px 3px;border-radius:3px" title="تعديل">✏️</button>` : ''}
-          ${can('delete') ? `<button onclick="event.stopPropagation();deleteOrphanDeal('${d.id||d.file_no}')"
-            style="background:none;border:none;cursor:pointer;color:var(--red);font-size:12px;padding:1px 3px;border-radius:3px" title="حذف">🗑</button>` : ''}
         </div>
         <div style="font-size:13px;color:var(--text2);margin-top:2px">${fmtDate(d.po_date)}</div>
       </td>
@@ -514,6 +510,10 @@ function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
       </td>
       <!-- الحالة -->
       <td><span class="badge badge-${statusClass(d.status)}">${d.status||'—'}</span></td>
+      <!-- ⋮ إجراءات -->
+      <td style="text-align:center;width:36px">
+        ${canOpen ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxDeal(this)" data-fn="${d.file_no}" data-id="${d.id||''}" title="إجراءات">⋮</button>` : ''}
+      </td>
     </tr>`;
   }).join('');
 
@@ -535,7 +535,7 @@ function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
         <span class="mono" style="font-weight:900;color:${tP>=0?'var(--green)':'var(--red)'};">${fmt(Math.abs(tP))}</span>
       </div>
     </td>
-    <td></td>
+    <td></td><td></td>
   </tr>`;
 
   target.innerHTML = `
@@ -550,6 +550,7 @@ function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
         <th style="color:var(--green)">المبيعات</th>
         <th>صافي الربح / الخسارة</th>
         <th>الحالة</th>
+        <th style="width:36px"></th>
       </tr></thead>
       <tbody>${rows}${totalRow}</tbody>
     </table>`;

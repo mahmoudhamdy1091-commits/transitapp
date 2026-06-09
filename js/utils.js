@@ -545,6 +545,18 @@ function _ctxVehicle(btn) {
   ]);
 }
 
+// الصفقات — جدول الصفقات الرئيسي (dashboard)
+function _ctxDeal(btn) {
+  const fn = btn.dataset.fn, id = btn.dataset.id;
+  const items = [];
+  items.push({icon:'✏️', label:'تعديل بيانات الملف', action:()=>openNewFileModal(fn)});
+  if (can('delete')) {
+    items.push('divider');
+    items.push({icon:'🗑', label:'حذف الصفقة', danger:true, action:()=>confirmAction('حذف الصفقة','هل أنت متأكد من حذف هذه الصفقة؟',()=>deleteOrphanDeal(id||fn))});
+  }
+  showCtxMenu(btn, items);
+}
+
 // طلب موافقة (operations)
 function _ctxApproval(btn) {
   const type = btn.dataset.type, id = btn.dataset.id;
