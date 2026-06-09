@@ -813,8 +813,16 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
           <select id="opex-filter-type" onchange="loadOpex()" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
             <option value="">كل الأنواع</option>
-            <option>رواتب</option><option>إيجارات</option><option>عمولات</option>
-            <option>نظافة</option><option>ضيافة</option><option>مصروفات حكومية</option><option>أخرى</option>
+            <option>رواتب وأجور</option>
+            <option>إيجار مكتب / معرض</option>
+            <option>كهرباء وماء ومرافق</option>
+            <option>نظافة وصيانة</option>
+            <option>مصاريف إدارية</option>
+            <option>تسويق وإعلانات</option>
+            <option>عمولات ووساطة</option>
+            <option>ضيافة ومطاعم</option>
+            <option>رسوم حكومية ورخص</option>
+            <option>مصاريف متنوعة</option>
           </select>
           <input type="date" id="opex-filter-from" onchange="loadOpex()" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
           <span style="color:var(--text2);font-size:12px">—</span>
@@ -2849,13 +2857,24 @@
           <label>نوع المصروف *</label>
           <select id="opex-type" onchange="onOpexTypeChange()">
             <option value="">— اختر —</option>
-            <option>رواتب</option>
-            <option>إيجارات</option>
-            <option>عمولات</option>
-            <option>نظافة</option>
-            <option>ضيافة</option>
-            <option>مصروفات حكومية</option>
-            <option>أخرى</option>
+            <optgroup label="── الموارد البشرية ──">
+              <option>رواتب وأجور</option>
+            </optgroup>
+            <optgroup label="── مصاريف المنشأة ──">
+              <option>إيجار مكتب / معرض</option>
+              <option>كهرباء وماء ومرافق</option>
+              <option>نظافة وصيانة</option>
+            </optgroup>
+            <optgroup label="── مصاريف تشغيلية ──">
+              <option>مصاريف إدارية</option>
+              <option>تسويق وإعلانات</option>
+              <option>عمولات ووساطة</option>
+              <option>ضيافة ومطاعم</option>
+            </optgroup>
+            <optgroup label="── رسوم وأخرى ──">
+              <option>رسوم حكومية ورخص</option>
+              <option>مصاريف متنوعة</option>
+            </optgroup>
           </select>
         </div>
         <div class="field" id="opex-other-wrap" style="display:none">

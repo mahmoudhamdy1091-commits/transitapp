@@ -81,8 +81,8 @@ async function loadDashboard() {
       // تكلفة الشراء — حساب 1300 مدين من أوامر شراء
       if (acc === '1300' && dr > 0 && ref === 'purchase_orders') totPurchase += dr;
     });
-    // totExp = مجموع مصاريف الصفقات + التشغيلية (للـ KPI الإجمالي)
-    const totExp = totDealExp + totOpex;
+    // totExp = مصاريف الصفقات فقط (لا تشمل التشغيلية — التشغيلية تُطرح من الربح منفصلاً)
+    const totExp = totDealExp;
 
     // totSalesRaw للـ drill-down فقط (قائمة الفواتير)
     const totSalesRaw = (state.allSales||[]).filter(s => isPosted(s) && (s.sale_date||'') >= from && (s.sale_date||'') <= to)
@@ -127,8 +127,10 @@ async function loadDashboard() {
     };
 
     // ── KPIs — من journal_entries (SSOT) ──
-    // نشاط الفترة: إيراد - شراء - (مصاريف صفقات + تشغيلية)
-    const profit      = totSales - totPurchase - totExp;
+    // مجمل الربح = إيراد - شراء - مصاريف صفقات (التشغيلية لا تدخل في التكلفة)
+    const grossProfit = totSales - totPurchase - totExp;
+    // صافي الربح = مجمل الربح - المصاريف التشغيلية
+    const profit      = grossProfit - totOpex;
     const margin      = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
     // فلتر التحصيلات: فقط المقبوض فعلاً (paid_date موجود)
     const paidCollections    = (_ddState.data.periodCollections||[]).filter(c => isPosted(c) && c.paid_date);
@@ -172,8 +174,8 @@ async function loadDashboard() {
       }
     }
     if(el('kpi-month-exp-sub'))   el('kpi-month-exp-sub').textContent   = `${periodExpForDD.length} بند`;
-    if(el('kpi-fullcost-sub'))    el('kpi-fullcost-sub').textContent    = `شراء ${fmt(totPurchase)} + مصاريف ${fmt(totDealExp)} + تشغيلي ${fmt(totOpex)}`;
-    if(el('kpi-profit-sub'))      el('kpi-profit-sub').textContent      = `هامش ${margin}% · نشاط الفترة`;
+    if(el('kpi-fullcost-sub'))    el('kpi-fullcost-sub').textContent    = `شراء ${fmt(totPurchase)} + مصاريف صفقات ${fmt(totDealExp)}`;
+    if(el('kpi-profit-sub'))      el('kpi-profit-sub').textContent      = `هامش ${margin}% · مجمل ${fmt(grossProfit)} − تشغيلي ${fmt(totOpex)}`;
     if(el('kpi-stock-sub'))       el('kpi-stock-sub').textContent       = stockVehicles.filter(v=>daysSince(v.created_at)>60).length>0 ? `${stockVehicles.filter(v=>daysSince(v.created_at)>60).length} أكثر من 60 يوم` : 'لم تُباع بعد';
 
     // ── Badges ──
