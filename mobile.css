@@ -647,6 +647,50 @@
   }
 }
 
+/* ===== Journal Page — اليومية ===== */
+@media(max-width:640px){
+  /* KPI grid: عمودين بدل 6 */
+  #journalKpis{
+    grid-template-columns: repeat(2,1fr) !important;
+    gap: 8px;
+  }
+  .j-kpi{ padding: 10px 12px; }
+  .j-kpi-val{ font-size: 13px; }
+  .j-kpi-label{ font-size: 11px; }
+
+  /* Entry row: أصغر على الموبايل */
+  .j-entry{ padding: 8px 10px; gap: 8px; }
+  .j-entry-icon{ width:30px; height:30px; min-width:30px; font-size:14px; border-radius:8px; }
+  .j-entry-title{ font-size:12px; }
+  .j-entry-amount{ font-size:13px; }
+  .j-entry-actions button{ padding:2px 6px !important; font-size:11px !important; }
+
+  /* Period buttons: scroll أفقي */
+  #journalView .journal-period-wrap{
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    padding-bottom: 4px;
+  }
+  /* Type filter + تحديث: full width */
+  #jTypeFilter{ flex:1; min-width:0; font-size:12px; }
+
+  /* Quick buttons: scroll أفقي */
+  .j-quick-btns{
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    gap: 5px;
+  }
+  .j-quick-btns .btn{ white-space: nowrap; flex-shrink: 0; font-size:12px !important; padding:5px 10px !important; }
+  .j-quick-label{ display: none; } /* يوفّر مساحة على موبايل */
+
+  /* Day header */
+  .journal-day-label{ font-size:11px; padding:2px 8px; }
+  .journal-day-total{ font-size:11px; }
+}
+
 /* ===== إخفاء الأعمدة الثانوية على الموبايل ===== */
 @media(max-width:640px){
   .hide-mobile{

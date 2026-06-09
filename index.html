@@ -609,8 +609,8 @@
           </div>
 
           <!-- Row 2: فلتر الفترة -->
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-            <span style="font-size:11px;color:var(--text2);font-weight:500">الفترة:</span>
+          <div class="journal-period-wrap" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+            <span style="font-size:11px;color:var(--text2);font-weight:500;white-space:nowrap">الفترة:</span>
             <div style="display:flex;background:var(--card2);border-radius:var(--radius-sm);padding:3px;gap:2px">
               <button class="btn btn-sm journal-period-btn active" id="jperiod-today"    onclick="setJournalPeriod('today')">اليوم</button>
               <button class="btn btn-sm journal-period-btn"        id="jperiod-week"     onclick="setJournalPeriod('week')">هذا الأسبوع</button>
@@ -641,16 +641,15 @@
           </div>
 
           <!-- Row 3: أوامر سريعة -->
-          <div style="border-top:1px solid var(--border);padding-top:12px">
-            <span style="font-size:11px;color:var(--text2);font-weight:500;margin-left:8px">تسجيل سريع:</span>
-            <button class="btn btn-sm" onclick="openNewFileModal()"         style="background:var(--accent-dim);border:1px solid var(--accent);color:var(--accent)">📋 شراء</button>
-            <button class="btn btn-sm" onclick="openSaleModal()"            style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);margin-right:4px">🧾 بيع</button>
-            <button class="btn btn-sm" onclick="openQuickModal('collection')" style="background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);margin-right:4px">💰 تحصيل</button>
-            <button class="btn btn-sm" onclick="openQuickModal('payment')"    style="background:var(--cyan-dim);border:1px solid var(--cyan);color:var(--cyan);margin-right:4px">💳 دفعة مورد</button>
-
-            <button class="btn btn-sm" onclick="openExpenseModal()"         style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);margin-right:4px">💸 مصروف</button>
-            <button class="btn btn-sm" onclick="openQuickModal('payout')"   style="background:var(--purple-dim);border:1px solid var(--purple);color:var(--purple);margin-right:4px">👥 صرف شريك</button>
-            <button class="btn btn-sm" onclick="showOpex()" style="background:var(--purple-dim);border:1px solid var(--purple);color:var(--purple);margin-right:4px">💼 مصروف تشغيلي</button>
+          <div class="j-quick-btns">
+            <span class="j-quick-label">تسجيل سريع:</span>
+            <button class="btn btn-sm" onclick="openNewFileModal()"           style="background:var(--accent-dim);border:1px solid var(--accent);color:var(--accent)">📋 شراء</button>
+            <button class="btn btn-sm" onclick="openSaleModal()"              style="background:var(--green-dim);border:1px solid var(--green);color:var(--green)">🧾 بيع</button>
+            <button class="btn btn-sm" onclick="openQuickModal('collection')" style="background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue)">💰 تحصيل</button>
+            <button class="btn btn-sm" onclick="openQuickModal('payment')"    style="background:var(--cyan-dim);border:1px solid var(--cyan);color:var(--cyan)">💳 دفعة مورد</button>
+            <button class="btn btn-sm" onclick="openExpenseModal()"           style="background:var(--red-dim);border:1px solid var(--red);color:var(--red)">💸 مصروف</button>
+            <button class="btn btn-sm" onclick="openQuickModal('payout')"     style="background:var(--purple-dim);border:1px solid var(--purple);color:var(--purple)">👥 صرف شريك</button>
+            <button class="btn btn-sm" onclick="showOpex()"                   style="background:var(--purple-dim);border:1px solid var(--purple);color:var(--purple)">💼 مصروف تشغيلي</button>
           </div>
         </div>
 
