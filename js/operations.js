@@ -977,7 +977,7 @@ async function loadApprovalQueue() {
     // جيب كل البنود المعلقة من كل الجداول بالتوازي
     const [purchases, sales, expenses, collections, payments, payouts,
            voidPay, voidExp, voidCol, voidPayout,
-           editPay, editExp, editCol, editPO, editPayout, editOpex] = await Promise.all([
+           editPay, editExp, editCol, editPO, editPayout] = await Promise.all([
       apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
       apiGetAll('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
       apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
@@ -994,8 +994,9 @@ async function loadApprovalQueue() {
       apiGetAll('collections',         { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
       apiGetAll('purchase_orders',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
       apiGetAll('partner_payouts',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
-      apiGetAll('operating_expenses',  { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
+      // operating_expenses لا تحتوي على post_status — لا تدخل في قائمة المراجعة
     ]);
+    const editOpex = []; // operating_expenses بدون workflow موافقة
 
     // فواتير البيع pending_edit — نجمّع بـ inv_no لتفادي التكرار
     const editSalesRaw = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' });
