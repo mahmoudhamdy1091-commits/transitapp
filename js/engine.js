@@ -278,12 +278,24 @@ async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}
   }
 }
 
-// ── حساب تكلفة المخزون المباع (COGS) لعدد من السيارات المباعة في ملف ──
-// المعادلة: (إجمالي الشراء + إجمالي المصاريف المرحّلة) ÷ عدد السيارات الكلي × عدد السيارات المباعة
-// soldCount: عدد السيارات في الفاتورة الحالية
-async function calcCOGS(sys, fileNo, soldCount) {
+// ── حساب تكلفة المخزون المباع (COGS) — المنطق الصح ──
+//
+// السيارة المباعة تُقفل تكلفتها وقت البيع، والمصاريف اللاحقة تُحمَّل
+// على السيارات المتبقية فقط. المعادلة:
+//
+//   التكلفة المتبقية = (إجمالي الشراء + جميع المصاريف) − COGS المرحّل سابقاً
+//   السيارات المتبقية = إجمالي السيارات − سيارات مباعة سابقاً (مرحّلة)
+//   تكلفة/سيارة = التكلفة المتبقية ÷ السيارات المتبقية
+//   COGS الفاتورة = تكلفة/سيارة × عدد سيارات الفاتورة
+//
+// params:
+//   sys, fileNo, soldCount  — كالمعتاد
+//   alreadySold (optional)  — للمهاجر (migration) الذي يتتبع الحالة داخلياً
+//   alreadyCOGS (optional)  — نفس الغرض؛ لو null يُجلب من journal_entries
+async function calcCOGS(sys, fileNo, soldCount, { alreadySold = null, alreadyCOGS = null } = {}) {
   if (!soldCount || soldCount <= 0) return 0;
   try {
+    // جلب بيانات الملف
     const [poRows, vehRows, expRows] = await Promise.all([
       apiGetAll('purchase_orders', { select:'total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
       apiGetAll('vehicles',        { select:'id',             system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
@@ -291,8 +303,27 @@ async function calcCOGS(sys, fileNo, soldCount) {
     ]);
     const totalPurchase = +((poRows||[])[0]?.total_purchase || 0);
     const totalExp      = (expRows||[]).reduce((s,e) => s + (+e.amount||0), 0);
-    const vehCount      = (vehRows||[]).length || 1;
-    const costPerVeh    = (totalPurchase + totalExp) / vehCount;
+    const totalVeh      = (vehRows||[]).length || 1;
+    const fullCost      = totalPurchase + totalExp;
+
+    // إذا لم تُمرَّر قيم جاهزة — اجلبها من القيود المرحّلة
+    let _alreadyCOGS = alreadyCOGS;
+    let _alreadySold = alreadySold;
+
+    if (_alreadyCOGS === null || _alreadySold === null) {
+      const [jeRows, soldRows] = await Promise.all([
+        apiGetAll('journal_entries', { select:'dr_amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, account_code:'eq.5100', post_status:'eq.posted' }),
+        apiGetAll('sales',           { select:'id',        system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
+      ]);
+      if (_alreadyCOGS === null) _alreadyCOGS = (jeRows||[]).reduce((s,r) => s + (+r.dr_amount||0), 0);
+      if (_alreadySold === null) _alreadySold  = (soldRows||[]).length;
+    }
+
+    // التكلفة والسيارات المتبقية قبل هذا البيع
+    const remainingVeh  = Math.max(totalVeh - _alreadySold, soldCount);
+    const remainingCost = Math.max(fullCost  - _alreadyCOGS, 0);
+    const costPerVeh    = remainingVeh > 0 ? remainingCost / remainingVeh : 0;
+
     return Math.round(costPerVeh * soldCount * 100) / 100;
   } catch(e) {
     console.warn('calcCOGS error:', e.message);

@@ -4040,7 +4040,7 @@ async function runMigration() {
 
     // ── الخطوة 5: المبيعات ──
     _migProgress(38, 'الخطوة 5/8: قيود المبيعات...');
-    // ── بناء خريطة تكلفة/سيارة لكل ملف: (إجمالي الشراء + المصاريف) ÷ عدد السيارات ──
+    // ── بناء خرائط التكلفة الكاملة لكل ملف ──
     const _allVehicles = await apiGetAll('vehicles', { select:'id,file_no', system_type:`eq.${sys}` });
     const _vehCountByFile = {};
     (_allVehicles||[]).forEach(v => { if (v.file_no) _vehCountByFile[v.file_no] = (_vehCountByFile[v.file_no]||0) + 1; });
@@ -4053,23 +4053,44 @@ async function runMigration() {
       if (e.file_no) _expCostByFile[e.file_no] = (_expCostByFile[e.file_no]||0) + (+e.amount||0);
     });
 
-    // costPerVehicle[fileNo] = (totalPurchase + totalExp) / vehicleCount
-    const _costPerVehicle = {};
-    Object.keys(_poCostByFile).forEach(fn => {
-      const vCount = _vehCountByFile[fn] || 1;
-      _costPerVehicle[fn] = (_poCostByFile[fn] + (_expCostByFile[fn]||0)) / vCount;
+    // التكلفة الكاملة لكل ملف = شراء + مصاريف
+    const _fullCostByFile = {};
+    [...new Set([...Object.keys(_poCostByFile), ...Object.keys(_expCostByFile)])].forEach(fn => {
+      _fullCostByFile[fn] = (_poCostByFile[fn]||0) + (_expCostByFile[fn]||0);
     });
 
+    // ── تجميع الفواتير مرتبةً زمنياً ──
+    // المنطق: السيارة المباعة تُقفل تكلفتها، والمصاريف اللاحقة تُحمَّل على الباقين فقط
+    // → نعالج الفواتير بالترتيب الزمني ونتتبع لكل ملف: (alreadySold, alreadyCOGS)
     const salesByInv = {};
     (sales||[]).filter(isPosted).forEach(s => {
       const k = `${s.file_no}__${s.inv_no||s.id}`;
-      if (!salesByInv[k]) salesByInv[k] = { ...s, total:0, cogs:0, soldCount:0 };
+      if (!salesByInv[k]) salesByInv[k] = { ...s, total:0, soldCount:0 };
       salesByInv[k].total     += +s.sale_price||0;
       salesByInv[k].soldCount += 1;
-      salesByInv[k].cogs      += _costPerVehicle[s.file_no] || 0;
     });
-    _migLog(`🤝 ${Object.keys(salesByInv).length} فاتورة بيع...`);
-    for (const s of Object.values(salesByInv)) {
+    // رتّب زمنياً بالتاريخ ثم بالـ id
+    const sortedInvs = Object.values(salesByInv).sort((a,b) =>
+      (a.sale_date||'').localeCompare(b.sale_date||'') || String(a.id).localeCompare(String(b.id))
+    );
+
+    // حالة متراكمة لكل ملف خلال المعالجة
+    const _fileState = {}; // { [fileNo]: { alreadySold, alreadyCOGS } }
+    for (const s of sortedInvs) {
+      const fn = s.file_no;
+      if (!_fileState[fn]) _fileState[fn] = { alreadySold:0, alreadyCOGS:0 };
+      const st        = _fileState[fn];
+      const totalVeh  = _vehCountByFile[fn] || 1;
+      const fullCost  = _fullCostByFile[fn] || 0;
+      const remVeh    = Math.max(totalVeh - st.alreadySold, s.soldCount);
+      const remCost   = Math.max(fullCost  - st.alreadyCOGS, 0);
+      const cogs      = remVeh > 0 ? Math.round((remCost / remVeh) * s.soldCount * 100) / 100 : 0;
+      s.cogs          = cogs;
+      st.alreadySold += s.soldCount;
+      st.alreadyCOGS += cogs;
+    }
+    _migLog(`🤝 ${sortedInvs.length} فاتورة بيع...`);
+    for (const s of sortedInvs) {
       if (!s.total) { skipped++; done++; continue; }
       await safe(`بيع ${s.inv_no||s.id}`, () => je_sale({ sys, date:s.sale_date||today(), amount:s.total, cost:s.cogs, fileNo:s.file_no, customer:s.customer||'', invNo:s.inv_no||'' }));
     }
