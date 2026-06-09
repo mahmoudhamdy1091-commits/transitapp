@@ -103,6 +103,48 @@ function clearActivityFilters() {
   setActivityPeriod('month');
 }
 
+// ── خرائط الأسماء ──────────────────────────────────────────────
+const _ACT_LABELS = {
+  INSERT:'➕ إضافة', UPDATE:'✏️ تعديل', EDIT:'✏️ تعديل', DELETE:'🗑 حذف',
+  VOID:'🔄 إلغاء', VOID_REQUEST:'🔄 طلب إلغاء', EDIT_REQUEST:'📝 طلب تعديل',
+  EDIT_APPROVED:'✅ موافقة تعديل', REJECT:'❌ رفض', MIGRATION:'🔁 ترحيل',
+  IMPORT:'📥 استيراد', DEAL_NOTE:'📌 ملاحظة', DELETE_DRAFT_LEFTOVER:'🧹 تنظيف',
+  VOID_REJECTED:'🚫 رفض إلغاء',
+};
+const _ACT_COLORS = {
+  INSERT:'var(--green)', UPDATE:'var(--accent)', EDIT:'var(--accent)',
+  DELETE:'var(--red)', VOID:'var(--red)', VOID_REQUEST:'var(--red)',
+  EDIT_REQUEST:'var(--blue)', EDIT_APPROVED:'var(--green)', REJECT:'var(--red)',
+  MIGRATION:'var(--cyan)', IMPORT:'var(--purple)', DEAL_NOTE:'var(--blue)',
+  DELETE_DRAFT_LEFTOVER:'var(--text2)', VOID_REJECTED:'var(--red)',
+};
+const _ACT_BG = {
+  INSERT:'var(--green-dim)', UPDATE:'var(--accent-dim)', EDIT:'var(--accent-dim)',
+  DELETE:'var(--red-dim)', VOID:'var(--red-dim)', VOID_REQUEST:'var(--red-dim)',
+  EDIT_REQUEST:'var(--blue-dim)', EDIT_APPROVED:'var(--green-dim)', REJECT:'var(--red-dim)',
+  MIGRATION:'var(--cyan-dim)', IMPORT:'var(--purple-dim)', DEAL_NOTE:'var(--blue-dim)',
+  DELETE_DRAFT_LEFTOVER:'var(--card2)', VOID_REJECTED:'var(--red-dim)',
+};
+const _TBL_LABELS = {
+  purchase_orders:'أوامر الشراء', sales:'المبيعات', expenses:'المصاريف',
+  payments:'دفعات المورد', collections:'التحصيلات', partner_payouts:'صرف الشركاء',
+  vehicles:'السيارات', contacts:'جهات الاتصال', user_roles:'المستخدمين',
+  operating_expenses:'المصاريف التشغيلية', journal_entries:'القيود المحاسبية',
+  stock_locations:'مواقع المخزون', partners_master:'الشركاء',
+  audit_log:'سجل البيانات',
+};
+// أسماء عربية للحقول
+const _FIELD_LABELS = {
+  amount:'المبلغ', description:'الوصف', exp_type:'النوع', vendor:'المورد', pay_method:'طريقة الدفع',
+  exp_date:'التاريخ', ref_no:'رقم المرجع', post_status:'الحالة', file_no:'رقم الملف',
+  sale_price:'سعر البيع', customer:'العميل', sale_date:'تاريخ البيع', vin:'رقم الشاصي',
+  supplier:'المورد', total_purchase:'إجمالي الشراء', po_date:'تاريخ السند',
+  payer:'الدافع', document:'المستند', partner:'الشريك', payout_type:'نوع الصرف',
+  model:'الموديل', make:'الصانع', year:'السنة', color:'اللون', purchase_price:'سعر الشراء',
+  inv_no:'رقم الفاتورة', paid_date:'تاريخ الدفع', due_date:'تاريخ الاستحقاق',
+  name:'الاسم', phone:'الهاتف', email:'الإيميل', type:'النوع',
+};
+
 function renderActivityLog() {
   const filterUser   = el('actFilter-user')?.value   || '';
   const filterAction = el('actFilter-action')?.value || '';
@@ -117,45 +159,50 @@ function renderActivityLog() {
   if (filterFrom)   list = list.filter(r => (r.created_at||'') >= filterFrom);
   if (filterTo)     list = list.filter(r => (r.created_at||'').split('T')[0] <= filterTo);
 
-  if(el('activity-subtitle')) el('activity-subtitle').textContent = `${list.length} سجل`;
-
+  if (el('activity-subtitle')) el('activity-subtitle').textContent = `${list.length} سجل`;
   if (!list.length) { el('activityTableWrap').innerHTML = emptyHTML('🕵️','لا توجد سجلات'); return; }
 
-  const actionColors = { INSERT:'var(--green)', UPDATE:'var(--accent)', DELETE:'var(--red)' };
-  const actionLabels = { INSERT:'➕ إضافة', UPDATE:'✏️ تعديل', DELETE:'🗑 حذف' };
-  const actionBg     = { INSERT:'var(--green-dim)', UPDATE:'var(--accent-dim)', DELETE:'var(--red-dim)' };
-  const tableLabels  = {
-    purchase_orders:'أوامر الشراء', sales:'المبيعات', expenses:'المصاريف',
-    payments:'الدفعات', collections:'التحصيلات', partner_payouts:'صرف الشركاء',
-    vehicles:'السيارات', contacts:'جهات الاتصال', user_roles:'المستخدمين',
-    operating_expenses:'التشغيلية',
-  };
-
   const rows = list.map(r => {
-    const dt       = r.created_at ? new Date(r.created_at).toLocaleString('en-US') : '—';
+    const dt       = r.created_at ? new Date(r.created_at).toLocaleString('ar-KW',{dateStyle:'short',timeStyle:'short'}) : '—';
     const email    = r.user_email || 'غير معروف';
-    const initials = email[0]?.toUpperCase() || '?';
-    const hasDetail= r.new_val || r.old_val || r.notes;
+    const username = email.split('@')[0];
+    const initials = username[0]?.toUpperCase() || '?';
+    const hasDetail= !!(r.new_value || r.old_value || r.notes);
+    const actLabel = _ACT_LABELS[r.action] || r.action;
+    const actColor = _ACT_COLORS[r.action] || 'var(--text2)';
+    const actBg    = _ACT_BG[r.action]    || 'var(--card2)';
+    const tblLabel = _TBL_LABELS[r.table_name] || r.table_name || '—';
+
+    // ملخص سريع — ماذا تغيّر؟
+    let summary = r.notes || '';
+    if (!summary && r.new_value) {
+      try {
+        const nw = typeof r.new_value==='string' ? JSON.parse(r.new_value) : r.new_value;
+        const keys = Object.keys(nw).filter(k=>!['id','created_at','system_type'].includes(k));
+        if (keys.length) summary = keys.slice(0,3).map(k=>_FIELD_LABELS[k]||k).join(' · ');
+      } catch(e) {}
+    }
+
     return `
     <tr onclick="${hasDetail ? `showActivityDetail('${r.id}')` : ''}"
       style="cursor:${hasDetail?'pointer':'default'};transition:background .1s"
       onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
-      <td style="padding:9px 12px;font-size:13px;color:var(--text2);white-space:nowrap">${dt}</td>
+      <td style="padding:9px 12px;font-size:12px;color:var(--text2);white-space:nowrap">${dt}</td>
       <td style="padding:9px 12px">
         <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:var(--accent);flex-shrink:0">${initials}</div>
-          <span style="font-size:12px">${email}</span>
+          <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--accent);flex-shrink:0">${initials}</div>
+          <span style="font-size:12px">${username}</span>
         </div>
       </td>
       <td style="padding:9px 12px">
-        <span style="font-size:13px;font-weight:700;padding:2px 8px;border-radius:6px;background:${actionBg[r.action]||'var(--card2)'};color:${actionColors[r.action]||'var(--text2)'}">
-          ${actionLabels[r.action]||r.action}
+        <span style="font-size:12px;font-weight:700;padding:3px 8px;border-radius:6px;background:${actBg};color:${actColor};white-space:nowrap">
+          ${actLabel}
         </span>
       </td>
-      <td style="padding:9px 12px;font-size:12px;color:var(--text2)">${tableLabels[r.table_name]||r.table_name||'—'}</td>
+      <td style="padding:9px 12px;font-size:12px;color:var(--text2)">${tblLabel}</td>
       <td style="padding:9px 12px;font-size:12px;font-weight:700;color:var(--accent);font-family:monospace">${r.file_no||'—'}</td>
-      <td style="padding:9px 12px;font-size:13px;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.notes||'—'}</td>
-      <td style="padding:9px 12px">${hasDetail ? '<span style="font-size:12px;color:var(--blue)">تفاصيل ←</span>' : ''}</td>
+      <td style="padding:9px 12px;font-size:12px;color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${summary}">${summary||'—'}</td>
+      <td style="padding:9px 12px;text-align:center">${hasDetail ? `<button onclick="event.stopPropagation();showActivityDetail('${r.id}')" style="font-size:11px;color:var(--blue);background:var(--blue-dim);border:none;border-radius:4px;padding:3px 8px;cursor:pointer">تفاصيل</button>` : ''}</td>
     </tr>`;
   }).join('');
 
@@ -164,7 +211,7 @@ function renderActivityLog() {
       <table class="data-table">
         <thead><tr>
           <th>الوقت</th><th>المستخدم</th><th>العملية</th>
-          <th>الجدول</th><th>رقم الملف</th><th>ملاحظات</th><th></th>
+          <th>الجدول</th><th>الملف</th><th>الملخص</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -175,66 +222,118 @@ function showActivityDetail(id) {
   const r = _activityData.find(x => String(x.id) === String(id));
   if (!r) return;
 
-  const actionColors = { INSERT:'var(--green)', UPDATE:'var(--accent)', DELETE:'var(--red)' };
-  const actionLabels = { INSERT:'➕ إضافة', UPDATE:'✏️ تعديل', DELETE:'🗑 حذف' };
+  const actLabel = _ACT_LABELS[r.action] || r.action;
+  const actColor = _ACT_COLORS[r.action] || 'var(--text)';
 
-  let detailHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-      <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">المستخدم</div>
-        <div style="font-weight:600">${r.user_email||'—'}</div>
-      </div>
-      <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">الوقت</div>
-        <div style="font-weight:600;font-size:13px">${r.created_at ? new Date(r.created_at).toLocaleString('en-US') : '—'}</div>
-      </div>
-      <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">العملية</div>
-        <div style="font-weight:700;color:${actionColors[r.action]||'var(--text)'}">${actionLabels[r.action]||r.action}</div>
-      </div>
-      <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:3px">الملف</div>
-        <div style="font-weight:700;color:var(--accent);font-family:monospace">${r.file_no||'—'}</div>
-      </div>
-    </div>`;
+  // ── parse old/new ──
+  let oldObj = null, newObj = null;
+  try { oldObj = r.old_value ? (typeof r.old_value==='string' ? JSON.parse(r.old_value) : r.old_value) : null; } catch(e) {}
+  try { newObj = r.new_value ? (typeof r.new_value==='string' ? JSON.parse(r.new_value) : r.new_value) : null; } catch(e) {}
 
+  // ── رأس التفاصيل ──
+  let html = `
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px">
+    <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:3px">المستخدم</div>
+      <div style="font-weight:700;font-size:13px">${r.user_email||'—'}</div>
+    </div>
+    <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:3px">الوقت</div>
+      <div style="font-size:13px">${r.created_at ? new Date(r.created_at).toLocaleString('ar-KW') : '—'}</div>
+    </div>
+    <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:3px">العملية</div>
+      <div style="font-weight:700;color:${actColor}">${actLabel}</div>
+    </div>
+    <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:3px">الملف · الجدول</div>
+      <div style="font-weight:700;color:var(--accent);font-family:monospace;font-size:13px">${r.file_no||'—'} <span style="color:var(--text2);font-family:inherit;font-size:11px">· ${_TBL_LABELS[r.table_name]||r.table_name||'—'}</span></div>
+    </div>
+  </div>`;
+
+  // ── ملاحظات ──
   if (r.notes) {
-    detailHTML += `
-    <div style="margin-bottom:12px">
-      <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">ملاحظات</div>
-      <div style="background:var(--card2);border-radius:var(--radius-sm);padding:10px;font-size:12px">${r.notes}</div>
+    html += `<div style="margin-bottom:12px;padding:10px 14px;background:var(--blue-dim);border-radius:var(--radius-sm);border-right:3px solid var(--blue);font-size:13px">${r.notes}</div>`;
+  }
+
+  // ── DIFF: قارن old و new ──
+  if (oldObj && newObj) {
+    const allKeys = new Set([...Object.keys(oldObj), ...Object.keys(newObj)]);
+    const skip    = new Set(['id','created_at','updated_at','system_type','post_status']);
+    const changed = [];
+    allKeys.forEach(k => {
+      if (skip.has(k)) return;
+      const ov = String(oldObj[k] ?? '');
+      const nv = String(newObj[k] ?? '');
+      if (ov !== nv) changed.push({ key:k, old:ov, new:nv });
+    });
+
+    if (changed.length) {
+      html += `<div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:8px">📝 التغييرات (${changed.length} حقل)</div>`;
+      html += `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:14px">`;
+      changed.forEach((c, i) => {
+        const fieldLabel = _FIELD_LABELS[c.key] || c.key;
+        html += `
+        <div style="display:grid;grid-template-columns:120px 1fr 1fr;gap:0;${i?'border-top:1px solid var(--border)':''}">
+          <div style="padding:8px 12px;background:var(--card2);font-size:12px;font-weight:700;color:var(--text2);display:flex;align-items:center">${fieldLabel}</div>
+          <div style="padding:8px 12px;background:var(--red-dim);font-size:12px;font-family:monospace;border-right:1px solid var(--border);word-break:break-all">
+            <span style="color:var(--text3);font-size:10px;display:block;margin-bottom:2px">قبل</span>
+            <span style="color:var(--red)">${c.old || '—'}</span>
+          </div>
+          <div style="padding:8px 12px;background:var(--green-dim);font-size:12px;font-family:monospace;word-break:break-all">
+            <span style="color:var(--text3);font-size:10px;display:block;margin-bottom:2px">بعد</span>
+            <span style="color:var(--green)">${c.new || '—'}</span>
+          </div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+  } else if (newObj) {
+    // INSERT — عرض البيانات المضافة
+    const skip  = new Set(['id','created_at','updated_at','system_type']);
+    const pairs = Object.entries(newObj).filter(([k]) => !skip.has(k));
+    if (pairs.length) {
+      html += `<div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:8px">➕ البيانات المضافة</div>`;
+      html += `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:14px">`;
+      pairs.forEach(([k,v],i) => {
+        html += `
+        <div style="display:flex;gap:0;${i?'border-top:1px solid var(--border)':''}">
+          <div style="padding:7px 12px;background:var(--card2);font-size:12px;font-weight:700;color:var(--text2);min-width:130px">${_FIELD_LABELS[k]||k}</div>
+          <div style="padding:7px 12px;font-size:12px;font-family:monospace;color:var(--text);word-break:break-all;flex:1">${v??'—'}</div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+  } else if (oldObj) {
+    // DELETE/VOID — عرض البيانات المحذوفة
+    const skip  = new Set(['id','created_at','updated_at','system_type']);
+    const pairs = Object.entries(oldObj).filter(([k]) => !skip.has(k));
+    if (pairs.length) {
+      html += `<div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:8px">🗑 البيانات قبل الحذف/الإلغاء</div>`;
+      html += `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:14px">`;
+      pairs.forEach(([k,v],i) => {
+        html += `
+        <div style="display:flex;gap:0;${i?'border-top:1px solid var(--border)':''}">
+          <div style="padding:7px 12px;background:var(--card2);font-size:12px;font-weight:700;color:var(--text2);min-width:130px">${_FIELD_LABELS[k]||k}</div>
+          <div style="padding:7px 12px;font-size:12px;font-family:monospace;color:var(--red);word-break:break-all;flex:1">${v??'—'}</div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+  }
+
+  // ── زر الانتقال للملف ──
+  if (r.file_no) {
+    html += `<div style="text-align:center;margin-top:8px">
+      <button onclick="document.getElementById('activity-detail').style.display='none'; openViewerFile('${r.file_no}')"
+        style="background:var(--accent);color:#000;border:none;border-radius:8px;padding:10px 24px;font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;cursor:pointer">
+        📂 فتح الملف ${r.file_no}
+      </button>
     </div>`;
   }
 
-  // Old/New values
-  if (r.old_value) {
-    try {
-      const old = typeof r.old_value === 'string' ? JSON.parse(r.old_value) : r.old_value;
-      detailHTML += `
-      <div style="margin-bottom:12px">
-        <div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:6px">القيمة قبل التعديل</div>
-        <div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px;font-family:monospace;font-size:13px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">
-          ${JSON.stringify(old, null, 2)}
-        </div>
-      </div>`;
-    } catch(e) { detailHTML += `<div style="margin-bottom:12px;font-size:13px;color:var(--text2)">القيمة القديمة: ${r.old_value}</div>`; }
-  }
-
-  if (r.new_value) {
-    try {
-      const nw = typeof r.new_value === 'string' ? JSON.parse(r.new_value) : r.new_value;
-      detailHTML += `
-      <div>
-        <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:6px">البيانات المضافة / بعد التعديل</div>
-        <div style="background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:10px;font-family:monospace;font-size:13px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">
-          ${JSON.stringify(nw, null, 2)}
-        </div>
-      </div>`;
-    } catch(e) { detailHTML += `<div style="font-size:13px;color:var(--text2)">البيانات: ${r.new_value}</div>`; }
-  }
-
-  el('act-detail-title').textContent = `🕵️ تفاصيل — ${r.table_name||'—'} — ${r.file_no||'—'}`;
-  el('act-detail-body').innerHTML = detailHTML;
+  el('act-detail-title').textContent = `${actLabel} — ${_TBL_LABELS[r.table_name]||r.table_name||'—'} — ${r.file_no||'—'}`;
+  el('act-detail-body').innerHTML = html;
   el('activity-detail').style.display = 'flex';
 }
 
