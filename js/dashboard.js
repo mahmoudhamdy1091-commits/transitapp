@@ -952,14 +952,15 @@ async function loadPaymentsTab(fn, sys) {
     const total = data.filter(isEffective).reduce((s,p)=>s+(+p.amount||0),0);
 
     // كشف الدفعات المشبوهة: نفس المبلغ + الدافع + التاريخ + طريقة الدفع + رقم المستند
-    // لو المستند أو طريقة الدفع مختلفة → دفعتان حقيقيتان وليستا تكراراً
+    // يستثني الملغاة (voided) لأن إلغاء دفعة وإعادتها يعطي نفس البيانات
     const dupKeys = new Set();
     const keyCount = {};
-    data.forEach(p => {
+    const activePayments = data.filter(p => p.post_status !== 'voided');
+    activePayments.forEach(p => {
       const k = `${p.amount}__${p.payer}__${p.pay_date}__${p.pay_method||''}__${p.document||''}`;
       keyCount[k] = (keyCount[k]||0) + 1;
     });
-    data.forEach(p => {
+    activePayments.forEach(p => {
       const k = `${p.amount}__${p.payer}__${p.pay_date}__${p.pay_method||''}__${p.document||''}`;
       if (keyCount[k] > 1) dupKeys.add(p.id);
     });
@@ -968,9 +969,9 @@ async function loadPaymentsTab(fn, sys) {
     const csvHeaders = ['رقم الدفعة','الدافع','المبلغ','طريقة الدفع','المستند','التاريخ','ملاحظات'];
 
     const dupWarning = dupKeys.size > 0
-      ? `<div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--red);display:flex;align-items:center;gap:8px">
+      ? `<div style="background:var(--yellow-dim,#fffbe6);border:1px solid var(--yellow,#f5a623);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--yellow-dark,#b07d00);display:flex;align-items:center;gap:8px">
           <span style="font-size:16px">⚠️</span>
-          <span>يوجد <strong>${dupKeys.size}</strong> دفعة مشبوهة بنفس المبلغ والدافع والتاريخ — مُعلَّمة بالأحمر</span>
+          <span>يوجد <strong>${dupKeys.size}</strong> دفعة بنفس المستند والمبلغ والتاريخ — قد تكون دفعة مشتركة بين شركاء</span>
          </div>`
       : '';
 
@@ -989,11 +990,10 @@ async function loadPaymentsTab(fn, sys) {
         <tbody>
           ${data.filter(isVisible).map((p,i)=>{
             const isDup = dupKeys.has(p.id);
-            const rowStyle = isDup ? 'background:var(--red-dim);' : '';
-            const dupBadge = isDup ? '<span style="font-size:13px;background:var(--red);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">مكرر؟</span>' : '';
+            const dupBadge = isDup ? '<span style="font-size:12px;background:var(--yellow,#f5a623);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">نفس المستند</span>' : '';
             const isVoided = false;
             const voidedBadge = '';
-            const trStyle = isDup ? 'background:var(--red-dim);' : '';
+            const trStyle = isDup ? 'background:var(--yellow-dim,#fffbe6);' : '';
             return `<tr style="${trStyle}">
               <td style="text-align:center;font-size:13px;color:var(--text3);font-weight:700">${i+1}</td>
               <td class="mono" style="color:var(--cyan);font-weight:700;font-size:13px">${p.ref_no||'—'} ${voidedBadge}</td>
