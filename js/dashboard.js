@@ -951,15 +951,16 @@ async function loadPaymentsTab(fn, sys) {
     // ✅ الإجمالي يستثني الملغية
     const total = data.filter(isEffective).reduce((s,p)=>s+(+p.amount||0),0);
 
-    // كشف الدفعات المشبوهة (نفس المبلغ ونفس الدافع في نفس اليوم أو متقاربة)
+    // كشف الدفعات المشبوهة: نفس المبلغ + الدافع + التاريخ + طريقة الدفع + رقم المستند
+    // لو المستند أو طريقة الدفع مختلفة → دفعتان حقيقيتان وليستا تكراراً
     const dupKeys = new Set();
     const keyCount = {};
     data.forEach(p => {
-      const k = `${p.amount}__${p.payer}__${p.pay_date}`;
+      const k = `${p.amount}__${p.payer}__${p.pay_date}__${p.pay_method||''}__${p.document||''}`;
       keyCount[k] = (keyCount[k]||0) + 1;
     });
     data.forEach(p => {
-      const k = `${p.amount}__${p.payer}__${p.pay_date}`;
+      const k = `${p.amount}__${p.payer}__${p.pay_date}__${p.pay_method||''}__${p.document||''}`;
       if (keyCount[k] > 1) dupKeys.add(p.id);
     });
 
