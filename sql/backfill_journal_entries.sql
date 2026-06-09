@@ -114,7 +114,8 @@ WHERE e.post_status IN ('posted','pending_edit') AND e.amount > 0
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- 3. SALES  DR 1200 / CR 4100
--- يتجاهل أي ملف عنده قيد مبيعات حقيقي (غير BF)
+-- مجمّع بـ inv_no تماماً كالنظام (فاتورة واحدة = قيد واحد)
+-- يتجاهل أي فاتورة عندها قيد حقيقي موجود (غير BF)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INSERT INTO journal_entries
   (system_type, entry_no, entry_date, entry_type,
@@ -122,15 +123,18 @@ INSERT INTO journal_entries
    contact_name, description, ref_table, ref_id, file_no,
    post_status, posted_at)
 SELECT
-  s.system_type, 'BF-SAL-' || s.id::text,
-  COALESCE(s.sale_date, s.created_at::date, CURRENT_DATE), 'journal',
-  '1200', 'ذمم العملاء', s.sale_price, 0, s.customer,
-  'فاتورة ' || COALESCE(s.inv_no,'') || ' - ' || COALESCE(s.customer,'') || ' - ملف ' || COALESCE(s.file_no,''),
-  'sales', s.id::text, s.file_no, 'posted', NOW()
+  s.system_type,
+  'BF-SAL-' || s.system_type || '-' || s.file_no || '-' || COALESCE(s.inv_no, s.file_no),
+  MIN(COALESCE(s.sale_date, s.created_at::date, CURRENT_DATE)),
+  'journal',
+  '1200', 'ذمم العملاء',
+  SUM(s.sale_price), 0,
+  MAX(s.customer),
+  'فاتورة ' || COALESCE(s.inv_no,'') || ' - ' || MAX(s.customer) || ' - ملف ' || s.file_no,
+  'sales', NULL, s.file_no, 'posted', NOW()
 FROM sales s
 WHERE s.post_status IN ('posted','pending_edit') AND s.sale_price > 0
   AND NOT EXISTS (
-    -- لو في قيد حقيقي (مش BF) لحساب المدينين في هذا الملف → تجاهل
     SELECT 1 FROM journal_entries j
     WHERE j.system_type  = s.system_type
       AND j.file_no      = s.file_no
@@ -139,10 +143,11 @@ WHERE s.post_status IN ('posted','pending_edit') AND s.sale_price > 0
       AND j.entry_no NOT LIKE 'BF-%'
   )
   AND NOT EXISTS (
-    -- لو BF لهذا السجل موجود مسبقاً → تجاهل
     SELECT 1 FROM journal_entries j
-    WHERE j.ref_table = 'sales' AND j.ref_id = s.id::text AND j.dr_amount > 0
-  );
+    WHERE j.entry_no = 'BF-SAL-' || s.system_type || '-' || s.file_no || '-' || COALESCE(s.inv_no, s.file_no)
+      AND j.dr_amount > 0
+  )
+GROUP BY s.system_type, s.file_no, s.inv_no;
 
 INSERT INTO journal_entries
   (system_type, entry_no, entry_date, entry_type,
@@ -150,11 +155,14 @@ INSERT INTO journal_entries
    contact_name, description, ref_table, ref_id, file_no,
    post_status, posted_at)
 SELECT
-  s.system_type, 'BF-SAL-' || s.id::text,
-  COALESCE(s.sale_date, s.created_at::date, CURRENT_DATE), 'journal',
-  '4100', 'ايراد المبيعات', 0, s.sale_price, NULL,
-  'فاتورة ' || COALESCE(s.inv_no,'') || ' - ' || COALESCE(s.customer,'') || ' - ملف ' || COALESCE(s.file_no,''),
-  'sales', s.id::text, s.file_no, 'posted', NOW()
+  s.system_type,
+  'BF-SAL-' || s.system_type || '-' || s.file_no || '-' || COALESCE(s.inv_no, s.file_no),
+  MIN(COALESCE(s.sale_date, s.created_at::date, CURRENT_DATE)),
+  'journal',
+  '4100', 'ايراد المبيعات',
+  0, SUM(s.sale_price), NULL,
+  'فاتورة ' || COALESCE(s.inv_no,'') || ' - ' || MAX(s.customer) || ' - ملف ' || s.file_no,
+  'sales', NULL, s.file_no, 'posted', NOW()
 FROM sales s
 WHERE s.post_status IN ('posted','pending_edit') AND s.sale_price > 0
   AND NOT EXISTS (
@@ -167,8 +175,10 @@ WHERE s.post_status IN ('posted','pending_edit') AND s.sale_price > 0
   )
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.ref_table = 'sales' AND j.ref_id = s.id::text AND j.cr_amount > 0
-  );
+    WHERE j.entry_no = 'BF-SAL-' || s.system_type || '-' || s.file_no || '-' || COALESCE(s.inv_no, s.file_no)
+      AND j.cr_amount > 0
+  )
+GROUP BY s.system_type, s.file_no, s.inv_no;
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- 4. COLLECTIONS  DR 1120/1110 / CR 1200
