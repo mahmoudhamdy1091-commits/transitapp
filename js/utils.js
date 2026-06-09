@@ -125,6 +125,8 @@ function hideAllViews() {
         e.style.transition = '';
       }
     });
+  // تطبيق صلاحيات المستخدم عند كل تنقل
+  if (typeof applyRoleRestrictions === 'function') applyRoleRestrictions();
 }
 
 // ════════════════════════════════════════
@@ -330,14 +332,15 @@ function switchView(showId, title, sub='') {
 // ROLES & PERMISSIONS
 // ════════════════════════════════════════
 const ROLES = {
-  admin:    { label:'👑 مدير كامل',  edit:true,  delete:true,  transactions:true,  roles:true  },
-  employee: { label:'👤 موظف',       edit:true,  delete:false, transactions:true,  roles:false },
-  readonly: { label:'👁 مشاهدة',     edit:false, delete:false, transactions:false, roles:false },
+  admin:    { label:'👑 مدير',   color:'var(--accent)',  bg:'var(--accent-dim)',  edit:true,  delete:true,  transactions:true,  approve:true,  settings:true,  roles:true  },
+  employee: { label:'👤 موظف',   color:'var(--blue)',    bg:'var(--blue-dim)',    edit:true,  delete:false, transactions:true,  approve:false, settings:false, roles:false },
+  readonly: { label:'👁 مشاهدة', color:'var(--text2)',   bg:'var(--card2)',       edit:false, delete:false, transactions:false, approve:false, settings:false, roles:false },
 };
 
-let _currentRole = localStorage.getItem('tm_role') || 'admin';
+// افتراضي: readonly (الأكثر أماناً) حتى تُحمَّل الصلاحية من DB
+let _currentRole = localStorage.getItem('tm_role') || 'readonly';
 
-function can(action) { return ROLES[_currentRole]?.[action] !== false; }
+function can(action) { return ROLES[_currentRole]?.[action] === true; }
 
 // ════════════════════════════════════════
 // ⋮ CONTEXT MENU — قائمة الإجراءات

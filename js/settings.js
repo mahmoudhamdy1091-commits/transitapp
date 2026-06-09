@@ -386,7 +386,7 @@ function loadApiKeyInSettings() {
 }
 
 async function showSettings() {
-  if (!can('roles')) { toast('🔒 هذه الصفحة للمدراء فقط', 'err'); return; }
+  if (!can('settings')) { toast('🔒 الإعدادات للمدراء فقط', 'err'); return; }
   hideAllViews();
   el('settingsView').style.display = 'block';
   el('topBarTitle').textContent = 'الإعدادات';
@@ -525,17 +525,46 @@ async function deleteUserRole(id, email) {
 // Load role from Supabase on login
 async function loadUserRoleFromDB() {
   try {
+    const email = state.user?.email;
+    if (!email) return;
+
     const data = await apiGet('user_roles', {
-      select:'role,systems', system_type:`eq.${state.system}`,
-      email:`eq.${state.user?.email}`, limit:1
+      select:'role,systems', email:`eq.${email}`, limit:1
     });
+
     if (data && data[0]) {
-      _currentRole = data[0].role;
-      _pendingRole = _currentRole;
-      localStorage.setItem('tm_role', _currentRole);
-      applyRoleRestrictions();
+      _currentRole = data[0].role || 'readonly';
+    } else {
+      // إذا لم يُعثر على سجل للمستخدم — تحقق هل هو أول مستخدم في النظام
+      const allUsers = await apiGet('user_roles', { select:'id', limit:1 });
+      if (!allUsers || !allUsers.length) {
+        // أول مستخدم يدخل → مدير تلقائياً + إضافة سجله
+        _currentRole = 'admin';
+        try {
+          await apiPost('user_roles', {
+            email, role:'admin',
+            system_type: state.system,
+            systems: 'BOX,TRANSIT',
+            notes: 'أول مستخدم — مدير تلقائي'
+          });
+        } catch(e2) { console.warn('autoAdmin insert:', e2.message); }
+      } else {
+        // مستخدم غير مسجل في النظام → readonly
+        _currentRole = 'readonly';
+        toast('⚠️ حسابك غير مُضاف في النظام — صلاحية مشاهدة فقط', 'warn');
+      }
     }
-  } catch(e) { console.warn('loadUserRole:', e.message); }
+
+    _pendingRole = _currentRole;
+    localStorage.setItem('tm_role', _currentRole);
+    applyRoleRestrictions();
+    console.log(`[Auth] Role loaded: ${_currentRole} (${email})`);
+  } catch(e) {
+    console.warn('loadUserRole:', e.message);
+    // في حالة خطأ الشبكة — استخدم آخر role محفوظ أو readonly
+    _currentRole = localStorage.getItem('tm_role') || 'readonly';
+    applyRoleRestrictions();
+  }
 }
 
 

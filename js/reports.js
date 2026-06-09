@@ -880,25 +880,68 @@ function saveRole() {
 }
 
 function applyRoleRestrictions() {
-  const canDel   = can('delete');
-  const canTx    = can('transactions');
-  const isAdmin  = can('roles');
+  const canDel      = can('delete');
+  const canTx       = can('transactions');
+  const canApprove  = can('approve');
+  const canSettings = can('settings');
+  const isAdmin     = can('roles');
+  const role        = ROLES[_currentRole] || ROLES.readonly;
 
-  // Hide static delete buttons
+  // ── ١. Role badge في sidebar ──
+  const badge = el('userRoleBadge');
+  if (badge) {
+    badge.textContent   = role.label;
+    badge.style.background = role.bg;
+    badge.style.color      = role.color;
+  }
+
+  // ── ٢. زرار "ملف جديد" في top-bar ──
+  const newFileBtn = el('topBarNewFile');
+  if (newFileBtn) newFileBtn.style.display = canTx ? '' : 'none';
+
+  // ── ٣. أزرار الحذف ──
   document.querySelectorAll('.btn-danger, #nfDeleteBtn').forEach(btn => {
     btn.style.display = canDel ? '' : 'none';
   });
-  // Hide add/edit buttons for readonly
-  document.querySelectorAll('#nfSubmitBtn, #saleSubmitBtn, #paymentSubmitBtn, #expSubmitBtn').forEach(btn => {
+
+  // ── ٤. أزرار الإضافة/الحفظ في المودالات ──
+  document.querySelectorAll('#nfSubmitBtn, #saleSubmitBtn, #paymentSubmitBtn, #expSubmitBtn, #collectionSubmitBtn, #payoutSubmitBtn').forEach(btn => {
     btn.style.display = canTx ? '' : 'none';
   });
-  // Quick expense fab
+
+  // ── ٥. FAB مصروف سريع ──
   const fab = el('quickExpFab');
   if (fab) fab.style.display = canTx && state.currentFileNo ? 'flex' : 'none';
 
-  // Hide admin-only sidebar section (الإدارة) for non-admins
+  // ── ٦. أزرار التسجيل السريع في اليومية ──
+  document.querySelectorAll('.j-quick-btns .btn').forEach(btn => {
+    btn.style.display = canTx ? '' : 'none';
+  });
+  const quickLabel = document.querySelector('.j-quick-label');
+  if (quickLabel) quickLabel.style.display = canTx ? '' : 'none';
+
+  // ── ٧. قسم الإدارة في sidebar (الإعدادات + المراجعة + إلخ) ──
   const adminNav = el('nav-section-admin');
-  if (adminNav) adminNav.style.display = isAdmin ? '' : 'none';
+  if (adminNav) adminNav.style.display = canSettings ? '' : 'none';
+
+  // ── ٨. قائمة المراجعة في sidebar ──
+  const approvalNav = el('nav-section-approval');
+  if (approvalNav) approvalNav.style.display = canApprove ? '' : 'none';
+
+  // ── ٩. أزرار الموافقة/الرفض في صفحة المراجعة ──
+  document.querySelectorAll('.approve-btn, .reject-btn, #approve-all-btn').forEach(btn => {
+    btn.style.display = canApprove ? '' : 'none';
+  });
+
+  // ── ١٠. زرار تعديل الملف في viewer ──
+  document.querySelectorAll('#viewerEditBtn, .vh-edit-btn').forEach(btn => {
+    btn.style.display = canTx ? '' : 'none';
+  });
+
+  // ── ١١. CSS class على body للتحكم بالـ context menus ──
+  document.body.classList.toggle('role-readonly',  _currentRole === 'readonly');
+  document.body.classList.toggle('role-employee',  _currentRole === 'employee');
+  document.body.classList.toggle('role-admin',     _currentRole === 'admin');
 }
 
 // ════════════════════════════════════════

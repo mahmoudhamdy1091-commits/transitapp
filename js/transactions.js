@@ -628,7 +628,8 @@ async function initApp() {
     }
     else showDashboard();
   });
-  loadUserRoleFromDB();
+  // تحميل الصلاحية من DB أولاً ثم تطبيق القيود
+  await loadUserRoleFromDB();
   updateSystemUI();
 }
 

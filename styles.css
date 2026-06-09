@@ -1210,6 +1210,44 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   margin-bottom: 16px;
 }
 
+/* ══════════════════════════════════════
+   ROLE-BASED UI — صلاحيات المستخدمين
+══════════════════════════════════════ */
+
+/* readonly: إخفاء كل عناصر التعديل والحذف */
+body.role-readonly .btn-danger,
+body.role-readonly .btn-ctx-menu,
+body.role-readonly #topBarNewFile,
+body.role-readonly .j-quick-btns .btn,
+body.role-readonly .j-quick-label,
+body.role-readonly #quickExpFab,
+body.role-readonly #nfSubmitBtn,
+body.role-readonly #saleSubmitBtn,
+body.role-readonly #paymentSubmitBtn,
+body.role-readonly #expSubmitBtn,
+body.role-readonly #collectionSubmitBtn,
+body.role-readonly #payoutSubmitBtn,
+body.role-readonly #approve-all-btn,
+body.role-readonly .approve-btn,
+body.role-readonly .reject-btn,
+body.role-readonly #viewerEditBtn,
+body.role-readonly .vh-edit-btn {
+  display: none !important;
+}
+
+/* employee: إخفاء الحذف فقط */
+body.role-employee .btn-danger,
+body.role-employee #nfDeleteBtn {
+  display: none !important;
+}
+
+/* employee: إخفاء الموافقة والإعدادات */
+body.role-employee .approve-btn,
+body.role-employee .reject-btn,
+body.role-employee #approve-all-btn {
+  display: none !important;
+}
+
 /* Responsive-ish */
 
 /* ══ MOBILE STYLES → mobile.css ══ */

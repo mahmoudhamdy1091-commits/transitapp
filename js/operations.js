@@ -958,7 +958,7 @@ const APPROVAL_CONFIG = {
 };
 
 async function showApprovalQueue() {
-  if (!can('roles')) { toast('🔒 هذه الصفحة للمدراء فقط','err'); return; }
+  if (!can('approve')) { toast('🔒 قائمة المراجعة للمدراء فقط','err'); return; }
   hideAllViews();
   el('approvalView').style.display = 'block';
   el('topBarTitle').textContent = 'المراجعة';
@@ -1164,10 +1164,10 @@ function renderApprovalList() {
       </div>
       <div class="approval-row-amount" style="color:${color}">${fmt(r._amount)}</div>
       <div class="approval-row-actions" onclick="event.stopPropagation()" style="display:flex;gap:6px;align-items:center">
-        <button class="btn btn-sm" onclick="confirmAction('${isReversal?'تنفيذ الإلغاء':'موافقة على العملية'}','${approveMsg}',()=>approveItem('${r._type}','${r.id}'),${isReversal})"
+        <button class="btn btn-sm approve-btn" onclick="confirmAction('${isReversal?'تنفيذ الإلغاء':'موافقة على العملية'}','${approveMsg}',()=>approveItem('${r._type}','${r.id}'),${isReversal})"
           style="background:${isReversal?'rgba(249,115,22,.15)':'var(--green-dim)'};border:1px solid ${isReversal?'#f97316':'var(--green)'};color:${isReversal?'#f97316':'var(--green)'};padding:4px 10px;font-weight:700">${approveLabel}</button>
         ${isReversal
-          ? `<button class="btn btn-sm" onclick="event.stopPropagation();confirmAction('استرداد العملية','سيتم إلغاء طلب الإلغاء وإعادة العملية لحالتها السابقة',()=>rejectItem('${r._type}','${r.id}'),false)"
+          ? `<button class="btn btn-sm reject-btn" onclick="event.stopPropagation();confirmAction('استرداد العملية','سيتم إلغاء طلب الإلغاء وإعادة العملية لحالتها السابقة',()=>rejectItem('${r._type}','${r.id}'),false)"
               style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);padding:4px 10px;font-weight:700">↩ استرداد</button>`
           : `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxApproval(this)" data-type="${r._type}" data-id="${r.id}" title="المزيد">⋮</button>`
         }

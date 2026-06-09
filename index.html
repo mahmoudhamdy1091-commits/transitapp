@@ -260,7 +260,10 @@
         <div class="user-avatar" id="userAvatar">M</div>
         <div>
           <div class="user-name" id="userName">...</div>
-          <div class="user-email" id="userEmailDisplay">...</div>
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+            <div class="user-email" id="userEmailDisplay">...</div>
+            <span id="userRoleBadge" style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;background:var(--accent-dim);color:var(--accent)"></span>
+          </div>
         </div>
         <button class="btn-logout" onclick="logout()" title="تسجيل الخروج">⏏</button>
       </div>
@@ -292,7 +295,7 @@
       </div>
 
       <div class="top-bar-actions">
-        <button class="btn btn-primary btn-sm" onclick="openNewFileModal()">
+        <button id="topBarNewFile" class="btn btn-primary btn-sm" onclick="openNewFileModal()">
           ➕ ملف جديد
         </button>
         <button class="btn btn-secondary btn-sm" onclick="loadDashboard()">
