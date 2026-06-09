@@ -408,32 +408,61 @@ async function loadUserRoles() {
     const data = await apiGet('user_roles', { select:'*', order:'email.asc' });
     const all  = data || [];
 
+    // ── دمج الصفوف المكررة بنفس الإيميل في سجل واحد ──
+    // لو نفس الإيميل له أكتر من صف (نظام مختلف) → يظهر مرة واحدة
+    // الدور = الأعلى صلاحية من بين كل صفوفه، الأنظمة = مجموع كل صفوفه
+    const ROLE_RANK = { admin:3, employee:2, readonly:1 };
+    const merged = {};
+    all.forEach(u => {
+      const key = u.email;
+      if (!merged[key]) {
+        merged[key] = { ...u, _ids: [u.id], _allSystems: new Set() };
+      } else {
+        merged[key]._ids.push(u.id);
+        // اختار الدور الأعلى
+        if ((ROLE_RANK[u.role]||0) > (ROLE_RANK[merged[key].role]||0)) {
+          merged[key].role = u.role;
+        }
+      }
+      // اجمع كل الأنظمة
+      const sysList = u.systems ? u.systems.split(',') : [];
+      if (u.system_type) sysList.push(u.system_type);
+      sysList.forEach(s => { if (s.trim()) merged[key]._allSystems.add(s.trim()); });
+    });
+    const users = Object.values(merged);
+
     // Update stats
-    const admins = all.filter(u => u.role === 'admin').length;
-    if(el('sett-stat-total'))  el('sett-stat-total').textContent  = all.length;
-    if(el('sett-stat-active')) el('sett-stat-active').textContent = all.length;
+    const admins = users.filter(u => u.role === 'admin').length;
+    if(el('sett-stat-total'))  el('sett-stat-total').textContent  = users.length;
+    if(el('sett-stat-active')) el('sett-stat-active').textContent = users.filter(u=>u.role!=='readonly').length;
     if(el('sett-stat-admins')) el('sett-stat-admins').textContent = admins;
 
-    if (!all.length) {
+    if (!users.length) {
       wrap.innerHTML = '<div class="empty-state"><div class="e-icon">👥</div><p>لا يوجد مستخدمون بعد</p><small>أضف مستخدمًا من تبويب "دعوة مستخدم"</small></div>';
       return;
     }
 
     const roleLabel = { admin:'👑 مدير', employee:'👤 موظف', readonly:'👁 مشاهدة' };
 
-    wrap.innerHTML = all.map(u => {
-      const sys = u.systems ? u.systems.split(',') : [u.system_type || state.system];
-      const sysTags = sys.map(s => s.trim()).filter(Boolean).map(s =>
+    wrap.innerHTML = users.map(u => {
+      const sysArr = [...u._allSystems].filter(Boolean);
+      const sysTags = sysArr.map(s =>
         `<span class="sett-sys-tag ${s==='BOX'?'sett-sys-box':'sett-sys-tr'}">${s}</span>`
       ).join(' ');
       const isSelf = u.email === state.user?.email;
+      // لو في تكرار → نبين تحذير صغير
+      const dupWarn = u._ids.length > 1
+        ? `<span style="font-size:11px;color:var(--accent);cursor:pointer" title="يوجد ${u._ids.length} صفوف لهذا المستخدم — اضغط دمج لتنظيفها"
+             onclick="mergeUserRows('${u.email}')">⚠️ دمج</span>`
+        : '';
       return `
-      <div class="sett-user-row" id="urow-${u.id}">
+      <div class="sett-user-row" id="urow-${u._ids[0]}">
         <div class="sett-user-avatar sett-av-${u.role}">${u.email[0].toUpperCase()}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px">
+          <div style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             ${u.email}
             ${isSelf ? '<span style="font-size:12px;background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-weight:700">أنت</span>' : ''}
+            ${dupWarn}
           </div>
           <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;align-items:center">
             <span class="sett-role-badge sett-badge-${u.role}">${roleLabel[u.role]||u.role}</span>
@@ -442,13 +471,40 @@ async function loadUserRoles() {
         </div>
         ${!isSelf ? `
         <div style="display:flex;gap:6px;flex-shrink:0">
-          <button class="btn btn-secondary btn-sm" onclick="openSettEditCard(${u.id},'${u.email}','${u.role}','${sys.join(',')}')">✏️ تعديل</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteUserRole(${u.id},'${u.email}')">🗑</button>
+          <button class="btn btn-secondary btn-sm" onclick="openSettEditCard(${u._ids[0]},'${u.email}','${u.role}','${sysArr.join(',')}')">✏️ تعديل</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteUserRole(${u._ids[0]},'${u.email}')">🗑</button>
         </div>` : ''}
       </div>`;
     }).join('');
 
   } catch(e) { wrap.innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px">خطأ في التحميل: ${e.message}</div>`; }
+}
+
+// دمج الصفوف المكررة لنفس الإيميل في صف واحد
+async function mergeUserRows(email) {
+  try {
+    const rows = await apiGet('user_roles', { select:'*', email:`eq.${email}` });
+    if (!rows || rows.length <= 1) { toast('لا يوجد تكرار','ok'); return; }
+
+    // الدور الأعلى + كل الأنظمة
+    const ROLE_RANK = { admin:3, employee:2, readonly:1 };
+    let bestRole = 'readonly';
+    const allSys = new Set();
+    rows.forEach(r => {
+      if ((ROLE_RANK[r.role]||0) > (ROLE_RANK[bestRole]||0)) bestRole = r.role;
+      if (r.system_type) allSys.add(r.system_type.trim());
+      (r.systems||'').split(',').forEach(s => { if(s.trim()) allSys.add(s.trim()); });
+    });
+    const systems = [...allSys].join(',');
+
+    // ابقِ الأول وحدّثه، احذف الباقي
+    const [keep, ...rest] = rows.sort((a,b)=>a.id-b.id);
+    await apiPatch('user_roles', { id:`eq.${keep.id}` }, { role:bestRole, systems, system_type: [...allSys][0]||'BOX' });
+    for (const r of rest) await apiDelete('user_roles', { id:`eq.${r.id}` });
+
+    toast(`✅ تم دمج ${rows.length} صفوف في صف واحد`, 'ok');
+    await loadUserRoles();
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
 function openSettEditCard(id, email, role, systems) {
@@ -528,9 +584,15 @@ async function loadUserRoleFromDB() {
     const email = state.user?.email;
     if (!email) return;
 
-    const data = await apiGet('user_roles', {
-      select:'role,systems', email:`eq.${email}`, limit:1
+    // جلب الدور — أولاً للنظام الحالي، ثم fallback لأي سجل بنفس الإيميل
+    const sys = state.system;
+    let data = await apiGet('user_roles', {
+      select:'role,systems', email:`eq.${email}`, system_type:`eq.${sys}`, limit:1
     });
+    // لو مش لاقي لهذا النظام تحديداً — جرّب أي سجل بنفس الإيميل
+    if (!data || !data.length) {
+      data = await apiGet('user_roles', { select:'role,systems', email:`eq.${email}`, limit:1 });
+    }
 
     if (data && data[0]) {
       _currentRole = data[0].role || 'readonly';
