@@ -229,16 +229,34 @@ async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method
 }
 
 // دفعة مورد: مورد Dr / نقد Cr
+// لو الدافع (payer) شريك مختلف عن المورد → يُضاف سطر ثالث على حساب الشريك 2400
+// حتى يظهر ما دفعه الشريك في كشف حسابه
 async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,payer,payerName,method}) {
   if(!amount||amount<=0) return;
   const sup      = supplier || supplierName || 'مورد';
   const payerStr = payer || payerName || sup;
   const cashAcc  = method==='نقد'?'1110':'1120';
   const cashNm   = method==='نقد'?'النقد':'البنك';
-  await postDoubleEntry({sys,date,fileNo,refTable:'payments',refId,desc:`دفعة للمورد ${sup} بواسطة ${payerStr} — ملف ${fileNo}`,lines:[
-    {acc:'2100',  name:`ذمم الموردين`, dr:amount, cr:0,     contact:sup  },
-    {acc:cashAcc, name:cashNm,         dr:0,      cr:amount, contact:null },
-  ]});
+
+  const payerIsPartner = payerStr && payerStr !== sup;
+
+  if (payerIsPartner) {
+    // الشريك يدفع للمورد نيابةً عن الصفقة:
+    // DR ذمم الموردين (يُبرئ ذمة المورد)
+    // CR حسابات الشركاء (الشريك يُقرض الصفقة)
+    await postDoubleEntry({sys,date,fileNo,refTable:'payments',refId,
+      desc:`دفعة للمورد ${sup} بواسطة ${payerStr} — ملف ${fileNo}`,lines:[
+      {acc:'2100', name:`ذمم الموردين`,   dr:amount, cr:0,     contact:sup      },
+      {acc:'2400', name:`حسابات الشركاء`, dr:0,      cr:amount, contact:payerStr },
+    ]});
+  } else {
+    // الدفع مباشرة من نقدية الشركة
+    await postDoubleEntry({sys,date,fileNo,refTable:'payments',refId,
+      desc:`دفعة للمورد ${sup} — ملف ${fileNo}`,lines:[
+      {acc:'2100',  name:`ذمم الموردين`, dr:amount, cr:0,     contact:sup  },
+      {acc:cashAcc, name:cashNm,         dr:0,      cr:amount, contact:null },
+    ]});
+  }
 }
 
 // مصروف: مصروف Dr / نقد Cr
@@ -262,6 +280,28 @@ async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
     {acc:'2400',  name:`حسابات الشركاء`, dr:amount, cr:0,     contact:partner },
     {acc:cashAcc, name:cashNm,           dr:0,      cr:amount, contact:null    },
   ]});
+}
+
+// عهدة: صرف = عهدة Dr / نقد Cr — تسوية = نقد Dr / عهدة Cr
+async function je_custodian({sys, date, amount, custodian, desc, method, direction='issue', refId=null}) {
+  if (!amount || amount <= 0) return;
+  const cashAcc = method === 'نقد' ? '1110' : '1120';
+  const cashNm  = method === 'نقد' ? 'النقد' : 'البنك';
+  if (direction === 'issue') {
+    // صرف عهدة: DR حسابات العهد / CR نقد
+    await postDoubleEntry({sys, date, fileNo:null, refTable:'custodians', refId,
+      desc: desc || `عهدة — ${custodian}`, lines:[
+      {acc:'1400', name:`حسابات العهد`, dr:amount, cr:0,      contact:custodian },
+      {acc:cashAcc, name:cashNm,        dr:0,      cr:amount, contact:null      },
+    ]});
+  } else {
+    // تسوية عهدة: DR نقد / CR حسابات العهد
+    await postDoubleEntry({sys, date, fileNo:null, refTable:'custodians', refId,
+      desc: desc || `تسوية عهدة — ${custodian}`, lines:[
+      {acc:cashAcc, name:cashNm,        dr:amount, cr:0,      contact:null      },
+      {acc:'1400',  name:`حسابات العهد`, dr:0,     cr:amount, contact:custodian },
+    ]});
+  }
 }
 
 // مصروف تشغيلي: مصروف Dr / نقد Cr

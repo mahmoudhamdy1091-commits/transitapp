@@ -1469,91 +1469,136 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
     // ── 2. جلب بيانات كل صفقة بالتوازي ──
     const dealDetails = await Promise.all(deals.map(async pm => {
-      const fn = pm.file_no;
+      const fn    = pm.file_no;
       const share = (pm.share_percent||0) / 100;
 
-      const [po, vehicles, expenses, sales, allPartners, payments, payouts] = await Promise.all([
-        apiGetAll('purchase_orders', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGetAll('vehicles', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGetAll('expenses', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGetAll('sales', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGetAll('partners_master', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGetAll('payments', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}`, payer:`eq.${partnerName}` }),
-        apiGetAll('partner_payouts', { select:'*',       system_type:`eq.${sys}`, file_no:`eq.${fn}`, partner:`eq.${partnerName}` }),
+      // ── أ. بيانات العرض (سيارات، مصاريف، مبيعات، شركاء) من الجداول المصدرية ──
+      const [po, vehicles, expenses, sales, allPartners, allPartnersPayments, payouts] = await Promise.all([
+        apiGetAll('purchase_orders',  { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('vehicles',         { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('expenses',         { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('sales',            { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('partners_master',  { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('payments',         { select:'payer,amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('partner_payouts',  { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, partner:`eq.${partnerName}` }),
       ]);
 
+      // ── ب. القيود المحاسبية من journal_entries — المصدر الموثوق ──
+      // حساب 2400 (حسابات الشركاء) مع contact_name = الشريك في هذا الملف
+      const jePartner = await apiGetAll('journal_entries', {
+        select: 'entry_date,account_code,dr_amount,cr_amount,description,entry_no,post_status',
+        system_type:  `eq.${sys}`,
+        file_no:      `eq.${fn}`,
+        account_code: `eq.2400`,
+        contact_name: `eq.${partnerName}`,
+        post_status:  `eq.posted`,
+        order: 'entry_date.asc,id.asc',
+      });
+
+      // ── ج. أرقام الربح من القيود (P&L من journal_entries) ──
+      const jeAll = await apiGetAll('journal_entries', {
+        select: 'account_code,dr_amount,cr_amount',
+        system_type: `eq.${sys}`,
+        file_no:     `eq.${fn}`,
+        post_status: `eq.posted`,
+      });
+
+      // إيراد (4xxx دائن) — تكلفة (5xxx مدين) — مصاريف صفقة (6xxx مدين)
+      let jeSales=0, jeCOGS=0, jeDealExp=0;
+      (jeAll||[]).forEach(r => {
+        const acc=r.account_code||'';
+        if (acc.startsWith('4') && (+r.cr_amount||0)>0) jeSales   += +r.cr_amount;
+        if (acc.startsWith('5') && (+r.dr_amount||0)>0) jeCOGS    += +r.dr_amount;
+        if (acc.startsWith('6') && (+r.dr_amount||0)>0) jeDealExp += +r.dr_amount;
+      });
+      const jeDealProfit = jeSales - jeCOGS - jeDealExp;
+
+      // ── د. حساب الأرقام المالية — من القيود أولاً، fallback للجداول ──
       const poData       = po?.[0] || {};
       const totalPurchase= +poData.total_purchase || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
       const totalExp     = (expenses||[]).filter(isPosted).reduce((s,e)=>s+(+e.amount||0),0);
       const totalSales   = (sales||[]).filter(isPosted).reduce((s,s2)=>s+(+s2.sale_price||0),0);
-      const fullCost     = totalPurchase + totalExp;
-      const dealProfit   = totalSales - fullCost;
 
-      // حصة الشريك
+      // الربح: من القيود لو موجودة، وإلا من الجداول
+      const hasJEData    = (jeAll||[]).length > 0;
+      const dealProfit   = hasJEData ? jeDealProfit : (totalSales - totalPurchase - totalExp);
+      const myProfit     = dealProfit * share;
       const myPurchase   = totalPurchase * share;
       const myExpenses   = totalExp * share;
-      const myFullCost   = fullCost * share;
+      const myFullCost   = (totalPurchase + totalExp) * share;
       const mySales      = totalSales * share;
-      const myProfit     = dealProfit * share;
 
-      // ما دفعه الشريك — استثناء الملغية
-      // لو شريك واحد بحصة 100% → كل دفعات الملف تخصه
-      // لو أكثر من شريك → نفلتر بالاسم
-      const allPartnersCount = (allPartners||[]).length;
-      // ✅ pending_edit = مرحّلة في طور التعديل → تُحسب
-      const capitalPaid  = (payments||[])
-        .filter(isEffective)
-        .filter(p => allPartnersCount <= 1 || p.payer === partnerName)
-        .reduce((s,p)=>s+(+p.amount||0),0);
+      // ما دفعه / استرده الشريك — من القيود (2400) أولاً
+      const hasJEPartner = (jePartner||[]).length > 0;
 
-      // ما استرده
-      const capitalRet   = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
-      const profitTaken  = (payouts||[]).reduce((s,p)=>s+(+p.profit_amount||0),0);
-      const advances     = (payouts||[]).reduce((s,p)=>s+(+p.advance_amount||0),0);
-      const totalWithdrawn = capitalRet + profitTaken + advances;
+      let capitalPaid, totalWithdrawn, capitalRet=0, profitTaken=0, advances=0;
+      let jeMovements = []; // للعرض في جدول الحركات
 
-      // الرصيد المستحق
+      if (hasJEPartner) {
+        // ✅ مصدر موثوق: من journal_entries حساب 2400
+        capitalPaid    = (jePartner||[]).reduce((s,r)=>s+(+r.cr_amount||0),0); // CR = الشريك دفع
+        totalWithdrawn = (jePartner||[]).reduce((s,r)=>s+(+r.dr_amount||0),0); // DR = الشريك استرد
+        jeMovements    = (jePartner||[]).map(r=>({
+          date:   (r.entry_date||'').split('T')[0],
+          desc:   r.description||'—',
+          ref:    r.entry_no||'',
+          debit:  +r.dr_amount||0,
+          credit: +r.cr_amount||0,
+        }));
+        // توزيع المسحوبات من payouts للعرض فقط
+        capitalRet  = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
+        profitTaken = (payouts||[]).reduce((s,p)=>s+(+p.profit_amount||0),0);
+        advances    = (payouts||[]).reduce((s,p)=>s+(+p.advance_amount||0),0);
+      } else {
+        // ⚠️ Fallback: بيانات قديمة — من الجداول المصدرية
+        const allPartnersCount = (allPartners||[]).length;
+        const partnerPayments  = await apiGetAll('payments', {
+          select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, payer:`eq.${partnerName}`
+        });
+        capitalPaid    = (partnerPayments||[]).filter(isEffective)
+          .filter(p => allPartnersCount <= 1 || p.payer === partnerName)
+          .reduce((s,p)=>s+(+p.amount||0), 0);
+        capitalRet     = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
+        profitTaken    = (payouts||[]).reduce((s,p)=>s+(+p.profit_amount||0),0);
+        advances       = (payouts||[]).reduce((s,p)=>s+(+p.advance_amount||0),0);
+        totalWithdrawn = capitalRet + profitTaken + advances;
+        jeMovements    = (partnerPayments||[]).filter(isEffective).map(p=>({
+          date:   (p.pay_date||'').split('T')[0],
+          desc:   'دفع رأس مال (بيانات قديمة)',
+          ref:    p.ref_no||'',
+          debit:  0,
+          credit: +p.amount||0,
+        }));
+      }
+
       const netDue = capitalPaid + myProfit - totalWithdrawn;
 
-      // ما دفعه كل شركاء الصفقة (مش بس الشريك المطلوب)
-      const allPartnersPayments = await apiGetAll('payments', {
-        select:'payer,amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}`
-      });
-
-      // احسب ما دفعه كل شريك فعلاً — استثناء الملغية
+      // ── هـ. تسوية بين الشركاء ──
       const paidByPartner = {};
       (allPartnersPayments||[]).filter(isEffective).forEach(p => {
         paidByPartner[p.payer] = (paidByPartner[p.payer]||0) + (+p.amount||0);
       });
-
-      // حصة كل شريك المفروض يدفعها
       const shouldPayMap = {};
       (allPartners||[]).forEach(p => {
         shouldPayMap[p.partner] = totalPurchase * ((+p.share_percent||0)/100);
       });
-
-      // الديون بين الشركاء
       const partnerDebts = [];
       (allPartners||[]).forEach(p => {
-        const name      = p.partner;
-        const shouldPay = shouldPayMap[name] || 0;
-        const didPay    = paidByPartner[name] || 0;
-        const diff      = didPay - shouldPay; // موجب = دفع زيادة، سالب = دفع أقل
-        if (Math.abs(diff) > 0.001) {
-          partnerDebts.push({ name, shouldPay, didPay, diff });
-        }
+        const diff = (paidByPartner[p.partner]||0) - (shouldPayMap[p.partner]||0);
+        if (Math.abs(diff) > 0.001) partnerDebts.push({ name:p.partner, shouldPay:shouldPayMap[p.partner]||0, didPay:paidByPartner[p.partner]||0, diff });
       });
 
       return {
         fn, share, poData, vehicles: vehicles||[], expenses: expenses||[],
-        sales: sales||[], allPartners: allPartners||[],
-        payments: payments||[], payouts: payouts||[],
-        totalPurchase, totalExp, totalSales, fullCost, dealProfit,
+        sales: sales||[], allPartners: allPartners||[], payouts: payouts||[],
+        totalPurchase, totalExp, totalSales,
+        fullCost: totalPurchase+totalExp, dealProfit,
         myPurchase, myExpenses, myFullCost, mySales, myProfit,
         capitalPaid, capitalRet, profitTaken, advances, totalWithdrawn, netDue,
         status: poData.status || '—', supplier: poData.supplier || '—',
         poDate: poData.po_date || poData.created_at || '',
         partnerDebts, paidByPartner, shouldPayMap,
+        hasJEPartner, hasJEData, jeMovements,
       };
     }));
 
@@ -1795,49 +1840,39 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
           <!-- الحركات المالية للشريك -->
           <div>
-            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">الحركات المالية</div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px">الحركات المالية</div>
+              ${d.hasJEPartner
+                ? `<span style="font-size:11px;background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:20px;font-weight:700">✅ من القيود المحاسبية</span>`
+                : `<span style="font-size:11px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:20px;font-weight:700">⚠️ بيانات قديمة — الجداول المصدرية</span>`
+              }
+            </div>
             <table style="width:100%;border-collapse:collapse;font-size:12px">
               <thead>
                 <tr style="background:#1e293b;color:#fff">
                   <th style="padding:8px 10px;text-align:right">التاريخ</th>
                   <th style="padding:8px 10px;text-align:right">البيان</th>
-                  <th style="padding:8px 10px;text-align:center">رأس مال دفع</th>
-                  <th style="padding:8px 10px;text-align:center">رأس مال استرد</th>
-                  <th style="padding:8px 10px;text-align:center">أرباح</th>
-                  <th style="padding:8px 10px;text-align:center">سلف</th>
-                  <th style="padding:8px 10px;text-align:right">مستند</th>
+                  <th style="padding:8px 10px;text-align:right">رقم القيد</th>
+                  <th style="padding:8px 10px;text-align:center">مدين (سحب)</th>
+                  <th style="padding:8px 10px;text-align:center">دائن (إضافة)</th>
                 </tr>
               </thead>
               <tbody>
-                ${d.payments.map(p=>`
-                <tr style="background:#eff6ff;border-bottom:1px solid #dbeafe">
-                  <td style="padding:7px 10px;color:#64748b">${(p.pay_date||'').split('T')[0]||'—'}</td>
-                  <td style="padding:7px 10px;font-weight:600;color:#1d4ed8">دفع رأس مال</td>
-                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:#2563eb;font-weight:700">${fmt2(p.amount)}</td>
-                  <td style="padding:7px 10px;text-align:center;color:#94a3b8">—</td>
-                  <td style="padding:7px 10px;text-align:center;color:#94a3b8">—</td>
-                  <td style="padding:7px 10px;text-align:center;color:#94a3b8">—</td>
-                  <td style="padding:7px 10px;font-family:monospace;font-size:13px;color:#94a3b8">${p.document||p.ref_no||'—'}</td>
-                </tr>`).join('')}
-                ${d.payouts.map(p=>`
-                <tr style="border-bottom:1px solid #f1f5f9">
-                  <td style="padding:7px 10px;color:#64748b">${(p.pay_date||'').split('T')[0]||'—'}</td>
-                  <td style="padding:7px 10px;font-weight:600">${p.payout_type||'صرف'}</td>
-                  <td style="padding:7px 10px;text-align:center;color:#94a3b8">—</td>
-                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${+p.capital_amount?'#d97706':'#94a3b8'}">${+p.capital_amount?fmt2(p.capital_amount):'—'}</td>
-                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${+p.profit_amount?'#16a34a':'#94a3b8'}">${+p.profit_amount?fmt2(p.profit_amount):'—'}</td>
-                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${+p.advance_amount?'#dc2626':'#94a3b8'}">${+p.advance_amount?fmt2(p.advance_amount):'—'}</td>
-                  <td style="padding:7px 10px;font-family:monospace;font-size:13px;color:#94a3b8">${p.document||p.pay_id||'—'}</td>
-                </tr>`).join('')}
+                ${d.jeMovements.length ? d.jeMovements.map(m=>`
+                <tr style="border-bottom:1px solid #f1f5f9;background:${m.credit>0?'#eff6ff':'#fff7ed'}">
+                  <td style="padding:7px 10px;color:#64748b">${m.date||'—'}</td>
+                  <td style="padding:7px 10px;font-weight:600">${m.desc}</td>
+                  <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#94a3b8">${m.ref||'—'}</td>
+                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${m.debit>0?'#dc2626':'#94a3b8'}">${m.debit>0?fmt2(m.debit):'—'}</td>
+                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${m.credit>0?'#2563eb':'#94a3b8'};font-weight:${m.credit>0?'700':'400'}">${m.credit>0?fmt2(m.credit):'—'}</td>
+                </tr>`).join('')
+                : `<tr><td colspan="5" style="padding:12px;text-align:center;color:#94a3b8">لا توجد حركات مسجّلة</td></tr>`}
               </tbody>
               <tfoot>
                 <tr style="background:#1e293b;color:#fff;font-weight:700">
-                  <td colspan="2" style="padding:8px 10px">الإجمالي</td>
+                  <td colspan="3" style="padding:8px 10px">الإجمالي</td>
+                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#fbbf24">${fmt2(d.totalWithdrawn)}</td>
                   <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#60a5fa">${fmt2(d.capitalPaid)}</td>
-                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#fbbf24">${fmt2(d.capitalRet)}</td>
-                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#4ade80">${fmt2(d.profitTaken)}</td>
-                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#f87171">${fmt2(d.advances)}</td>
-                  <td></td>
                 </tr>
               </tfoot>
             </table>

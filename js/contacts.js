@@ -218,6 +218,7 @@ async function showLedger(contactId, contactName, contactType) {
       debit:   +r.dr_amount || 0,
       credit:  +r.cr_amount || 0,
       file_no: r.file_no    || '',
+      status:  r.post_status || 'posted',   // ✅ كان غائباً — renderLedgerTable يفلتر بـ status
     }));
 
     window._ledgerAllEntries = entries;
@@ -233,6 +234,10 @@ async function showLedger(contactId, contactName, contactType) {
     // تنبيه لو بيانات قديمة
     if (byContactName?.length === 0 && byOldFormat?.length > 0) {
       toast('⚠️ بيانات قديمة — شغّل الترحيل لتحديث القيود','warn');
+    }
+    // تنبيه خاص بالعهدة: القيود المحاسبية لها لم تكن تُسجَّل قبل هذا الإصلاح
+    if (contactType === 'custodian' && entries.length === 0) {
+      toast('⚠️ حساب العهدة — القيود القديمة غير مسجّلة في دفتر الأستاذ. المعاملات الجديدة ستُسجَّل تلقائياً من الآن.', 'warn');
     }
 
     el('ledgerView').dataset.contactName = contactName;
