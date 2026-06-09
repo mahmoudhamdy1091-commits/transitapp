@@ -211,6 +211,30 @@ function _renderOverlay(fragment, title) {
   b.innerHTML = '<style>.print-root{all:initial;font-family:\'Cairo\',Arial,sans-serif;direction:rtl}' + PRINT_CSS + '</style><div class="print-root"><div class="print-page">' + fragment + '</div></div>';
   o.style.display = 'block';
   document.body.style.overflow = 'hidden';
+  // \u2705 \u0639\u0644\u0649 \u0627\u0644\u0645\u0648\u0628\u0627\u064A\u0644: \u0646\u064F\u0638\u0647\u0631 \u0632\u0631 "\u0625\u0631\u0633\u0627\u0644" \u0625\u0630\u0627 \u0643\u0627\u0646 Web Share \u0645\u062A\u0627\u062D\u0627\u064B
+  const shareBtn = document.getElementById('printShareBtn');
+  if (shareBtn) {
+    shareBtn.style.display = (window.innerWidth <= 640 && navigator.share) ? 'inline-block' : 'none';
+  }
+  // \u0646\u062D\u0641\u0638 HTML \u0644\u0644\u0645\u0634\u0627\u0631\u0643\u0629
+  window._lastPrintHtml = fragment;
+  window._lastPrintTitle = title || 'Transit';
+}
+
+// \u2500\u2500 \u0645\u0634\u0627\u0631\u0643\u0629 \u0645\u062D\u062A\u0648\u0649 \u0627\u0644\u0637\u0628\u0627\u0639\u0629 \u0643\u0635\u0648\u0631\u0629/\u0646\u0635 \u2500\u2500
+async function _sharePrintContent() {
+  try {
+    // \u0646\u062D\u0627\u0648\u0644 \u0645\u0634\u0627\u0631\u0643\u0629 \u0643\u0646\u0635 \u0628\u0633\u064A\u0637 (HTML\u2192text) \u0625\u0630\u0627 \u0644\u0645 \u064A\u062F\u0639\u0645 \u0627\u0644\u062C\u0647\u0627\u0632 \u0645\u0644\u0641\u0627\u062A
+    const titleText = window._lastPrintTitle || 'Transit';
+    if (navigator.share) {
+      await navigator.share({
+        title: titleText,
+        text:  `${titleText}\n\n\u0645\u0646 \u062A\u0637\u0628\u064A\u0642 Transit International Company`,
+      });
+    }
+  } catch(e) {
+    if (e.name !== 'AbortError') toast('\u062A\u0639\u0630\u0651\u0631\u062A \u0627\u0644\u0645\u0634\u0627\u0631\u0643\u0629', 'err');
+  }
 }
 
 // ── Compatibility aliases ─────────────────────────────────

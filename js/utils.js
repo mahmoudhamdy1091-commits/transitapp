@@ -14,25 +14,61 @@
 window._exportStore = window._exportStore || {};
 
 function exportBtns(csvFn, printFn) {
-  // نخزن الدوال مباشرة في window._exportStore — مش strings
-  // عشان data وfn يكونوا في closure scope وقت الاستدعاء
   if (typeof csvFn !== 'function' || typeof printFn !== 'function') {
     console.error('exportBtns: csvFn/printFn يجب أن تكونا functions، لا نصوصاً');
     return '';
   }
   const key = '_exp_' + Math.random().toString(36).slice(2);
   window._exportStore[key] = { csv: csvFn, print: printFn };
-  return `<div class="no-print" style="display:flex;gap:6px;margin-bottom:10px;justify-content:flex-end">
+  // على الموبايل: نضيف زر مشاركة إذا كان Web Share API متاحاً
+  const isMobile = window.innerWidth <= 640;
+  const canShare = isMobile && !!navigator.share && !!navigator.canShare;
+  const shareBtn = canShare
+    ? `<button class="btn btn-sm btn-secondary btn-share-mobile" onclick="_runExport('${key}','share')" style="color:var(--purple)">📤 إرسال</button>`
+    : '';
+  return `<div class="no-print export-btns-wrap" style="display:flex;gap:6px;margin-bottom:10px;justify-content:flex-end">
     <button class="btn btn-sm btn-secondary" onclick="_runExport('${key}','csv')" style="color:var(--green)">⬇️ Excel</button>
     <button class="btn btn-sm btn-secondary" onclick="_runExport('${key}','print')" style="color:var(--blue)">🖨️ PDF</button>
+    ${shareBtn}
   </div>`;
 }
 
 function _runExport(key, type) {
   const entry = window._exportStore?.[key];
   if (!entry) { toast('انتهت صلاحية الزر — أعد تحميل الجدول', 'err'); return; }
+  if (type === 'share') { _shareCSV(entry.csv); return; }
   try { entry[type]?.(); }
   catch(e) { toast('خطأ: ' + e.message, 'err'); }
+}
+
+// ── مشاركة ملف CSV عبر Web Share API (واتساب / إيميل / تلغرام ...) ──
+async function _shareCSV(csvFn) {
+  try {
+    // ① نولّد الـ CSV أولاً (يُخزَّن في window._lastExportBlob)
+    csvFn();
+    const blob     = window._lastExportBlob;
+    const filename = window._lastExportFilename || 'export.csv';
+    if (!blob) { toast('تعذّر إنشاء الملف', 'err'); return; }
+
+    const file = new File([blob], filename, { type: blob.type });
+
+    // ② نحاول المشاركة عبر Web Share API
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        title: filename.replace(/\.\w+$/, ''),
+        text:  'تصدير من تطبيق Transit International',
+        files: [file],
+      });
+    } else {
+      // fallback: تحميل مباشر (الملف اتحمّل فعلاً في الخطوة ①)
+      toast('تم التحميل — يمكنك الآن مشاركة الملف يدوياً', 'ok');
+    }
+  } catch(e) {
+    if (e.name !== 'AbortError') {
+      console.warn('Web Share failed:', e.message);
+      toast('تم تحميل الملف', 'ok');
+    }
+  }
 }
 
 

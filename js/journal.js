@@ -448,9 +448,12 @@ function exportCSV(headers, rows, filename) {
     .map(r => r.map(v => `"${String(v==null?'':v).replace(/"/g,'""')}"`).join(','))
     .join('\n');
   const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  // \u2705 \u0646\u062D\u0641\u0638 \u0627\u0644\u0640 blob \u0645\u0624\u0642\u062A\u0627\u064B \u0644\u0644\u0645\u0634\u0627\u0631\u0643\u0629 \u0639\u0628\u0631 Web Share API
+  window._lastExportBlob = blob;
+  window._lastExportFilename = (filename||'export') + '.csv';
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = filename + '.csv';
+  a.download = window._lastExportFilename;
   a.click();
 }
 
