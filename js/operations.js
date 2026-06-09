@@ -1100,6 +1100,24 @@ async function loadApprovalQueue() {
   }
 }
 
+// ── Optimistic UI: شيل العنصر فوراً من الشاشة قبل انتهاء DB ──
+function _optimisticRemove(type, id) {
+  approvalState.all      = approvalState.all.filter(r => !(r._type === type && String(r.id) === String(id)));
+  approvalState.filtered = approvalState.filtered.filter(r => !(r._type === type && String(r.id) === String(id)));
+  renderApprovalList();
+  // تحديث badge وعدادات الفلتر فوراً
+  const total = approvalState.all.length;
+  const badge = el('approval-badge');
+  if (badge) { badge.textContent = total || ''; badge.style.display = total ? '' : 'none'; }
+  if (el('approval-subtitle')) el('approval-subtitle').textContent = `${total} عملية معلقة للمراجعة`;
+  Object.keys(APPROVAL_CONFIG).forEach(t => {
+    const cnt = el(`af-count-${t}`);
+    if (cnt) cnt.textContent = approvalState.all.filter(r => r._type === t).length || '';
+  });
+  const cntAll = el('af-count-all');
+  if (cntAll) cntAll.textContent = total || '';
+}
+
 function filterApproval(type) {
   approvalState.currentType = type;
   document.querySelectorAll('.approval-filter-btn').forEach(b => b.classList.remove('active'));
@@ -1511,22 +1529,27 @@ async function approveItem(type, id) {
       const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
       if (!item) { toast('لم يُعثر على طلب التعديل','err'); return; }
 
-      // القيد اتحدث عند التعديل — نكتفي بتغيير الحالة لـ posted
-      const cleanPatch = { post_status: 'posted' };
-
-      if (type === 'sale_edit' && item.inv_no) {
-        // فواتير البيع: تحديث كل سجلات الفاتورة بالـ inv_no
-        await apiPatch('sales',
-          { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, post_status:`eq.pending_edit` },
-          cleanPatch
-        );
-      } else {
-        await apiPatch(cfg.table, { id:`eq.${id}` }, cleanPatch);
-      }
-      await logAudit('EDIT_APPROVED', cfg.table, item.file_no, item, {}, `موافقة تعديل ${cfg.label} ${item.ref_no||item.file_no||item.inv_no||id}`);
-      invalidateCache();
+      // ① شيل فوراً من الشاشة
+      _optimisticRemove(type, id);
       toast(`✅ تمت الموافقة على تعديل ${cfg.label}`,'ok');
-      await loadApprovalQueue();
+
+      // ② اكمل DB في الخلفية
+      (async () => {
+        try {
+          const cleanPatch = { post_status: 'posted' };
+          if (type === 'sale_edit' && item.inv_no) {
+            await apiPatch('sales',
+              { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, post_status:`eq.pending_edit` },
+              cleanPatch
+            );
+          } else {
+            await apiPatch(cfg.table, { id:`eq.${id}` }, cleanPatch);
+          }
+          await logAudit('EDIT_APPROVED', cfg.table, item.file_no, item, {}, `موافقة تعديل ${cfg.label} ${item.ref_no||item.file_no||item.inv_no||id}`);
+          invalidateCache();
+          loadApprovalQueue(); // refresh هادي في الخلفية
+        } catch(e) { toast('خطأ في حفظ الموافقة: '+e.message,'err'); }
+      })();
       return;
     }
 
@@ -1534,13 +1557,28 @@ async function approveItem(type, id) {
     if (type === 'reversal') {
       const item = approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
       if (!item) { toast('لم يُعثر على طلب الإلغاء','err'); return; }
-      await voidTransaction(item._srcType, item, true);
-      invalidateCache();
+
+      // ① شيل فوراً
+      _optimisticRemove(type, id);
       toast('✅ تم تنفيذ الإلغاء بقيد عكسي','ok');
-      await loadApprovalQueue();
+
+      // ② اكمل في الخلفية
+      (async () => {
+        try {
+          await voidTransaction(item._srcType, item, true);
+          invalidateCache();
+          loadApprovalQueue();
+        } catch(e) { toast('خطأ في تنفيذ الإلغاء: '+e.message,'err'); }
+      })();
       return;
     }
 
+    // ① شيل فوراً من الشاشة
+    _optimisticRemove(type, id);
+    toast('✅ تمت الموافقة','ok');
+
+    // ② اكمل DB في الخلفية
+    (async () => { try {
     await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'posted' });
     // لو شراء — نولّد قيد محاسبي
     if (type === 'purchase') {
@@ -1621,8 +1659,8 @@ async function approveItem(type, id) {
       if (item) await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, partner:item.partner||'', method:item.pay_method||'تحويل بنكي' });
     }
     invalidateCache();
-    toast('✅ تمت الموافقة','ok');
-    await loadApprovalQueue();
+    loadApprovalQueue(); // refresh هادي في الخلفية
+    } catch(e) { toast('خطأ في حفظ الموافقة: '+e.message,'err'); } })();
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
@@ -1642,10 +1680,13 @@ async function rejectItem(type, id) {
        '_edit_desc','_edit_type','_edit_due','_edit_paid'].forEach(f => {
         clearData[f] = null;
       });
-      await apiPatch(tbl, { id:`eq.${id}` }, clearData);
-      invalidateCache();
+      _optimisticRemove(type, id);
       toast('↩ تم رفض التعديل — رجعت للحالة الأصلية','ok');
-      await loadApprovalQueue();
+      (async () => { try {
+        await apiPatch(tbl, { id:`eq.${id}` }, clearData);
+        invalidateCache();
+        loadApprovalQueue();
+      } catch(e) { toast('خطأ: '+e.message,'err'); } })();
     } catch(e) { toast('خطأ: '+e.message,'err'); }
     return;
   }
@@ -1657,12 +1698,13 @@ async function rejectItem(type, id) {
     const tableMap = { payment:'payments', expense:'expenses', collection:'collections', payout:'partner_payouts' };
     const tbl = tableMap[item._srcType];
     if (tbl) {
-      try {
+      _optimisticRemove(type, id);
+      toast('↩ تم استرداد العملية — رجعت لحالة مرحّلة','ok');
+      (async () => { try {
         await apiPatch(tbl, { id:`eq.${item.id}` }, { post_status:'posted', notes:`${item.notes||''} | استُرد طلب الإلغاء بتاريخ ${today()}`.trim() });
         invalidateCache();
-        toast('↩ تم استرداد العملية — رجعت لحالة مرحّلة','ok');
-        await loadApprovalQueue();
-      } catch(e) { toast('خطأ: '+e.message,'err'); }
+        loadApprovalQueue();
+      } catch(e) { toast('خطأ: '+e.message,'err'); } })();
     }
     return;
   }
@@ -1675,35 +1717,38 @@ async function rejectItem(type, id) {
       try {
         const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
 
-        if (type === 'purchase' && item?.file_no) {
-          // أمر شراء draft: soft cancel — لا نمسح cascade
-          const fn  = item.file_no;
-          const sys = state.system;
-          await apiPatch('purchase_orders', { id:`eq.${id}` }, {
-            post_status: 'cancelled',
-            notes: `${item.notes||''} | مرفوض بتاريخ ${today()}`.trim(),
-          });
-          // باقي الجداول المرتبطة تتعلّم cancelled أيضاً بدل ما تتمسح
-          for (const t of ['payments','expenses','sales','collections','partner_payouts']) {
-            try {
-              const rows = await apiGetAll(t, { select:'id,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}`, post_status:'eq.draft' });
-              for (const r of (rows||[])) {
-                await apiPatch(t, { id:`eq.${r.id}` }, { post_status:'cancelled' });
-              }
-            } catch(e) { console.warn(`cancelCascade ${t}:`, e.message); }
-          }
-          await logAudit('REJECT','purchase_orders', fn, item, null, `رفض أمر شراء draft ملف ${fn}`);
-        } else {
-          await apiPatch(cfg.table, { id:`eq.${id}` }, {
-            post_status: 'cancelled',
-            notes: `${item?.notes||''} | مرفوض بتاريخ ${today()}`.trim(),
-          });
-          await logAudit('REJECT', cfg.table, item?.file_no||null, item, null, `رفض ${cfg.label} #${id}`);
-        }
-
-        invalidateCache();
+        // ① شيل فوراً
+        _optimisticRemove(type, id);
         toast('⊘ تم رفض العملية — وضعت كـ "مرفوضة"', 'ok');
-        await loadApprovalQueue();
+
+        // ② اكمل في الخلفية
+        (async () => { try {
+          if (type === 'purchase' && item?.file_no) {
+            const fn  = item.file_no;
+            const sys = state.system;
+            await apiPatch('purchase_orders', { id:`eq.${id}` }, {
+              post_status: 'cancelled',
+              notes: `${item.notes||''} | مرفوض بتاريخ ${today()}`.trim(),
+            });
+            for (const t of ['payments','expenses','sales','collections','partner_payouts']) {
+              try {
+                const rows = await apiGetAll(t, { select:'id,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}`, post_status:'eq.draft' });
+                for (const r of (rows||[])) {
+                  await apiPatch(t, { id:`eq.${r.id}` }, { post_status:'cancelled' });
+                }
+              } catch(e) { console.warn(`cancelCascade ${t}:`, e.message); }
+            }
+            await logAudit('REJECT','purchase_orders', fn, item, null, `رفض أمر شراء draft ملف ${fn}`);
+          } else {
+            await apiPatch(cfg.table, { id:`eq.${id}` }, {
+              post_status: 'cancelled',
+              notes: `${item?.notes||''} | مرفوض بتاريخ ${today()}`.trim(),
+            });
+            await logAudit('REJECT', cfg.table, item?.file_no||null, item, null, `رفض ${cfg.label} #${id}`);
+          }
+          invalidateCache();
+          loadApprovalQueue();
+        } catch(e) { toast('خطأ في حفظ الرفض: '+e.message,'err'); } })();
       } catch(e) { toast('خطأ: '+e.message,'err'); }
     }
   );
