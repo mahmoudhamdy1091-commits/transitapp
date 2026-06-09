@@ -4523,22 +4523,22 @@ async function loadVehiclesTab(fn, sys) {
         <colgroup>
           <col style="width:10%"><!-- الكود -->
           <col style="width:9%"> <!-- VIN -->
-          <col style="width:8%"> <!-- النوع -->
+          <col class="hide-mobile" style="width:8%"> <!-- النوع -->
           <col style="width:10%"><!-- الموديل -->
           <col style="width:5%"> <!-- السنة -->
-          <col style="width:8%"> <!-- اللوحة -->
-          <col style="width:6%"> <!-- اللون -->
-          <col style="width:6%"> <!-- الحجم -->
+          <col class="hide-mobile" style="width:8%"> <!-- اللوحة -->
+          <col class="hide-mobile" style="width:6%"> <!-- اللون -->
+          <col class="hide-mobile" style="width:6%"> <!-- الحجم -->
           <col style="width:9%"> <!-- سعر الشراء -->
-          <col style="width:9%"> <!-- انتهاء الرخصة -->
-          <col style="width:12%"><!-- الموقع -->
+          <col class="hide-mobile" style="width:9%"> <!-- انتهاء الرخصة -->
+          <col class="hide-mobile" style="width:12%"><!-- الموقع -->
           <col style="width:8%"> <!-- الحالة -->
           <col style="width:3%"> <!-- ⋮ -->
         </colgroup>
         <thead><tr>
-          <th>الكود</th><th>VIN</th><th>النوع</th><th>الموديل</th>
-          <th>السنة</th><th>اللوحة</th><th>اللون</th><th>الحجم</th>
-          <th>سعر الشراء</th><th>انتهاء الرخصة</th><th>الموقع</th><th>الحالة</th><th></th>
+          <th>الكود</th><th>VIN</th><th class="hide-mobile">النوع</th><th>الموديل</th>
+          <th>السنة</th><th class="hide-mobile">اللوحة</th><th class="hide-mobile">اللون</th><th class="hide-mobile">الحجم</th>
+          <th>سعر الشراء</th><th class="hide-mobile">انتهاء الرخصة</th><th class="hide-mobile">الموقع</th><th>الحالة</th><th></th>
         </tr></thead>
         <tbody>${(data||[]).map((v,i)=>{
           const code    = `${fn}-V${String(i+1).padStart(2,'0')}`;
@@ -4551,15 +4551,15 @@ async function loadVehiclesTab(fn, sys) {
           return `<tr>
             <td style="overflow:hidden;text-overflow:ellipsis"><span class="mono text-amber" style="font-size:13px">${code}</span></td>
             <td style="overflow:hidden;text-overflow:ellipsis"><span class="mono" style="direction:ltr;font-size:13px">${v.vin||'—'}</span></td>
-            <td style="overflow:hidden;text-overflow:ellipsis">${v.vehicle_type||'—'}</td>
+            <td class="hide-mobile" style="overflow:hidden;text-overflow:ellipsis">${v.vehicle_type||'—'}</td>
             <td style="overflow:hidden;text-overflow:ellipsis">${v.model||'—'}</td>
             <td style="text-align:center">${v.year||'—'}</td>
-            <td style="overflow:hidden"><span class="mono" style="direction:ltr">${v.plate||'—'}</span></td>
-            <td style="overflow:hidden;text-overflow:ellipsis">${v.color||'—'}</td>
-            <td style="text-align:center;white-space:nowrap">${v.engine_size||'—'}</td>
+            <td class="hide-mobile" style="overflow:hidden"><span class="mono" style="direction:ltr">${v.plate||'—'}</span></td>
+            <td class="hide-mobile" style="overflow:hidden;text-overflow:ellipsis">${v.color||'—'}</td>
+            <td class="hide-mobile" style="text-align:center;white-space:nowrap">${v.engine_size||'—'}</td>
             <td class="mono text-blue">${fmt(v.purchase_price)}</td>
-            <td class="${expired?'text-red':'text-muted'}">${v.license_expiry||'—'}</td>
-            <td>${locBadge}</td>
+            <td class="hide-mobile ${expired?'text-red':'text-muted'}">${v.license_expiry||'—'}</td>
+            <td class="hide-mobile">${locBadge}</td>
             <td><span class="badge ${isSold?'badge-closed':'badge-open'}">${isSold?'مباع':'في المخزن'}</span></td>
             <td style="text-align:center">
               <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxVehicle(this)" data-id="${v.id}" data-fn="${fn}" title="إجراءات">⋮</button>
