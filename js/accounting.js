@@ -222,11 +222,23 @@ async function showAccountLedger(accountCode, accountName, accountType) {
     <span class="mono" style="color:var(--accent);font-weight:900;margin-right:8px">${accountCode}</span>
     <span style="font-weight:700">${accountName}</span>`;
   el('ledgerTable').innerHTML='<div class="loading"><div class="spinner"></div></div>';
+  // ✅ ورِّث فترة ميزان المراجعة للدفتر لو كانت مضبوطة
+  if (trialState.from && el('ldg-from')) {
+    el('ldg-from').value = trialState.from;
+    el('ldg-to').value   = trialState.to || '';
+    ledgerState.period   = 'custom';
+    _setPeriodBtns('ldg', 'custom');
+    if (el('ldg-custom-dates')) el('ldg-custom-dates').style.display = 'flex';
+  } else {
+    _setPeriodBtns('ldg', ledgerState.period || 'all');
+  }
+
   try {
     const sys=state.system;
-    const url=`${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&account_code=eq.${encodeURIComponent(accountCode)}&select=*&order=entry_date.asc,id.asc&limit=5000`;
-    let res=await fetch(url,{headers:headers()});
-    if(res.status===401){const ok=await refreshAccessToken();if(!ok){el('ledgerTable').innerHTML=errHTML('انتهت الجلسة');return;}res=await fetch(url,{headers:headers()});}
+    const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
+    const url=`${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&account_code=eq.${encodeURIComponent(accountCode)}&select=*&order=entry_date.asc,id.asc&limit=49999`;
+    let res=await fetch(url,{headers:h,cache:'no-store'});
+    if(res.status===401){const ok=await refreshAccessToken();if(!ok){el('ledgerTable').innerHTML=errHTML('انتهت الجلسة');return;}res=await fetch(url,{headers:h,cache:'no-store'});}
     const rows=res.ok?await res.json():[];
     window._ledgerAllEntries=(rows||[]).map(r=>({
       id:r.id,date:(r.entry_date||'').split('T')[0],type:r.ref_table||'manual',
@@ -239,7 +251,6 @@ async function showAccountLedger(accountCode, accountName, accountType) {
     if(sel) sel.innerHTML='<option value="">كل الصفقات</option>'+fileNos.map(f=>`<option value="${f}">${f}</option>`).join('');
     el('ledgerView').dataset.contactName=accountName;
     el('ledgerView').dataset.accountCode=accountCode;
-    _setPeriodBtns('ldg',ledgerState.period||'all');
     renderLedgerTable();
   } catch(e){el('ledgerTable').innerHTML=errHTML('خطأ: '+e.message);}
 }

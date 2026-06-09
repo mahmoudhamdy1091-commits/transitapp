@@ -145,6 +145,15 @@ async function runReport() {
       const dealProfit = ts - tCOGS - tDealExp;
       const netProfit  = dealProfit - tOpex;
 
+      // ✅ تحذير: لو فيه قيود في الفترة لكن كل الأرقام صفر → أكواد الحسابات لا تطابق 4xxx/5xxx/6xxx
+      const hasEntries = (jeRows||[]).length > 0;
+      const allZero    = ts === 0 && tCOGS === 0 && tDealExp === 0 && tOpex === 0;
+      const acctWarn   = hasEntries && allZero
+        ? `<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--accent)">
+            ⚠️ يوجد <strong>${jeRows.length}</strong> قيد في هذه الفترة لكن جميع الأرقام صفر —
+            تحقق من أن أكواد حسابات الإيراد تبدأ بـ <strong>4</strong>، والتكاليف بـ <strong>5</strong>، والمصاريف بـ <strong>6</strong> في شجرة الحسابات.
+           </div>` : '';
+
       // ── KPIs ──
       el('reportKpis').innerHTML = `
         <div class="j-kpi" style="border-right:3px solid var(--green)">
@@ -223,9 +232,9 @@ async function runReport() {
 
       reportState.data = rows_data;
 
-      el('reportTable').innerHTML = rows_data.length
+      el('reportTable').innerHTML = acctWarn + (rows_data.length
         ? '<div id="reportDealsTable"></div>'
-        : emptyHTML('📈', 'لا توجد بيانات في هذه الفترة');
+        : emptyHTML('📈', 'لا توجد بيانات في هذه الفترة'));
 
       if (rows_data.length) {
         renderDealsTable(rows_data, 'reportDealsTable', { showSales: true, totalRow: true });
@@ -331,7 +340,7 @@ async function runCashFlowReport(from, to, sys) {
   try {
     const toEOD = to + 'T23:59:59';
     // ── مصدر واحد: journal_entries فقط — حسابات النقد والبنك ──
-    const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&select=*&limit=10000`;
+    const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&select=*&limit=49999`;
     const res  = await fetch(url, { headers: headers() });
     if (!res.ok) throw new Error(await res.text());
     const jeRows = await res.json();
