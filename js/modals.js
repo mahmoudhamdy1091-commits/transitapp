@@ -1039,13 +1039,11 @@ async function openSaleModal(fileNoOverride = null) {
     }
   } catch(e) { console.warn('regenInvNo:', e.message); }
 
-  // السيارات
-  el('saleVehiclesContainer').innerHTML = '';
   // مسح المصاريف الإضافية
   if (el('extraChargesContainer')) el('extraChargesContainer').innerHTML = '';
   updateSaleTotal();
-  state._saleAvailableVehicles = fileNo ? await loadAvailableVehicles(fileNo, sys) : [];
-  addSaleVehicleRow();
+  // تحميل السيارات مباشرة (renderSaleVehiclePicker تعرض + تحمّل state._saleAvailableVehicles)
+  await renderSaleVehiclePicker(fileNo, sys);
   openModal('saleModal');
 }
 
