@@ -479,36 +479,41 @@ async function loadDealStatement(fn, sys) {
     const voidedCount = (sales||[]).filter(r=>r.post_status==='voided').length
                       + (expenses||[]).filter(r=>r.post_status==='voided').length;
 
+    // ترتيب المجموعات: 0=شراء، 1=مصاريف (دائماً تحت الشراء)، 2=باقي
     const entries = [
       { date:deal.po_date||deal.created_at, type:'شراء', icon:'📋', color:'var(--blue)',
-        party:deal.supplier||'—', debit:0, credit:totalPurchase, _pl:true,
+        party:deal.supplier||'—', debit:0, credit:totalPurchase, _pl:true, _grp:0,
         desc:`سند شراء ${fn}${deal.po_no?' — PO: '+deal.po_no:''}`,
         extra:`${(vehicles||[]).length} سيارة` },
       // ✅ نُدرج فقط السجلات غير الملغية — الملغية تظهر بشفافية كمرجع
       ...(payments||[]).filter(isActive).map(p=>({ date:p.pay_date, type:'دفعة للمورد', icon:'💳', color:'var(--cyan)',
-        party:p.payer||'—', debit:+p.amount, credit:0, _pl:false, _voided:false,
+        party:p.payer||'—', debit:+p.amount, credit:0, _pl:false, _voided:false, _grp:2,
         desc:`دفعة من ${p.payer||'—'}`, extra:`${p.pay_method||''}${p.document?' · '+p.document:''}` })),
       ...(expenses||[]).filter(isSettled).map(e=>({ date:e.exp_date||e.expense_date, type:e.exp_type||e.category||'مصروف', icon:'💸', color:'var(--red)',
-        party:e.vendor||'—', debit:0, credit:+e.amount, _pl:true, _voided:false,
-        desc:e.description||e.exp_desc||e.category||'مصروف', extra:`${e.pay_method||''}` })),
+        party:e.vendor||'—', debit:0, credit:+e.amount, _pl:true, _voided:false, _grp:1,
+        desc:e.description||e.category||'مصروف', extra:`${e.pay_method||''}` })),
       ...(expenses||[]).filter(r=>r.post_status==='draft').map(e=>({ date:e.exp_date||e.expense_date, type:e.exp_type||e.category||'مصروف (معلق)', icon:'⏳', color:'var(--accent)',
-        party:e.vendor||'—', debit:0, credit:+e.amount, _pl:false, _draft:true,
-        desc:e.description||e.exp_desc||e.category||'مصروف', extra:'في انتظار الموافقة' })),
+        party:e.vendor||'—', debit:0, credit:+e.amount, _pl:false, _draft:true, _grp:1,
+        desc:e.description||e.category||'مصروف', extra:'في انتظار الموافقة' })),
       ...(sales||[]).filter(isSettled).map(s=>({ date:s.sale_date, type:'بيع', icon:'🤝', color:'var(--green)',
-        party:s.customer||'—', debit:+s.sale_price, credit:0, _pl:true, _voided:false,
+        party:s.customer||'—', debit:+s.sale_price, credit:0, _pl:true, _voided:false, _grp:2,
         desc:`بيع ${s.model||s.vin||'سيارة'} — ${s.customer||'—'}`,
         extra:`${s.vin?'شاصي: '+s.vin:''}${s.invoice_no?' · '+s.invoice_no:''}` })),
       ...(sales||[]).filter(r=>r.post_status==='draft').map(s=>({ date:s.sale_date, type:'بيع (معلق)', icon:'⏳', color:'var(--accent)',
-        party:s.customer||'—', debit:+s.sale_price, credit:0, _pl:false, _draft:true,
+        party:s.customer||'—', debit:+s.sale_price, credit:0, _pl:false, _draft:true, _grp:2,
         desc:`بيع ${s.model||s.vin||'سيارة'} — ${s.customer||'—'}`, extra:'في انتظار الموافقة' })),
       // التحصيلات: معلوماتية فقط لا تدخل في الربح/الخسارة
       ...(collections||[]).filter(c=>c.paid_date && isSettled(c)).map(c=>({ date:c.paid_date, type:'تحصيل', icon:'💰', color:'var(--green)',
-        party:c.customer||'—', debit:+c.amount, credit:0, _pl:false,
+        party:c.customer||'—', debit:+c.amount, credit:0, _pl:false, _grp:2,
         desc:`تحصيل من ${c.customer||'—'}`, extra:`${c.pay_method||''}` })),
       ...(payouts||[]).filter(isActive).map(p=>({ date:p.pay_date, type:'صرف شريك', icon:'👥', color:'var(--purple)',
-        party:p.partner||'—', debit:0, credit:+p.amount, _pl:false,
+        party:p.partner||'—', debit:0, credit:+p.amount, _pl:false, _grp:2,
         desc:`${p.payout_type||'صرف'} — ${p.partner||'—'}`, extra:`${p.pay_method||''}${p.notes?' · '+p.notes:''}` })),
-    ].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    ].sort((a,b) => {
+      // أولاً بالمجموعة (شراء=0 → مصاريف=1 → باقي=2)، ثم بالتاريخ داخل كل مجموعة
+      if ((a._grp||2) !== (b._grp||2)) return (a._grp||2) - (b._grp||2);
+      return (a.date||'').localeCompare(b.date||'');
+    });
 
     window._dealStatementData = { fn, deal, entries, totalPurchase, totalPaid, totalExp, totalSales, totalColl, totalPayouts, profit, partners, payouts, vehicles };
 

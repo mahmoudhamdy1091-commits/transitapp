@@ -1685,11 +1685,11 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
             </table>
           </div>
 
-          <!-- المصاريف -->
-          ${d.expenses.length ? `
+          <!-- المصاريف — فقط الفعّالة (بدون الملغية) -->
+          ${d.expenses.filter(isEffective).length ? (() => { const effExp = d.expenses.filter(isEffective); return `
           <div style="margin-bottom:14px">
             <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
-              المصاريف (${d.expenses.length} بند)
+              المصاريف (${effExp.length} بند)
             </div>
             <table style="width:100%;border-collapse:collapse;font-size:12px">
               <thead>
@@ -1702,22 +1702,22 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                 </tr>
               </thead>
               <tbody>
-                ${d.expenses.map(e=>`
+                ${effExp.map(e=>`
                 <tr style="border-bottom:1px solid #fff1f2">
                   <td style="padding:6px 10px">${e.description||'—'}</td>
                   <td style="padding:6px 10px"><span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:10px;font-size:12px">${e.exp_type||e.category||'—'}</span></td>
-                  <td style="padding:6px 10px;color:#94a3b8">${(e.expense_date||e.exp_date||'').split('T')[0]||'—'}</td>
+                  <td style="padding:6px 10px;color:#94a3b8">${(e.exp_date||e.expense_date||'').split('T')[0]||'—'}</td>
                   <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2(e.amount)}</td>
                   <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2((+e.amount||0)*d.share)}</td>
                 </tr>`).join('')}
                 <tr style="background:#fff1f2;font-weight:700">
                   <td colspan="3" style="padding:7px 10px;color:#dc2626">إجمالي المصاريف</td>
-                  <td style="padding:7px 10px;font-family:monospace;color:#dc2626">${fmt2(d.totalExp)}</td>
-                  <td style="padding:7px 10px;font-family:monospace;color:#dc2626">${fmt2(d.myExpenses)}</td>
+                  <td style="padding:7px 10px;font-family:monospace;color:#dc2626">${fmt2(effExp.reduce((s,e)=>s+(+e.amount||0),0))}</td>
+                  <td style="padding:7px 10px;font-family:monospace;color:#dc2626">${fmt2(effExp.reduce((s,e)=>s+(+e.amount||0),0)*d.share)}</td>
                 </tr>
               </tbody>
             </table>
-          </div>` : ''}
+          </div>`; })() : ''}
 
           <!-- المبيعات -->
           ${d.sales.length ? `
