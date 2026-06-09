@@ -252,7 +252,7 @@ async function loadDashboard() {
     if (_ddState.type) renderDrillDown(_ddState.type);
 
     // تحديث badge الموافقات
-    if (can('roles')) updateApprovalBadge();
+    if (can('approve')) updateApprovalBadge();
 
   } catch(e) {
     showErr('dealsTableBody', 'خطأ في تحميل البيانات: ' + e.message);

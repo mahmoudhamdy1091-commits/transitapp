@@ -9,7 +9,7 @@
 let _activityData = [];
 
 async function showActivityLog() {
-  if (!can('roles')) { toast('🔒 هذه الصفحة للمدراء فقط', 'err'); return; }
+  if (!can('settings')) { toast('🔒 هذه الصفحة للمدراء فقط', 'err'); return; }
   hideAllViews();
   el('activityView').style.display = 'block';
   el('topBarTitle').textContent = 'سجل النشاط';

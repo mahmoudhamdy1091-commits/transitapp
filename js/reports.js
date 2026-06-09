@@ -884,7 +884,7 @@ function applyRoleRestrictions() {
   const canTx       = can('transactions');
   const canApprove  = can('approve');
   const canSettings = can('settings');
-  const isAdmin     = can('roles');
+  const isAdmin     = can('settings');
   const role        = ROLES[_currentRole] || ROLES.readonly;
 
   // ── ١. Role badge في sidebar ──
