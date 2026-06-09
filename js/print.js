@@ -1066,12 +1066,13 @@ function printLedgerStatement() {
 // SECTION 13 — Deal Statement
 // ════════════════════════════════════════════════════════════
 async function printDealStatement(fileNo) {
+  // ✅ دائماً نُعيد التحميل من الخادم لضمان أحدث البيانات (بعد الحذف/التعديل)
+  const targetFile = fileNo || window._dealStatementData?.fn;
+  if (!targetFile) { toast('افتح كشف الصفقة أولاً','err'); return; }
+  toast('⏳ جاري تحميل كشف الصفقة...', 'ok');
+  try { await loadDealStatement(targetFile, state.system); }
+  catch(e) { toast('خطأ: '+e.message,'err'); return; }
   let d = window._dealStatementData;
-  if (fileNo && (!d || d.fn!==fileNo)) {
-    toast('⏳ جاري تحميل كشف الصفقة...', 'ok');
-    try { await loadDealStatement(fileNo, state.system); d=window._dealStatementData; }
-    catch(e) { toast('خطأ: '+e.message,'err'); return; }
-  }
   if (!d) { toast('افتح كشف الصفقة أولاً','err'); return; }
   const {fn,deal,entries,totalPurchase,totalPaid,totalExp,totalSales,totalColl,profit} = d;
   let running = 0;

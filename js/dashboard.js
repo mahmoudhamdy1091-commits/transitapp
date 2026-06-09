@@ -1071,7 +1071,7 @@ async function loadExpensesTab(fn, sys) {
             </tr>`;
           }).join('')}
           <tr style="background:var(--card2);font-weight:700">
-            <td colspan="4" style="padding:10px 16px">الإجمالي (${data.length} مصروف)</td>
+            <td colspan="4" style="padding:10px 16px">الإجمالي (${data.filter(isEffective).length} مصروف)</td>
             <td class="mono text-red" style="padding:10px 16px">${fmt(total)}</td>
             <td colspan="4"></td>
           </tr>
