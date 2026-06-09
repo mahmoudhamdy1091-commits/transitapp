@@ -4,8 +4,6 @@ BEGIN
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- 1. PAYMENTS  DR 2100 / CR 2400 or 1120 or 1110
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
--- سطر مدين — يُدرج لو لا يوجد أي سطر بهذا ref_id
 INSERT INTO journal_entries
   (system_type, entry_no, entry_date, entry_type,
    account_code, account_name, dr_amount, cr_amount,
@@ -29,7 +27,6 @@ WHERE p.post_status IN ('posted','pending_edit') AND p.amount > 0
     WHERE j.ref_table = 'payments' AND j.ref_id = p.id::text AND j.dr_amount > 0
   );
 
--- سطر دائن — يُدرج لو لا يوجد سطر دائن بهذا ref_id
 INSERT INTO journal_entries
   (system_type, entry_no, entry_date, entry_type,
    account_code, account_name, dr_amount, cr_amount,
@@ -71,7 +68,6 @@ WHERE p.post_status IN ('posted','pending_edit') AND p.amount > 0
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- 2. EXPENSES  DR 6xxx/5xxx / CR 1120 or 1110
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 INSERT INTO journal_entries
   (system_type, entry_no, entry_date, entry_type,
    account_code, account_name, dr_amount, cr_amount,
@@ -118,8 +114,8 @@ WHERE e.post_status IN ('posted','pending_edit') AND e.amount > 0
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- 3. SALES  DR 1200 / CR 4100
+-- يتجاهل أي ملف عنده قيد مبيعات حقيقي (غير BF)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 INSERT INTO journal_entries
   (system_type, entry_no, entry_date, entry_type,
    account_code, account_name, dr_amount, cr_amount,
@@ -134,9 +130,18 @@ SELECT
 FROM sales s
 WHERE s.post_status IN ('posted','pending_edit') AND s.sale_price > 0
   AND NOT EXISTS (
+    -- لو في قيد حقيقي (مش BF) لحساب المدينين في هذا الملف → تجاهل
     SELECT 1 FROM journal_entries j
-    WHERE j.system_type = s.system_type AND j.file_no = s.file_no
-      AND j.account_code = '1200' AND j.dr_amount = s.sale_price
+    WHERE j.system_type  = s.system_type
+      AND j.file_no      = s.file_no
+      AND j.account_code = '1200'
+      AND j.dr_amount    > 0
+      AND j.entry_no NOT LIKE 'BF-%'
+  )
+  AND NOT EXISTS (
+    -- لو BF لهذا السجل موجود مسبقاً → تجاهل
+    SELECT 1 FROM journal_entries j
+    WHERE j.ref_table = 'sales' AND j.ref_id = s.id::text AND j.dr_amount > 0
   );
 
 INSERT INTO journal_entries
@@ -154,14 +159,21 @@ FROM sales s
 WHERE s.post_status IN ('posted','pending_edit') AND s.sale_price > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
-    WHERE j.system_type = s.system_type AND j.file_no = s.file_no
-      AND j.account_code = '4100' AND j.cr_amount = s.sale_price
+    WHERE j.system_type  = s.system_type
+      AND j.file_no      = s.file_no
+      AND j.account_code = '1200'
+      AND j.dr_amount    > 0
+      AND j.entry_no NOT LIKE 'BF-%'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM journal_entries j
+    WHERE j.ref_table = 'sales' AND j.ref_id = s.id::text AND j.cr_amount > 0
   );
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- 4. COLLECTIONS  DR 1120/1110 / CR 1200
+-- يتجاهل أي ملف عنده قيد تحصيل حقيقي (غير BF)
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 INSERT INTO journal_entries
   (system_type, entry_no, entry_date, entry_type,
    account_code, account_name, dr_amount, cr_amount,
@@ -177,6 +189,15 @@ SELECT
   'collections', c.id::text, c.file_no, 'posted', NOW()
 FROM collections c
 WHERE c.post_status IN ('posted','pending_edit') AND c.amount > 0
+  AND NOT EXISTS (
+    -- لو في قيد تحصيل حقيقي لهذا الملف → تجاهل
+    SELECT 1 FROM journal_entries j
+    WHERE j.system_type  = c.system_type
+      AND j.file_no      = c.file_no
+      AND j.account_code = '1200'
+      AND j.cr_amount    > 0
+      AND j.entry_no NOT LIKE 'BF-%'
+  )
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
     WHERE j.ref_table = 'collections' AND j.ref_id = c.id::text AND j.dr_amount > 0
@@ -197,13 +218,20 @@ FROM collections c
 WHERE c.post_status IN ('posted','pending_edit') AND c.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM journal_entries j
+    WHERE j.system_type  = c.system_type
+      AND j.file_no      = c.file_no
+      AND j.account_code = '1200'
+      AND j.cr_amount    > 0
+      AND j.entry_no NOT LIKE 'BF-%'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM journal_entries j
     WHERE j.ref_table = 'collections' AND j.ref_id = c.id::text AND j.cr_amount > 0
   );
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- 5. PARTNER_PAYOUTS  DR 2400 / CR 1120 or 1110
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 INSERT INTO journal_entries
   (system_type, entry_no, entry_date, entry_type,
    account_code, account_name, dr_amount, cr_amount,
