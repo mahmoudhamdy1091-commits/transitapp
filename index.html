@@ -211,21 +211,6 @@
           <div class="nav-item" id="nav-coa" onclick="showChartOfAccounts()">
             <span class="ni-icon">🗂️</span><span>شجرة الحسابات</span>
           </div>
-          <div class="nav-item" id="nav-contacts" onclick="showContacts('all')">
-            <span class="ni-icon">📒</span><span>جهات الاتصال</span>
-          </div>
-          <div class="nav-item" onclick="showContactsByType('customer')">
-            <span class="ni-icon">👥</span><span>العملاء</span>
-          </div>
-          <div class="nav-item" onclick="showContactsByType('supplier')">
-            <span class="ni-icon">🏭</span><span>الموردين</span>
-          </div>
-          <div class="nav-item" onclick="showContactsByType('partner')">
-            <span class="ni-icon">🤲</span><span>الشركاء</span>
-          </div>
-          <div class="nav-item" onclick="showContactsByType('custodian')">
-            <span class="ni-icon">🗝</span><span>العهد وأخرى</span>
-          </div>
           <div class="nav-item" id="nav-ledger" onclick="showTrialBalance()">
             <span class="ni-icon">📖</span><span>دفتر الأستاذ</span>
           </div>
@@ -878,42 +863,60 @@
 
       <!-- ════ REPORTS ════ -->
       <div id="reportsView" style="display:none">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-          <div style="display:flex;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;gap:2px">
-            <button class="btn btn-sm journal-period-btn active" id="rtype-profit"    onclick="setReportType('profit')">📈 الأرباح</button>
-            <button class="btn btn-sm journal-period-btn" id="rtype-cashflow"  onclick="setReportType('cashflow')">💵 التدفقات</button>
-            <button class="btn btn-sm journal-period-btn" id="rtype-inventory" onclick="setReportType('inventory')">🚛 المخزون</button>
-            <button class="btn btn-sm journal-period-btn" id="rtype-sales"     onclick="setReportType('sales')">💹 المبيعات</button>
-            <button class="btn btn-sm journal-period-btn" id="rtype-expenses"  onclick="setReportType('expenses')">💸 المصاريف</button>
-            <button class="btn btn-sm journal-period-btn" id="rtype-partners"  onclick="setReportType('partners')">👥 الشركاء</button>
-            <button class="btn btn-sm journal-period-btn" id="rtype-opex"      onclick="setReportType('opex')">💼 التشغيلية</button>
+
+        <!-- Reports Toolbar Card -->
+        <div class="report-toolbar-card">
+
+          <!-- Row 1: نوع التقرير -->
+          <div class="report-toolbar-row">
+            <span class="report-toolbar-label">التقرير:</span>
+            <div class="report-type-group">
+              <button class="btn btn-sm journal-period-btn active" id="rtype-profit"    onclick="setReportType('profit')">📈 الأرباح</button>
+              <button class="btn btn-sm journal-period-btn"        id="rtype-cashflow"  onclick="setReportType('cashflow')">💵 التدفقات</button>
+              <button class="btn btn-sm journal-period-btn"        id="rtype-inventory" onclick="setReportType('inventory')">🚛 المخزون</button>
+              <button class="btn btn-sm journal-period-btn"        id="rtype-sales"     onclick="setReportType('sales')">💹 المبيعات</button>
+              <button class="btn btn-sm journal-period-btn"        id="rtype-expenses"  onclick="setReportType('expenses')">💸 المصاريف</button>
+              <button class="btn btn-sm journal-period-btn"        id="rtype-partners"  onclick="setReportType('partners')">👥 الشركاء</button>
+              <button class="btn btn-sm journal-period-btn"        id="rtype-opex"      onclick="setReportType('opex')">💼 التشغيلية</button>
+            </div>
           </div>
-          <div style="display:flex;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;gap:2px">
-            <button class="btn btn-sm journal-period-btn active" id="rperiod-today"    onclick="setReportPeriod('today')">اليوم</button>
-            <button class="btn btn-sm journal-period-btn"        id="rperiod-week"     onclick="setReportPeriod('week')">هذا الأسبوع</button>
-            <button class="btn btn-sm journal-period-btn"        id="rperiod-month"    onclick="setReportPeriod('month')">هذا الشهر</button>
-            <button class="btn btn-sm journal-period-btn"        id="rperiod-year"     onclick="setReportPeriod('year')">هذه السنة</button>
-            <button class="btn btn-sm journal-period-btn"        id="rperiod-lastyear" onclick="setReportPeriod('lastyear')">السنة السابقة</button>
-            <button class="btn btn-sm journal-period-btn"        id="rperiod-custom"   onclick="setReportPeriod('custom')">تاريخ محدد</button>
+
+          <!-- Row 2: الفترة الزمنية -->
+          <div class="report-toolbar-row">
+            <span class="report-toolbar-label">الفترة:</span>
+            <div class="report-type-group">
+              <button class="btn btn-sm journal-period-btn active" id="rperiod-today"    onclick="setReportPeriod('today')">اليوم</button>
+              <button class="btn btn-sm journal-period-btn"        id="rperiod-week"     onclick="setReportPeriod('week')">هذا الأسبوع</button>
+              <button class="btn btn-sm journal-period-btn"        id="rperiod-month"    onclick="setReportPeriod('month')">هذا الشهر</button>
+              <button class="btn btn-sm journal-period-btn"        id="rperiod-year"     onclick="setReportPeriod('year')">هذه السنة</button>
+              <button class="btn btn-sm journal-period-btn"        id="rperiod-lastyear" onclick="setReportPeriod('lastyear')">السنة السابقة</button>
+              <button class="btn btn-sm journal-period-btn"        id="rperiod-custom"   onclick="setReportPeriod('custom')">تاريخ محدد</button>
+            </div>
           </div>
-          <div id="rCustomDateWrap" style="display:none;align-items:center;gap:6px">
-            <input type="date" id="r-from" onchange="runReport()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
-            <span style="color:var(--text2)">—</span>
-            <input type="date" id="r-to"   onchange="runReport()" style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:Cairo,sans-serif;font-size:13px">
+
+          <!-- Row 3: تاريخ محدد + فلتر + أوامر -->
+          <div class="report-toolbar-row report-toolbar-actions">
+            <div id="rCustomDateWrap" style="display:none;align-items:center;gap:6px">
+              <input type="date" id="r-from" onchange="runReport()" class="form-control" style="font-size:13px;padding:6px 10px">
+              <span style="color:var(--text2)">—</span>
+              <input type="date" id="r-to"   onchange="runReport()" class="form-control" style="font-size:13px;padding:6px 10px">
+            </div>
+            <select id="r-post-filter" onchange="runReport()" class="form-control" style="font-size:13px;padding:6px 10px">
+              <option value="posted">✅ مرحَّل فقط</option>
+              <option value="all">📊 الكل</option>
+              <option value="draft">⏳ معلق فقط</option>
+            </select>
+            <div class="report-action-btns">
+              <button class="btn btn-primary btn-sm"    onclick="runReport()">🔍 تشغيل</button>
+              <button class="btn btn-secondary btn-sm"  onclick="printCurrentReport()">🖨️ طباعة</button>
+              <button class="btn btn-secondary btn-sm"  onclick="exportCurrentReportExcel()">📊 Excel</button>
+              <button class="btn btn-secondary btn-sm"  onclick="exportReportCSV()">📥 CSV</button>
+            </div>
           </div>
-          <!-- فلتر posted/draft -->
-          <select id="r-post-filter" onchange="runReport()"
-            style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:13px">
-            <option value="posted">✅ مرحَّل فقط</option>
-            <option value="all">📊 الكل (posted + draft)</option>
-            <option value="draft">⏳ معلق فقط</option>
-          </select>
-          <button class="btn btn-primary btn-sm" onclick="runReport()">🔍 تشغيل</button>
-          <button class="btn btn-secondary btn-sm" onclick="printCurrentReport()">🖨️ طباعة</button>
-          <button class="btn btn-secondary btn-sm" onclick="exportCurrentReportExcel()">📊 Excel</button>
-          <button class="btn btn-secondary btn-sm" onclick="exportReportCSV()">📥 CSV</button>
-        </div>
-        <div id="reportKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px"></div>
+
+        </div><!-- /report-toolbar-card -->
+
+        <div id="reportKpis" class="report-kpis-grid"></div>
         <div class="data-table-wrap"><div id="reportTable"></div></div>
       </div>
 
@@ -1701,9 +1704,6 @@
   </button>
   <button class="mob-nav-item" onclick="showReport('profit');setMobNav(this)">
     <span class="mn-icon">📈</span>تقارير
-  </button>
-  <button class="mob-nav-item" onclick="showContacts();setMobNav(this)">
-    <span class="mn-icon">👥</span>جهات
   </button>
 </nav>
 
