@@ -20,13 +20,47 @@ async function showOpex() {
   if(el('opexSystemLabel')) el('opexSystemLabel').textContent = `نظام ${state.system}`;
   navActive('nav-opex');
   sessionStorage.setItem('tm_last_view','opex');
-  // ✅ default: السنة الحالية
-  const yr = new Date().getFullYear();
-  if (el('opex-filter-from') && !el('opex-filter-from').value)
-    el('opex-filter-from').value = `${yr}-01-01`;
-  if (el('opex-filter-to') && !el('opex-filter-to').value)
-    el('opex-filter-to').value = `${yr}-12-31`;
-  await loadOpex();
+  setOpexPeriod('year');
+}
+
+function setOpexPeriod(period) {
+  document.querySelectorAll('[id^="opexperiod-"]').forEach(b => b.classList.remove('active'));
+  el('opexperiod-' + period)?.classList.add('active');
+  const customWrap = el('opexCustomDateWrap');
+  const pad = n => String(n).padStart(2,'0');
+  const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const now = new Date();
+  const yr  = now.getFullYear();
+
+  if (period === 'custom') {
+    customWrap.style.display = 'flex';
+    return;
+  }
+  customWrap.style.display = 'none';
+
+  let from, to;
+  if (period === 'today') {
+    from = to = toDate(now);
+  } else if (period === 'week') {
+    const sun = new Date(now); sun.setDate(now.getDate() - now.getDay());
+    const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
+    from = toDate(sun); to = toDate(sat);
+  } else if (period === 'month') {
+    from = `${yr}-${pad(now.getMonth()+1)}-01`;
+    to   = toDate(new Date(yr, now.getMonth()+1, 0));
+  } else if (period === '3months') {
+    const f = new Date(now); f.setMonth(f.getMonth() - 3);
+    from = toDate(f); to = toDate(now);
+  } else if (period === 'year') {
+    from = `${yr}-01-01`;
+    to   = `${yr}-12-31`;
+  } else if (period === 'lastyear') {
+    from = `${yr-1}-01-01`;
+    to   = `${yr-1}-12-31`;
+  }
+  if (el('opex-filter-from')) el('opex-filter-from').value = from || '';
+  if (el('opex-filter-to'))   el('opex-filter-to').value   = to   || '';
+  loadOpex();
 }
 
 async function loadOpex() {

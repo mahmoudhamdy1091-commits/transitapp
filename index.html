@@ -810,24 +810,43 @@
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px" id="opexKpis"></div>
 
         <!-- Filters -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
-          <select id="opex-filter-type" onchange="loadOpex()" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
-            <option value="">كل الأنواع</option>
-            <option>رواتب وأجور</option>
-            <option>إيجار مكتب / معرض</option>
-            <option>كهرباء وماء ومرافق</option>
-            <option>نظافة وصيانة</option>
-            <option>مصاريف إدارية</option>
-            <option>تسويق وإعلانات</option>
-            <option>عمولات ووساطة</option>
-            <option>ضيافة ومطاعم</option>
-            <option>رسوم حكومية ورخص</option>
-            <option>مصاريف متنوعة</option>
-          </select>
-          <input type="date" id="opex-filter-from" onchange="loadOpex()" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
-          <span style="color:var(--text2);font-size:12px">—</span>
-          <input type="date" id="opex-filter-to" onchange="loadOpex()" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
-          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('opex-filter-type').value='';document.getElementById('opex-filter-from').value='';document.getElementById('opex-filter-to').value='';loadOpex()">✕ مسح الفلاتر</button>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px">
+          <!-- أزرار الفترة -->
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+            <span style="font-size:11px;color:var(--text2);font-weight:500">الفترة:</span>
+            <div style="display:flex;background:var(--card2);border-radius:var(--radius-sm);padding:3px;gap:2px;flex-wrap:wrap">
+              <button class="btn btn-sm journal-period-btn"        id="opexperiod-today"    onclick="setOpexPeriod('today')">اليوم</button>
+              <button class="btn btn-sm journal-period-btn"        id="opexperiod-week"     onclick="setOpexPeriod('week')">هذا الأسبوع</button>
+              <button class="btn btn-sm journal-period-btn"        id="opexperiod-month"    onclick="setOpexPeriod('month')">هذا الشهر</button>
+              <button class="btn btn-sm journal-period-btn"        id="opexperiod-3months"  onclick="setOpexPeriod('3months')">آخر 3 أشهر</button>
+              <button class="btn btn-sm journal-period-btn active" id="opexperiod-year"     onclick="setOpexPeriod('year')">هذه السنة</button>
+              <button class="btn btn-sm journal-period-btn"        id="opexperiod-lastyear" onclick="setOpexPeriod('lastyear')">السنة السابقة</button>
+              <button class="btn btn-sm journal-period-btn"        id="opexperiod-custom"   onclick="setOpexPeriod('custom')">تاريخ محدد</button>
+            </div>
+          </div>
+          <!-- الصف الثاني: تاريخ مخصص + فلتر النوع -->
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <div id="opexCustomDateWrap" style="display:none;align-items:center;gap:6px">
+              <input type="date" id="opex-filter-from" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+              <span style="color:var(--text2)">—</span>
+              <input type="date" id="opex-filter-to" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+              <button class="btn btn-primary btn-sm" onclick="loadOpex()">🔍</button>
+            </div>
+            <select id="opex-filter-type" onchange="loadOpex()" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+              <option value="">كل الأنواع</option>
+              <option>رواتب وأجور</option>
+              <option>إيجار مكتب / معرض</option>
+              <option>كهرباء وماء ومرافق</option>
+              <option>نظافة وصيانة</option>
+              <option>مصاريف إدارية</option>
+              <option>تسويق وإعلانات</option>
+              <option>عمولات ووساطة</option>
+              <option>ضيافة ومطاعم</option>
+              <option>رسوم حكومية ورخص</option>
+              <option>مصاريف متنوعة</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="setOpexPeriod('year');el('opex-filter-type').value=''">✕ مسح</button>
+          </div>
         </div>
 
         <!-- Table -->
