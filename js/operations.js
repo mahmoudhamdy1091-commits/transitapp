@@ -428,29 +428,41 @@ function renderDrillDown(type) {
       </tbody></table>` : emptyHTML('📋','لا توجد صفقات في هذه الفترة');
   }
 
-  // ── مبيعات ──
+  // ── مبيعات ── مجمّعة بالفاتورة
   else if (type === 'sales') {
     (el('dd-title-main')||el('dd-title')).textContent = `💹 تفاصيل المبيعات — ${periodLabel}`;
     const sales = d.periodSales || [];
     const total = sales.reduce((s,r)=>s+(+r.sale_price||0),0);
+
+    // تجميع بالفاتورة (inv_no + file_no)
+    const invMap = {};
+    sales.forEach(r => {
+      const key = (r.file_no||'') + '||' + (r.inv_no||'');
+      if (!invMap[key]) invMap[key] = { file_no:r.file_no, inv_no:r.inv_no, customer:r.customer, sale_date:r.sale_date, total:0, vins:[] };
+      invMap[key].total    += +r.sale_price || 0;
+      invMap[key].vins.push(r.vin||'');
+    });
+    const invoices = Object.values(invMap).sort((a,b)=>(b.sale_date||'').localeCompare(a.sale_date||''));
     const byFile = {};
-    sales.forEach(r => { byFile[r.file_no]=(byFile[r.file_no]||0)+(+r.sale_price||0); });
+    invoices.forEach(r => { byFile[r.file_no]=(byFile[r.file_no]||0)+r.total; });
+
     ddKpis.style.gridTemplateColumns = 'repeat(3,1fr)';
     ddKpis.innerHTML = `
       <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--green)">${fmt(total)}</div><div class="dd-kpi-lbl">إجمالي المبيعات</div></div>
-      <div class="dd-kpi"><div class="dd-kpi-val">${sales.length}</div><div class="dd-kpi-lbl">عدد الفواتير</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val">${invoices.length}</div><div class="dd-kpi-lbl">عدد الفواتير</div></div>
       <div class="dd-kpi"><div class="dd-kpi-val">${Object.keys(byFile).length}</div><div class="dd-kpi-lbl">عدد الملفات</div></div>`;
     renderDDChart(Object.entries(byFile).sort((a,b)=>b[1]-a[1]), 'var(--green)');
-    ddTable.innerHTML = sales.length ? `
+    ddTable.innerHTML = invoices.length ? `
       <table class="data-table"><thead><tr>
-        <th>التاريخ</th><th>الملف</th><th>الشاصي</th><th>العميل</th><th>سعر البيع</th>
+        <th>التاريخ</th><th>رقم الفاتورة</th><th>الملف</th><th>العميل</th><th>السيارات</th><th>إجمالي الفاتورة</th>
       </tr></thead><tbody>
-      ${sales.map(r=>`<tr onclick="openViewer('${r.file_no}')" style="cursor:pointer">
+      ${invoices.map(r=>`<tr onclick="openViewer('${r.file_no}')" style="cursor:pointer" title="اضغط لفتح الملف">
         <td class="mono">${fmtDate(r.sale_date)}</td>
-        <td class="mono text-amber">${r.file_no||'—'}</td>
-        <td class="mono" style="font-size:13px">${r.vin||'—'}</td>
+        <td class="mono text-blue" style="font-weight:700">${r.inv_no||'—'}</td>
+        <td class="mono text-amber" style="font-weight:700">${r.file_no||'—'}</td>
         <td>${r.customer||'—'}</td>
-        <td class="mono text-green" style="font-weight:700">${fmt(r.sale_price)}</td>
+        <td style="text-align:center;color:var(--text2)">${r.vins.filter(Boolean).length} سيارة</td>
+        <td class="mono text-green" style="font-weight:700">${fmt(r.total)}</td>
       </tr>`).join('')}
       </tbody></table>` : emptyHTML('💹','لا توجد مبيعات في هذه الفترة');
   }
