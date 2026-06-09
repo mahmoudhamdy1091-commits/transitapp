@@ -91,9 +91,23 @@ SELECT
   e.system_type, 'BF-EXP-' || e.id::text,
   COALESCE(e.exp_date, e.expense_date, e.created_at::date, CURRENT_DATE), 'journal',
   CASE COALESCE(e.exp_type, e.category,'')
-    WHEN 'شحن' THEN '5200' WHEN 'جمارك' THEN '6600' WHEN 'تأمين' THEN '6600'
-    WHEN 'إيجار' THEN '6100' WHEN 'رواتب' THEN '6200' WHEN 'نقل' THEN '5200'
-    WHEN 'صيانة' THEN '6700' WHEN 'تسويق' THEN '6500' ELSE '6500'
+    WHEN 'شحن بحري'     THEN '5200'
+    WHEN 'شحن داخلي'    THEN '5210'
+    WHEN 'نقل'          THEN '5210'
+    WHEN 'تأمين الشحنة' THEN '5220'
+    WHEN 'تأمين'        THEN '5220'
+    WHEN 'جمارك'        THEN '5300'
+    WHEN 'رسوم ميناء'   THEN '5310'
+    WHEN 'تخليص جمركي'  THEN '5320'
+    WHEN 'فحص وتقييم'   THEN '5400'
+    WHEN 'صيانة وإصلاح' THEN '5410'
+    WHEN 'صيانة'        THEN '5410'
+    WHEN 'دهان وتشطيب'  THEN '5420'
+    WHEN 'تسجيل ولوحات' THEN '5430'
+    WHEN 'عمولة وسيط'   THEN '6510'
+    WHEN 'رسوم حكومية'  THEN '6610'
+    WHEN 'شحن'          THEN '5200'
+    ELSE '6700'
   END,
   COALESCE(e.exp_type, e.category, 'مصروف'),
   e.amount, 0, NULL,

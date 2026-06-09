@@ -816,8 +816,15 @@ function addExpenseRow(prefill={}) {
     <td style="padding:4px 3px"><input type="text" name="er-desc" placeholder="الوصف *" style="${s}"></td>
     <td style="padding:4px 3px">
       <select name="er-type" style="${s}">
-        <option>شحن</option><option>جمارك</option><option>تأمين</option>
-        <option>إدارية</option><option>صيانة</option><option>أخرى</option>
+        <optgroup label="تكلفة مباشرة">
+          <option>شحن بحري</option><option>شحن داخلي</option><option>تأمين الشحنة</option>
+          <option>جمارك</option><option>رسوم ميناء</option><option>تخليص جمركي</option>
+          <option>فحص وتقييم</option><option>صيانة وإصلاح</option>
+          <option>دهان وتشطيب</option><option>تسجيل ولوحات</option>
+        </optgroup>
+        <optgroup label="مصاريف الصفقة">
+          <option>عمولة وسيط</option><option>رسوم حكومية</option><option>مصاريف متنوعة</option>
+        </optgroup>
       </select>
     </td>
     <td style="padding:4px 3px"><input type="number" name="er-amount" placeholder="0.00" min="0" step="0.01" oninput="updateExpenseTotal()" style="${s}"></td>
