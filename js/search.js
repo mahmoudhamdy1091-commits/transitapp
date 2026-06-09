@@ -76,57 +76,59 @@ async function gsSearch(q) {
   GS.active  = -1;
 
   const sys = state.system;
-  const ilike = `ilike.*${q}*`;
+  // PostgREST: or=(field.ilike.*q*,field2.ilike.*q*) — يجب وضع القوسين
+  const il  = v => `ilike.*${v.replace(/[()]/g,'')}*`;
+  const or  = (...fields) => `(${fields.map(f => `${f}.${il(q)}`).join(',')})`;
 
   try {
-    // نبحث في كل الجداول بالتوازي
+    // نستخدم apiGet مباشرة (لا apiGetAll) — البحث لنظام محدد فقط، مع limit
     const [vehicles, pos, sales, expenses, contacts, collections] = await Promise.all([
 
       // السيارات: شاصي، موديل، لون، ملف
-      apiGetAll('vehicles', {
+      apiGet('vehicles', {
         select: 'id,vin,model,make,year,color,file_no,purchase_price,post_status',
         system_type: `eq.${sys}`,
-        or: `vin.${ilike},model.${ilike},make.${ilike},color.${ilike},file_no.${ilike}`,
+        or: or('vin','model','make','color','file_no'),
         limit: 8, order: 'id.desc',
       }),
 
       // ملفات الشراء: رقم الملف، المورد
-      apiGetAll('purchase_orders', {
+      apiGet('purchase_orders', {
         select: 'id,file_no,supplier,po_date,total_purchase,status',
         system_type: `eq.${sys}`,
-        or: `file_no.${ilike},supplier.${ilike},po_no.${ilike}`,
+        or: or('file_no','supplier','po_no'),
         limit: 6, order: 'id.desc',
       }),
 
       // المبيعات: العميل، رقم الفاتورة، الشاصي
-      apiGetAll('sales', {
+      apiGet('sales', {
         select: 'id,inv_no,invoice_no,customer,vin,sale_price,sale_date,file_no,post_status',
         system_type: `eq.${sys}`,
-        or: `customer.${ilike},inv_no.${ilike},invoice_no.${ilike},vin.${ilike}`,
+        or: or('customer','inv_no','invoice_no','vin'),
         limit: 6, order: 'id.desc',
       }),
 
       // المصاريف: الوصف، المورد، رقم المرجع
-      apiGetAll('expenses', {
+      apiGet('expenses', {
         select: 'id,ref_no,description,exp_type,vendor,amount,file_no,exp_date,post_status',
         system_type: `eq.${sys}`,
-        or: `description.${ilike},vendor.${ilike},ref_no.${ilike}`,
+        or: or('description','vendor','ref_no'),
         limit: 5, order: 'id.desc',
       }),
 
       // جهات الاتصال: عملاء، موردين، شركاء
-      apiGetAll('contacts', {
+      apiGet('contacts', {
         select: 'id,name,type,phone,email',
         system_type: `eq.${sys}`,
-        or: `name.${ilike},phone.${ilike},email.${ilike}`,
+        or: or('name','phone','email'),
         limit: 5, order: 'id.desc',
       }),
 
       // التحصيلات: العميل، رقم الفاتورة
-      apiGetAll('collections', {
+      apiGet('collections', {
         select: 'id,inv_no,customer,amount,paid_date,file_no,post_status',
         system_type: `eq.${sys}`,
-        or: `customer.${ilike},inv_no.${ilike}`,
+        or: or('customer','inv_no'),
         limit: 4, order: 'id.desc',
       }),
     ]);

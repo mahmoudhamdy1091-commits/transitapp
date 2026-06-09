@@ -207,7 +207,7 @@ function headers(extra = {}) {
 }
 
 async function apiGet(table, params = {}) {
-  const NO_ENCODE = new Set(['select','order']);
+  const NO_ENCODE = new Set(['select','order','or','and','limit','offset']);
   const qs = Object.entries(params).map(([k,v]) => NO_ENCODE.has(k) ? `${k}=${v}` : `${k}=${encodeURIComponent(v)}`).join('&');
   const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
   // ✅ Audit fix: رُفع الحد من 9999 إلى 49999 لمنع قطع البيانات الصامت
