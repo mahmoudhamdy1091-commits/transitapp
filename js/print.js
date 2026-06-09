@@ -499,8 +499,8 @@ async function printPurchaseOrder(fileNo) {
       <div class="info-cell">
         <div class="info-row"><span class="info-lbl">عدد السيارات</span><span class="info-val">${(vehicles||[]).length} سيارة</span></div>
         <div class="info-row"><span class="info-lbl">عدد الشركاء</span><span class="info-val">${(partners||[]).length} شريك</span></div>
-        <div class="info-row"><span class="info-lbl">عدد الدفعات</span><span class="info-val">${(payments||[]).length} دفعة</span></div>
-        <div class="info-row"><span class="info-lbl">عدد المصاريف</span><span class="info-val">${(expenses||[]).length} بند</span></div>
+        <div class="info-row"><span class="info-lbl">عدد الدفعات</span><span class="info-val">${(payments||[]).filter(isEffective).length} دفعة</span></div>
+        <div class="info-row"><span class="info-lbl">عدد المصاريف</span><span class="info-val">${(expenses||[]).filter(isEffective).length} بند</span></div>
         <div class="info-row"><span class="info-lbl">تاريخ الطباعة</span><span class="info-val">${new Date().toLocaleDateString('en-GB')}</span></div>
       </div>
     </div>

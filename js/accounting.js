@@ -1719,11 +1719,11 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
             </table>
           </div>`; })() : ''}
 
-          <!-- المبيعات -->
-          ${d.sales.length ? `
+          <!-- المبيعات — فقط الفعّالة -->
+          ${d.sales.filter(isEffective).length ? (() => { const effSales = d.sales.filter(isEffective); return `
           <div style="margin-bottom:14px">
             <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
-              المبيعات (${d.sales.length} فاتورة)
+              المبيعات (${effSales.length} فاتورة)
             </div>
             <table style="width:100%;border-collapse:collapse;font-size:12px">
               <thead>
@@ -1736,7 +1736,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                 </tr>
               </thead>
               <tbody>
-                ${d.sales.map(s=>`
+                ${effSales.map(s=>`
                 <tr style="border-bottom:1px solid #f0fdf4">
                   <td style="padding:6px 10px;font-family:monospace;color:#2563eb;font-size:13px">${s.vin||'—'}</td>
                   <td style="padding:6px 10px">${s.customer||'—'}</td>
@@ -1746,12 +1746,12 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                 </tr>`).join('')}
                 <tr style="background:#f0fdf4;font-weight:700">
                   <td colspan="3" style="padding:7px 10px;color:#16a34a">إجمالي المبيعات</td>
-                  <td style="padding:7px 10px;font-family:monospace;color:#16a34a">${fmt2(d.totalSales)}</td>
-                  <td style="padding:7px 10px;font-family:monospace;color:#16a34a">${fmt2(d.mySales)}</td>
+                  <td style="padding:7px 10px;font-family:monospace;color:#16a34a">${fmt2(effSales.reduce((s,x)=>s+(+x.sale_price||0),0))}</td>
+                  <td style="padding:7px 10px;font-family:monospace;color:#16a34a">${fmt2(effSales.reduce((s,x)=>s+(+x.sale_price||0),0)*d.share)}</td>
                 </tr>
               </tbody>
             </table>
-          </div>` : ''}
+          </div>`; })() : ''}
 
           <!-- ملخص الصفقة للشريك -->
           <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:14px">
