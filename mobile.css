@@ -20,10 +20,31 @@
   /* ── Layout ── */
   .sidebar{ display:none !important; }
   .main-area{ width:100%; }
-  .top-bar{ padding:0 12px; height:50px; min-height:50px; }
-  .top-bar-title{ font-size:15px; }
+
+  /* Top-bar: صفّين على الموبايل */
+  .top-bar{
+    flex-wrap:wrap;
+    height:auto !important;
+    min-height:unset !important;
+    padding:8px 12px 6px;
+    gap:6px;
+    align-items:center;
+  }
+  /* الصف الأول: العنوان + الأزرار */
+  .top-bar > div:first-child{ order:1; flex:1; min-width:0; }
+  .top-bar-title{ font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .top-bar-sub{ font-size:11px; }
+  .top-bar-actions{ order:2; gap:5px; flex-shrink:0; }
   .top-bar-actions .btn span{ display:none; }
-  .top-bar-actions .btn{ padding:8px 10px; min-width:36px; min-height:36px; }
+  .top-bar-actions .btn{ padding:7px 10px; min-width:34px; min-height:34px; font-size:13px; }
+  /* الصف الثاني: البحث كامل العرض */
+  .gs-wrap{
+    order:3;
+    width:100% !important;
+    max-width:100% !important;
+    flex-basis:100%;
+  }
+
   .content-area{ padding:10px; padding-bottom:72px; }
 
   /* ── KPI Grid ── */
