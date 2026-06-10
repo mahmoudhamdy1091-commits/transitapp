@@ -4167,9 +4167,12 @@ async function runMigration() {
 // ════════════════════════════════════════════════════════
 
 const whState = {
-  warehouses:  [],   // قائمة المخازن (أسماء فريدة)
-  transfers:   [],   // كل التحويلات
-  allTransfers:[],   // نسخة كاملة للفلترة
+  warehouses:    [],   // قائمة المخازن (أسماء فريدة)
+  transfers:     [],   // كل التحويلات
+  allTransfers:  [],   // نسخة كاملة للفلترة
+  locationFilter:'',   // '' = الجميع
+  statusFilter:  'all',// all | stock | sold
+  searchQuery:   '',
 };
 
 // ── العرض الرئيسي ──
@@ -4189,16 +4192,50 @@ function filterWhByLocation(loc) {
   document.querySelectorAll('[id^="whf-"]').forEach(b => b.classList.remove('active'));
   el('whf-' + loc)?.classList.add('active');
   whState.locationFilter = loc === 'all' ? '' : loc;
-  const transfers = loc === 'all'
-    ? whState.allTransfers
-    : (whState.allTransfers||[]).filter(t => t.location_name === loc);
+  const transfers = whState.locationFilter
+    ? (whState.allTransfers||[]).filter(t => t.location_name === whState.locationFilter)
+    : whState.allTransfers;
   whState.transfers = transfers;
   ensureCache().then(() => {
     const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
     renderWhKpis(transfers, soldVins);
-    renderWhTable(transfers, soldVins);
-    renderWhTransfersTable(transfers, soldVins);
+    renderWhAll();
   });
+}
+
+// فلتر الحالة (الكل / في المخزن / مباع) — يعمل فوق فلتر المخزن والبحث
+function filterWhByStatus(status) {
+  whState.statusFilter = status;
+  ['all','stock','sold'].forEach(s => {
+    el('whfs-'+s)?.classList.toggle('active', s === status);
+  });
+  renderWhAll();
+}
+
+// بحث داخل قائمة السيارات — يعمل فوق فلتر المخزن والحالة
+function filterWhSearch() {
+  whState.searchQuery = el('wh-search')?.value || '';
+  renderWhAll();
+}
+// اسم قديم محتفَظ به للتوافق
+function filterWhTransfers() { filterWhSearch(); }
+
+// يطبّق كل الفلاتر (المخزن + الحالة + البحث) ويُعيد رسم جدول السيارات
+function renderWhAll() {
+  const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
+  let list = whState.locationFilter
+    ? (whState.allTransfers||[]).filter(t => t.location_name === whState.locationFilter)
+    : (whState.allTransfers||[]);
+  if (whState.statusFilter === 'stock') list = list.filter(t => !soldVins.has(t.vin));
+  else if (whState.statusFilter === 'sold') list = list.filter(t => soldVins.has(t.vin));
+  const q = (whState.searchQuery||'').toLowerCase().trim();
+  if (q) list = list.filter(t =>
+    (t.vin||'').toLowerCase().includes(q) ||
+    (t.location_name||'').toLowerCase().includes(q) ||
+    (t.file_no||'').toLowerCase().includes(q) ||
+    (t.model||'').toLowerCase().includes(q)
+  );
+  renderWhTable(list, soldVins);
 }
 
 async function loadWarehouses() {
@@ -4208,8 +4245,13 @@ async function loadWarehouses() {
     const transfers = await apiGetAll('stock_locations', {
       select:'*', system_type:`eq.${sys}`, order:'transfer_date.desc,id.desc'
     });
-    whState.transfers    = transfers || [];
-    whState.allTransfers = transfers || [];
+    whState.transfers     = transfers || [];
+    whState.allTransfers  = transfers || [];
+    whState.locationFilter= '';
+    whState.statusFilter  = 'all';
+    whState.searchQuery   = '';
+    if (el('wh-search')) el('wh-search').value = '';
+    document.querySelectorAll('[id^="whfs-"]').forEach(b => b.classList.toggle('active', b.id === 'whfs-all'));
 
     // جلب أسماء المخازن الفريدة
     whState.warehouses = [...new Set((transfers||[]).map(t=>t.location_name).filter(Boolean))];
@@ -4220,7 +4262,6 @@ async function loadWarehouses() {
 
     renderWhKpis(transfers, soldVins);
     renderWhCards(transfers, soldVins);
-    renderWhTransfersTable(transfers, soldVins);
   } catch(e) {
     if(el('wh-cards')) el('wh-cards').innerHTML = errHTML('خطأ: '+e.message);
   }
@@ -4293,70 +4334,6 @@ function renderWhTable(transfers, soldVins) {
       <tbody>${rows}</tbody>
     </table>
   </div>`;
-}
-
-function renderWhTransfersTable(transfers, soldVins) {
-  const wrap = el('wh-transfers-table');
-  if (!wrap) return;
-  if (!transfers.length) { wrap.innerHTML = emptyHTML('📋','لا توجد تحويلات'); return; }
-
-  const rows = transfers.map(t => {
-    const isSold = soldVins.has(t.vin);
-    return `<tr>
-      <td class="mono text-muted" style="font-size:13px">${t.transfer_date||'—'}</td>
-      <td><span style="font-weight:700;color:var(--purple)">${t.location_name||'—'}</span></td>
-      <td class="mono text-amber" style="cursor:pointer;font-weight:700" onclick="openViewer('${t.file_no}')">${t.file_no||'—'}</td>
-      <td class="mono" style="direction:ltr;font-size:13px">${t.vin||'—'}</td>
-      <td>${t.model||'—'}</td>
-      <td class="mono text-muted" style="font-size:13px">${t.transfer_ref||'—'}</td>
-      <td><span style="font-size:12px;font-weight:700;padding:2px 8px;border-radius:10px;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'✅ مباع':'📦 في المخزن'}</span></td>
-      <td style="font-size:13px;color:var(--text2)">${t.notes||'—'}</td>
-      <td>
-        <button class="btn btn-sm" onclick="openViewer('${t.file_no}')" style="padding:2px 8px;font-size:12px">📂</button>
-        <button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" style="padding:2px 8px;font-size:12px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>
-      </td>
-    </tr>`;
-  }).join('');
-
-  wrap.innerHTML = `<div style="overflow-x:auto">
-    <table class="data-table">
-      <thead><tr>
-        <th>التاريخ</th><th>المخزن</th><th>الملف</th><th>VIN</th>
-        <th>الموديل</th><th>المستند</th><th>الحالة</th><th>ملاحظات</th><th></th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`;
-}
-
-function filterWhTransfers() {
-  const q = (el('wh-search')?.value||'').toLowerCase().trim();
-  const filtered = q
-    ? whState.allTransfers.filter(t =>
-        (t.vin||'').toLowerCase().includes(q) ||
-        (t.location_name||'').toLowerCase().includes(q) ||
-        (t.file_no||'').toLowerCase().includes(q) ||
-        (t.model||'').toLowerCase().includes(q)
-      )
-    : whState.allTransfers;
-  const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
-  renderWhTransfersTable(filtered, soldVins);
-}
-
-function filterWhByStatus(status) {
-  ['all','stock','sold'].forEach(s => {
-    el('whfs-'+s)?.classList.toggle('active', s === status);
-  });
-  const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
-  const all = whState.allTransfers || [];
-  const filtered = status === 'stock' ? all.filter(t => !soldVins.has(t.vin))
-                 : status === 'sold'  ? all.filter(t =>  soldVins.has(t.vin))
-                 : all;
-  renderWhTransfersTable(filtered, soldVins);
-}
-
-function filterWhSearch() {
-  filterWhTransfers();
 }
 
 // ── إدارة المخازن ──
