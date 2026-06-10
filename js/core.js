@@ -339,6 +339,7 @@ function computeFinancials(jeRows) {
     }
     // 1300 مدين = تكلفة شراء المخزون (للصفقة)
     if (acc === '1300' && dr > 0 && ref === 'purchase_orders') {
+      totPurchase += dr;
       if (fn) { ensure(fn); byFile[fn].purchase += dr; }
     }
     // 6xxx مدين + ref=expenses = مصاريف صفقة
