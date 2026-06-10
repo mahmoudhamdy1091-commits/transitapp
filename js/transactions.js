@@ -445,9 +445,12 @@ async function openInvoiceModal(invNo) {
     <div id="invoice-print-area" style="font-family:'Cairo',Arial,sans-serif;direction:rtl;max-width:800px;margin:0 auto;background:#fff;color:#111;padding:32px">
       <!-- Header -->
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #1a1a2e">
-        <div>
-          <div style="font-size:26px;font-weight:900;color:#1a1a2e">🚗 Transit Cars</div>
-          <div style="font-size:13px;color:#666;margin-top:4px">${sysName}</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <img src="${TIC_LOGO_URI}" alt="TIC" style="width:48px;height:48px;border-radius:10px;display:block">
+          <div>
+            <div style="font-size:20px;font-weight:900;color:#1a1a2e">Transit International Company</div>
+            <div style="font-size:13px;color:#666;margin-top:2px">${sysName}</div>
+          </div>
         </div>
         <div style="text-align:left">
           <div style="font-size:22px;font-weight:900;color:#1a1a2e">فاتورة بيع</div>
@@ -467,7 +470,7 @@ async function openInvoiceModal(invNo) {
             <span style="color:#666">رقم الملف</span><strong>${fileNo}</strong>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:13px">
-            <span style="color:#666">تاريخ الإصدار</span><strong>${invDate}</strong>
+            <span style="color:#666">تاريخ الإصدار</span><strong style="direction:ltr;unicode-bidi:isolate">${invDate}</strong>
           </div>
         </div>
       </div>
