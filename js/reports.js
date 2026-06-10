@@ -85,7 +85,26 @@ async function runReport() {
       await ensureCache();
 
       // جلب كل القيود المرحّلة في الفترة (النظام + system_type=null) — حساب واحد فقط
-      const jeRows = await fetchJEForPeriod(sys, from, to);
+      const postedRows  = await fetchJEForPeriod(sys, from, to);
+
+      // ── فلتر العرض: مرحّل فقط (افتراضي) / الكل / معلّق فقط ──
+      // 'draft' و'all' يضيفون معاينة (preview) لأثر العمليات المعلّقة (لم تُعتمد بعد)
+      // عبر simulateDraftJE — بدون أي قيود فعلية أو تعديل على المحرك المحاسبي
+      const postFilter = el('r-post-filter')?.value || 'posted';
+      let jeRows = postedRows;
+      let draftRows = [];
+      if (postFilter !== 'posted') {
+        draftRows = await simulateDraftJE(sys, from, to);
+        jeRows = postFilter === 'draft' ? draftRows : [...postedRows, ...draftRows];
+      }
+
+      const previewBanner = (postFilter !== 'posted' && draftRows.length)
+        ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400e">
+            🔍 <strong>معاينة:</strong> الأرقام أدناه تشمل ${draftRows.length} سطر قيد من ${postFilter==='draft'?'':'إجمالي '}عمليات <strong>معلّقة (لم تُعتمد بعد)</strong> — قد تتغيّر بعد المراجعة.
+           </div>`
+        : (postFilter !== 'posted' ? `<div style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--text2)">
+            🔍 لا توجد عمليات معلّقة (draft) في هذه الفترة.
+           </div>` : '');
 
       // ── تجميع الأرقام من القيود عبر الدالة الموحّدة ──
       const fin = computeFinancials(jeRows);
@@ -186,7 +205,7 @@ async function runReport() {
 
       reportState.data = rows_data;
 
-      el('reportTable').innerHTML = acctWarn + (rows_data.length
+      el('reportTable').innerHTML = previewBanner + acctWarn + (rows_data.length
         ? '<div id="reportDealsTable"></div>'
         : emptyHTML('📈', 'لا توجد بيانات في هذه الفترة'));
 

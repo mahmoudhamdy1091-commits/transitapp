@@ -477,6 +477,161 @@ async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
     {acc:cashAcc, name:cashNm,                               dr:0,      cr:amount, contact:null},
   ]});
 }
+
+// ════════════════════════════════════════════════════════════
+// SIMULATE DRAFT JE — معاينة فقط (Preview Mode)
+// ════════════════════════════════════════════════════════════
+// يبني صفوف "قيود وهمية" (في الذاكرة فقط — لا إدراج في القاعدة)
+// تمثّل الأثر المحاسبي المتوقع للعمليات draft (لم تُعتمد بعد) ضمن الفترة.
+// تُستخدم لعرض "أرقام تشمل المسودات" للموظف في التقارير دون أي تعديل
+// على محرك الترحيل أو على القيود الفعلية. كل صف ناتج يحمل post_status:'draft'
+// ومُعرّف سالب (id) لتمييزه كصف معاينة.
+//
+// نفس منطق je_purchase / je_payment / je_expense / je_payout / je_sale /
+// je_collection بالظبط — لكن بدون postDoubleEntry (بدون أي كتابة في DB).
+async function simulateDraftJE(sys, from, to) {
+  const toEOD = to + 'T23:59:59';
+  const inRange = d => !!d && d >= from && d <= toEOD;
+  const out = [];
+  let synthId = -1;
+
+  const push = (lines, fileNo, refTable, desc, date) => {
+    (lines||[]).forEach(l => {
+      out.push({
+        id: synthId--,
+        entry_date:   date,
+        account_code: l.acc,
+        account_name: l.name,
+        contact_name: l.contact || null,
+        dr_amount:    +l.dr || 0,
+        cr_amount:    +l.cr || 0,
+        ref_table:    refTable,
+        file_no:      fileNo || null,
+        description:  l.desc || desc,
+        post_status:  'draft',
+        _preview:     true,
+      });
+    });
+  };
+
+  try {
+    // ── المشتريات draft ──
+    const POs = await apiGetAll('purchase_orders', {
+      select:'id,po_date,total_purchase,supplier,file_no', system_type:`eq.${sys}`, post_status:'eq.draft',
+    });
+    (POs||[]).forEach(p => {
+      if (!inRange(p.po_date) || !(+p.total_purchase>0)) return;
+      push([
+        {acc:'1300', name:getAccountName('1300'), dr:+p.total_purchase, cr:0, contact:null},
+        {acc:'2100', name:'ذمم الموردين',          dr:0, cr:+p.total_purchase, contact:p.supplier},
+      ], p.file_no, 'purchase_orders', `شراء — ملف ${p.file_no} — ${p.supplier} (معاينة)`, p.po_date);
+    });
+
+    // ── المدفوعات draft ──
+    const PMs = await apiGetAll('payments', {
+      select:'id,pay_date,amount,file_no,payer,pay_method', system_type:`eq.${sys}`, post_status:'eq.draft',
+    });
+    for (const pmt of (PMs||[])) {
+      if (!inRange(pmt.pay_date) || !(+pmt.amount>0)) continue;
+      let sup = '';
+      if (!sup && pmt.file_no) {
+        try {
+          const po = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${sys}`, file_no:`eq.${pmt.file_no}`, limit:1 });
+          sup = po?.[0]?.supplier || '';
+        } catch(_) {}
+      }
+      if (!sup) sup = 'مورد';
+      const payerStr = pmt.payer || sup;
+      const cashAcc  = pmt.pay_method==='نقد'?'1110':'1120';
+      const cashNm   = pmt.pay_method==='نقد'?'النقد':'البنك';
+      if (payerStr && payerStr !== sup) {
+        push([
+          {acc:'2100', name:'ذمم الموردين',   dr:+pmt.amount, cr:0, contact:sup},
+          {acc:'2400', name:'حسابات الشركاء', dr:0, cr:+pmt.amount, contact:payerStr},
+        ], pmt.file_no, 'payments', `دفعة للمورد ${sup} بواسطة ${payerStr} — ملف ${pmt.file_no} (معاينة)`, pmt.pay_date);
+      } else {
+        push([
+          {acc:'2100',  name:'ذمم الموردين', dr:+pmt.amount, cr:0, contact:sup},
+          {acc:cashAcc, name:cashNm,         dr:0, cr:+pmt.amount, contact:null},
+        ], pmt.file_no, 'payments', `دفعة للمورد ${sup} — ملف ${pmt.file_no} (معاينة)`, pmt.pay_date);
+      }
+    }
+
+    // ── المصاريف draft ──
+    const EXPs = await apiGetAll('expenses', {
+      select:'id,exp_date,amount,file_no,description,exp_type,pay_method', system_type:`eq.${sys}`, post_status:'eq.draft',
+    });
+    (EXPs||[]).forEach(e => {
+      if (!inRange(e.exp_date) || !(+e.amount>0)) return;
+      const eAcc    = EXPENSE_ACCOUNT_MAP[e.exp_type] || '6500';
+      const cashAcc = e.pay_method==='نقد'?'1110':'1120';
+      const cashNm  = e.pay_method==='نقد'?'النقد':'البنك';
+      push([
+        {acc:eAcc,    name:e.exp_type||'مصروف', dr:+e.amount, cr:0, contact:null},
+        {acc:cashAcc, name:cashNm,               dr:0, cr:+e.amount, contact:null},
+      ], e.file_no, 'expenses', `${e.description||'مصروف'} — ملف ${e.file_no||'عام'} (معاينة)`, e.exp_date);
+    });
+
+    // ── صرف الشركاء draft ──
+    const POuts = await apiGetAll('partner_payouts', {
+      select:'id,pay_date,amount,file_no,partner,pay_method', system_type:`eq.${sys}`, post_status:'eq.draft',
+    });
+    (POuts||[]).forEach(o => {
+      if (!inRange(o.pay_date) || !(+o.amount>0)) return;
+      const cashAcc = o.pay_method==='نقد'?'1110':'1120';
+      const cashNm  = o.pay_method==='نقد'?'النقد':'البنك';
+      push([
+        {acc:'2400',  name:'حسابات الشركاء', dr:+o.amount, cr:0, contact:o.partner},
+        {acc:cashAcc, name:cashNm,           dr:0, cr:+o.amount, contact:null},
+      ], o.file_no, 'partner_payouts', `صرف شريك ${o.partner} — ملف ${o.file_no} (معاينة)`, o.pay_date);
+    });
+
+    // ── المبيعات draft — مجمّعة حسب الفاتورة لحساب COGS ──
+    const Sales = await apiGetAll('sales', {
+      select:'id,sale_date,sale_price,vin,customer,file_no,inv_no', system_type:`eq.${sys}`, post_status:'eq.draft',
+    });
+    const byInv = {};
+    (Sales||[]).forEach(s => {
+      if (!inRange(s.sale_date)) return;
+      const k = `${s.file_no}|${s.inv_no}`;
+      if (!byInv[k]) byInv[k] = { rows:[], file_no:s.file_no, inv_no:s.inv_no, customer:s.customer, sale_date:s.sale_date };
+      byInv[k].rows.push(s);
+    });
+    for (const k in byInv) {
+      const grp = byInv[k];
+      const totalAmount = grp.rows.reduce((s,r)=>s+(+r.sale_price||0),0);
+      if (!(totalAmount>0)) continue;
+      let cost = 0;
+      try { cost = await calcCOGS(sys, grp.file_no, grp.rows.length); } catch(_) {}
+      const lines = [
+        {acc:'1200', name:'ذمم العملاء',          dr:totalAmount, cr:0, contact:grp.customer, desc:`فاتورة ${grp.inv_no}`},
+        {acc:'4100', name:getAccountName('4100'), dr:0, cr:totalAmount, contact:null,          desc:`فاتورة ${grp.inv_no}`},
+      ];
+      if (cost>0) {
+        lines.push({acc:'5100', name:'تكلفة المخزون المباع', dr:cost, cr:0, contact:null});
+        lines.push({acc:'1300', name:'المخزون — سيارات',     dr:0,    cr:cost, contact:null});
+      }
+      push(lines, grp.file_no, 'sales', `بيع فاتورة ${grp.inv_no} — ${grp.customer} — ملف ${grp.file_no} (معاينة)`, grp.sale_date);
+    }
+
+    // ── التحصيلات المدفوعة draft ──
+    const Cols = await apiGetAll('collections', {
+      select:'id,paid_date,amount,file_no,customer,inv_no,pay_method', system_type:`eq.${sys}`, post_status:'eq.draft',
+    });
+    (Cols||[]).forEach(c => {
+      if (!c.paid_date || !inRange(c.paid_date) || !(+c.amount>0)) return;
+      const cashAcc = c.pay_method==='نقد'?'1110':'1120';
+      const cashNm  = c.pay_method==='نقد'?'النقد':'البنك';
+      push([
+        {acc:cashAcc, name:cashNm,        dr:+c.amount, cr:0, contact:null},
+        {acc:'1200',  name:'ذمم العملاء', dr:0, cr:+c.amount, contact:c.customer},
+      ], c.file_no, 'collections', `تحصيل ${c.inv_no} — ${c.customer} — ملف ${c.file_no} (معاينة)`, c.paid_date);
+    });
+  } catch(e) { console.warn('simulateDraftJE:', e.message); }
+
+  return out;
+}
+
 let _pwaInstallPrompt = null;
 
 
