@@ -269,7 +269,7 @@ function renderTxTable(rows, cfg, auditMap, type) {
   const tbody = rows.map(r => {
     const cells = typeCols.map(col => {
       let v = r[col.k] ?? '—';
-      if (col.k.includes('date')) v = v && v !== '—' ? fmtDate(v) : '—';
+      if (col.k.includes('date')) v = v && v !== '—' ? `<span class="ltr-num">${fmtDate(v)}</span>` : '—';
       if (col.mono) {
         v = (v !== null && v !== undefined && v !== '—' && v !== '' && +v !== 0 || (+v === 0 && v === 0))
           ? `<span class="mono" style="color:${cfg.color};font-weight:700">${fmt(v)}</span>`
@@ -365,7 +365,7 @@ function renderSalesInvoices(rows, cfg, auditMap) {
   const tbody = invoices.map(inv => `
     <tr onclick="openInvoiceModal(${JSON.stringify(inv.inv_no).replace(/"/g,'&quot;')})" style="cursor:pointer"
       onmouseover="this.style.background='var(--accent-dim)'" onmouseout="this.style.background=''">
-      <td class="mono text-muted" style="font-size:13px;white-space:nowrap">${fmtDate(inv.sale_date)}</td>
+      <td class="mono text-muted" style="font-size:13px;white-space:nowrap"><span class="ltr-num">${fmtDate(inv.sale_date)}</span></td>
       <td class="mono text-amber" style="font-weight:700">${inv.file_no}</td>
       <td><span style="font-weight:700;color:var(--green);font-family:monospace">${inv.inv_no}</span></td>
       <td style="font-weight:600">${inv.customer}</td>
