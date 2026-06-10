@@ -334,11 +334,8 @@ async function gsNavigate(type, fileNo, extra) {
 // helper: فتح viewer لملف معين
 async function openViewerFile(fileNo) {
   if (!fileNo) return;
-  // showViewer موجود في viewer.js
-  if (typeof showViewer === 'function') {
-    await showViewer(fileNo, state.system);
-  } else if (typeof openFileViewer === 'function') {
-    openFileViewer(fileNo);
+  if (typeof openViewer === 'function') {
+    await openViewer(fileNo);
   }
 }
 
