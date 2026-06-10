@@ -160,7 +160,7 @@ async function loadDashboard() {
         el('dash-supplier-due-list').innerHTML = duelist.length
           ? duelist.slice(0,3).map(d =>
               `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid var(--border)">
-                <span style="color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.supplier} <span style="color:var(--accent);font-family:monospace;font-size:12px">${d.file_no}</span></span>
+                <span style="color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.supplier} <span class="ltr-num" style="color:var(--accent);font-family:monospace;font-size:12px">${d.file_no}</span></span>
                 <span style="font-family:monospace;color:var(--red);font-weight:700;flex-shrink:0">${fmt(d.due)}</span>
               </div>`).join('') + (duelist.length > 3 ? `<div style="font-size:12px;color:var(--text2);margin-top:4px">+ ${duelist.length-3} صفقة أخرى</div>` : '')
           : '<div style="color:var(--green);font-size:13px">✓ لا توجد مستحقات</div>';
@@ -181,7 +181,7 @@ async function loadDashboard() {
       el('dash-overdue-list').innerHTML = overdueItems.length
         ? overdueItems.slice(0,3).map(c =>
             `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid var(--border)">
-              <span style="color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.customer||'—'} <span style="color:var(--text2);font-size:12px">${c.due_date}</span></span>
+              <span style="color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.customer||'—'} <span class="ltr-num" style="color:var(--text2);font-size:12px">${c.due_date}</span></span>
               <span style="font-family:monospace;color:var(--accent);font-weight:700;flex-shrink:0">${fmt(c.amount)}</span>
             </div>`).join('') + (overdueItems.length > 3 ? `<div style="font-size:12px;color:var(--text2);margin-top:4px">+ ${overdueItems.length-3} فاتورة أخرى</div>` : '')
         : '<div style="color:var(--green);font-size:13px">✓ لا توجد تحصيلات متأخرة</div>';
@@ -427,7 +427,7 @@ function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
         <div style="display:flex;align-items:center;gap:5px">
           <span class="mono text-amber" style="font-weight:700;font-size:13px">${fileNoDisplay}</span>
         </div>
-        <div style="font-size:13px;color:var(--text2);margin-top:2px">${fmtDate(d.po_date)}</div>
+        <div class="ltr-num" style="font-size:13px;color:var(--text2);margin-top:2px">${fmtDate(d.po_date)}</div>
       </td>
       <!-- المورد + ملاحظات -->
       <td>
@@ -549,7 +549,7 @@ async function openViewer(fileNo) {
   el('vh-meta').innerHTML = `
     <span class="vh-meta-item"><strong>المورد:</strong> ${deal?.supplier || '—'}</span>
     <span class="vh-meta-item"><strong>PO:</strong> ${deal?.po_no || '—'}</span>
-    <span class="vh-meta-item"><strong>التاريخ:</strong> ${fmtDate(deal?.po_date)}</span>
+    <span class="vh-meta-item"><strong>التاريخ:</strong> <span class="ltr-num">${fmtDate(deal?.po_date)}</span></span>
     <span class="vh-meta-item"><strong>عدد السيارات:</strong> ${deal?.vehicle_count || '—'}</span>
   `;
   el('vh-status-badge').innerHTML = `<span class="badge badge-${statusClass(deal?.status)}">${deal?.status}</span>`;
