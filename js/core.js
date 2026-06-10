@@ -163,6 +163,16 @@ function isPending(row) {
   return row.post_status === 'pending_edit' || row.post_status === 'pending_void';
 }
 
+// passesPostFilter: فلتر عرض موحّد للتقارير — يطابق خيارات #r-post-filter
+//   'posted' (افتراضي) → مرحّل فقط (isPosted)
+//   'draft'            → معلّق فقط (draft)
+//   غير ذلك ('all')    → الكل ما عدا المرفوض/الملغى (cancelled/voided)
+function passesPostFilter(row, filter) {
+  if (filter === 'draft')  return isDraft(row);
+  if (filter === 'posted' || !filter) return isPosted(row);
+  return row.post_status !== 'cancelled' && row.post_status !== 'voided';
+}
+
 // ════════════════════════════════════════
 // TOKEN REFRESH
 // ════════════════════════════════════════

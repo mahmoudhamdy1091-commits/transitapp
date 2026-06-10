@@ -78,6 +78,11 @@ async function runReport() {
   el('reportTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري إعداد التقرير...</div>';
   el('reportKpis').innerHTML = '';
 
+  // ── فلتر العرض الموحّد لكل التقارير: مرحّل فقط (افتراضي) / الكل / معلّق فقط ──
+  // 'draft' و'all' يضيفون معاينة (preview) لأثر العمليات المعلّقة (لم تُعتمد بعد)
+  // بدون أي قيود فعلية أو تعديل على المحرك المحاسبي
+  const postFilter = el('r-post-filter')?.value || 'posted';
+
   try {
     if (type === 'profit') {
       // ✅ A02: تقرير P&L يُبنى الآن من journal_entries مباشرة
@@ -87,10 +92,6 @@ async function runReport() {
       // جلب كل القيود المرحّلة في الفترة (النظام + system_type=null) — حساب واحد فقط
       const postedRows  = await fetchJEForPeriod(sys, from, to);
 
-      // ── فلتر العرض: مرحّل فقط (افتراضي) / الكل / معلّق فقط ──
-      // 'draft' و'all' يضيفون معاينة (preview) لأثر العمليات المعلّقة (لم تُعتمد بعد)
-      // عبر simulateDraftJE — بدون أي قيود فعلية أو تعديل على المحرك المحاسبي
-      const postFilter = el('r-post-filter')?.value || 'posted';
       let jeRows = postedRows;
       let draftRows = [];
       if (postFilter !== 'posted') {
@@ -216,49 +217,60 @@ async function runReport() {
     } else if (type === 'sales') {
       await ensureCache();
       const data = state.allSales.filter(s => {
-        if (!isPosted(s)) return false; // استبعاد المسودات
+        if (!passesPostFilter(s, postFilter)) return false;
         const d = s.sale_date || s.created_at?.split('T')[0] || '';
         return d >= from && d <= to;
       }).sort((a,b)=>(b.sale_date||'').localeCompare(a.sale_date||''));
       const total = data.reduce((s,r)=>s+(+r.sale_price||0),0);
+      const draftCount = data.filter(isDraft).length;
       reportState.data = data;
       el('reportKpis').innerHTML = `
         <div class="j-kpi"><div class="j-kpi-label">عدد المبيعات</div><div class="j-kpi-val">${data.length}</div></div>
         <div class="j-kpi"><div class="j-kpi-label">إجمالي</div><div class="j-kpi-val text-green">${fmt(total)}</div></div>`;
-      const rows = data.map(s=>`<tr onclick="openViewer('${s.file_no}')" style="cursor:pointer">
+      const rows = data.map(s=>`<tr onclick="openViewer('${s.file_no}')" style="cursor:pointer${isDraft(s)?';opacity:.6':''}">
         <td class="mono text-muted">${fmtDate(s.sale_date)}</td><td class="mono text-amber">${s.file_no}</td>
-        <td class="mono" style="direction:ltr">${s.vin||'—'}</td><td>${s.customer||'—'}</td>
+        <td class="mono" style="direction:ltr">${s.vin||'—'}</td><td>${s.customer||'—'}${isDraft(s)?' <span style="font-size:11px;color:#f59e0b">⏳ معلّق</span>':''}</td>
         <td class="mono text-green">${fmt(s.sale_price)}</td></tr>`).join('');
-      el('reportTable').innerHTML = rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>VIN</th><th>العميل</th><th>السعر</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('💹','لا توجد مبيعات');
+      el('reportTable').innerHTML =
+        (postFilter !== 'posted' && draftCount ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400e">🔍 يشمل ${draftCount} عملية بيع معلّقة (لم تُعتمد بعد)</div>` : '') +
+        (rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>VIN</th><th>العميل</th><th>السعر</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('💹','لا توجد مبيعات'));
 
     } else if (type === 'expenses') {
       await ensureCache();
       const data = state.allExpenses.filter(e => {
-        if (!isPosted(e)) return false; // استبعاد المسودات
+        if (!passesPostFilter(e, postFilter)) return false;
         const d = e.exp_date || e.expense_date || e.created_at?.split('T')[0] || '';
         return d >= from && d <= to;
       }).sort((a,b)=>(b.exp_date||'').localeCompare(a.exp_date||''));
       const total = data.reduce((s,r)=>s+(+r.amount||0),0);
+      const draftCount = data.filter(isDraft).length;
       reportState.data = data;
       el('reportKpis').innerHTML = `
         <div class="j-kpi"><div class="j-kpi-label">عدد المصاريف</div><div class="j-kpi-val">${data.length}</div></div>
         <div class="j-kpi"><div class="j-kpi-label">إجمالي</div><div class="j-kpi-val text-red">${fmt(total)}</div></div>`;
-      const rows = data.map(e=>`<tr>
+      const rows = data.map(e=>`<tr style="${isDraft(e)?'opacity:.6':''}">
         <td class="mono text-muted">${fmtDate(e.exp_date||e.expense_date)}</td><td class="mono text-amber">${e.file_no||'—'}</td>
-        <td>${e.description||'—'}</td><td>${e.exp_type||e.category||'—'}</td>
+        <td>${e.description||'—'}${isDraft(e)?' <span style="font-size:11px;color:#f59e0b">⏳ معلّق</span>':''}</td><td>${e.exp_type||e.category||'—'}</td>
         <td class="mono text-red">${fmt(e.amount)}</td></tr>`).join('');
-      el('reportTable').innerHTML = rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>البيان</th><th>النوع</th><th>المبلغ</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('💸','لا توجد مصاريف');
+      el('reportTable').innerHTML =
+        (postFilter !== 'posted' && draftCount ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400e">🔍 يشمل ${draftCount} مصروف معلّق (لم يُعتمد بعد)</div>` : '') +
+        (rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>البيان</th><th>النوع</th><th>المبلغ</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('💸','لا توجد مصاريف'));
 
     } else if (type === 'partners') {
       await ensureCache();
-      const [payouts, allPartnerDeals] = await Promise.all([
+      const [payoutsRaw, allPartnerDeals] = await Promise.all([
         apiGetDateRange('partner_payouts','pay_date',from,to,{order:'pay_date.desc'}),
         apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}` }),
       ]);
       // payments من الـ cache مع فلتر تاريخ
-      const payments = state.allPayments
+      const paymentsRaw = state.allPayments
         ? state.allPayments.filter(p => { const d = p.pay_date||''; return d >= from && d <= to; })
         : await apiGetDateRange('payments','pay_date',from,to);
+
+      // ── فلتر العرض الموحّد (مرحّل/معلّق/الكل) ──
+      const payouts  = (payoutsRaw||[]).filter(p => passesPostFilter(p, postFilter));
+      const payments = (paymentsRaw||[]).filter(p => passesPostFilter(p, postFilter));
+      const draftCount = payouts.filter(isDraft).length + payments.filter(isDraft).length;
 
       // قائمة الشركاء الفريدة
       const uniquePartners = [...new Set((allPartnerDeals||[]).map(p=>p.partner))].filter(Boolean);
@@ -281,23 +293,25 @@ async function runReport() {
           </div>
         </div>`;
 
-      const rows = (payouts||[]).map(p=>`<tr>
+      const rows = (payouts||[]).map(p=>`<tr style="${isDraft(p)?'opacity:.6':''}">
         <td class="mono text-muted">${fmtDate(p.pay_date)}</td>
         <td class="mono text-amber">${p.file_no||'—'}</td>
-        <td>${p.partner||'—'}</td>
+        <td>${p.partner||'—'}${isDraft(p)?' <span style="font-size:11px;color:#f59e0b">⏳ معلّق</span>':''}</td>
         <td>${p.payout_type||'—'}</td>
         <td class="mono text-purple">${fmt(p.amount)}</td>
         <td><button class="btn btn-secondary btn-sm" onclick="showPartnerStatement('${p.partner}')">📋 كشف شامل</button></td>
       </tr>`).join('');
-      el('reportTable').innerHTML = rows
-        ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>الشريك</th><th>النوع</th><th>المبلغ</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-        : emptyHTML('👥','لا توجد بيانات');
+      el('reportTable').innerHTML =
+        (postFilter !== 'posted' && draftCount ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400e">🔍 يشمل ${draftCount} عملية معلّقة (لم تُعتمد بعد)</div>` : '') +
+        (rows
+          ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>الشريك</th><th>النوع</th><th>المبلغ</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+          : emptyHTML('👥','لا توجد بيانات'));
     }
     if (type === 'inventory') {
       await runInventoryReport(sys);
       return;
     }
-    if (type === 'cashflow') { await runCashFlowReport(from, to, sys); return; }
+    if (type === 'cashflow') { await runCashFlowReport(from, to, sys, postFilter); return; }
     if (type === 'opex') {
       await loadOpexReport(from, to);
     }
@@ -307,7 +321,7 @@ async function runReport() {
 // ════════════════════════════════════════
 // CASH FLOW REPORT — من القيود المحاسبية
 // ════════════════════════════════════════
-async function runCashFlowReport(from, to, sys) {
+async function runCashFlowReport(from, to, sys, postFilter = 'posted') {
   el('reportKpis').innerHTML = '';
   el('reportTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري إعداد تقرير التدفقات من القيود...</div>';
   try {
@@ -316,7 +330,19 @@ async function runCashFlowReport(from, to, sys) {
     const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&select=*&limit=49999`;
     const res  = await fetch(url, { headers: headers() });
     if (!res.ok) throw new Error(await res.text());
-    const jeRows = await res.json();
+    let jeRows = await res.json();
+
+    // ── معاينة: تضمين أثر العمليات المعلّقة (draft) دون أي كتابة فعلية ──
+    let draftRows = [];
+    if (postFilter !== 'posted') {
+      draftRows = await simulateDraftJE(sys, from, to);
+      jeRows = postFilter === 'draft' ? draftRows : [...jeRows, ...draftRows];
+    }
+    const previewBanner = (postFilter !== 'posted')
+      ? (draftRows.length
+          ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400e">🔍 <strong>معاينة:</strong> يشمل ${draftRows.length} سطر قيد من عمليات معلّقة (لم تُعتمد بعد) — قد تتغيّر بعد المراجعة.</div>`
+          : `<div style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--text2)">🔍 لا توجد عمليات معلّقة (draft) في هذه الفترة.</div>`)
+      : '';
 
     // حركات حسابات النقد/البنك
     const cashRows = jeRows.filter(r => r.account_code === '1110' || r.account_code === '1120');
@@ -417,7 +443,7 @@ async function runCashFlowReport(from, to, sys) {
     reportState.data = [...Object.entries(inBySource).map(([src,d])=>({البند:srcLabels[src]||src,الاتجاه:'داخل',المبلغ:d.amount})),
                         ...Object.entries(outBySource).map(([src,d])=>({البند:srcLabels[src]||src,الاتجاه:'خارج',المبلغ:d.amount}))];
 
-    el('reportTable').innerHTML = `
+    el('reportTable').innerHTML = previewBanner + `
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px">
         <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px;display:flex;justify-content:space-between">
           <span>📊 تفصيل التدفقات النقدية (من القيود)</span>
