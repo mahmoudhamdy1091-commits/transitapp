@@ -2614,7 +2614,7 @@ async function runAllReviewChecks() {
       apiGetAll('payments',        { select:'*', system_type:`eq.${sys}` }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}` }),
       apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}` }),
-      apiGet('journal_entries', { select:'id,dr_amount,cr_amount,entry_no,file_no', system_type:`eq.${sys}`, post_status:'eq.posted' }).catch(()=>[]),
+      apiGet('journal_entries', { select:'id,dr_amount,cr_amount,entry_no,file_no,account_code,ref_table', system_type:`eq.${sys}`, post_status:'eq.posted' }).catch(()=>[]),
     ]);
 
     const deals=state.allDeals||[], vehicles=state.allVehicles||[];
