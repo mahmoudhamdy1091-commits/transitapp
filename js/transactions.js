@@ -430,16 +430,31 @@ async function openInvoiceModal(invNo) {
   const fileNo   = first.file_no  || '—';
   const sysName  = state.system === 'BOX' ? 'BOX System' : 'TM System';
 
+  // إثراء بيانات السيارة (موديل/سنة/لون/لوحة/سلندر) من جدول vehicles عن طريق VIN
+  const vehByVin = {};
+  (state.allVehicles||[]).forEach(veh => { if (veh.vin) vehByVin[veh.vin] = veh; });
+
   // محتوى الفاتورة
-  const itemRows = vehicles.map((v,i) => `
+  const itemRows = vehicles.map((v,i) => {
+    const veh   = vehByVin[v.vin] || {};
+    const model = v.model || veh.model || '—';
+    const year  = v.year  || veh.year  || '';
+    const color = v.color || veh.color || '';
+    const plate = v.plate || veh.plate || '—';
+    const engine= v.engine|| veh.engine|| '';
+    return `
     <tr>
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${i+1}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;direction:ltr;font-family:monospace">${v.vin||'—'}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${v.model||'—'}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${v.year||'—'}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${v.color||'—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">
+        <div style="font-weight:600">${model}</div>
+        <div style="font-size:12px;color:#666">${color}${color&&year?' · ':''}${year}</div>
+      </td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;direction:ltr;text-align:center;font-family:monospace;font-size:12px">${v.vin||'—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;direction:ltr;text-align:center;font-family:monospace">${plate}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${engine?engine+' L':'—'}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:left;font-family:monospace;font-weight:700">${(+v.sale_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   const invoiceHTML = `
     <div id="invoice-print-area" style="font-family:'Cairo',Arial,sans-serif;direction:rtl;max-width:800px;margin:0 auto;background:#fff;color:#111;padding:32px">
@@ -480,10 +495,10 @@ async function openInvoiceModal(invNo) {
         <thead>
           <tr style="background:#1a1a2e;color:#fff">
             <th style="padding:10px 12px;text-align:center;font-size:12px">#</th>
-            <th style="padding:10px 12px;font-size:12px">رقم الشاصي VIN</th>
-            <th style="padding:10px 12px;font-size:12px">الموديل</th>
-            <th style="padding:10px 12px;font-size:12px">السنة</th>
-            <th style="padding:10px 12px;font-size:12px">اللون</th>
+            <th style="padding:10px 12px;font-size:12px">السيارة</th>
+            <th style="padding:10px 12px;text-align:center;font-size:12px">رقم الشاصي VIN</th>
+            <th style="padding:10px 12px;text-align:center;font-size:12px">اللوحة</th>
+            <th style="padding:10px 12px;text-align:center;font-size:12px">السلندر</th>
             <th style="padding:10px 12px;text-align:left;font-size:12px">السعر</th>
           </tr>
         </thead>
