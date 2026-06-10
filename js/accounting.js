@@ -246,29 +246,142 @@ async function showAccountLedger(accountCode, accountName, accountType) {
       credit:+r.cr_amount||0,file_no:r.file_no||'',contact:r.contact_name||'',status:r.post_status||'posted',
     }));
     window._ledgerOpening=0;
+    // فلتر الصفقات
     const fileNos=[...new Set((rows||[]).map(r=>r.file_no).filter(Boolean))].sort();
     const sel=el('ledger-file-filter');
     if(sel) sel.innerHTML='<option value="">كل الصفقات</option>'+fileNos.map(f=>`<option value="${f}">${f}</option>`).join('');
+    // ── Dropdown العملاء/الموردين — من contact_name الموجودة في هذا الحساب ──
+    const contacts=[...new Set((rows||[]).map(r=>r.contact_name).filter(Boolean))].sort();
+    const csel=el('ledger-contact-filter');
+    if(csel) {
+      csel.innerHTML='<option value="">كل العملاء / الموردين</option>'+contacts.map(c=>`<option value="${c}">${c}</option>`).join('');
+      csel.onchange=()=>renderLedgerTable();
+    }
     el('ledgerView').dataset.contactName=accountName;
     el('ledgerView').dataset.accountCode=accountCode;
     renderLedgerTable();
   } catch(e){el('ledgerTable').innerHTML=errHTML('خطأ: '+e.message);}
 }
 
-// ضغط على اسم عميل/مورد → فلترة فورية
+// ضغط على اسم عميل/مورد في الجدول → اختياره في الـ dropdown
 function filterLedgerByContact(name) {
-  const inp = el('ledger-contact-filter');
-  if (!inp) return;
-  inp.value = name;
+  const sel = el('ledger-contact-filter');
+  if (!sel) return;
+  if (![...sel.options].some(o => o.value === name)) sel.add(new Option(name, name));
+  sel.value = name;
   renderLedgerTable();
-  inp.scrollIntoView({ behavior:'smooth', block:'nearest' });
-  inp.focus();
+  sel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+// ── كشف حساب PDF (طباعة) ──
+function printAccountStatement() {
+  const list    = JSON.parse(el('ledgerView').dataset.entries || '[]');
+  const accCode = el('ledgerView').dataset.accountCode || '';
+  const contact = el('ledger-contact-filter')?.value || '';
+  const accName = el('ledgerView').dataset.contactName || accCode;
+  const title   = contact ? `كشف حساب — ${contact}` : `دفتر الأستاذ — ${accCode} ${accName}`;
+  const from    = el('ldg-from')?.value || '';
+  const to      = el('ldg-to')?.value   || '';
+  const period  = (from||to) ? `${from||''}  —  ${to||''}` : 'كل الفترات';
+  const co      = (state.systems||[]).find(s=>s.id===state.system)?.name || state.system || '';
+
+  let running = 0;
+  const rows = list.map((e,i) => {
+    running += e.debit - e.credit;
+    const bal = Math.abs(running);
+    const dir = running > 0 ? 'مدين' : running < 0 ? 'دائن' : '—';
+    const f = v => v > 0 ? v.toLocaleString('en-US',{minimumFractionDigits:2}) : '—';
+    return `<tr style="background:${i%2?'#f8fafc':'#fff'}">
+      <td>${e.date||'—'}</td>
+      <td>${e.desc||'—'}</td>
+      <td style="font-size:11px;color:#64748b">${e.file_no||'—'}</td>
+      <td style="text-align:left;color:#16a34a;font-weight:600">${f(e.debit)}</td>
+      <td style="text-align:left;color:#dc2626;font-weight:600">${f(e.credit)}</td>
+      <td style="text-align:left;font-weight:700">${bal.toLocaleString('en-US',{minimumFractionDigits:2})} <span style="font-size:10px;color:#64748b">${dir}</span></td>
+    </tr>`;
+  }).join('');
+
+  const totalDr  = list.reduce((s,e)=>s+e.debit,0);
+  const totalCr  = list.reduce((s,e)=>s+e.credit,0);
+  const finalBal = totalDr - totalCr;
+  const fmtN = v => v.toLocaleString('en-US',{minimumFractionDigits:2});
+
+  const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8">
+  <title>${title}</title>
+  <style>
+    *{box-sizing:border-box} body{font-family:Cairo,Arial,sans-serif;font-size:12px;margin:24px;color:#1e293b}
+    .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #1e293b}
+    .hdr h2{margin:0 0 4px;font-size:17px;font-weight:900} .hdr .sub{font-size:11px;color:#64748b}
+    .kpis{display:flex;gap:12px;margin-bottom:16px}
+    .kpi{flex:1;background:#f1f5f9;border-radius:8px;padding:10px 14px;text-align:center}
+    .kpi .v{font-size:15px;font-weight:900} .kpi .l{font-size:11px;color:#64748b;margin-top:2px}
+    table{width:100%;border-collapse:collapse}
+    th{background:#1e293b;color:#fff;padding:8px 10px;text-align:right;font-size:12px;font-weight:700}
+    td{padding:7px 10px;border-bottom:1px solid #e2e8f0;font-size:12px}
+    tfoot td{background:#f8fafc;font-weight:700;border-top:2px solid #1e293b;padding:9px 10px}
+    @media print{body{margin:8px}.no-print{display:none}}
+  </style></head><body>
+  <div class="hdr">
+    <div>
+      <h2>${title}</h2>
+      <div class="sub">الحساب: ${accCode} — ${accName}</div>
+      <div class="sub">الفترة: ${period}</div>
+    </div>
+    <div style="text-align:left">
+      <div style="font-weight:700;font-size:13px">${co}</div>
+      <div class="sub">${new Date().toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'})}</div>
+    </div>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div class="v" style="color:#16a34a">${fmtN(totalDr)}</div><div class="l">إجمالي المدين</div></div>
+    <div class="kpi"><div class="v" style="color:#dc2626">${fmtN(totalCr)}</div><div class="l">إجمالي الدائن</div></div>
+    <div class="kpi"><div class="v" style="color:${finalBal>=0?'#16a34a':'#dc2626'}">${fmtN(Math.abs(finalBal))}</div><div class="l">الرصيد ${finalBal>=0?'مدين':'دائن'}</div></div>
+    <div class="kpi"><div class="v">${list.length}</div><div class="l">عدد الحركات</div></div>
+  </div>
+  <table>
+    <thead><tr><th>التاريخ</th><th>البيان</th><th>الملف</th>
+    <th style="text-align:left">مدين</th><th style="text-align:left">دائن</th><th style="text-align:left">الرصيد</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:20px;color:#94a3b8">لا توجد حركات</td></tr>'}</tbody>
+    <tfoot><tr>
+      <td colspan="3" style="text-align:right">الإجمالي — ${list.length} حركة</td>
+      <td style="text-align:left;color:#16a34a">${fmtN(totalDr)}</td>
+      <td style="text-align:left;color:#dc2626">${fmtN(totalCr)}</td>
+      <td style="text-align:left;color:${finalBal>=0?'#16a34a':'#dc2626'}">${fmtN(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}</td>
+    </tr></tfoot>
+  </table>
+  <script>window.onload=()=>window.print();<\/script>
+  </body></html>`;
+
+  const w = window.open('','_blank','width=960,height=720');
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
+// ── تصدير Excel لدفتر الأستاذ / كشف الحساب ──
+function exportLedgerExcel() {
+  const list    = JSON.parse(el('ledgerView').dataset.entries || '[]');
+  const accCode = el('ledgerView').dataset.accountCode || '';
+  const contact = el('ledger-contact-filter')?.value || '';
+  const accName = el('ledgerView').dataset.contactName || accCode;
+  const sheet   = (contact || `${accCode} ${accName}`).slice(0, 31);
+
+  let running = 0;
+  const data = list.map(e => {
+    running += e.debit - e.credit;
+    return [e.date||'', e.desc||'', e.contact||'', e.file_no||'', e.debit||0, e.credit||0,
+            Math.abs(running), running>=0?'مدين':'دائن'];
+  });
+
+  exportToExcel([{
+    name: sheet,
+    headers: ['التاريخ','البيان','العميل/المورد','الملف','مدين','دائن','الرصيد','اتجاه'],
+    data,
+  }], `كشف-حساب-${contact||accCode}`);
 }
 
 function renderLedgerTable() {
   const fileFilter=el('ledger-file-filter')?.value||'';
   const postFilter=el('ledger-post-filter')?.value||'posted';
-  const contactQ=(el('ledger-contact-filter')?.value||'').trim().toLowerCase();
+  const contactQ=(el('ledger-contact-filter')?.value||'').trim();
   const from=el('ldg-from')?.value||null;
   const to=el('ldg-to')?.value||null;
   let list=window._ledgerAllEntries||[];
@@ -278,7 +391,7 @@ function renderLedgerTable() {
   if(postFilter==='draft')  list=list.filter(e=>e.status==='draft');
   if(from) list=list.filter(e=>e.date>=from);
   if(to)   list=list.filter(e=>e.date<=to);
-  if(contactQ)    list=list.filter(e=>(e.contact||'').toLowerCase().includes(contactQ)||(e.desc||'').toLowerCase().includes(contactQ));
+  if(contactQ)    list=list.filter(e=>e.contact===contactQ);
   const totalDr=list.reduce((s,e)=>s+(+e.debit||0),0);
   const totalCr=list.reduce((s,e)=>s+(+e.credit||0),0);
   const finalBal=opening+totalDr-totalCr;
