@@ -73,7 +73,7 @@ async function loadTrialBalance() {
     // بناء URL مع Range header لتجاوز حد 1000 صف الافتراضي في Supabase
     const buildUrl = (sysParam) => {
       let u = `${SB_URL}/rest/v1/journal_entries?${sysParam}`
-            + `&select=account_code,account_name,dr_amount,cr_amount,post_status&limit=49999`;
+            + `&select=id,account_code,account_name,dr_amount,cr_amount,post_status&limit=49999`;
       if (from) u += `&entry_date=gte.${encodeURIComponent(from)}`;
       if (to)   u += `&entry_date=lte.${encodeURIComponent(to + 'T23:59:59')}`;
       if (postF === 'posted') u += `&post_status=eq.posted`;
