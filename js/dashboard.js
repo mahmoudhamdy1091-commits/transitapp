@@ -203,9 +203,9 @@ async function loadDashboard() {
       if (el('dash-supplier-due-list')) {
         el('dash-supplier-due-list').innerHTML = duelist.length
           ? duelist.slice(0,3).map(d =>
-              `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-                <span style="color:var(--text)">${d.supplier} <span style="color:var(--accent);font-family:monospace;font-size:12px">${d.file_no}</span></span>
-                <span style="font-family:monospace;color:var(--red);font-weight:700">${fmt(d.due)}</span>
+              `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid var(--border)">
+                <span style="color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.supplier} <span style="color:var(--accent);font-family:monospace;font-size:12px">${d.file_no}</span></span>
+                <span style="font-family:monospace;color:var(--red);font-weight:700;flex-shrink:0">${fmt(d.due)}</span>
               </div>`).join('') + (duelist.length > 3 ? `<div style="font-size:12px;color:var(--text2);margin-top:4px">+ ${duelist.length-3} صفقة أخرى</div>` : '')
           : '<div style="color:var(--green);font-size:13px">✓ لا توجد مستحقات</div>';
       }
@@ -224,9 +224,9 @@ async function loadDashboard() {
     if (el('dash-overdue-list')) {
       el('dash-overdue-list').innerHTML = overdueItems.length
         ? overdueItems.slice(0,3).map(c =>
-            `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-              <span style="color:var(--text)">${c.customer||'—'} <span style="color:var(--text2);font-size:12px">${c.due_date}</span></span>
-              <span style="font-family:monospace;color:var(--accent);font-weight:700">${fmt(c.amount)}</span>
+            `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid var(--border)">
+              <span style="color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.customer||'—'} <span style="color:var(--text2);font-size:12px">${c.due_date}</span></span>
+              <span style="font-family:monospace;color:var(--accent);font-weight:700;flex-shrink:0">${fmt(c.amount)}</span>
             </div>`).join('') + (overdueItems.length > 3 ? `<div style="font-size:12px;color:var(--text2);margin-top:4px">+ ${overdueItems.length-3} فاتورة أخرى</div>` : '')
         : '<div style="color:var(--green);font-size:13px">✓ لا توجد تحصيلات متأخرة</div>';
     }
