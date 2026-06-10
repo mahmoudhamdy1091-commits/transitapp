@@ -475,7 +475,7 @@ function renderDrillDown(type) {
       ${deals.map(d2=>`<tr onclick="openViewer('${d2.file_no}')" style="cursor:pointer">
         <td class="mono text-amber" style="font-weight:700">${d2.file_no}</td>
         <td>${d2.supplier||'—'}</td>
-        <td class="mono">${fmtDate(d2.po_date)}</td>
+        <td class="mono"><span class="ltr-num">${fmtDate(d2.po_date)}</span></td>
         <td style="text-align:center">${d2.vehicle_count||0}</td>
         <td class="mono text-blue" style="font-weight:700">${fmt(d2.total_purchase)}</td>
         <td><span class="badge badge-${statusClass(d2.status)}">${d2.status}</span></td>
