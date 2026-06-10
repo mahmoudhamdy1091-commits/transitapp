@@ -256,6 +256,100 @@ async function apiGetAll(table, params = {}) {
   return out;
 }
 
+// ════════════════════════════════════════
+// FINANCIALS — مصدر موحّد لحساب أرقام الربح/التكاليف
+// مستخدم في: dashboard.js (KPIs) و reports.js (تقرير الأرباح والخسائر)
+// الهدف: ضمان تطابق "صافي الربح" وما شابه بين الشاشتين لنفس الفترة
+// ════════════════════════════════════════
+
+/** جلب قيود journal_entries المرحّلة لفترة معيّنة (النظام الحالي + system_type=null) مع إزالة التكرار */
+async function fetchJEForPeriod(sys, from, to) {
+  const toEOD = to + 'T23:59:59';
+  const buildUrl = (sysParam) =>
+    `${SB_URL}/rest/v1/journal_entries?${sysParam}` +
+    `&entry_date=gte.${encodeURIComponent(from)}` +
+    `&entry_date=lte.${encodeURIComponent(toEOD)}` +
+    `&post_status=eq.posted` +
+    `&select=id,account_code,account_name,dr_amount,cr_amount,ref_table,file_no` +
+    `&limit=49999`;
+
+  const fetchOne = async (url) => {
+    const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
+    let res = await fetch(url, { headers: h });
+    if (res.status === 401) {
+      const ok = await refreshAccessToken();
+      if (!ok) throw new Error('انتهت الجلسة');
+      res = await fetch(url, { headers: headers({ 'Range': '0-49999', 'Range-Unit': 'items' }) });
+    }
+    if (!res.ok && res.status !== 206) return [];
+    return res.json();
+  };
+
+  const [rows1, rows2] = await Promise.all([
+    fetchOne(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`)),
+    fetchOne(buildUrl('system_type=is.null')),
+  ]);
+
+  const seen = new Set();
+  const rows = [];
+  [...(rows1||[]), ...(rows2||[])].forEach(r => {
+    const k = r.id ?? JSON.stringify(r);
+    if (!seen.has(k)) { seen.add(k); rows.push(r); }
+  });
+  return rows;
+}
+
+/**
+ * حساب أرقام الربح/التكاليف من قيود journal_entries — معادلة موحّدة
+ * تُستخدم في لوحة التحكم وتقرير الأرباح والخسائر لضمان تطابق الأرقام بينهما
+ */
+function computeFinancials(jeRows) {
+  let totSales = 0, totCOGS = 0, totDealExp = 0, totOpex = 0, totPurchase = 0;
+  const byFile = {};
+  const ensure = fn => {
+    if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, dealExp:0, purchase:0 };
+  };
+
+  (jeRows || []).forEach(r => {
+    const acc = r.account_code || '';
+    const dr  = +r.dr_amount  || 0;
+    const cr  = +r.cr_amount  || 0;
+    const ref = r.ref_table   || '';
+    const fn  = r.file_no     || null;
+
+    // 4xxx دائن = إيراد مبيعات
+    if (acc.startsWith('4') && cr > 0) {
+      totSales += cr;
+      if (fn) { ensure(fn); byFile[fn].sales += cr; }
+    }
+    // 5xxx مدين (عدا التشغيلية) = تكلفة مخزون مباع + مصاريف شحن/نقل
+    if (acc.startsWith('5') && dr > 0 && ref !== 'operating_expenses') {
+      totCOGS += dr;
+      if (fn) { ensure(fn); byFile[fn].cogs += dr; }
+    }
+    // 1300 مدين = تكلفة شراء المخزون (للصفقة)
+    if (acc === '1300' && dr > 0 && ref === 'purchase_orders') {
+      if (fn) { ensure(fn); byFile[fn].purchase += dr; }
+    }
+    // 6xxx مدين + ref=expenses = مصاريف صفقة
+    if (acc.startsWith('6') && dr > 0 && ref === 'expenses') {
+      totDealExp += dr;
+      if (fn) { ensure(fn); byFile[fn].dealExp += dr; }
+    }
+    // 6xxx مدين + ref=operating_expenses = مصاريف تشغيلية
+    if (acc.startsWith('6') && dr > 0 && ref === 'operating_expenses') {
+      totOpex += dr;
+    }
+  });
+
+  // مجمل ربح الصفقات = إيراد - COGS - مصاريف صفقات
+  const grossProfit = totSales - totCOGS - totDealExp;
+  // صافي الربح = مجمل الربح - المصاريف التشغيلية
+  const netProfit = grossProfit - totOpex;
+
+  return { totSales, totCOGS, totDealExp, totOpex, totPurchase, grossProfit, netProfit, byFile };
+}
+
 async function apiPost(table, data) {
   const body = JSON.stringify(data);
   let res = await fetch(`${SB_URL}/rest/v1/${table}`, {

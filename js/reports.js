@@ -9,7 +9,7 @@ function showReport(type) {
   const _rt={profit:'الأرباح والخسائر',cashflow:'التدفقات النقدية',inventory:'تقرير المخزون',sales:'المبيعات',expenses:'المصاريف',partners:'الشركاء',opex:'التشغيلية'};
   el('topBarTitle').textContent = _rt[type]||'التقارير';
   navActive('');
-  setReportPeriod(reportState.period || 'today', false); // بدون run — setReportType هتشغل
+  setReportPeriod(reportState.period || 'year', false); // بدون run — setReportType هتشغل
   setReportType(type);
 }
 
@@ -81,69 +81,23 @@ async function runReport() {
   try {
     if (type === 'profit') {
       // ✅ A02: تقرير P&L يُبنى الآن من journal_entries مباشرة
-      // مصدر واحد = ميزان المراجعة = لا تعارض في الأرقام
+      // مصدر واحد موحّد (computeFinancials في core.js) = نفس أرقام لوحة التحكم بالظبط
       await ensureCache();
 
-      const toEOD = to + 'T23:59:59';
-      // جلب كل القيود المرحّلة في الفترة — حساب واحد فقط
-      const jeUrl = `${SB_URL}/rest/v1/journal_entries` +
-        `?system_type=eq.${encodeURIComponent(sys)}` +
-        `&entry_date=gte.${encodeURIComponent(from)}` +
-        `&entry_date=lte.${encodeURIComponent(toEOD)}` +
-        `&post_status=eq.posted` +
-        `&select=account_code,dr_amount,cr_amount,ref_table,file_no,account_name` +
-        `&limit=49999`;
-      const jeRes = await fetch(jeUrl, { headers: headers() });
-      if (!jeRes.ok) throw new Error(await jeRes.text());
-      const jeRows = await jeRes.json();
+      // جلب كل القيود المرحّلة في الفترة (النظام + system_type=null) — حساب واحد فقط
+      const jeRows = await fetchJEForPeriod(sys, from, to);
 
-      // ── تجميع الأرقام من القيود ──
-      // إجماليات على مستوى النظام
-      let ts = 0, tCOGS = 0, tDealExp = 0, tOpex = 0;
-
-      // تفصيل بالملف لكل صفقة
-      const byFile = {};
-      const ensure = fn => {
-        if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, dealExp:0, purchase:0 };
-      };
-
-      (jeRows || []).forEach(r => {
-        const acc  = r.account_code || '';
-        const dr   = +r.dr_amount  || 0;
-        const cr   = +r.cr_amount  || 0;
-        const ref  = r.ref_table   || '';
-        const fn   = r.file_no     || null;
-
-        // 4xxx دائن = إيراد مبيعات
-        if (acc.startsWith('4') && cr > 0) {
-          ts += cr;
-          if (fn) { ensure(fn); byFile[fn].sales += cr; }
-        }
-        // 5xxx مدين = تكلفة مخزون مباع (5100) + مصاريف شحن/نقل (5200)
-        // يستخدم startsWith('5') بما يتوافق مع getAccountType() في accounting.js
-        // ref !== 'operating_expenses' حماية من أي قيد 5xxx غير صفقة
-        if (acc.startsWith('5') && dr > 0 && ref !== 'operating_expenses') {
-          tCOGS += dr;
-          if (fn) { ensure(fn); byFile[fn].cogs += dr; }
-        }
-        // 1300 مدين = تكلفة شراء المخزون (purchase cost للصفقة)
-        if (acc === '1300' && dr > 0 && ref === 'purchase_orders') {
-          if (fn) { ensure(fn); byFile[fn].purchase += dr; }
-        }
-        // 6xxx مدين + ref=expenses = مصاريف صفقة
-        if (acc.startsWith('6') && dr > 0 && ref === 'expenses') {
-          tDealExp += dr;
-          if (fn) { ensure(fn); byFile[fn].dealExp += dr; }
-        }
-        // 6xxx مدين + ref=operating_expenses = مصاريف تشغيلية
-        if (acc.startsWith('6') && dr > 0 && ref === 'operating_expenses') {
-          tOpex += dr;
-        }
-      });
+      // ── تجميع الأرقام من القيود عبر الدالة الموحّدة ──
+      const fin = computeFinancials(jeRows);
+      const ts        = fin.totSales;
+      const tCOGS     = fin.totCOGS;
+      const tDealExp  = fin.totDealExp;
+      const tOpex     = fin.totOpex;
+      const byFile    = fin.byFile;
 
       // ربح الصفقات = إيراد - COGS - مصاريف صفقات
-      const dealProfit = ts - tCOGS - tDealExp;
-      const netProfit  = dealProfit - tOpex;
+      const dealProfit = fin.grossProfit;
+      const netProfit  = fin.netProfit;
 
       // ✅ تحذير: لو فيه قيود في الفترة لكن كل الأرقام صفر → أكواد الحسابات لا تطابق 4xxx/5xxx/6xxx
       const hasEntries = (jeRows||[]).length > 0;

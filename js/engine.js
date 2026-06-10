@@ -370,7 +370,16 @@ async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method
 // حتى يظهر ما دفعه الشريك في كشف حسابه
 async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,payer,payerName,method}) {
   if(!amount||amount<=0) return;
-  const sup      = supplier || supplierName || 'مورد';
+  let sup = supplier || supplierName || '';
+  if (!sup && fileNo) {
+    // ✅ احتياطي: لو لم يُمرَّر اسم المورد (مثلاً جدول payments بدون عمود supplier)
+    // اجلبه من ملف الشراء بدلاً من استخدام كلمة "مورد" العامة كـ contact_name
+    try {
+      const po = await apiGet('purchase_orders', { select:'supplier', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, limit:1 });
+      sup = po?.[0]?.supplier || '';
+    } catch(_) {}
+  }
+  if (!sup) sup = 'مورد';
   const payerStr = payer || payerName || sup;
   const cashAcc  = method==='نقد'?'1110':'1120';
   const cashNm   = method==='نقد'?'النقد':'البنك';

@@ -93,6 +93,7 @@ function setTxPeriod(period) {
 async function loadTransactions() {
   const type = _txType;
   const cfg  = TX_CONFIG[type];
+  if (!cfg) return; // لا توجد شاشة معاملات نشطة (مثلاً 'deals') — تجاهل
   const from = el('tx-from').value;
   const to   = el('tx-to').value;
   const pf   = el('tx-post-filter')?.value || 'all';

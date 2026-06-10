@@ -29,58 +29,14 @@ async function loadDashboard() {
 
     // ── حسابات الفترة — المصدر الموحد: journal_entries ──
     // يشمل: النظام الحالي + صفوف system_type=null (بيانات قديمة)
-    const toEOD = to + 'T23:59:59';
-    const _buildJeKpiUrl = (sysParam) =>
-      `${SB_URL}/rest/v1/journal_entries` +
-      `?${sysParam}` +
-      `&entry_date=gte.${encodeURIComponent(from)}` +
-      `&entry_date=lte.${encodeURIComponent(toEOD)}` +
-      `&post_status=eq.posted` +
-      `&select=account_code,dr_amount,cr_amount,ref_table,file_no` +
-      `&limit=49999`;
-
-    // دالة مساعدة: fetch مع معالجة 401
-    const _fetchJeKpi = async (url) => {
-      const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
-      let res = await fetch(url, { headers: h });
-      if (res.status === 401) {
-        const ok = await refreshAccessToken();
-        if (!ok) throw new Error('انتهت الجلسة');
-        res = await fetch(url, { headers: headers({ 'Range': '0-49999', 'Range-Unit': 'items' }) });
-      }
-      return res.ok ? res.json() : [];
-    };
-
-    // جلب صفوف النظام + صفوف system_type=null معاً
-    const [_jeKpi1, _jeKpi2] = await Promise.all([
-      _fetchJeKpi(_buildJeKpiUrl(`system_type=eq.${encodeURIComponent(sys)}`)),
-      _fetchJeKpi(_buildJeKpiUrl('system_type=is.null')),
-    ]);
-    const _seenJeKpi = new Set();
-    const jeKpiRows = [];
-    [...(_jeKpi1||[]), ...(_jeKpi2||[])].forEach(r => {
-      const k = r.id ?? JSON.stringify(r);
-      if (!_seenJeKpi.has(k)) { _seenJeKpi.add(k); jeKpiRows.push(r); }
-    });
-
-    // تجميع الأرقام من القيود المحاسبية
-    // totExp  = مصاريف الصفقات فقط (ref=expenses) — الـ opex يُعرض منفصلاً
-    let totSales = 0, totDealExp = 0, totOpex = 0, totPurchase = 0;
-    (jeKpiRows || []).forEach(r => {
-      const acc = r.account_code || '';
-      const dr  = +r.dr_amount  || 0;
-      const cr  = +r.cr_amount  || 0;
-      const ref = r.ref_table   || '';
-      // إيرادات المبيعات — حساب 4xxx دائن
-      if (acc.startsWith('4') && cr > 0) totSales += cr;
-      // مصاريف الصفقات — 5xxx أو 6xxx مدين + ref=expenses
-      // (شحن/نقل → 5200، جمارك/صيانة → 6xxx — كلاهما مصاريف صفقة)
-      if ((acc.startsWith('5') || acc.startsWith('6')) && dr > 0 && ref === 'expenses') totDealExp += dr;
-      // المصاريف التشغيلية — 6xxx مدين + ref=operating_expenses
-      if (acc.startsWith('6') && dr > 0 && ref === 'operating_expenses') totOpex += dr;
-      // تكلفة الشراء — حساب 1300 مدين من أوامر شراء
-      if (acc === '1300' && dr > 0 && ref === 'purchase_orders') totPurchase += dr;
-    });
+    // ✅ نفس الدالة الموحّدة المستخدمة في تقرير الأرباح والخسائر (core.js)
+    // لضمان تطابق "صافي الربح" بين الداشبورد والتقرير لنفس الفترة
+    const jeKpiRows = await fetchJEForPeriod(sys, from, to);
+    const _fin = computeFinancials(jeKpiRows);
+    const totSales    = _fin.totSales;
+    const totDealExp  = _fin.totDealExp;
+    const totOpex     = _fin.totOpex;
+    const totPurchase = _fin.totPurchase;
     // totExp = مصاريف الصفقات فقط (لا تشمل التشغيلية — التشغيلية تُطرح من الربح منفصلاً)
     const totExp = totDealExp;
 
@@ -127,10 +83,10 @@ async function loadDashboard() {
     };
 
     // ── KPIs — من journal_entries (SSOT) ──
-    // مجمل الربح = إيراد - شراء - مصاريف صفقات (التشغيلية لا تدخل في التكلفة)
-    const grossProfit = totSales - totPurchase - totExp;
-    // صافي الربح = مجمل الربح - المصاريف التشغيلية
-    const profit      = grossProfit - totOpex;
+    // ✅ نفس معادلة تقرير الأرباح والخسائر بالظبط (computeFinancials في core.js):
+    // مجمل الربح = إيراد - COGS - مصاريف صفقات · صافي الربح = مجمل الربح - المصاريف التشغيلية
+    const grossProfit = _fin.grossProfit;
+    const profit      = _fin.netProfit;
     const margin      = totSales > 0 ? ((profit/totSales)*100).toFixed(1) : 0;
     // فلتر التحصيلات: فقط المقبوض فعلاً (paid_date موجود)
     const paidCollections    = (_ddState.data.periodCollections||[]).filter(c => isPosted(c) && c.paid_date);
