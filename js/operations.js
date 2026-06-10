@@ -4748,7 +4748,7 @@ async function loadContactStatement() {
         <td class="mono text-muted" style="font-size:13px;white-space:nowrap">${(r.entry_date||'').split('T')[0]}</td>
         <td><span style="font-size:13px;font-weight:700;font-family:monospace;color:var(--accent)">${r.entry_no||'—'}</span></td>
         <td><span style="font-size:12px;font-weight:700;padding:2px 7px;border-radius:10px;background:${srcColor}22;color:${srcColor}">${srcLabel}</span></td>
-        <td style="font-size:13px;max-width:220px">${r.description||'—'}</td>
+        <td style="font-size:13px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(r.description||'').replace(/"/g,'&quot;')}">${r.description||'—'}</td>
         <td class="mono text-muted" style="font-size:13px">${r.file_no||'—'}</td>
         <td class="mono text-green" style="text-align:left;font-weight:700">${dr>0?fmt(dr):'—'}</td>
         <td class="mono text-red"   style="text-align:left;font-weight:700">${cr>0?fmt(cr):'—'}</td>
@@ -4767,7 +4767,7 @@ async function loadContactStatement() {
     if (el('cs-kpis')) el('cs-kpis').innerHTML = [
       ['إجمالي مدين',   fmt(totalDr),         'var(--green)'],
       ['إجمالي دائن',   fmt(totalCr),         'var(--red)'],
-      ['الرصيد الختامي', fmt(Math.abs(balance))+'  '+balLabel, balColor],
+      ['الرصيد الختامي', `${fmt(Math.abs(balance))}<span style="font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;margin-right:4px">${balLabel}</span>`, balColor],
       ['عدد القيود',    entries.length,        'var(--blue)'],
     ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c};font-size:18px;font-weight:900">${v}</div></div>`).join('');
 
