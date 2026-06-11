@@ -589,7 +589,7 @@ function renderDrillDown(type) {
   // ── التكلفة الكاملة ──
   else if (type === 'fullcost') {
     (el('dd-title-main')||el('dd-title')).textContent = `🏷️ التكلفة الكاملة — ${periodLabel}`;
-    const deals  = d.periodDeals  || [];
+    const deals  = d.periodPurchaseDeals  || [];
     const totPur = deals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
     const totExp = (d.periodExp||[]).filter(e=>e.file_no).reduce((s,e)=>s+(+e.amount||0),0);
     ddKpis.style.gridTemplateColumns = 'repeat(3,1fr)';

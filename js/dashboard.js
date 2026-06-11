@@ -34,11 +34,8 @@ async function loadDashboard() {
     const jeKpiRows = await fetchJEForPeriod(sys, from, to);
     const _fin = computeFinancials(jeKpiRows);
     const totSales    = _fin.totSales;
-    const totDealExp  = _fin.totDealExp;
     const totOpex     = _fin.totOpex;
     const totPurchase = _fin.totPurchase;
-    // totExp = مصاريف الصفقات فقط (لا تشمل التشغيلية — التشغيلية تُطرح من الربح منفصلاً)
-    const totExp = totDealExp;
 
     // totSalesRaw للـ drill-down فقط (قائمة الفواتير)
     const totSalesRaw = (state.allSales||[]).filter(s => isPosted(s) && (s.sale_date||'') >= from && (s.sale_date||'') <= to)
@@ -96,7 +93,8 @@ async function loadDashboard() {
     const pendingCollections = (_ddState.data.periodCollections||[]).filter(c => isPosted(c) && !c.paid_date);
     const totCollections     = paidCollections.reduce((s,c)=>s+(+c.amount||0),0);
     const totPending         = pendingCollections.reduce((s,c)=>s+(+c.amount||0),0);
-    const totFullCost        = totPurchase + totExp;
+    // التكلفة الكاملة = شراء + كل مصاريف الصفقات (نفس مصدر drill-down "fullcost" و"المصروفات")
+    const totFullCost        = totPurchase + totExpRaw;
 
     const setKpi = (id, val, color) => { const e = el(id); if(!e) return; animateCount(e, String(val), color); };
     setKpi('kpi-purchase',    fmt(totPurchase),    'var(--blue)');
@@ -133,7 +131,7 @@ async function loadDashboard() {
       }
     }
     if(el('kpi-month-exp-sub'))   el('kpi-month-exp-sub').textContent   = `${periodExpForDD.length} بند`;
-    if(el('kpi-fullcost-sub'))    el('kpi-fullcost-sub').textContent    = `شراء ${fmt(totPurchase)} + مصاريف صفقات ${fmt(totDealExp)}`;
+    if(el('kpi-fullcost-sub'))    el('kpi-fullcost-sub').textContent    = `شراء ${fmt(totPurchase)} + مصاريف صفقات ${fmt(totExpRaw)}`;
     if(el('kpi-profit-sub'))      el('kpi-profit-sub').textContent      = `هامش ${margin}% · مجمل ${fmt(grossProfit)} − تشغيلي ${fmt(totOpex)}`;
     if(el('kpi-stock-sub'))       el('kpi-stock-sub').textContent       = stockVehicles.filter(v=>daysSince(v.created_at)>60).length>0 ? `${stockVehicles.filter(v=>daysSince(v.created_at)>60).length} أكثر من 60 يوم` : 'لم تُباع بعد';
 
