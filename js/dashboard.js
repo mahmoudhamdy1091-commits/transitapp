@@ -45,6 +45,9 @@ async function loadDashboard() {
       .reduce((s,r)=>s+(+r.sale_price||0),0);
     const periodSalesForDD = (state.allSales||[]).filter(s => isPosted(s) && (s.sale_date||'') >= from && (s.sale_date||'') <= to);
     const periodExpForDD   = (state.allExpenses||[]).filter(e => isPosted(e) && ((e.exp_date||e.expense_date||'') >= from) && ((e.exp_date||e.expense_date||'') <= to));
+    // إجمالي المصاريف المعروض في كارت "المصروفات" — نفس مصدر الـ drill-down (جدول expenses)
+    // حتى يطابق الرقم الإجمالي عند الضغط على الكارت
+    const totExpRaw = periodExpForDD.reduce((s,e)=>s+(+e.amount||0),0);
 
     const allDealsEnriched = state.allDealsEnriched || [];
 
@@ -98,7 +101,7 @@ async function loadDashboard() {
     const setKpi = (id, val, color) => { const e = el(id); if(!e) return; animateCount(e, String(val), color); };
     setKpi('kpi-purchase',    fmt(totPurchase),    'var(--blue)');
     setKpi('kpi-sales',       fmt(totSales),       'var(--green)');
-    setKpi('kpi-month-exp',   fmt(totExp),         totExp>0?'var(--red)':'var(--text2)');
+    setKpi('kpi-month-exp',   fmt(totExpRaw),      totExpRaw>0?'var(--red)':'var(--text2)');
     setKpi('kpi-fullcost',    fmt(totFullCost),     'var(--accent)');
     setKpi('kpi-profit',      fmt(profit),          profit>=0?'var(--green)':'var(--red)');
     setKpi('kpi-stock',       stockVehicles.length, stockVehicles.length>0?'var(--purple)':'var(--green)');
