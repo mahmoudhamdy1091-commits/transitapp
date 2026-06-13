@@ -145,6 +145,9 @@ async function loadJournal() {
     }).sort((a,b) => (b.date||'').localeCompare(a.date||''));
 
     journalState.entries = entries;
+    // ✅ حفظ نطاق التاريخ الفعلي لهذه البيانات حتى يطابقه تقرير الطباعة دائماً
+    journalState.loadedFrom = from;
+    journalState.loadedTo   = to;
     renderJournalKpis(entries);
     renderJournalEntries();
     loadJournalDrafts();

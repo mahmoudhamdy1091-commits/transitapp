@@ -1293,9 +1293,11 @@ async function editJournalEntry(type, sourceId, fileNo) {
 // JOURNAL REPORT
 // ════════════════════════════════════════
 function showJournalReport() {
-  // ✅ استخدام نفس نطاق التاريخ الفعلي المستخدم في تحميل journalState.entries
-  // (jDateFrom/jDateTo لا تُحدَّث إلا في وضع "تاريخ محدد" فتعطي فترة خاطئة في باقي الأوضاع)
-  const { from, to } = getJournalDateRange();
+  // ✅ استخدام نطاق التاريخ المحفوظ مع journalState.entries نفسها (وقت تحميلها)
+  // وليس getJournalDateRange() الحالي — لتجنّب تعارض الفترة المعروضة مع البيانات
+  // إذا تغيّر فلتر الفترة بعد التحميل أو قبل اكتماله
+  const from = journalState.loadedFrom || today();
+  const to   = journalState.loadedTo   || today();
   const entries = journalState.entries || [];
 
   if (!entries.length) { toast('لا توجد بيانات للتقرير','err'); return; }
