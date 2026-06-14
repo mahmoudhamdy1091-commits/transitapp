@@ -1536,6 +1536,34 @@ async function approveItem(type, id) {
       // ② اكمل DB في الخلفية
       (async () => {
         try {
+          // ✅ لو السجل كان "مسودة" قبل التعديل (لم يُرحَّل/يُنشأ له قيد من قبل) —
+          // updateJEInPlace عند الحفظ لم يجد قيداً ليُحدّثه، فننشئ القيد الآن
+          // بالبيانات الحالية (بعد التعديل) — يضمن ظهور المبلغ على اسم المورد/العميل الجديد
+          const refTableMap = {
+            purchase_edit:'purchase_orders', payment_edit:'payments', expense_edit:'expenses',
+            collection_edit:'collections',   payout_edit:'partner_payouts',
+          };
+          const refTable = refTableMap[type];
+          if (refTable && item.file_no) {
+            const existingJE = await apiGet('journal_entries', {
+              select:'entry_no', system_type:`eq.${state.system}`,
+              file_no:`eq.${item.file_no}`, ref_table:`eq.${refTable}`, limit:'1',
+            });
+            if (!existingJE?.length) {
+              if (type === 'purchase_edit') {
+                await je_purchase({ sys:state.system, date:item.po_date||today(), amount:+item.total_purchase||0, fileNo:item.file_no, supplier:item.supplier||'' });
+              } else if (type === 'payment_edit') {
+                await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
+              } else if (type === 'expense_edit') {
+                await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'نقد' });
+              } else if (type === 'collection_edit') {
+                await je_collection({ sys:state.system, date:item.paid_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
+              } else if (type === 'payout_edit') {
+                await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, partner:item.partner||'', method:item.pay_method||'نقد' });
+              }
+            }
+          }
+
           const cleanPatch = { post_status: 'posted' };
           if (type === 'sale_edit' && item.inv_no) {
             await apiPatch('sales',
