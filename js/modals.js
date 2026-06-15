@@ -519,7 +519,8 @@ async function submitNewFile() {
           po_no: poNo||null, payer: p.name,
           amount: p.paid, pay_method: p.method||'تحويل بنكي',
           document: p.doc||null, pay_date: p.payDate||poDate||null,
-          notes: `حصة ${p.share}% — دفع مقدماً`
+          notes: `حصة ${p.share}% — دفع مقدماً`,
+          post_status: entryStatus(),
         });
         // Ledger: partner paid (credit partner account)
         if (entryStatus()==='posted') {
@@ -678,16 +679,24 @@ async function submitEditFileFull() {
       if (p.paid > 0) {
         // حذف الدفعة الأولية المسجّلة عند إنشاء الصفقة فقط (بالـ pay_id الأولي)
         // لا نحذف الدفعات الإضافية اللي أُضيفت لاحقاً من موديل الدفعات
-        const initialPmtId = `PMT-${oldFileNo}-P${p.name.slice(0,3)}`;
-        try { await apiDelete('payments', { system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}`, pay_id:`eq.${initialPmtId}` }); } catch(e) { console.warn('deleteInitialPayment on rename:', e.message); }
-        const newPmtId = `PMT-${newFileNo}-P${p.name.slice(0,3)}`;
+        // ملاحظة: نفس صيغة الترقيم المستخدمة عند إنشاء الصفقة (PMT-<file>-P<index>)
+        const pIndex = partners.indexOf(p) + 1;
+        const initialPmtId = `PMT-${oldFileNo}-P${pIndex}`;
+        let oldPostStatus = null;
+        try {
+          const oldPmt = await apiGet('payments', { select:'post_status', system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}`, pay_id:`eq.${initialPmtId}`, limit:'1' });
+          oldPostStatus = oldPmt?.[0]?.post_status || null;
+          await apiDelete('payments', { system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}`, pay_id:`eq.${initialPmtId}` });
+        } catch(e) { console.warn('deleteInitialPayment on rename:', e.message); }
+        const newPmtId = `PMT-${newFileNo}-P${pIndex}`;
         await apiPost('payments', {
           system_type:state.system, file_no:newFileNo,
           pay_id: newPmtId, ref_no: newPmtId,
           po_no:poNo||null, payer:p.name,
           amount:p.paid, pay_method:p.method||'تحويل بنكي',
           document:p.doc||null, pay_date:p.payDate||poDate||null,
-          notes:`حصة ${p.share}%`
+          notes:`حصة ${p.share}%`,
+          post_status: oldPostStatus || entryStatus(),
         });
       }
     }
