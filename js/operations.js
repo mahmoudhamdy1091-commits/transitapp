@@ -1673,6 +1673,9 @@ async function approveItem(type, id) {
       return;
     }
 
+    // ✅ خذ نسخة من بيانات السجل قبل إزالته من القائمة (الإزالة المتفائلة تمسحه من approvalState.all)
+    const approvedItem = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+
     // ① شيل فوراً من الشاشة
     _optimisticRemove(type, id);
     toast('✅ تمت الموافقة','ok');
@@ -1682,15 +1685,22 @@ async function approveItem(type, id) {
     // ✅ فحص idempotency: لو السجل أُعتمد فعلاً (لم يعد draft) — توقف بدون تكرار القيود
     const patched = await apiPatch(cfg.table, { id:`eq.${id}`, post_status:`eq.draft` }, { post_status:'posted' });
     if (!patched?.length) return;
+    // ✅ لو فشل إنشاء القيد بعد الموافقة — رجّع السجل لـ draft ليظهر في قائمة الاعتمادات من جديد
+    const revertToDraft = async () => {
+      await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'draft' });
+      toast(`⚠️ فشلت الموافقة على ${cfg.label} — أُعيد لقائمة الاعتمادات`,'warn');
+    };
     // لو شراء — نولّد قيد محاسبي
     if (type === 'purchase') {
-      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+      const item = approvedItem;
       if (item && item.file_no) {
-        await je_purchase({ sys:state.system, date:item.po_date||today(), amount:+item.total_purchase||0, fileNo:item.file_no, supplier:item.supplier||'' });
+        try {
+          await je_purchase({ sys:state.system, date:item.po_date||today(), amount:+item.total_purchase||0, fileNo:item.file_no, supplier:item.supplier||'' });
+        } catch(e) { await revertToDraft(); throw e; }
       }
     }
     if (type === 'sale') {
-      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+      const item = approvedItem;
       if (item && item.inv_no && item.file_no) {
         // تجميع كل سيارات الفاتورة — الفاتورة قد تحتوي أكثر من سيارة
         try {
@@ -1705,7 +1715,7 @@ async function approveItem(type, id) {
           if (totalInvAmount > 0) {
             await je_sale({ sys:state.system, date:item.sale_date||today(), amount:totalInvAmount, cost:totalCOGS, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'' });
           }
-        } catch(e) { console.warn('approveItem sale je_sale:', e.message); }
+        } catch(e) { await revertToDraft(); throw e; }
 
         // OPTION B: ابحث عن collections مرتبطة بهذه الفاتورة كانت draft + paid_date محفوظ
         // وافق عليها تلقائياً وأنشئ قيودها — بدون أي تدخل من المستخدم
@@ -1723,40 +1733,59 @@ async function approveItem(type, id) {
             const colPatched = await apiPatch('collections', { id:`eq.${col.id}`, post_status:`eq.draft` }, { post_status:'posted' });
             if (!colPatched?.length) continue;
             // أنشئ قيد التحصيل
-            await je_collection({
-              sys:      state.system,
-              date:     col.paid_date,
-              amount:   +col.amount,
-              fileNo:   col.file_no,
-              refId:    col.id || null,
-              customer: col.customer || item.customer || '',
-              invNo:    col.inv_no   || item.inv_no   || '',
-              method:   col.pay_method || 'تحويل بنكي',
-            });
+            try {
+              await je_collection({
+                sys:      state.system,
+                date:     col.paid_date,
+                amount:   +col.amount,
+                fileNo:   col.file_no,
+                refId:    col.id || null,
+                customer: col.customer || item.customer || '',
+                invNo:    col.inv_no   || item.inv_no   || '',
+                method:   col.pay_method || 'تحويل بنكي',
+              });
+            } catch(jeErr) {
+              await apiPatch('collections', { id:`eq.${col.id}` }, { post_status:'draft' });
+              toast(`⚠️ فشل قيد تحصيل ${col.inv_no||col.file_no} — أُعيد لقائمة الاعتمادات: ${jeErr.message}`,'warn');
+            }
           }
         } catch(e) { console.warn('approveItem sale auto-approve collections:', e.message); }
       }
     }
     if (type === 'collection') {
-      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+      const item = approvedItem;
       // القيد يُولَّد فقط إذا كان مدفوعاً فعلاً (paid_date موجود)
       if (item && item.paid_date) {
-        await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
+        try {
+          await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
+        } catch(e) { await revertToDraft(); throw e; }
       }
       // FIX: إذا لا يوجد paid_date → التحصيل معلق — يظهر في قائمة "مستحق" ليُسجَّل الدفع لاحقاً
       // لا قيد يُنشأ الآن لأن المبلغ لم يُقبض بعد
     }
     if (type === 'payment') {
-      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
-      if (item) await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
+      const item = approvedItem;
+      if (item) {
+        try {
+          await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
+        } catch(e) { await revertToDraft(); throw e; }
+      }
     }
     if (type === 'expense') {
-      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
-      if (item) await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'تحويل بنكي' });
+      const item = approvedItem;
+      if (item) {
+        try {
+          await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'تحويل بنكي' });
+        } catch(e) { await revertToDraft(); throw e; }
+      }
     }
     if (type === 'payout') {
-      const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
-      if (item) await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, partner:item.partner||'', method:item.pay_method||'تحويل بنكي' });
+      const item = approvedItem;
+      if (item) {
+        try {
+          await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, partner:item.partner||'', method:item.pay_method||'تحويل بنكي' });
+        } catch(e) { await revertToDraft(); throw e; }
+      }
     }
     invalidateCache();
     loadApprovalQueue(); // refresh هادي في الخلفية
@@ -3829,9 +3858,8 @@ async function checkMissingEntries() {
 
     _missingJEList = missing;
 
-    showConfirmHtml(
-      `⚠️ ${missing.length} سجل مرحّل بدون قيد محاسبي`,
-      `<div style="overflow-x:auto;max-height:320px;overflow-y:auto">
+    el('missingJETitle').textContent = `⚠️ ${missing.length} سجل مرحّل بدون قيد محاسبي`;
+    el('missingJEBody').innerHTML = `<div style="overflow-x:auto;max-height:320px;overflow-y:auto">
         <table style="width:100%;border-collapse:collapse">
           <thead><tr style="background:var(--card2)">
             <th style="padding:7px 10px;text-align:right">النوع</th>
@@ -3843,9 +3871,8 @@ async function checkMissingEntries() {
           <tbody id="missing-je-tbody">${rowsHTML}</tbody>
         </table>
       </div>
-      <div style="margin-top:10px;font-size:13px;color:var(--text2)">هذه السجلات معلّمة "مرحّلة" لكن لا يوجد لها قيد في دفتر القيود — اضغط "إنشاء القيد" لكل سجل لترحيله.</div>`,
-      () => {}
-    );
+      <div style="margin-top:10px;font-size:13px;color:var(--text2)">هذه السجلات معلّمة "مرحّلة" لكن لا يوجد لها قيد في دفتر القيود — اضغط "إنشاء القيد" لكل سجل لترحيله.</div>`;
+    openModal('missingJEModal');
   } catch(e) {
     toast('خطأ: '+e.message,'err');
   }
