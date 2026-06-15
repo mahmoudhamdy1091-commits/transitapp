@@ -547,9 +547,13 @@ async function _submitNewFileInner() {
         });
         // Ledger: partner paid (credit partner account)
         if (entryStatus()==='posted') {
+          const pmtId = pmtIns?.[0]?.id || null;
           try {
-            await je_payment({sys:state.system,date:poDate||today(),amount:p.paid,fileNo,refId:pmtIns?.[0]?.id||null,supplierName:supplier,payerName:p.name,method:p.method||'تحويل بنكي'});
-          } catch(jeErr) { toast(`⚠️ فشل قيد دفعة ${p.name}: ${jeErr.message}`,'warn'); }
+            await je_payment({sys:state.system,date:poDate||today(),amount:p.paid,fileNo,refId:pmtId,supplierName:supplier,payerName:p.name,method:p.method||'تحويل بنكي'});
+          } catch(jeErr) {
+            if (pmtId) await apiPatch('payments', { id:`eq.${pmtId}` }, { post_status:'draft' });
+            toast(`⚠️ فشل قيد دفعة ${p.name} — أُعيدت لانتظار الموافقة: ${jeErr.message}`,'warn');
+          }
         }
       }
     }
@@ -1048,7 +1052,16 @@ async function submitExpense() {
       , post_status:entryStatus()};
       const expIns = await apiPost('expenses', data);
       await logAudit('INSERT','expenses', expFileNo, null, data);
-      if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,refId:expIns?.[0]?.id||null,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method});
+      if (entryStatus()==='posted') {
+        const expId = expIns?.[0]?.id || null;
+        try {
+          await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,refId:expId,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method});
+        } catch(jeErr) {
+          console.error('je_expense failed:', jeErr.message);
+          if (expId) await apiPatch('expenses', { id:`eq.${expId}` }, { post_status:'draft' });
+          toast(`⚠️ تم حفظ المصروف بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+        }
+      }
     }
     markSaving('expenseModal'); closeModal('expenseModal');
     invalidateCache();
@@ -1121,7 +1134,15 @@ async function _proceedSubmitPayment() {
     await logAudit('INSERT','payments',fn,null,data);
     const poArr = await apiGetAll('purchase_orders', { select:'supplier', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const supplierName = poArr?.[0]?.supplier || state.allDeals.find(d=>d.file_no===fn)?.supplier || '';
-    if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo:fn,refId:payIns?.[0]?.id||null,supplierName,payerName:payer,method});
+    if (entryStatus()==='posted') {
+      const payId = payIns?.[0]?.id || null;
+      try {
+        await je_payment({sys:state.system,date,amount,fileNo:fn,refId:payId,supplierName,payerName:payer,method});
+      } catch(jeErr) {
+        if (payId) await apiPatch('payments', { id:`eq.${payId}` }, { post_status:'draft' });
+        toast(`⚠️ تم حفظ الدفعة بدون ترحيل قيدها — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+      }
+    }
 
     // ── ⛔ تم إلغاء الإنشاء التلقائي لـ partner_payouts عند دفع شريك ──
     // كان يُنشئ سجل "استرداد رأس مال" تلقائياً بنفس مبلغ كل دفعة للمورد إذا كان
@@ -1507,6 +1528,7 @@ async function submitSale() {
 
   try {
     // ── تسجيل سجل بيع لكل سيارة ──
+    const saleIds = [];
     for (const item of saleItems) {
       const data = {
         system_type: state.system, file_no: item.fileNo||fn,
@@ -1514,8 +1536,9 @@ async function submitSale() {
         sale_price: item.price, sale_date: date, post_status: entryStatus(),
         notes: item.vnote||notes||null
       };
-      await apiPost('sales', data);
+      const saleIns = await apiPost('sales', data);
       await logAudit('INSERT','sales', item.fileNo||fn, null, data);
+      if (saleIns?.[0]?.id) saleIds.push(saleIns[0].id);
     }
     if (customer) await ensureContact(customer, 'customer');
 
@@ -1537,7 +1560,10 @@ async function submitSale() {
         const totalCOGS = await calcCOGS(state.system, fn, saleItems.length);
         // ✅ القيد يستخدم grandTotal (شامل extra charges) لتطابق قيمة التحصيل
         await je_sale({sys:state.system, date, amount:grandTotal, cost:totalCOGS, fileNo:fn, customer, invNo});
-      } catch(jeErr) { toast(`⚠️ تم حفظ الفاتورة لكن فشل قيد البيع: ${jeErr.message}`,'warn'); }
+      } catch(jeErr) {
+        if (saleIds.length) await apiPatch('sales', { id:`in.(${saleIds.join(',')})` }, { post_status:'draft' });
+        toast(`⚠️ تم حفظ الفاتورة بدون ترحيل قيدها — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+      }
     }
 
     // ── اقرأ بيانات الدفع قبل إغلاق المودال ──
@@ -1596,9 +1622,13 @@ async function submitSale() {
         await logAudit('INSERT','collections',fn,null,col1);
         if (customer) await ensureContact(customer, 'customer');
         if (isPostedNow) {
+          const col1Id = col1Ins?.[0]?.id || null;
           try {
-            await je_collection({ sys:state.system, date:payDate, amount:payAmtInput, fileNo:fn, refId:col1Ins?.[0]?.id||null, customer, invNo, method:payMethod });
-          } catch(jeErr) { toast(`⚠️ فشل قيد التحصيل: ${jeErr.message}`,'warn'); }
+            await je_collection({ sys:state.system, date:payDate, amount:payAmtInput, fileNo:fn, refId:col1Id, customer, invNo, method:payMethod });
+          } catch(jeErr) {
+            if (col1Id) await apiPatch('collections', { id:`eq.${col1Id}` }, { post_status:'draft' });
+            toast(`⚠️ فشل قيد التحصيل — أُعيد لانتظار الموافقة: ${jeErr.message}`,'warn');
+          }
         }
       } else {
         // دفع كامل أو بدون دفع الآن
@@ -1615,9 +1645,13 @@ async function submitSale() {
         await logAudit('INSERT','collections',fn,null,colData);
         if (customer) await ensureContact(customer, 'customer');
         if (isPaid && isPostedNow) {
+          const colDataId = colDataIns?.[0]?.id || null;
           try {
-            await je_collection({ sys:state.system, date:payDate, amount:grandTotal, fileNo:fn, refId:colDataIns?.[0]?.id||null, customer, invNo, method:payMethod });
-          } catch(jeErr) { toast(`⚠️ فشل قيد التحصيل: ${jeErr.message}`,'warn'); }
+            await je_collection({ sys:state.system, date:payDate, amount:grandTotal, fileNo:fn, refId:colDataId, customer, invNo, method:payMethod });
+          } catch(jeErr) {
+            if (colDataId) await apiPatch('collections', { id:`eq.${colDataId}` }, { post_status:'draft' });
+            toast(`⚠️ فشل قيد التحصيل — أُعيد لانتظار الموافقة: ${jeErr.message}`,'warn');
+          }
         }
       }
     } catch(e) { console.error('collection create error:', e.message); toast('⚠️ تم حفظ البيع لكن فشل إنشاء التحصيل: ' + e.message, 'warn'); }
@@ -1812,7 +1846,15 @@ async function submitCollection() {
     const colIns = await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
     if (cust) await ensureContact(cust, 'customer');
-    if (isPostedNow && cust && paid) await je_collection({sys:state.system,date:paid,amount,fileNo:fn,refId:colIns?.[0]?.id||null,customer:cust,invNo:invNo||'',method});
+    if (isPostedNow && cust && paid) {
+      const colId = colIns?.[0]?.id || null;
+      try {
+        await je_collection({sys:state.system,date:paid,amount,fileNo:fn,refId:colId,customer:cust,invNo:invNo||'',method});
+      } catch(jeErr) {
+        if (colId) await apiPatch('collections', { id:`eq.${colId}` }, { post_status:'draft' });
+        toast(`⚠️ تم حفظ التحصيل بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+      }
+    }
     markSaving('collectionModal'); closeModal('collectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     invalidateCache();
@@ -2047,7 +2089,15 @@ async function submitPayout() {
     };
     const poutDataIns = await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fn,null,data);
-    if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo:fn,refId:poutDataIns?.[0]?.id||null,partner,method});
+    if (entryStatus()==='posted') {
+      const poutId = poutDataIns?.[0]?.id || null;
+      try {
+        await je_payout({sys:state.system,date,amount,fileNo:fn,refId:poutId,partner,method});
+      } catch(jeErr) {
+        if (poutId) await apiPatch('partner_payouts', { id:`eq.${poutId}` }, { post_status:'draft' });
+        toast(`⚠️ تم حفظ ${type} بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+      }
+    }
     markSaving('payoutModal'); closeModal('payoutModal');
     toast(`✅ تم تسجيل ${type} للشريك ${partner}`,'ok');
     invalidateCache();

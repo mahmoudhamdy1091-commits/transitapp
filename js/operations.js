@@ -3783,6 +3783,102 @@ async function fixUnbalancedEntries() {
   toast(msg, failed > 0 ? 'warn' : 'ok');
   await loadJEManager();
 }
+
+// ════════════════════════════════════════
+// فحص القيود المفقودة — سجلات posted بدون قيد محاسبي مطابق
+// ════════════════════════════════════════
+const MISSING_JE_TABLES = [
+  { table:'expenses',        label:'مصروف',       refLabel:'EXP' },
+  { table:'payments',        label:'دفعة مورد',    refLabel:'PMT' },
+  { table:'collections',     label:'تحصيل',        refLabel:'COL' },
+  { table:'partner_payouts', label:'صرف شريك',     refLabel:'PAY' },
+];
+
+async function checkMissingEntries() {
+  const sys = state.system;
+  toast('⏳ جاري فحص القيود المفقودة...','ok');
+  try {
+    const jeRows = await apiGetAll('journal_entries', { select:'ref_table,ref_id', system_type:`eq.${sys}` });
+    const haveJE = new Set((jeRows||[]).filter(r=>r.ref_table && r.ref_id!=null).map(r=>`${r.ref_table}:${r.ref_id}`));
+
+    const missing = [];
+    for (const { table, label, refLabel } of MISSING_JE_TABLES) {
+      const rows = await apiGetAll(table, { select:'*', system_type:`eq.${sys}`, post_status:'eq.posted' });
+      for (const r of (rows||[])) {
+        if (+r.amount > 0 && !haveJE.has(`${table}:${r.id}`)) {
+          missing.push({ table, label, refLabel, row:r });
+        }
+      }
+    }
+
+    if (!missing.length) { toast('✅ لا توجد سجلات مرحّلة بدون قيود','ok'); return; }
+
+    const esc = v => String(v||'—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const rowsHTML = missing.map((m,i) => {
+      const r = m.row;
+      return `<tr>
+        <td style="padding:7px 10px;font-size:13px">${esc(m.label)}</td>
+        <td style="padding:7px 10px;font-size:13px">${esc(r.file_no)}</td>
+        <td style="padding:7px 10px;font-size:13px">${esc(r.pay_id || r.ref_no || r.id)}</td>
+        <td class="mono" style="padding:7px 10px;color:var(--accent)">${fmt(r.amount)}</td>
+        <td style="padding:7px 10px;text-align:left">
+          <button class="btn btn-sm btn-primary" onclick="createMissingJE(${i})">📝 إنشاء القيد</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    _missingJEList = missing;
+
+    showConfirmHtml(
+      `⚠️ ${missing.length} سجل مرحّل بدون قيد محاسبي`,
+      `<div style="overflow-x:auto;max-height:320px;overflow-y:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--card2)">
+            <th style="padding:7px 10px;text-align:right">النوع</th>
+            <th style="padding:7px 10px;text-align:right">الملف</th>
+            <th style="padding:7px 10px;text-align:right">المرجع</th>
+            <th style="padding:7px 10px;text-align:left">المبلغ</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="missing-je-tbody">${rowsHTML}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px;font-size:13px;color:var(--text2)">هذه السجلات معلّمة "مرحّلة" لكن لا يوجد لها قيد في دفتر القيود — اضغط "إنشاء القيد" لكل سجل لترحيله.</div>`,
+      () => {}
+    );
+  } catch(e) {
+    toast('خطأ: '+e.message,'err');
+  }
+}
+
+let _missingJEList = [];
+
+async function createMissingJE(idx) {
+  const m = _missingJEList[idx];
+  if (!m) return;
+  const r = m.row;
+  const sys = state.system;
+  try {
+    if (m.table === 'expenses') {
+      await je_expense({ sys, date:r.exp_date||r.expense_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, desc:r.description||'مصروف', expType:r.exp_type||r.category||'أخرى', method:r.pay_method||'نقد' });
+    } else if (m.table === 'payments') {
+      await je_payment({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'نقد' });
+    } else if (m.table === 'collections') {
+      await je_collection({ sys, date:r.paid_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, customer:r.customer||'—', invNo:r.inv_no||'', method:r.pay_method||'نقد' });
+    } else if (m.table === 'partner_payouts') {
+      await je_payout({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, partner:r.partner||'', method:r.pay_method||'نقد' });
+    }
+    toast(`✅ تم إنشاء القيد لـ ${m.label} (${r.file_no})`,'ok');
+    const tr = document.querySelector(`#missing-je-tbody tr:nth-child(${idx+1})`);
+    if (tr) tr.style.opacity = '0.4';
+    const btn = tr?.querySelector('button');
+    if (btn) { btn.disabled = true; btn.textContent = '✅ تم'; }
+    await loadJEManager();
+  } catch(e) {
+    toast(`⚠️ فشل إنشاء القيد: ${e.message}`,'err');
+  }
+}
+
 function toggleJELines(row) {
   const next = row.nextElementSibling;
   if (!next || !next.classList.contains('je-lines-row')) return;

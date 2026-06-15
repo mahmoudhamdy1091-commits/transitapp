@@ -308,12 +308,18 @@ async function submitQuickSale() {
   try {
     const data = { system_type:state.system, file_no:fileNo, vin, customer,
       invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:entryStatus()};
-    await apiPost('sales', data);
+    const qsIns = await apiPost('sales', data);
     await logAudit('INSERT','sales',fileNo,null,data);
     if (entryStatus()==='posted') {
-      // COGS = (إجمالي الشراء + المصاريف) ÷ عدد السيارات × 1 (سيارة واحدة في البيع السريع)
-      const _qsCOGS = await calcCOGS(state.system, fileNo, 1);
-      await je_sale({sys:state.system,date,amount:price,cost:_qsCOGS,fileNo,customer,invNo:invNo||'QS'});
+      const saleId = qsIns?.[0]?.id || null;
+      try {
+        // COGS = (إجمالي الشراء + المصاريف) ÷ عدد السيارات × 1 (سيارة واحدة في البيع السريع)
+        const _qsCOGS = await calcCOGS(state.system, fileNo, 1);
+        await je_sale({sys:state.system,date,amount:price,cost:_qsCOGS,fileNo,customer,invNo:invNo||'QS'});
+      } catch(jeErr) {
+        if (saleId) await apiPatch('sales', { id:`eq.${saleId}` }, { post_status:'draft' });
+        toast(`⚠️ تم حفظ البيع بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+      }
     }
     markSaving('quickSaleModal'); closeModal('quickSaleModal');
     toast('✅ تم تسجيل البيع بنجاح','ok');
@@ -362,7 +368,15 @@ async function submitQuickCollection() {
     , post_status:entryStatus()};
     const qcIns = await apiPost('collections', data);
     await logAudit('INSERT','collections', fileNo, null, data);
-    if (isPostedNow && customer) await je_collection({sys:state.system,date:paid||today(),amount,fileNo,refId:qcIns?.[0]?.id||null,customer,invNo,method});
+    if (isPostedNow && customer) {
+      const qcId = qcIns?.[0]?.id || null;
+      try {
+        await je_collection({sys:state.system,date:paid||today(),amount,fileNo,refId:qcId,customer,invNo,method});
+      } catch(jeErr) {
+        if (qcId) await apiPatch('collections', { id:`eq.${qcId}` }, { post_status:'draft' });
+        toast(`⚠️ تم حفظ التحصيل بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+      }
+    }
     markSaving('quickCollectionModal'); closeModal('quickCollectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     invalidateCache();
@@ -393,7 +407,16 @@ async function submitQuickExpense() {
       post_status:entryStatus() };
     const qeIns = await apiPost('expenses', data);
     await logAudit('INSERT','expenses',fileNo,null,data);
-    if (entryStatus()==='posted') await je_expense({sys:state.system,date,amount,fileNo,refId:qeIns?.[0]?.id||null,desc,expType:type,method});
+    if (entryStatus()==='posted') {
+      const expId = qeIns?.[0]?.id || null;
+      try {
+        await je_expense({sys:state.system,date,amount,fileNo,refId:expId,desc,expType:type,method});
+      } catch(jeErr) {
+        console.error('je_expense failed:', jeErr.message);
+        if (expId) await apiPatch('expenses', { id:`eq.${expId}` }, { post_status:'draft' });
+        toast(`⚠️ تم حفظ المصروف بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+      }
+    }
     markSaving('quickExpenseModal'); closeModal('quickExpenseModal');
     toast('✅ تم تسجيل المصروف بنجاح','ok');
     invalidateCache();
@@ -476,7 +499,15 @@ async function submitQuickPayment() {
       post_status:entryStatus() };
     const qpIns = await apiPost('payments', data);
     await logAudit('INSERT','payments', fileNo, null, data);
-    if (entryStatus()==='posted') await je_payment({sys:state.system,date,amount,fileNo,refId:qpIns?.[0]?.id||null,supplierName,payerName:payer,method});
+    if (entryStatus()==='posted') {
+      const qpId = qpIns?.[0]?.id || null;
+      try {
+        await je_payment({sys:state.system,date,amount,fileNo,refId:qpId,supplierName,payerName:payer,method});
+      } catch(jeErr) {
+        if (qpId) await apiPatch('payments', { id:`eq.${qpId}` }, { post_status:'draft' });
+        toast(`⚠️ تم حفظ الدفعة بدون ترحيل قيدها — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+      }
+    }
     markSaving('quickPaymentModal'); closeModal('quickPaymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
     loadJournal();
@@ -512,7 +543,15 @@ async function submitQuickPayout() {
       pay_date: date, notes:notes||null, post_status:entryStatus() };
     const qpoIns = await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fileNo,null,data);
-    if (entryStatus()==='posted') await je_payout({sys:state.system,date,amount,fileNo,refId:qpoIns?.[0]?.id||null,partner,method});
+    if (entryStatus()==='posted') {
+      const qpoId = qpoIns?.[0]?.id || null;
+      try {
+        await je_payout({sys:state.system,date,amount,fileNo,refId:qpoId,partner,method});
+      } catch(jeErr) {
+        if (qpoId) await apiPatch('partner_payouts', { id:`eq.${qpoId}` }, { post_status:'draft' });
+        toast(`⚠️ تم حفظ ${type} بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+      }
+    }
     markSaving('quickPayoutModal'); closeModal('quickPayoutModal');
     invalidateCache();
     toast('✅ تم تسجيل الصرف بنجاح','ok');

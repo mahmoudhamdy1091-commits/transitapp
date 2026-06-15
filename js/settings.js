@@ -1380,7 +1380,8 @@ async function submitEditCollection() {
           method:   method,
         });
       } catch(jeErr) {
-        toast(`⚠️ تم الحفظ لكن فشل القيد المحاسبي: ${jeErr.message}`, 'warn');
+        await apiPatch('collections', { id:`eq.${old.id}` }, { post_status:'draft' });
+        toast(`⚠️ تم الحفظ بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`, 'warn');
       }
     }
 
@@ -1455,7 +1456,10 @@ async function submitMarkPaid() {
           invNo:    c.inv_no   || '',
           method,
         });
-      } catch(jeErr) { toast(`⚠️ تم الحفظ — فشل القيد: ${jeErr.message}`, 'warn'); }
+      } catch(jeErr) {
+        await apiPatch('collections', { id:`eq.${c.id}` }, { post_status:'draft' });
+        toast(`⚠️ تم الحفظ بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`, 'warn');
+      }
     }
 
     markSaving('markPaidModal');
