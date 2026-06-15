@@ -1415,7 +1415,10 @@ let _nfEditMode = false;
 let _nfEditFileNo = null;
 let _originalPOTotal = 0;
 let _originalPOSupplier = '';
+let _originalPOPostStatus = null;
 let _originalVehicleIds = [];   // IDs of all vehicles loaded at edit open time
+let _originalPartners = [];     // partner+payment data loaded at edit open time
+let _nfSaving = false;          // guard against double-submit
 
 // Add vehicle row pre-filled with existing data
 function addVehicleRowWithData(v) {
@@ -1444,7 +1447,9 @@ async function addPartnerRowWithData(partner, payment) {
   const rows = el('partnersContainer').querySelectorAll('.p-row');
   const row  = rows[rows.length - 1];
   if (!row) return;
-  row.dataset.partnerId = partner.id;
+  row.dataset.partnerId         = partner.id;
+  row.dataset.paymentId         = payment?.id || '';
+  row.dataset.paymentPostStatus = payment?.post_status || '';
 
   const inputs = row.querySelectorAll('input');
   const sels   = row.querySelectorAll('select');

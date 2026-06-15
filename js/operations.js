@@ -1564,6 +1564,25 @@ async function approveItem(type, id) {
             }
           }
 
+          // ✅ تعديل سند شراء قد يُنشئ دفعات شركاء جديدة بحالة pending_edit (بدون قيد بعد)
+          // — أنشئ قيودها الآن مع الموافقة على التعديل
+          if (type === 'purchase_edit' && item.file_no) {
+            const pendingPayments = await apiGetAll('payments', {
+              select:'*', system_type:`eq.${state.system}`,
+              file_no:`eq.${item.file_no}`, post_status:`eq.pending_edit`,
+            });
+            for (const pmt of (pendingPayments||[])) {
+              const hasJE = await apiGet('journal_entries', {
+                select:'entry_no', system_type:`eq.${state.system}`,
+                ref_table:`eq.payments`, ref_id:`eq.${pmt.id}`, limit:'1',
+              });
+              if (!hasJE?.length) {
+                await je_payment({ sys:state.system, date:pmt.pay_date||today(), amount:+pmt.amount||0, fileNo:pmt.file_no, refId:pmt.id||null, supplierName:item.supplier||'', payerName:pmt.payer||'', method:pmt.pay_method||'تحويل بنكي' });
+              }
+              await apiPatch('payments', { id:`eq.${pmt.id}` }, { post_status:'posted' });
+            }
+          }
+
           const cleanPatch = { post_status: 'posted' };
           if (type === 'sale_edit' && item.inv_no) {
             await apiPatch('sales',

@@ -68,8 +68,9 @@ async function openNewFileModal(editFileNo = null) {
 
       const d = deals?.[0] || {};
       // حفظ القيم الأصلية للمقارنة عند الحفظ
-      _originalPOTotal    = +(d.total_purchase||0);
-      _originalPOSupplier = d.supplier || '';
+      _originalPOTotal      = +(d.total_purchase||0);
+      _originalPOSupplier   = d.supplier || '';
+      _originalPOPostStatus = d.post_status || null;
       el('nf-fileNo').value       = d.file_no       || editFileNo;
       el('nf-poDate').value       = d.po_date        || '';
       el('nf-notes').value        = d.notes          || '';
@@ -85,6 +86,17 @@ async function openNewFileModal(editFileNo = null) {
 
       // حفظ IDs الأصلية للمقارنة عند الحفظ (للكشف عن المحذوفة)
       _originalVehicleIds = (vList||[]).map(v => v.id).filter(Boolean);
+
+      // حفظ بيانات الشركاء والدفعات الأصلية للمقارنة عند الحفظ
+      _originalPartners = (pList||[]).map(p => {
+        const pay = (payList||[]).find(pm => pm.payer === p.partner);
+        return {
+          pid: p.id, name: p.partner, share: +p.share_percent||0,
+          paymentId: pay?.id || null,
+          paymentAmount: +pay?.amount || 0,
+          paymentPostStatus: pay?.post_status || null,
+        };
+      });
 
       // Load vehicles
       el('vehiclesContainer').innerHTML = '';
@@ -387,6 +399,17 @@ function checkShareTotal() {
 }
 
 async function submitNewFile() {
+  // ✅ منع التنفيذ المزدوج (مثلاً عند ضغط الحفظ مرتين أو ظهور الديالوج مرتين)
+  if (_nfSaving) return;
+  _nfSaving = true;
+  try {
+    await _submitNewFileInner();
+  } finally {
+    _nfSaving = false;
+  }
+}
+
+async function _submitNewFileInner() {
   // Route to edit if in edit mode
   if (_nfEditMode) { await submitEditFileFull(); return; }
 
@@ -553,6 +576,20 @@ async function submitNewFile() {
 // ════════════════════════════════════════
 // SUBMIT EDIT (full sند update)
 // ════════════════════════════════════════
+
+// إلغاء دفعة شريك أُزيلت/صُفِّرت أثناء التعديل: عكس قيدها لو كانت مُرحَّلة، أو حذفها مباشرة لو لم يُرحَّل لها قيد بعد
+async function voidOrDeleteOldPayment(op) {
+  try {
+    if (op.paymentPostStatus === 'posted') {
+      const rows = await apiGet('payments', { select:'*', id:`eq.${op.paymentId}` });
+      const record = rows?.[0];
+      if (record) await voidTransaction('payment', record, true);
+    } else {
+      await apiDelete('payments', { id:`eq.${op.paymentId}` });
+    }
+  } catch(e) { console.warn('voidOrDeleteOldPayment:', e.message); }
+}
+
 async function submitEditFileFull() {
   const oldFileNo   = _nfEditFileNo;
   const newFileNo   = el('nf-fileNo').value.trim();
@@ -599,7 +636,9 @@ async function submitEditFileFull() {
     const method = sels[1]?.value || 'تحويل بنكي';
     const doc    = inputs[3]?.value.trim() || '';
     const pid    = row.dataset.partnerId || null;
-    if (name) { partners.push({ pid, name, share, paid, payDate, method, doc }); shareTotal += share; }
+    const paymentId = row.dataset.paymentId || null;
+    const paymentPostStatus = row.dataset.paymentPostStatus || null;
+    if (name) { partners.push({ pid, name, share, paid, payDate, method, doc, paymentId, paymentPostStatus }); shareTotal += share; }
   });
 
   if (partners.length && Math.abs(shareTotal-100) > 0.01) {
@@ -668,26 +707,60 @@ async function submitEditFileFull() {
       }
     }
 
-    // 3. Update partners — delete all then re-insert (simplest approach)
-    await apiDelete('partners_master', { system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}` });
+    // 3. Update partners — diff-based: تعديل في المكان للموجود، حذف للمُزال، إنشاء للجديد فقط
+    //    (نفس أسلوب السيارات أعلاه) — يحافظ على ثبات id الدفعة فيعمل updateJEInPlace بشكل صحيح
+    const remainingPids = new Set(partners.filter(p=>p.pid).map(p=>p.pid));
+
+    // 3a. شركاء أُزيلوا بالكامل من الجدول
+    for (const op of (_originalPartners||[])) {
+      if (remainingPids.has(op.pid)) continue;
+      try { await apiDelete('partners_master', { id:`eq.${op.pid}` }); } catch(e) { console.warn('delete removed partner:', e.message); }
+      if (op.paymentId && op.paymentAmount > 0) {
+        await voidOrDeleteOldPayment(op);
+      }
+    }
+
+    // 3b. شركاء موجودون (تعديل في المكان) أو جدد (إنشاء)
     for (const p of partners) {
-      await apiPost('partners_master', {
-        system_type:state.system, file_no:newFileNo,
-        partner:p.name, share_percent:p.share
-      });
-      // Update existing payment or create new one
-      if (p.paid > 0) {
-        // حذف الدفعة الأولية المسجّلة عند إنشاء الصفقة فقط (بالـ pay_id الأولي)
-        // لا نحذف الدفعات الإضافية اللي أُضيفت لاحقاً من موديل الدفعات
-        // ملاحظة: نفس صيغة الترقيم المستخدمة عند إنشاء الصفقة (PMT-<file>-P<index>)
-        const pIndex = partners.indexOf(p) + 1;
-        const initialPmtId = `PMT-${oldFileNo}-P${pIndex}`;
-        let oldPostStatus = null;
-        try {
-          const oldPmt = await apiGet('payments', { select:'post_status', system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}`, pay_id:`eq.${initialPmtId}`, limit:'1' });
-          oldPostStatus = oldPmt?.[0]?.post_status || null;
-          await apiDelete('payments', { system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}`, pay_id:`eq.${initialPmtId}` });
-        } catch(e) { console.warn('deleteInitialPayment on rename:', e.message); }
+      const pIndex = partners.indexOf(p) + 1;
+      if (p.pid) {
+        await apiPatch('partners_master', { id:`eq.${p.pid}` }, {
+          partner:p.name, share_percent:p.share, file_no:newFileNo
+        });
+      } else {
+        await apiPost('partners_master', {
+          system_type:state.system, file_no:newFileNo,
+          partner:p.name, share_percent:p.share
+        });
+      }
+
+      if (p.paymentId) {
+        const orig = (_originalPartners||[]).find(op => op.paymentId === p.paymentId);
+        if (p.paid > 0) {
+          // تعديل الدفعة في مكانها — نفس id فيبقى ref_id في القيد صحيحاً
+          await apiPatch('payments', { id:`eq.${p.paymentId}` }, {
+            payer:p.name, amount:p.paid, pay_method:p.method||'تحويل بنكي',
+            document:p.doc||null, pay_date:p.payDate||poDate||null,
+            file_no:newFileNo, notes:`حصة ${p.share}%`
+          });
+          if (orig?.paymentPostStatus === 'posted') {
+            const amountChanged  = Math.abs((+orig.paymentAmount||0) - (+p.paid||0)) > 0.001;
+            const contactChanged = orig.name !== p.name;
+            if (amountChanged || contactChanged) {
+              await updateJEInPlace({
+                sys: state.system, fileNo: oldFileNo,
+                refTable: 'payments', refId: p.paymentId,
+                oldAmount: orig.paymentAmount, newAmount: p.paid,
+                contactPatch: contactChanged ? p.name : null,
+              });
+            }
+          }
+        } else if (orig) {
+          // المستخدم صفّر مبلغ هذه الدفعة — إلغاؤها
+          await voidOrDeleteOldPayment(orig);
+        }
+      } else if (p.paid > 0) {
+        // دفعة جديدة (شريك جديد، أو شريك بدون دفعة سابقة)
         const newPmtId = `PMT-${newFileNo}-P${pIndex}`;
         await apiPost('payments', {
           system_type:state.system, file_no:newFileNo,
@@ -696,7 +769,8 @@ async function submitEditFileFull() {
           amount:p.paid, pay_method:p.method||'تحويل بنكي',
           document:p.doc||null, pay_date:p.payDate||poDate||null,
           notes:`حصة ${p.share}%`,
-          post_status: oldPostStatus || entryStatus(),
+          // الصفقة كانت مُرحَّلة → الدفعة الجديدة تنتظر الموافقة (سيتم إنشاء قيدها عند الموافقة)
+          post_status: _originalPOPostStatus==='posted' ? 'pending_edit' : entryStatus(),
         });
       }
     }
@@ -715,6 +789,28 @@ async function submitEditFileFull() {
       { system_type:`eq.${state.system}`, file_no:`eq.${newFileNo}` },
       { post_status: 'pending_edit' }
     );
+
+    // 6. فحص سريع (غير معطِّل): تأكيد أن القيود المُرحَّلة تعكس القيم الجديدة بعد التحديث
+    try {
+      const checkLines = await apiGetAll('journal_entries', {
+        select: 'ref_table,ref_id,dr_amount,cr_amount',
+        system_type:`eq.${state.system}`, file_no:`eq.${newFileNo}`,
+        post_status:'eq.posted',
+      });
+      const poLine = (checkLines||[]).find(l => l.ref_table==='purchase_orders' && (+l.dr_amount||0) > 0);
+      if (poLine && Math.abs((+poLine.dr_amount||0) - finalTotal) > 0.01) {
+        toast(`⚠️ تحقّق من قيد المخزون — القيمة الحالية لا تطابق قيمة الصفقة الجديدة`,'warn');
+      }
+      for (const p of partners) {
+        if (p.paymentId && p.paymentPostStatus==='posted' && p.paid>0) {
+          const pLine = (checkLines||[]).find(l => l.ref_table==='payments' && String(l.ref_id)===String(p.paymentId));
+          const lineAmt = pLine ? (+pLine.dr_amount||+pLine.cr_amount||0) : 0;
+          if (Math.abs(lineAmt - p.paid) > 0.01) {
+            toast(`⚠️ تحقّق من قيد دفعة ${p.name} — لم يُحدَّث بالكامل`,'warn');
+          }
+        }
+      }
+    } catch(e) { console.warn('post-edit JE check:', e.message); }
 
     await logAudit('EDIT','purchase_orders',oldFileNo,null,{newFileNo,supplier,finalTotal}, `تعديل سند الشراء ${oldFileNo}`);
     await updateApprovalBadge();
