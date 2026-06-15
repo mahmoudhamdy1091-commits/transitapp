@@ -1131,16 +1131,33 @@ async function voidSaleInvoice(invNo, fileNo) {
         // جيب كل سطور الفاتورة
         const saleItems = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
         if (!saleItems?.length) { toast('لم يُعثر على بيانات الفاتورة', 'err'); return; }
+        if (saleItems.every(r => r.post_status === 'voided')) { toast('⚠️ هذه الفاتورة مُلغاة مسبقاً', 'warn'); return; }
         const first = saleItems[0];
         const totalSale = saleItems.reduce((s,r)=>s+(+r.sale_price||0),0);
-        // قيد عكسي للمبيعات
+        // ✅ جلب قيد التكلفة (COGS) الأصلي المرتبط بهذه الفاتورة — لعكسه أيضاً
+        let totalCOGS = 0;
+        try {
+          const cogsLines = await apiGetAll('journal_entries', {
+            select:'dr_amount,description', system_type:`eq.${sys}`,
+            ref_table:`eq.sales`, file_no:`eq.${fileNo}`, account_code:`eq.5100`, post_status:`eq.posted`,
+          });
+          totalCOGS = (cogsLines||[]).filter(r => (r.description||'').includes(invNo))
+            .reduce((s,r)=>s+(+r.dr_amount||0), 0);
+        } catch(e) { console.warn('voidSaleInvoice cogs lookup:', e.message); }
+        // قيد عكسي للمبيعات (+ التكلفة لو وُجدت)
+        const reversalLines = [];
         if (totalSale > 0) {
+          reversalLines.push({acc:'4100', name:'إيرادات المبيعات', dr:totalSale, cr:0, contact:null});
+          reversalLines.push({acc:'1200', name:'ذمم العملاء',       dr:0, cr:totalSale, contact:first.customer||null});
+        }
+        if (totalCOGS > 0) {
+          reversalLines.push({acc:'1300', name:'المخزون — سيارات',     dr:totalCOGS, cr:0, contact:null});
+          reversalLines.push({acc:'5100', name:'تكلفة المخزون المباع', dr:0, cr:totalCOGS, contact:null});
+        }
+        if (reversalLines.length) {
           await postDoubleEntry({ sys, date:today(), fileNo,
             refTable:'reversal', desc:`عكس بيع فاتورة ${invNo} — ${first.customer||''}`,
-            lines:[
-              {acc:'4100', name:'إيرادات المبيعات', dr:totalSale, cr:0, contact:null},
-              {acc:'1200', name:'ذمم العملاء',       dr:0, cr:totalSale, contact:first.customer||null},
-            ]
+            lines: reversalLines,
           });
         }
         // void السجلات

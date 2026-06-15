@@ -528,7 +528,7 @@ function _ctxPayout(btn) {
 function _ctxOpex(btn) {
   const id = btn.dataset.id;
   const items = [{icon:'✏️', label:'تعديل', action:()=>openEditOpexModal(id)}, 'divider'];
-  if (can('delete')) items.push({icon:'🗑', label:'حذف', danger:true, action:()=>confirmAction('حذف مصروف تشغيلي','هل أنت متأكد من حذف هذا المصروف؟',()=>deleteOpex(id))});
+  if (can('delete')) items.push({icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>deleteOpex(id)});
   showCtxMenu(btn, items);
 }
 

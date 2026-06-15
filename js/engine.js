@@ -28,6 +28,25 @@ const EXPENSE_ACCOUNT_MAP = {
   'إدارية':'6700',
 };
 
+// ✅ مطابق لشجرة الحسابات الفعلية (chart_of_accounts):
+// 6100=إيجار، 6200=رواتب وأجور، 6300=نقل وشحن، 6400=تسويق وإعلان،
+// 6500=مصاريف عمومية وإدارية، 6600=جمارك وتأمين، 6700=صيانة ومتفرقات
+const OPEX_ACC_MAP = {
+  'رواتب وأجور':          '6200',
+  'إيجار مكتب / معرض':    '6100',
+  'كهرباء وماء ومرافق':   '6500',
+  'مصاريف إدارية':        '6500',
+  'تسويق وإعلانات':       '6400',
+  'عمولات ووساطة':        '6500',
+  'ضيافة ومطاعم':         '6500',
+  'رسوم حكومية ورخص':     '6600',
+  'نظافة وصيانة':         '6700',
+  'مصاريف متنوعة':        '6700',
+  // احتياطي للبيانات القديمة
+  'رواتب':'6200','إيجارات':'6100','عمولات':'6500',
+  'نظافة':'6700','ضيافة':'6500','مصروفات حكومية':'6600','أخرى':'6700',
+};
+
 // ════════════════════════════════════════════════════════════════
 // IN-PLACE JE UPDATE HELPER
 // يُحدِّث أسطر القيد الأصلي مباشرة دون إنشاء قيد جديد
@@ -39,28 +58,32 @@ async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmo
   if (!amountChanged && !contactChanged) return;
 
   try {
-    // جيب كل الأسطر المرتبطة بهذا القيد
-    const filter = {
-      select: 'id,entry_no,dr_amount,cr_amount,contact_name',
-      system_type: `eq.${sys}`,
-      ref_table: `eq.${refTable}`,
-      post_status: 'eq.posted',
-      order: 'id.desc',
-      limit: 40,
-    };
-    if (fileNo) filter.file_no = `eq.${fileNo}`;
-
-    const jeLines = await apiGetAll('journal_entries', filter);
-    if (!jeLines?.length) return;
-
-    // ابحث عن entry_no المناسب — أولاً بـ ref_id، ثم بالمبلغ كاحتياط
     let entryNo = null;
-    const byRefId = (jeLines).find(j => String(j.ref_id||'') === String(refId||''));
-    if (byRefId) {
-      entryNo = byRefId.entry_no;
-    } else if (amountChanged) {
+
+    // ✅ المسار الأساسي: بحث مباشر عبر ref_id (بدون حد أقصى على عدد السطور) — يعمل بشكل صحيح حتى مع الملفات الكبيرة
+    if (refId != null) {
+      const byRef = await apiGetAll('journal_entries', {
+        select: 'entry_no', system_type: `eq.${sys}`,
+        ref_table: `eq.${refTable}`, ref_id: `eq.${refId}`,
+        post_status: 'eq.posted', limit: 1,
+      });
+      if (byRef?.length) entryNo = byRef[0].entry_no;
+    }
+
+    // مسار احتياطي: بحث بالمبلغ ضمن آخر 40 قيد لهذا الملف — فقط لو ref_id غير موجود/غير مطابق
+    if (!entryNo && amountChanged) {
+      const filter = {
+        select: 'entry_no,dr_amount,cr_amount',
+        system_type: `eq.${sys}`,
+        ref_table: `eq.${refTable}`,
+        post_status: 'eq.posted',
+        order: 'id.desc',
+        limit: 40,
+      };
+      if (fileNo) filter.file_no = `eq.${fileNo}`;
+      const jeLines = await apiGetAll('journal_entries', filter);
       const amt = +oldAmount;
-      const fallback = (jeLines).find(j =>
+      const fallback = (jeLines||[]).find(j =>
         Math.abs((+j.dr_amount||0) - amt) < 0.001 ||
         Math.abs((+j.cr_amount||0) - amt) < 0.001
       );
@@ -453,24 +476,6 @@ async function je_custodian({sys, date, amount, custodian, desc, method, directi
 // مصروف تشغيلي: مصروف Dr / نقد Cr
 async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
   if(!amount||amount<=0) return;
-  // ✅ مطابق لشجرة الحسابات الفعلية (chart_of_accounts):
-  // 6100=إيجار، 6200=رواتب وأجور، 6300=نقل وشحن، 6400=تسويق وإعلان،
-  // 6500=مصاريف عمومية وإدارية، 6600=جمارك وتأمين، 6700=صيانة ومتفرقات
-  const OPEX_ACC_MAP = {
-    'رواتب وأجور':          '6200',
-    'إيجار مكتب / معرض':    '6100',
-    'كهرباء وماء ومرافق':   '6500',
-    'مصاريف إدارية':        '6500',
-    'تسويق وإعلانات':       '6400',
-    'عمولات ووساطة':        '6500',
-    'ضيافة ومطاعم':         '6500',
-    'رسوم حكومية ورخص':     '6600',
-    'نظافة وصيانة':         '6700',
-    'مصاريف متنوعة':        '6700',
-    // احتياطي للبيانات القديمة
-    'رواتب':'6200','إيجارات':'6100','عمولات':'6500',
-    'نظافة':'6700','ضيافة':'6500','مصروفات حكومية':'6600','أخرى':'6700',
-  };
   const eAcc    = OPEX_ACC_MAP[expType] || '6700';
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
