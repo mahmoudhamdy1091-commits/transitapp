@@ -1547,7 +1547,7 @@ async function approveItem(type, id) {
           if (refTable && item.file_no) {
             const existingJE = await apiGet('journal_entries', {
               select:'entry_no', system_type:`eq.${state.system}`,
-              file_no:`eq.${item.file_no}`, ref_table:`eq.${refTable}`, limit:'1',
+              ref_table:`eq.${refTable}`, ref_id:`eq.${item.id}`, limit:'1',
             });
             if (!existingJE?.length) {
               if (type === 'purchase_edit') {
