@@ -1599,8 +1599,8 @@ async function approveItem(type, id) {
                 await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
               } else if (type === 'expense_edit') {
                 await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'نقد' });
-              } else if (type === 'collection_edit') {
-                await je_collection({ sys:state.system, date:item.paid_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
+              } else if (type === 'collection_edit' && item.paid_date) {
+                await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
               } else if (type === 'payout_edit') {
                 await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, partner:item.partner||'', method:item.pay_method||'نقد' });
               } else if (type === 'opex_edit') {
@@ -1985,7 +1985,12 @@ async function approveAll() {
           } else if (r._type === 'payout') {
             await je_payout({ sys:state.system, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no,refId:r.id||null, partner:r.partner||'', method:r.pay_method||'نقد' });
           }
-        } catch(jeErr) { console.warn(`approveAll je_ failed for ${r._type} ${r.id}:`, jeErr.message); }
+        } catch(jeErr) {
+          console.warn(`approveAll je_ failed for ${r._type} ${r.id}:`, jeErr.message);
+          // ✅ فشل إنشاء القيد بعد الترحيل في الخطوة 1 — رجّع السجل لـ draft ليظهر في قائمة الاعتمادات من جديد
+          await apiPatch(APPROVAL_CONFIG[r._type].table, { id:`eq.${r.id}` }, { post_status:'draft' });
+          toast(`⚠️ فشلت الموافقة على ${APPROVAL_CONFIG[r._type].label} (${r._desc||r.id}) — أُعيد لقائمة الاعتمادات: ${jeErr.message}`,'warn');
+        }
       }
       invalidateCache();
       toast(`✅ تمت الموافقة على ${items.length} عملية`,'ok');
@@ -3835,6 +3840,7 @@ async function checkMissingEntries() {
       const rows = await apiGetAll(table, { select:'*', system_type:`eq.${sys}`, post_status:'eq.posted' });
       for (const r of (rows||[])) {
         if (+r.amount > 0 && !haveJE.has(`${table}:${r.id}`)) {
+          if (table === 'collections' && !r.paid_date) continue; // مستحق غير محصَّل — لا قيد متوقع
           missing.push({ table, label, refLabel, row:r });
         }
       }
@@ -3891,7 +3897,8 @@ async function createMissingJE(idx) {
     } else if (m.table === 'payments') {
       await je_payment({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'نقد' });
     } else if (m.table === 'collections') {
-      await je_collection({ sys, date:r.paid_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, customer:r.customer||'—', invNo:r.inv_no||'', method:r.pay_method||'نقد' });
+      if (!r.paid_date) { toast('⚠️ هذا التحصيل مستحق (غير مدفوع) — لا يُنشأ له قيد','warn'); return; }
+      await je_collection({ sys, date:r.paid_date, amount:+r.amount, fileNo:r.file_no, refId:r.id, customer:r.customer||'—', invNo:r.inv_no||'', method:r.pay_method||'نقد' });
     } else if (m.table === 'partner_payouts') {
       await je_payout({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, partner:r.partner||'', method:r.pay_method||'نقد' });
     }
