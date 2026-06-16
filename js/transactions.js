@@ -53,10 +53,6 @@ function setTxPeriod(period) {
   document.querySelectorAll('[id^="txperiod-"]').forEach(b => b.classList.remove('active'));
   el('txperiod-' + period)?.classList.add('active');
   const customWrap = el('txCustomDateWrap');
-  const pad = n => String(n).padStart(2,'0');
-  const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-  const now = new Date();
-  const yr  = now.getFullYear();
 
   if (period === 'custom') {
     customWrap.style.display = 'flex';
@@ -64,27 +60,8 @@ function setTxPeriod(period) {
   }
   customWrap.style.display = 'none';
 
-  let from, to;
-  if (period === 'today') {
-    from = to = toDate(now);
-  } else if (period === 'week') {
-    const sun = new Date(now); sun.setDate(now.getDate() - now.getDay());
-    const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
-    from = toDate(sun); to = toDate(sat);
-  } else if (period === 'month') {
-    from = `${yr}-${pad(now.getMonth()+1)}-01`;
-    to   = toDate(new Date(yr, now.getMonth()+1, 0));
-  } else if (period === '3months') {
-    const f = new Date(now); f.setMonth(f.getMonth() - 3);
-    from = toDate(f); to = toDate(now);
-  } else if (period === 'year') {
-    from = `${yr}-01-01`;
-    to   = `${yr}-12-31`;
-  } else if (period === 'lastyear') {
-    from = `${yr-1}-01-01`;
-    to   = `${yr-1}-12-31`;
-  }
-
+  // ✅ المصدر الموحّد: getPeriodDates (periods.js) — Phase 1
+  const { from, to } = getPeriodDates(period);
   if (el('tx-from')) el('tx-from').value = from;
   if (el('tx-to'))   el('tx-to').value   = to;
   loadTransactions();

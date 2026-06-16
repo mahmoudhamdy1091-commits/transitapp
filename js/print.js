@@ -1131,3 +1131,46 @@ function printContactStatement() {
   const kpis    = el('cs-kpis')?.innerHTML  || '';
   printSection(`كشف حساب — ${name}`, `نظام ${state.system}`, kpis + content);
 }
+
+// ════════════════════════════════════════════════════════════
+// SECTION 15 — Single Voucher Print (نُقلت من dashboard.js — Phase 1)
+// ════════════════════════════════════════════════════════════
+// طباعة سند دفعة مورد منفردة
+async function printPaymentVoucher(paymentId, fn) {
+  try {
+    const rows = await apiGetAll('payments', { select:'*', id:`eq.${paymentId}` });
+    const p = rows?.[0];
+    if (!p) { toast('لم يُعثر على الدفعة','err'); return; }
+    // جيب entry_no من journal_entries
+    const jes = await apiGet('journal_entries', {
+      select:'entry_no,dr_amount,cr_amount',
+      system_type:`eq.${state.system}`, file_no:`eq.${fn}`,
+      ref_table:'eq.payments', post_status:'eq.posted',
+      order:'id.desc', limit:50
+    });
+    // ابحث عن القيد الأقرب للمبلغ والتاريخ
+    const match = (jes||[]).find(j => +j.dr_amount === +p.amount || +j.cr_amount === +p.amount);
+    const entryNo = match?.entry_no || '';
+    const title = `دفعة مورد — ${p.ref_no||p.id} — ${p.payer||''}`;
+    printJournalVoucher(entryNo, 'payment', fn, +p.amount, p.pay_date, title);
+  } catch(e) { toast('خطأ في الطباعة: '+e.message,'err'); }
+}
+
+// طباعة سند مصروف منفرد
+async function printExpenseVoucher(expenseId, fn) {
+  try {
+    const rows = await apiGetAll('expenses', { select:'*', id:`eq.${expenseId}` });
+    const e = rows?.[0];
+    if (!e) { toast('لم يُعثر على المصروف','err'); return; }
+    const jes = await apiGet('journal_entries', {
+      select:'entry_no,dr_amount,cr_amount',
+      system_type:`eq.${state.system}`, file_no:`eq.${fn}`,
+      ref_table:'eq.expenses', post_status:'eq.posted',
+      order:'id.desc', limit:50
+    });
+    const match = (jes||[]).find(j => +j.dr_amount === +e.amount || +j.cr_amount === +e.amount);
+    const entryNo = match?.entry_no || '';
+    const title = `مصروف — ${e.ref_no||e.id} — ${e.description||e.exp_type||''}`;
+    printJournalVoucher(entryNo, 'expense', fn, +e.amount, e.exp_date||e.expense_date, title);
+  } catch(e2) { toast('خطأ في الطباعة: '+e2.message,'err'); }
+}

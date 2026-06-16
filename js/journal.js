@@ -37,36 +37,16 @@ function setJournalPeriod(period) {
 }
 
 function getJournalDateRange() {
-  const pad = n => String(n).padStart(2,'0');
-  const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-  const now = new Date();
-  const yr  = now.getFullYear();
-
-  if (journalState.period === 'today') {
-    const t = toDate(now);
-    return { from: t, to: t };
-  }
-  if (journalState.period === 'week') {
-    const day  = now.getDay();
-    const sun  = new Date(now); sun.setDate(now.getDate() - day);
-    const sat  = new Date(sun); sat.setDate(sun.getDate() + 6);
-    return { from: toDate(sun), to: toDate(sat) };
-  }
-  if (journalState.period === 'month') {
-    const from = `${yr}-${pad(now.getMonth()+1)}-01`;
-    const last = new Date(yr, now.getMonth()+1, 0);
-    return { from, to: toDate(last) };
-  }
-  if (journalState.period === 'year') {
-    return { from: `${yr}-01-01`, to: `${yr}-12-31` };
-  }
-  if (journalState.period === 'lastyear') {
-    return { from: `${yr-1}-01-01`, to: `${yr-1}-12-31` };
-  }
   if (journalState.period === 'custom') {
     return { from: el('jDateFrom').value, to: el('jDateTo').value };
   }
-  return { from: toDate(now), to: toDate(now) };
+  // ✅ المصدر الموحّد: getPeriodDates (periods.js) — Phase 1
+  const { from, to } = getPeriodDates(journalState.period);
+  if (from && to) return { from, to };
+  const pad = n => String(n).padStart(2,'0');
+  const now = new Date();
+  const td  = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  return { from: td, to: td };
 }
 
 async function loadJournal() {

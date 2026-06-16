@@ -1167,22 +1167,9 @@ function fillRowFromLicense(row, data) {
 
 // Save any operation as Draft first, then Post
 
-// ════ ENTRY STATUS ════
-function isAdminUser() { return _currentRole === 'admin'; }
-function adminPostsImmediately() { return localStorage.getItem('tm_admin_post') === 'posted'; }
-function entryStatus() { return (isAdminUser() && adminPostsImmediately()) ? 'posted' : 'draft'; }
-function toggleAdminPostSetting() {
-  const v = adminPostsImmediately() ? 'draft' : 'posted';
-  localStorage.setItem('tm_admin_post', v);
-  updateAdminPostToggleUI();
-  toast(v==='draft'?'✅ إدخالات المدير ستحتاج موافقة':'✅ إدخالات المدير ستُرحَّل فوراً','ok');
-}
-function updateAdminPostToggleUI() {
-  const im=adminPostsImmediately(),t=document.getElementById('adminPostToggle'),k=document.getElementById('adminPostKnob'),l=document.getElementById('adminPostLabel');
-  if(!t)return; t.style.background=im?'var(--green)':'var(--border2)';
-  if(k)k.style.transform=im?'translateX(0)':'translateX(-18px)';
-  if(l)l.textContent=im?'ترحيل فوري ✓':'يحتاج موافقة';
-}
+// ── ENTRY STATUS: نُقلت isAdminUser/adminPostsImmediately/entryStatus/
+//    toggleAdminPostSetting/updateAdminPostToggleUI إلى engine.js (Phase 1)
+//    لكسر التبعية العكسية: engine.js كان يستدعي entryStatus() المعرّفة هنا ──
 
 async function saveDraft(entryType, fileNo, description, amount, refTable, refId) {
   try {

@@ -48,6 +48,28 @@ const OPEX_ACC_MAP = {
 };
 
 // ════════════════════════════════════════════════════════════════
+// ENTRY STATUS — حالة الترحيل (نُقلت من accounting.js — Phase 1)
+// تُحدِّد هل تُرحَّل العملية فوراً أم تذهب للمراجعة (draft).
+// مكانها هنا لأن المحرك (voidTransaction) يستدعي entryStatus() —
+// كانت في accounting.js مما يسبب تبعية عكسية من المحرك لطبقة أعلى.
+// ════════════════════════════════════════════════════════════════
+function isAdminUser() { return _currentRole === 'admin'; }
+function adminPostsImmediately() { return localStorage.getItem('tm_admin_post') === 'posted'; }
+function entryStatus() { return (isAdminUser() && adminPostsImmediately()) ? 'posted' : 'draft'; }
+function toggleAdminPostSetting() {
+  const v = adminPostsImmediately() ? 'draft' : 'posted';
+  localStorage.setItem('tm_admin_post', v);
+  updateAdminPostToggleUI();
+  toast(v==='draft'?'✅ إدخالات المدير ستحتاج موافقة':'✅ إدخالات المدير ستُرحَّل فوراً','ok');
+}
+function updateAdminPostToggleUI() {
+  const im=adminPostsImmediately(),t=document.getElementById('adminPostToggle'),k=document.getElementById('adminPostKnob'),l=document.getElementById('adminPostLabel');
+  if(!t)return; t.style.background=im?'var(--green)':'var(--border2)';
+  if(k)k.style.transform=im?'translateX(0)':'translateX(-18px)';
+  if(l)l.textContent=im?'ترحيل فوري ✓':'يحتاج موافقة';
+}
+
+// ════════════════════════════════════════════════════════════════
 // IN-PLACE JE UPDATE HELPER
 // يُحدِّث أسطر القيد الأصلي مباشرة دون إنشاء قيد جديد
 // الاستخدام: updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch })

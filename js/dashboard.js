@@ -864,49 +864,7 @@ function summRow(label, cls, val, bold=false, color='') {
 
 // loadVehiclesTab — النسخة الصح في ملف آخر
 
-// ════════════════════════════════════════════════
-// طباعة سند دفعة مورد منفردة
-// ════════════════════════════════════════════════
-async function printPaymentVoucher(paymentId, fn) {
-  try {
-    const rows = await apiGetAll('payments', { select:'*', id:`eq.${paymentId}` });
-    const p = rows?.[0];
-    if (!p) { toast('لم يُعثر على الدفعة','err'); return; }
-    // جيب entry_no من journal_entries
-    const jes = await apiGet('journal_entries', {
-      select:'entry_no,dr_amount,cr_amount',
-      system_type:`eq.${state.system}`, file_no:`eq.${fn}`,
-      ref_table:'eq.payments', post_status:'eq.posted',
-      order:'id.desc', limit:50
-    });
-    // ابحث عن القيد الأقرب للمبلغ والتاريخ
-    const match = (jes||[]).find(j => +j.dr_amount === +p.amount || +j.cr_amount === +p.amount);
-    const entryNo = match?.entry_no || '';
-    const title = `دفعة مورد — ${p.ref_no||p.id} — ${p.payer||''}`;
-    printJournalVoucher(entryNo, 'payment', fn, +p.amount, p.pay_date, title);
-  } catch(e) { toast('خطأ في الطباعة: '+e.message,'err'); }
-}
-
-// ════════════════════════════════════════════════
-// طباعة سند مصروف منفرد
-// ════════════════════════════════════════════════
-async function printExpenseVoucher(expenseId, fn) {
-  try {
-    const rows = await apiGetAll('expenses', { select:'*', id:`eq.${expenseId}` });
-    const e = rows?.[0];
-    if (!e) { toast('لم يُعثر على المصروف','err'); return; }
-    const jes = await apiGet('journal_entries', {
-      select:'entry_no,dr_amount,cr_amount',
-      system_type:`eq.${state.system}`, file_no:`eq.${fn}`,
-      ref_table:'eq.expenses', post_status:'eq.posted',
-      order:'id.desc', limit:50
-    });
-    const match = (jes||[]).find(j => +j.dr_amount === +e.amount || +j.cr_amount === +e.amount);
-    const entryNo = match?.entry_no || '';
-    const title = `مصروف — ${e.ref_no||e.id} — ${e.description||e.exp_type||''}`;
-    printJournalVoucher(entryNo, 'expense', fn, +e.amount, e.exp_date||e.expense_date, title);
-  } catch(e2) { toast('خطأ في الطباعة: '+e2.message,'err'); }
-}
+// ── نُقلت printPaymentVoucher / printExpenseVoucher إلى print.js (Phase 1) ──
 
 async function loadPaymentsTab(fn, sys) {
   try {
@@ -1425,17 +1383,7 @@ async function openEditPayoutModal(payoutId) {
 // ════════════════════════════════════════
 // NEW FILE MODAL — سند شراء
 // ════════════════════════════════════════
-let nfPriceMode = 'equal';
-
-// Edit mode state
-let _nfEditMode = false;
-let _nfEditFileNo = null;
-let _originalPOTotal = 0;
-let _originalPOSupplier = '';
-let _originalPOPostStatus = null;
-let _originalVehicleIds = [];   // IDs of all vehicles loaded at edit open time
-let _originalPartners = [];     // partner+payment data loaded at edit open time
-let _nfSaving = false;          // guard against double-submit
+// ── حالة المودال (nfPriceMode + _nfEditMode وأصدقاؤه) نُقلت إلى modals.js (Phase 1) ──
 
 // Add vehicle row pre-filled with existing data
 function addVehicleRowWithData(v) {

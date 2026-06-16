@@ -3,6 +3,20 @@
 // ║           Collection · Payout Modals                    ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
+
+// ── حالة مودال سند الشراء (نُقلت من dashboard.js — Phase 1) ──
+let nfPriceMode = 'equal';
+
+// Edit mode state
+let _nfEditMode = false;
+let _nfEditFileNo = null;
+let _originalPOTotal = 0;
+let _originalPOSupplier = '';
+let _originalPOPostStatus = null;
+let _originalVehicleIds = [];   // IDs of all vehicles loaded at edit open time
+let _originalPartners = [];     // partner+payment data loaded at edit open time
+let _nfSaving = false;          // guard against double-submit
+
 async function openNewFileModal(editFileNo = null) {
   // ── set mode FIRST ──
   _nfEditMode   = !!editFileNo;
