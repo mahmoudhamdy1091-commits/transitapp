@@ -655,12 +655,13 @@ async function submitEditFileFull() {
 
   try {
     // 1. Update PO
-    await apiPatch('purchase_orders',
+    const poPatch = await apiPatch('purchase_orders',
       { system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}` },
       { file_no:newFileNo, supplier, po_no:poNo||null, po_date:poDate||null,
         total_purchase:finalTotal, vehicle_count:vehicles.length,
         notes:notes||null }
     );
+    const poId = poPatch?.[0]?.id || null;
 
     // 2a. حذف السيارات التي أزالها المستخدم من الجدول
     const remainingVids = new Set(vehicles.filter(v=>v.vid).map(v=>v.vid));
@@ -782,7 +783,7 @@ async function submitEditFileFull() {
     // 4. تحديث القيد المحاسبي في مكانه (كل أسطر القيد)
     await updateJEInPlace({
       sys: state.system, fileNo: oldFileNo,
-      refTable: 'purchase_orders', refId: null,
+      refTable: 'purchase_orders', refId: poId,
       oldAmount: _originalPOTotal || finalTotal,
       newAmount: finalTotal,
       contactPatch: supplier !== _originalPOSupplier ? supplier : null,
