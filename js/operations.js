@@ -215,18 +215,21 @@ async function submitOpex() {
       exp_date: date, pay_method: method,
       document: doc||null, beneficiary: beneficiary||null, notes: notes||null
     };
-    await apiPost('operating_expenses', payload);
-    await logAudit('INSERT','operating_expenses', null, null, payload);
+    const ins = await apiPost('operating_expenses', payload);
+    const newId = ins?.[0]?.id || null;
     // قيد محاسبي مزدوج للمصروف التشغيلي
+    // ✅ ذرّياً: لو فشل القيد نتراجع عن حفظ المصروف حتى لا يبقى سجل بلا قيد (المشكلة السابقة)
     try {
       await je_opex({ sys:state.system, date, amount, expType:finalType, desc, method, refNo });
     } catch(jeErr) {
-      toast(`⚠️ تم الحفظ لكن فشل القيد المحاسبي: ${jeErr.message}`, 'warn');
+      if (newId) { try { await apiDelete('operating_expenses', { id:`eq.${newId}` }); } catch(_){} }
+      showFieldErr('opexError', `⚠️ فشل إنشاء القيد المحاسبي — لم يُحفظ المصروف: ${jeErr.message}`);
+      return;
     }
+    await logAudit('INSERT','operating_expenses', null, null, payload);
     markSaving('opexModal'); closeModal('opexModal');
     invalidateCache();
-    toast('✅ تم تسجيل المصروف التشغيلي','ok');
-    invalidateCache();
+    toast('✅ تم تسجيل المصروف التشغيلي وقيده','ok');
     await loadOpex();
   } catch(e) { showFieldErr('opexError','خطأ: '+e.message); }
 }
