@@ -1084,6 +1084,7 @@ async function submitEditPayment() {
         refTable: 'payments', refId: id,
         oldAmount, newAmount: amount,
         contactPatch: payer !== oldPayer ? payer : null,
+        newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ الدفعة الجديد
       });
 
       await logAudit('EDIT', 'payments', old.file_no, old, {payer,amount,method,date,doc}, `تعديل دفعة ${old.ref_no||id}`);
@@ -1256,6 +1257,7 @@ async function submitEditExpense() {
         sys: state.system, fileNo: old.file_no,
         refTable: 'expenses', refId: id,
         oldAmount, newAmount: amount,
+        newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ المصروف الجديد
       });
 
       await logAudit('EDIT', 'expenses', old.file_no, old, {desc,type,amount,date,method,doc}, `تعديل مصروف ${old.ref_no||id}`);
@@ -1325,6 +1327,7 @@ async function submitEditCollection() {
         sys: state.system, fileNo: old.file_no,
         refTable: 'collections', refId: id,
         oldAmount, newAmount: amount,
+        newDate: paid || old.paid_date,   // ✅ مزامنة تاريخ القيد مع تاريخ التحصيل الجديد
       });
 
       await logAudit('EDIT', 'collections', old.file_no, old, {amount,method,due,paid}, `تعديل تحصيل ${old.ref_no||id}`);

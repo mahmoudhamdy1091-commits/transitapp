@@ -771,6 +771,7 @@ async function submitEditFileFull() {
                 refTable: 'payments', refId: p.paymentId,
                 oldAmount: orig.paymentAmount, newAmount: p.paid,
                 contactPatch: contactChanged ? p.name : null,
+                newDate: p.payDate || poDate || null,   // ✅ مزامنة تاريخ قيد دفعة الشريك
               });
             }
           }
@@ -801,6 +802,7 @@ async function submitEditFileFull() {
       oldAmount: _originalPOTotal || finalTotal,
       newAmount: finalTotal,
       contactPatch: supplier !== _originalPOSupplier ? supplier : null,
+      newDate: poDate || null,   // ✅ مزامنة تاريخ قيد الشراء مع تاريخ السند الجديد
     });
 
     // 5. تحديث حالة الصفقة → pending_edit للموافقة

@@ -1361,6 +1361,7 @@ async function openEditPayoutModal(payoutId) {
             refTable: 'partner_payouts', refId: payoutId,
             oldAmount: +p.amount||0, newAmount,
             contactPatch: newPartner !== p.partner ? newPartner : null,
+            newDate,   // ✅ مزامنة تاريخ قيد صرف الشريك مع تاريخه الجديد
           });
         }
 

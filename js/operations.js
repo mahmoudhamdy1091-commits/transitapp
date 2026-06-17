@@ -266,6 +266,7 @@ async function submitEditOpex() {
       sys: state.system, fileNo: old?.file_no || null,
       refTable: 'operating_expenses', refId: id,
       oldAmount: +old?.amount||0, newAmount: amount,
+      newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ المصروف التشغيلي الجديد
     });
 
     // 3. إرسال للموافقة فقط إذا كان مرحّلاً
@@ -1458,11 +1459,15 @@ async function openEditSaleApproval(saleId, fileNo, invNo) {
           totalNew = checkedRows.reduce((s,r) => s + (parseFloat(r.querySelector('[name="sv-price"]')?.value)||0), 0);
 
           // ── 3. تحديث القيد في مكانه ──
-          if (wasPosted && (Math.abs(totalOld - totalNew) > 0.001 || newCustomer !== oldCustomer)) {
+          // ✅ يشمل الآن تغيّر التاريخ فقط (قيد البيع بلا ref_id — يُطابَق بالمبلغ القديم)
+          const oldDate = oldSales?.[0]?.sale_date || null;
+          const dateChangedSale = !!newDate && newDate !== oldDate;
+          if (wasPosted && (Math.abs(totalOld - totalNew) > 0.001 || newCustomer !== oldCustomer || dateChangedSale)) {
             await updateJEInPlace({
               sys, fileNo, refTable:'sales', refId: oldSales?.[0]?.id||null,
               oldAmount: totalOld, newAmount: totalNew,
               contactPatch: newCustomer !== oldCustomer ? newCustomer : null,
+              newDate: dateChangedSale ? newDate : null,   // ✅ مزامنة تاريخ قيد البيع
             });
           }
 
@@ -1821,11 +1826,14 @@ async function rejectItem(type, id) {
 
       // ✅ عكس القيد المحاسبي للقيمة الأصلية (وكذلك اسم الطرف لو تغيّر)
       const contactPatch = (srcType === 'payment' && oldRow.payer !== current.payer) ? oldRow.payer : null;
+      // ✅ إرجاع تاريخ القيد لتاريخ العملية الأصلي (اتساقاً مع مزامنة التاريخ عند التعديل)
+      const _dateField = { payments:'pay_date', expenses:'exp_date', collections:'paid_date', partner_payouts:'pay_date', sales:'sale_date', purchase_orders:'po_date', operating_expenses:'exp_date' }[tbl];
       await updateJEInPlace({
         sys: state.system, fileNo: oldRow.file_no,
         refTable: tbl, refId: id,
         oldAmount: newAmount, newAmount: oldAmount,
         contactPatch,
+        newDate: _dateField ? (oldRow[_dateField] || null) : null,
       });
 
       await logAudit('EDIT_REJECTED', tbl, oldRow.file_no, current, oldRow, `رفض تعديل ${cfg.label} ${oldRow.ref_no||id}`);

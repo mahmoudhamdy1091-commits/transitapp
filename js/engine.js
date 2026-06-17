@@ -74,10 +74,11 @@ function updateAdminPostToggleUI() {
 // يُحدِّث أسطر القيد الأصلي مباشرة دون إنشاء قيد جديد
 // الاستخدام: updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch })
 // ════════════════════════════════════════════════════════════════
-async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null }) {
+async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null, newDate = null }) {
   const amountChanged  = Math.abs((+oldAmount||0) - (+newAmount||0)) > 0.001;
   const contactChanged = contactPatch != null;
-  if (!amountChanged && !contactChanged) return;
+  const dateChanged    = newDate != null && newDate !== '';   // ✅ مزامنة تاريخ القيد مع تاريخ العملية
+  if (!amountChanged && !contactChanged && !dateChanged) return;
 
   try {
     let entryNo = null;
@@ -93,7 +94,8 @@ async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmo
     }
 
     // مسار احتياطي: بحث بالمبلغ ضمن آخر 40 قيد لهذا الملف — فقط لو ref_id غير موجود/غير مطابق
-    if (!entryNo && amountChanged) {
+    // ✅ يعمل أيضاً عند تغيّر التاريخ فقط (قيود الشراء/البيع بلا ref_id) — يطابق بالمبلغ القديم
+    if (!entryNo && (amountChanged || dateChanged)) {
       const filter = {
         select: 'entry_no,dr_amount,cr_amount',
         system_type: `eq.${sys}`,
@@ -115,7 +117,7 @@ async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmo
 
     // جيب كل أسطر هذا القيد بالـ entry_no
     const allLines = await apiGetAll('journal_entries', {
-      select: 'id,dr_amount,cr_amount,contact_name',
+      select: 'id,dr_amount,cr_amount,contact_name,entry_date',
       system_type: `eq.${sys}`,
       entry_no: `eq.${entryNo}`,
     });
@@ -128,6 +130,10 @@ async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmo
       }
       if (contactChanged && contactPatch && (line.contact_name || (+line.cr_amount||0) > 0)) {
         patch.contact_name = contactPatch;
+      }
+      // ✅ مزامنة تاريخ القيد مع تاريخ العملية الجديد (يشمل كل أسطر القيد)
+      if (dateChanged && line.entry_date !== newDate) {
+        patch.entry_date = newDate;
       }
       if (Object.keys(patch).length) {
         await apiPatch('journal_entries', { id: `eq.${line.id}` }, patch);

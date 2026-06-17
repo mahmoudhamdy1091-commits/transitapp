@@ -114,9 +114,16 @@ async function loadJournal() {
           : `<span style="color:var(--red)">دائن ${fmt(l.cr_amount)}</span>`;
         return `<span style="font-size:12px;color:var(--text2);display:inline-block;margin-left:8px">${l.account_code||''} ${l.account_name||'—'}: ${side}</span>`;
       });
+      // ✅ قيمة سند البيع = الإيراد (حسابات 4xxx) فقط — بدون تكلفة البضاعة المباعة.
+      // قيد البيع مركّب (إيراد + COGS) فمجموع المدين يضخّم القيمة وKPI المبيعات.
+      let displayAmount = g.totalDr;
+      if (g.type === 'sale') {
+        const rev = g.lines.reduce((s,l) => s + ((l.account_code||'').startsWith('4') ? (+l.cr_amount||0) : 0), 0);
+        if (rev > 0) displayAmount = rev;
+      }
       return {
         type:    g.type, date: g.date,
-        amount:  g.totalDr, sign: g.sign,
+        amount:  displayAmount, sign: g.sign,
         title:   g.desc || '—',
         entryNo: g.no,  fileNo: g.file_no,
         meta,   raw: g,
