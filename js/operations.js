@@ -257,14 +257,15 @@ async function submitEditOpex() {
     const old = oldRows?.[0];
 
     // 1. تحديث السجل
+    // ✅ جدول operating_expenses بلا عمود post_status (لا دورة اعتماد) — لا نضبطه هنا
+    //    (كان يسبب فشل التعديل: "column post_status does not exist")
     await apiPatch('operating_expenses', { id:`eq.${id}` }, {
       exp_type: finalType, description: desc, amount,
       exp_date: date, pay_method: method,
       document: doc||null, beneficiary: beneficiary||null, notes: notes||null,
-      post_status: old?.post_status === 'posted' ? 'pending_edit' : (old?.post_status || 'pending_edit'),
     });
 
-    // 2. تحديث القيد في مكانه
+    // 2. تحديث القيد في مكانه (المبلغ + التاريخ)
     await updateJEInPlace({
       sys: state.system, fileNo: old?.file_no || null,
       refTable: 'operating_expenses', refId: id,
@@ -272,21 +273,14 @@ async function submitEditOpex() {
       newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ المصروف التشغيلي الجديد
     });
 
-    // 3. إرسال للموافقة فقط إذا كان مرحّلاً
-    if (old?.post_status === 'posted' || old?.post_status === 'pending_edit') {
-      await updateApprovalBadge();
-      markSaving('opexModal'); closeModal('opexModal');
-      toast('⚠️ تم تعديل المصروف التشغيلي والقيد — في انتظار الموافقة','warn');
-    } else {
-      markSaving('opexModal'); closeModal('opexModal');
-      toast('✅ تم تعديل المصروف','ok');
-    }
+    markSaving('opexModal'); closeModal('opexModal');
+    toast('✅ تم تعديل المصروف التشغيلي وقيده','ok');
     await loadOpex();
   } catch(e) { showFieldErr('opexError','خطأ: '+e.message); }
 }
 
 async function deleteOpex(id) {
-  showConfirm('إلغاء مصروف تشغيلي', 'سيتم إلغاء هذا المصروف بقيد عكسي محاسبي. لا يمكن التراجع.', async () => {
+  showConfirm('حذف مصروف تشغيلي', 'سيتم حذف هذا المصروف وعكس قيده المحاسبي. لا يمكن التراجع.', async () => {
     try {
       const rows = await apiGetAll('operating_expenses', { select:'*', system_type:`eq.${state.system}`, id:`eq.${id}` });
       const o = rows?.[0];
@@ -309,13 +303,12 @@ async function deleteOpex(id) {
           ],
         });
       }
-      await apiPatch('operating_expenses', { id:`eq.${id}` }, {
-        post_status: 'voided',
-        notes: `${o.notes ? o.notes + ' | ' : ''}مُلغى بتاريخ ${today()}`,
-      });
-      await logAudit('VOID','operating_expenses', null, o, { voided_at: today() }, `إلغاء مصروف تشغيلي بقيد عكسي ${o.ref_no||''}`);
+      // ✅ operating_expenses بلا عمود post_status — لا يمكن وضع voided (كان يسبب فشل الحذف).
+      //    نحذف السجل فعلياً؛ القيد العكسي يبقى في اليومية كأثر تدقيق كامل.
+      await apiDelete('operating_expenses', { id:`eq.${id}` });
+      await logAudit('DELETE','operating_expenses', null, o, { deleted_at: today() }, `حذف مصروف تشغيلي بقيد عكسي ${o.ref_no||''}`);
       invalidateCache();
-      toast('✅ تم إلغاء المصروف بقيد عكسي','ok');
+      toast('✅ تم حذف المصروف بقيد عكسي','ok');
       await loadOpex();
     } catch(e) { toast('خطأ: '+e.message,'err'); }
   });
