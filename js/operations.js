@@ -1924,60 +1924,81 @@ async function cancelApprovalRow(type, id) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
+// ════════════════════════════════════════════════════════════
+// ✅ إنشاء قيد الموافقة بأمان (idempotent) — يُنشئ القيد فقط لو غير موجود.
+// يُستخدم في approveAll بترتيب آمن: (قيد ثم ترحيل) حتى لا يبقى سجل posted بلا قيد
+// لو انقطعت العملية. فحص-القيد-الموجود يمنع تكرار القيد عند إعادة المحاولة.
+// ════════════════════════════════════════════════════════════
+async function _ensureApprovalJE(r, sys) {
+  const t = r._type;
+  const refMap = { collection:'collections', payment:'payments', expense:'expenses', payout:'partner_payouts' };
+
+  // الأنواع ذات ref_id: افحص وجود القيد بالـ ref_id لتفادي التكرار
+  if (refMap[t] && r.id != null) {
+    const ex = await apiGet('journal_entries', {
+      select:'entry_no', system_type:`eq.${sys}`,
+      ref_table:`eq.${refMap[t]}`, ref_id:`eq.${r.id}`, post_status:'eq.posted', limit:1,
+    });
+    if (ex?.length) return; // القيد موجود بالفعل
+  }
+
+  if (t === 'payment') {
+    await je_payment({ sys, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no, refId:r.id||null, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'تحويل بنكي' });
+  } else if (t === 'expense') {
+    await je_expense({ sys, date:r.exp_date||today(), amount:+r.amount||0, fileNo:r.file_no, refId:r.id||null, desc:r.description||'مصروف', expType:r.exp_type||'أخرى', method:r.pay_method||'نقد' });
+  } else if (t === 'payout') {
+    await je_payout({ sys, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no, refId:r.id||null, partner:r.partner||'', method:r.pay_method||'نقد' });
+  } else if (t === 'collection') {
+    if (r.paid_date) await je_collection({ sys, date:r.paid_date, amount:+r.amount||0, fileNo:r.file_no, refId:r.id||null, customer:r.customer||'', invNo:r.inv_no||'', method:r.pay_method||'تحويل بنكي' });
+  } else if (t === 'purchase' && r.file_no) {
+    const ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${sys}`, ref_table:'eq.purchase_orders', file_no:`eq.${r.file_no}`, post_status:'eq.posted', limit:1 });
+    if (!ex?.length) await je_purchase({ sys, date:r.po_date||today(), amount:+r.total_purchase||0, fileNo:r.file_no, supplier:r.supplier||'' });
+  } else if (t === 'sale' && r.inv_no && r.file_no) {
+    const rows = await apiGetAll('journal_entries', { select:'entry_no,description', system_type:`eq.${sys}`, ref_table:'eq.sales', file_no:`eq.${r.file_no}`, post_status:'eq.posted' });
+    const has = (rows||[]).some(j => (j.description||'').includes(r.inv_no));
+    if (!has) {
+      const allInvSales = await apiGetAll('sales', { select:'sale_price,vin', system_type:`eq.${sys}`, file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}` });
+      const totalAmt = (allInvSales||[]).reduce((s,x)=>s+(+x.sale_price||0),0);
+      const cogs = await calcCOGS(sys, r.file_no, (allInvSales||[]).length);
+      if (totalAmt > 0) await je_sale({ sys, date:r.sale_date||today(), amount:totalAmt, cost:cogs, fileNo:r.file_no, customer:r.customer||'', invNo:r.inv_no||'' });
+    }
+    // collections المدفوعة المرتبطة بالفاتورة — قيد (لو غير موجود) ثم ترحيل
+    try {
+      const linkedCols = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}`, post_status:'eq.draft' });
+      for (const col of (linkedCols||[])) {
+        if (!col.paid_date) continue;
+        const exC = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${sys}`, ref_table:'eq.collections', ref_id:`eq.${col.id}`, post_status:'eq.posted', limit:1 });
+        if (!exC?.length) await je_collection({ sys, date:col.paid_date, amount:+col.amount, fileNo:col.file_no, refId:col.id||null, customer:col.customer||r.customer||'', invNo:col.inv_no||r.inv_no||'', method:col.pay_method||'تحويل بنكي' });
+        await apiPatch('collections', { id:`eq.${col.id}`, post_status:`eq.draft` }, { post_status:'posted' });
+      }
+    } catch(e) { console.warn('ensureApprovalJE linked cols:', e.message); }
+  }
+}
+
 async function approveAll() {
   const items = approvalState.filtered;
   if (!items.length) return;
   showConfirm(`موافقة على الكل`, `هل تريد الموافقة على ${items.length} عملية دفعة واحدة؟`, async () => {
-    try {
-      // أولاً: رحّل كل السجلات دفعة واحدة — مع فحص idempotency (لو السجل اعتُمد مسبقاً نتجاهله)
-      const patchResults = await Promise.all(items.map(r =>
-        apiPatch(APPROVAL_CONFIG[r._type].table, { id:`eq.${r.id}`, post_status:`eq.draft` }, { post_status:'posted' })
-      ));
-      const toProcess = items.filter((r,i) => patchResults[i]?.length);
-      // ثانياً: ولّد القيود المحاسبية لكل عملية (نفس منطق approveItem)
-      for (const r of toProcess) {
-        try {
-          if (r._type === 'purchase' && r.file_no) {
-            await je_purchase({ sys:state.system, date:r.po_date||today(), amount:+r.total_purchase||0, fileNo:r.file_no, supplier:r.supplier||'' });
-          } else if (r._type === 'sale' && r.inv_no && r.file_no) {
-            const allInvSales = await apiGetAll('sales', { select:'sale_price,vin', system_type:`eq.${state.system}`, file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}` });
-            const totalAmt = (allInvSales||[]).reduce((s,x)=>s+(+x.sale_price||0),0);
-            const cogs = await calcCOGS(state.system, r.file_no, (allInvSales||[]).length);
-            if (totalAmt > 0) await je_sale({ sys:state.system, date:r.sale_date||today(), amount:totalAmt, cost:cogs, fileNo:r.file_no, customer:r.customer||'', invNo:r.inv_no||'' });
-            // OPTION B: وافق تلقائياً على collections مرتبطة بهذه الفاتورة draft + paid_date
-            try {
-              const linkedCols = await apiGetAll('collections', {
-                select:'*', system_type:`eq.${state.system}`,
-                file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}`, post_status:`eq.draft`,
-              });
-              for (const col of (linkedCols||[])) {
-                if (!col.paid_date) continue;
-                const colPatched = await apiPatch('collections', { id:`eq.${col.id}`, post_status:`eq.draft` }, { post_status:'posted' });
-                if (!colPatched?.length) continue;
-                await je_collection({ sys:state.system, date:col.paid_date, amount:+col.amount, fileNo:col.file_no,refId:col.id||null, customer:col.customer||r.customer||'', invNo:col.inv_no||r.inv_no||'', method:col.pay_method||'تحويل بنكي' });
-              }
-            } catch(e) { console.warn(`approveAll auto-approve collections for ${r.inv_no}:`, e.message); }
-          } else if (r._type === 'collection' && r.paid_date) {
-            // FIX: القيد يُنشأ فقط إذا كان paid_date موجوداً (مدفوع فعلاً)
-            await je_collection({ sys:state.system, date:r.paid_date, amount:+r.amount||0, fileNo:r.file_no,refId:r.id||null, customer:r.customer||'', invNo:r.inv_no||'', method:r.pay_method||'تحويل بنكي' });
-          } else if (r._type === 'payment') {
-            await je_payment({ sys:state.system, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no,refId:r.id||null, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'تحويل بنكي' });
-          } else if (r._type === 'expense') {
-            await je_expense({ sys:state.system, date:r.exp_date||today(), amount:+r.amount||0, fileNo:r.file_no,refId:r.id||null, desc:r.description||'مصروف', expType:r.exp_type||'أخرى', method:r.pay_method||'نقد' });
-          } else if (r._type === 'payout') {
-            await je_payout({ sys:state.system, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no,refId:r.id||null, partner:r.partner||'', method:r.pay_method||'نقد' });
-          }
-        } catch(jeErr) {
-          console.warn(`approveAll je_ failed for ${r._type} ${r.id}:`, jeErr.message);
-          // ✅ فشل إنشاء القيد بعد الترحيل في الخطوة 1 — رجّع السجل لـ draft ليظهر في قائمة الاعتمادات من جديد
-          await apiPatch(APPROVAL_CONFIG[r._type].table, { id:`eq.${r.id}` }, { post_status:'draft' });
-          toast(`⚠️ فشلت الموافقة على ${APPROVAL_CONFIG[r._type].label} (${r._desc||r.id}) — أُعيد لقائمة الاعتمادات: ${jeErr.message}`,'warn');
-        }
+    const sys = state.system;
+    let okCount = 0, failCount = 0;
+    // ✅ ترتيب آمن ضد الانقطاع/السباق: لكل عملية → أنشئ القيد (لو غير موجود) → ثم رحّل السجل.
+    //    السجل لا يصير "posted" قبل وجود قيده؛ فلو انقطعت العملية يبقى draft ويعود لقائمة الاعتمادات.
+    for (const r of items) {
+      const cfg = APPROVAL_CONFIG[r._type];
+      if (!cfg) continue;
+      try {
+        await _ensureApprovalJE(r, sys);
+        const patched = await apiPatch(cfg.table, { id:`eq.${r.id}`, post_status:`eq.draft` }, { post_status:'posted' });
+        if (patched?.length) okCount++;
+      } catch(jeErr) {
+        failCount++;
+        console.warn(`approveAll failed ${r._type} ${r.id}:`, jeErr.message);
+        toast(`⚠️ فشلت الموافقة على ${cfg.label} (${r._desc||r.ref_no||r.id}) — تبقى في الانتظار: ${jeErr.message}`,'warn');
       }
-      invalidateCache();
-      toast(`✅ تمت الموافقة على ${items.length} عملية`,'ok');
-      await loadApprovalQueue();
-    } catch(e) { toast('خطأ: '+e.message,'err'); }
+    }
+    invalidateCache();
+    toast(`✅ تمت الموافقة على ${okCount} عملية${failCount?` · ${failCount} فشلت وتبقى في الانتظار`:''}`, failCount?'warn':'ok');
+    await loadApprovalQueue();
   });
 }
 
@@ -3847,7 +3868,7 @@ async function checkMissingEntries() {
     _missingJEList = missing;
 
     el('missingJETitle').textContent = `⚠️ ${missing.length} سجل مرحّل بدون قيد محاسبي`;
-    el('missingJEBody').innerHTML = `<div style="overflow-x:auto;max-height:320px;overflow-y:auto">
+    el('missingJEBody').innerHTML = `<div style="margin-bottom:10px"><button class="btn btn-sm btn-primary" onclick="createAllMissingJE()">⚡ إنشاء كل القيود الناقصة (${missing.length})</button></div><div style="overflow-x:auto;max-height:320px;overflow-y:auto">
         <table style="width:100%;border-collapse:collapse">
           <thead><tr style="background:var(--card2)">
             <th style="padding:7px 10px;text-align:right">النوع</th>
@@ -3893,6 +3914,37 @@ async function createMissingJE(idx) {
   } catch(e) {
     toast(`⚠️ فشل إنشاء القيد: ${e.message}`,'err');
   }
+}
+
+// ✅ إنشاء كل القيود الناقصة دفعة واحدة (شبكة أمان لإصلاح اليتامى من سباق الموافقات)
+async function createAllMissingJE() {
+  const list = _missingJEList || [];
+  if (!list.length) { toast('لا يوجد ما يُصلَح','ok'); return; }
+  const sys = state.system;
+  let ok = 0, fail = 0;
+  for (const m of list) {
+    const r = m.row;
+    try {
+      // فحص وجود القيد أولاً (تفادي التكرار)
+      const ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${sys}`, ref_table:`eq.${m.table}`, ref_id:`eq.${r.id}`, post_status:'eq.posted', limit:1 });
+      if (ex?.length) { ok++; continue; }
+      if (m.table === 'expenses') {
+        await je_expense({ sys, date:r.exp_date||r.expense_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, desc:r.description||'مصروف', expType:r.exp_type||r.category||'أخرى', method:r.pay_method||'نقد' });
+      } else if (m.table === 'payments') {
+        await je_payment({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'نقد' });
+      } else if (m.table === 'collections') {
+        if (!r.paid_date) continue;
+        await je_collection({ sys, date:r.paid_date, amount:+r.amount, fileNo:r.file_no, refId:r.id, customer:r.customer||'—', invNo:r.inv_no||'', method:r.pay_method||'نقد' });
+      } else if (m.table === 'partner_payouts') {
+        await je_payout({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, partner:r.partner||'', method:r.pay_method||'نقد' });
+      }
+      ok++;
+    } catch(e) { fail++; console.warn('createAllMissingJE:', m.table, r.id, e.message); }
+  }
+  invalidateCache();
+  toast(`✅ تم إنشاء ${ok} قيد${fail?` · ${fail} فشل`:''}`, fail?'warn':'ok');
+  closeModal('missingJEModal');
+  await checkMissingEntries(); // إعادة فحص لتأكيد عدم بقاء يتامى
 }
 
 function toggleJELines(row) {

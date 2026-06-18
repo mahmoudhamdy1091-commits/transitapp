@@ -253,14 +253,24 @@ async function apiGetAll(table, params = {}) {
   if (!system_type || !system_type.startsWith('eq.')) {
     return apiGet(table, params);
   }
+  // ✅ إصلاح جذري: لو select محدد بلا "id" نحقنه — حتى تتم إزالة التكرار بالـ id الحقيقي.
+  //    بدون id كانت الصفوف المتطابقة محتوىً (مثل دفعتين بنفس المبلغ والحالة) تُدمَج خطأً
+  //    عبر JSON.stringify فينقص الإجمالي (كان سبب ظهور "تم دفعه" أقل من الحقيقي).
+  let qParams = params, qRest = rest;
+  if (params.select && params.select !== '*' && !/(^|,)\s*id\s*(,|$)/.test(params.select)) {
+    const sel = 'id,' + params.select;
+    qParams = { ...params, select: sel };
+    qRest   = { ...rest,   select: sel };
+  }
   const [matched, nullRows] = await Promise.all([
-    apiGet(table, params),
-    apiGet(table, { ...rest, system_type: 'is.null' }),
+    apiGet(table, qParams),
+    apiGet(table, { ...qRest, system_type: 'is.null' }),
   ]);
   const seen = new Set();
   const out = [];
   [...(matched||[]), ...(nullRows||[])].forEach(r => {
-    const key = r.id ?? JSON.stringify(r);
+    // نزيل التكرار بالـ id فقط؛ لو غاب (نظرياً) لا ندمج بالمحتوى لتفادي حذف صفوف صحيحة متطابقة
+    const key = (r.id != null) ? ('id:' + r.id) : ('row:' + (seen.size));
     if (!seen.has(key)) { seen.add(key); out.push(r); }
   });
   return out;
