@@ -15,7 +15,7 @@ const OPEX_COLORS = {
 async function showOpex() {
   hideAllViews();
   el('opexView').style.display = 'block';
-  el('topBarTitle').textContent = 'المصاريف التشغيلية';
+  el('topBarTitle').textContent = 'مصروفات تشغيلية';
   el('topBarSub').textContent   = `نظام ${state.system}`;
   if(el('opexSystemLabel')) el('opexSystemLabel').textContent = `نظام ${state.system}`;
   navActive('nav-opex');

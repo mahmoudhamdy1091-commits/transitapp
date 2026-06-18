@@ -164,8 +164,8 @@
           <div class="nav-item" onclick="showTransactions('payouts')">
             <span class="ni-icon">👥</span><span>مسحوبات الشركاء</span>
           </div>
-          <div class="nav-item" onclick="showTransactions('opex')">
-            <span class="ni-icon">💼</span><span>مصروفات عامة</span>
+          <div class="nav-item" id="nav-opex" onclick="showOpex()">
+            <span class="ni-icon">💼</span><span>مصروفات تشغيلية</span>
           </div>
           <div class="nav-item" id="nav-warehouses" onclick="showWarehouses()">
             <span class="ni-icon">🏪</span><span>المخازن</span>
@@ -194,9 +194,6 @@
           </div>
           <div class="nav-item" onclick="showReport('partners')">
             <span class="ni-icon">🤲</span><span>تقرير الشركاء</span>
-          </div>
-          <div class="nav-item" onclick="showReport('opex')">
-            <span class="ni-icon">💼</span><span>تقرير التشغيلية</span>
           </div>
         </div>
       </div>
@@ -808,7 +805,7 @@
         <!-- Header -->
         <div class="section-header" style="margin-bottom:16px">
           <div>
-            <div class="section-title">💼 المصاريف التشغيلية</div>
+            <div class="section-title">💼 مصروفات تشغيلية</div>
             <div class="section-sub" id="opexSystemLabel">نظام BOX</div>
           </div>
           <div class="section-actions">
@@ -883,7 +880,6 @@
               <button class="btn btn-sm journal-period-btn"        id="rtype-sales"     onclick="setReportType('sales')">💹 المبيعات</button>
               <button class="btn btn-sm journal-period-btn"        id="rtype-expenses"  onclick="setReportType('expenses')">💸 المصاريف</button>
               <button class="btn btn-sm journal-period-btn"        id="rtype-partners"  onclick="setReportType('partners')">👥 الشركاء</button>
-              <button class="btn btn-sm journal-period-btn"        id="rtype-opex"      onclick="setReportType('opex')">💼 التشغيلية</button>
             </div>
           </div>
 
