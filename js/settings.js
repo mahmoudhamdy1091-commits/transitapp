@@ -4,6 +4,52 @@
 // ╚══════════════════════════════════════════════════════════╝
 
 // ════════════════════════════════════════
+// سجل العملية (Audit Trail) لكل سجل — يُفتح من قائمة ⋮ (المرحلة ج)
+// ════════════════════════════════════════
+async function showRecordAudit({ table, fileNo, refNo, id, title } = {}) {
+  if (!table) return;
+  document.getElementById('_recAuditModal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = '_recAuditModal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div dir="rtl" style="width:100%;max-width:460px;max-height:82vh;overflow:auto;background:var(--card);border:1px solid var(--border);border-radius:var(--radius)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)">
+        <div style="font-size:15px;font-weight:700">📜 سجل العملية</div>
+        <button onclick="document.getElementById('_recAuditModal').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text2)">✕</button>
+      </div>
+      <div style="padding:8px 18px;background:var(--card2);font-size:12px;color:var(--text2)">${title || table}</div>
+      <div id="_recAuditBody" style="padding:18px"><div style="color:var(--text2);font-size:13px;text-align:center">⏳ جاري التحميل...</div></div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  // ضمان الربط الدقيق: لو ما عندناش ref_no نجيبه من السجل (سجل الإنشاء يُخزَّن بالـ ref_no)
+  if (!refNo && id) {
+    try { const rec = await apiGet(table, { select:'*', id:`eq.${id}`, limit:1 }); const r0 = rec?.[0]||{}; refNo = r0.ref_no || r0.pay_id || r0.inv_no || null; } catch(_) {}
+  }
+
+  let trail = [];
+  try { trail = await getRecordAuditTrail({ table, fileNo, refNo, id }); } catch(_) {}
+  const body = document.getElementById('_recAuditBody');
+  if (!body) return;
+  if (!trail.length) { body.innerHTML = `<div style="color:var(--text2);font-size:13px;text-align:center;padding:14px">لا يوجد سجل متتبَّع لهذه العملية</div>`; return; }
+
+  body.innerHTML = `<div style="position:relative">
+    <div style="position:absolute;right:15px;top:6px;bottom:18px;width:2px;background:var(--border)"></div>
+    ${trail.map(t => `
+      <div style="display:flex;gap:12px;position:relative;padding-bottom:16px">
+        <div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:var(--card2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;z-index:1;font-size:14px">${t.icon}</div>
+        <div style="flex:1;padding-top:3px">
+          <div style="font-size:13px;font-weight:700">${t.label}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">بواسطة <span style="color:var(--text)">${(t.email||'').split('@')[0]}</span> · ${fmtDate(t.date)}</div>
+          ${t.notes ? `<div style="font-size:11px;color:var(--text2);margin-top:2px;opacity:.85">${t.notes}</div>` : ''}
+        </div>
+      </div>`).join('')}
+  </div>`;
+}
+
+// ════════════════════════════════════════
 // ACTIVITY LOG
 // ════════════════════════════════════════
 let _activityData = [];

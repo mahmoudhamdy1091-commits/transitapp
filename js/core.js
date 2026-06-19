@@ -525,6 +525,28 @@ async function getRecordAuditTrail({ table, fileNo, refNo, id } = {}) {
   }));
 }
 
+/**
+ * خريطة "من أنشأ" لكل سجل (من قيود INSERT في audit_log) — لعمود "بواسطة".
+ * المفتاح = ref_no / pay_id / inv_no الموجود داخل new_value.
+ * @returns {Promise<Object<string,string>>} { key: user_email }
+ */
+async function getCreatorsMap(table, fileNo) {
+  const map = {};
+  if (!table) return map;
+  try {
+    const params = { select:'new_value,user_email', system_type:`eq.${state.system}`, table_name:`eq.${table}`, action:'eq.INSERT', limit:2000 };
+    if (fileNo) params.file_no = `eq.${fileNo}`;
+    const rows = (await apiGetAll('audit_log', params)) || [];
+    rows.forEach(r => {
+      if (!r.user_email) return;
+      let v = null; try { v = JSON.parse(r.new_value); } catch(_) {}
+      const key = v && (v.ref_no || v.pay_id || v.inv_no);
+      if (key && !map[key]) map[key] = r.user_email;
+    });
+  } catch(e) { console.warn('getCreatorsMap:', e.message); }
+  return map;
+}
+
 // ════════════════════════════════════════
 // AUTH
 // ════════════════════════════════════════

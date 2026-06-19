@@ -872,6 +872,7 @@ async function loadPaymentsTab(fn, sys) {
     if (!data?.length) { el('paymentsTable').innerHTML = emptyHTML('💳','لا توجد دفعات'); return; }
     // ✅ الإجمالي يستثني الملغية
     const total = data.filter(isEffective).reduce((s,p)=>s+(+p.amount||0),0);
+    const creators = await getCreatorsMap('payments', fn); // عمود "بواسطة"
 
     // كشف الدفعات المشبوهة: نفس المبلغ + الدافع + التاريخ + طريقة الدفع + رقم المستند
     // يستثني الملغاة (voided) لأن إلغاء دفعة وإعادتها يعطي نفس البيانات
@@ -907,7 +908,7 @@ async function loadPaymentsTab(fn, sys) {
         <thead><tr>
           <th style="width:36px;text-align:center">#</th>
           <th>رقم الدفعة</th><th>الدافع</th><th>المبلغ</th><th>طريقة الدفع</th>
-          <th>المستند</th><th>التاريخ</th><th>ملاحظات</th><th></th>
+          <th>المستند</th><th>التاريخ</th><th>ملاحظات</th><th>بواسطة</th><th></th>
         </tr></thead>
         <tbody>
           ${data.filter(isVisible).map((p,i)=>{
@@ -925,6 +926,7 @@ async function loadPaymentsTab(fn, sys) {
               <td class="mono">${p.document||'—'}</td>
               <td class="mono">${fmtDate(p.pay_date)}</td>
               <td class="text-muted" style="font-size:13px">${p.notes||''}</td>
+              <td style="font-size:12px;color:var(--text2)">${((creators[p.ref_no]||creators[p.pay_id]||'').split('@')[0])||'—'}</td>
               <td style="text-align:center">
                 ${!isVoided ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxPayment(this)" data-id="${p.id}" data-fn="${fn}" title="إجراءات">⋮</button>` : ''}
               </td>
@@ -933,7 +935,7 @@ async function loadPaymentsTab(fn, sys) {
           <tr style="background:var(--card2);font-weight:700">
             <td colspan="3" style="padding:10px 16px">الإجمالي (${data.length} دفعة)</td>
             <td class="mono text-blue" style="padding:10px 16px">${fmt(total)}</td>
-            <td colspan="5"></td>
+            <td colspan="6"></td>
           </tr>
         </tbody>
       </table>`;
@@ -946,6 +948,7 @@ async function loadExpensesTab(fn, sys) {
     if (!data?.length) { el('expensesTable').innerHTML = emptyHTML('💸','لا توجد مصاريف'); return; }
     // ✅ الإجمالي يستثني الملغية
     const total = data.filter(isEffective).reduce((s,e)=>s+(+e.amount||0),0);
+    const creators = await getCreatorsMap('expenses', fn); // عمود "بواسطة"
 
     // كشف المصاريف المشبوهة
     const dupKeyCount = {};
@@ -966,7 +969,7 @@ async function loadExpensesTab(fn, sys) {
         <thead><tr>
           <th style="width:36px;text-align:center">#</th>
           <th>رقم المصروف</th><th>الوصف</th><th>النوع</th><th>المبلغ</th>
-          <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th><th></th>
+          <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th><th>بواسطة</th><th></th>
         </tr></thead>
         <tbody>
           ${data.filter(isVisible).map((e,i)=>{
@@ -981,6 +984,7 @@ async function loadExpensesTab(fn, sys) {
               <td>${e.pay_method||'—'}</td>
               <td class="mono">${e.document||'—'}</td>
               <td class="mono">${fmtDate(e.exp_date)}</td>
+              <td style="font-size:12px;color:var(--text2)">${((creators[e.ref_no]||'').split('@')[0])||'—'}</td>
               <td style="text-align:center">
                 <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxExpense(this)" data-id="${e.id}" data-fn="${fn}" title="إجراءات">⋮</button>
               </td>
@@ -989,7 +993,7 @@ async function loadExpensesTab(fn, sys) {
           <tr style="background:var(--card2);font-weight:700">
             <td colspan="4" style="padding:10px 16px">الإجمالي (${data.filter(isEffective).length} مصروف)</td>
             <td class="mono text-red" style="padding:10px 16px">${fmt(total)}</td>
-            <td colspan="4"></td>
+            <td colspan="5"></td>
           </tr>
         </tbody>
       </table>`;
@@ -1023,6 +1027,7 @@ async function loadSalesTab(fn, sys) {
     const totalCars    = data.reduce((s,v)=>s+(+v.sale_price||0),0);
     const totalCharges = (charges||[]).reduce((s,c)=>s+(+c.amount||0),0);
     const total        = totalCars + totalCharges;
+    const creators = await getCreatorsMap('sales', fn); // عمود "بواسطة"
 
     const rows = Object.values(invoices).map(inv => {
       const carsTotal   = inv.items.reduce((s,i)=>s+(+i.sale_price||0),0);
@@ -1045,6 +1050,7 @@ async function loadSalesTab(fn, sys) {
           ${fmt(grandTotal)}
           ${chargesBadge}
         </td>
+        <td style="font-size:12px;color:var(--text2)">${((creators[inv.inv_no]||'').split('@')[0])||'—'}</td>
         <td style="text-align:center">
           <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxSale(this)" data-inv="${inv.inv_no}" data-fn="${fn}" data-id="${inv.items[0]?.id||''}" title="إجراءات">⋮</button>
         </td>
@@ -1065,12 +1071,12 @@ async function loadSalesTab(fn, sys) {
       <table class="data-table">
         <thead><tr>
           <th>رقم الفاتورة</th><th>العميل</th><th>VINs</th>
-          <th style="text-align:center">عدد السيارات</th><th>الإجمالي</th><th></th>
+          <th style="text-align:center">عدد السيارات</th><th>الإجمالي</th><th>بواسطة</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
         <tfoot style="background:var(--card2)">
           <tr><td colspan="4" style="padding:10px 16px;font-weight:700">الإجمالي الكلي</td>
-          <td class="mono text-green" style="padding:10px 16px;font-weight:700">${fmt(total)}</td><td></td></tr>
+          <td class="mono text-green" style="padding:10px 16px;font-weight:700">${fmt(total)}</td><td colspan="2"></td></tr>
         </tfoot>
       </table>`;
   } catch(e) { el('salesTable').innerHTML = errHTML(e.message); }
@@ -1177,6 +1183,7 @@ async function loadCollectionsTab(fn, sys) {
     const totalInvoiced = activeData.reduce((s,c)=>s+(+c.amount||0),0);
     const totalPaid     = paidData.reduce((s,c)=>s+(+c.amount||0),0);
     const totalPending  = pendingData.reduce((s,c)=>s+(+c.amount||0),0);
+    const creators = await getCreatorsMap('collections', fn); // عمود "بواسطة"
 
     const csvRows = data.map(c=>[c.ref_no||'—', c.inv_no||'—', c.customer||'—', c.vin||'—', +c.amount||0, c.pay_method||'—', c.due_date||'—', c.paid_date||'—', c.paid_date?'محصّل':'مستحق']);
     const csvHeaders = ['رقم التحصيل','رقم الفاتورة','العميل','الشاصي','المبلغ','طريقة الدفع','تاريخ الاستحقاق','تاريخ الدفع','الحالة'];
@@ -1199,7 +1206,7 @@ async function loadCollectionsTab(fn, sys) {
         <thead><tr>
           <th style="width:36px;text-align:center">#</th>
           <th>رقم التحصيل</th><th>رقم الفاتورة</th><th>العميل</th><th>الشاصي</th>
-          <th>المبلغ</th><th>طريقة الدفع</th><th>الاستحقاق</th><th>تاريخ الدفع</th><th>الحالة</th><th></th>
+          <th>المبلغ</th><th>طريقة الدفع</th><th>الاستحقاق</th><th>تاريخ الدفع</th><th>الحالة</th><th>بواسطة</th><th></th>
         </tr></thead>
         <tbody>
           ${data.map((c,i)=>{
@@ -1216,6 +1223,7 @@ async function loadCollectionsTab(fn, sys) {
             <td class="mono">${fmtDate(c.due_date)}</td>
             <td class="mono">${c.paid_date ? fmtDate(c.paid_date) : '—'}</td>
             <td>${isVoidedC ? '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">ملغى</span>' : statusBadge(c)}</td>
+            <td style="font-size:12px;color:var(--text2)">${((creators[c.ref_no]||'').split('@')[0])||'—'}</td>
             <td style="text-align:center">
               ${!isVoidedC ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxCollection(this)" data-id="${c.id}" data-fn="${fn}" data-paid="${c.paid_date?'1':'0'}" title="إجراءات">⋮</button>` : ''}
             </td>
@@ -1227,7 +1235,7 @@ async function loadCollectionsTab(fn, sys) {
               محصّل: <span style="color:var(--green)">${fmt(totalPaid)}</span>
               ${totalPending>0?` · منتظر: <span style="color:var(--accent)">${fmt(totalPending)}</span>`:''}
             </td>
-            <td></td>
+            <td colspan="2"></td>
           </tr>
         </tbody>
       </table>`;
@@ -1248,6 +1256,7 @@ async function loadPayoutsTab(fn, sys) {
     const capTotal  = activePayouts.reduce((s,p)=>s+(+p.capital_amount||0),0);
     const profTotal = activePayouts.reduce((s,p)=>s+(+p.profit_amount||0),0);
     const advTotal  = activePayouts.reduce((s,p)=>s+(+p.advance_amount||0),0);
+    const creators = await getCreatorsMap('partner_payouts', fn); // عمود "بواسطة"
 
     const rows = data.map(p => {
       const hasSplit = (+p.capital_amount||0) + (+p.profit_amount||0) + (+p.advance_amount||0) > 0;
@@ -1270,6 +1279,7 @@ async function loadPayoutsTab(fn, sys) {
         <td>${p.pay_method||'—'}</td>
         <td class="mono text-muted">${p.document||'—'}</td>
         <td class="mono text-muted">${fmtDate(p.pay_date)}</td>
+        <td style="font-size:12px;color:var(--text2)">${((creators[p.pay_id]||creators[p.ref_no]||'').split('@')[0])||'—'}</td>
         <td style="text-align:center">
           <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxPayout(this)" data-id="${p.id}" data-fn="${fn}" title="إجراءات">⋮</button>
         </td>
@@ -1291,13 +1301,13 @@ async function loadPayoutsTab(fn, sys) {
         <thead><tr>
           <th style="width:36px;text-align:center">#</th>
           <th>رقم الصرف</th><th>الشريك</th><th>نوع الصرف</th><th>المبلغ</th><th>دفع للمورد</th>
-          <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th><th></th>
+          <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th><th>بواسطة</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
         <tfoot style="background:var(--card2)">
           <tr><td colspan="2" style="padding:10px 16px;font-weight:700">الإجمالي</td>
           <td class="mono" style="color:var(--purple);padding:10px 16px;font-weight:700">${fmt(total)}</td>
-          <td colspan="4"></td></tr>
+          <td colspan="5"></td></tr>
         </tfoot>
       </table>`;
   } catch(e) { el('payoutsTable').innerHTML = errHTML(e.message); }

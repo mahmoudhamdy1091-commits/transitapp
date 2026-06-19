@@ -130,6 +130,7 @@ function _ctxPayment(btn) {
   showCtxMenu(btn, [
     {icon:'🖨️', label:'طباعة سند الدفعة', action:()=>printPaymentVoucher(id, fn)},
     {icon:'✏️', label:'تعديل', action:()=>openEditPaymentModal(id)},
+    {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'payments', fileNo:fn, id, title:'دفعة مورد'})},
     'divider',
     {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء دفعة','سيتم إلغاء الدفعة بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePaymentEntry(id,fn))}
   ]);
@@ -141,6 +142,7 @@ function _ctxExpense(btn) {
   showCtxMenu(btn, [
     {icon:'🖨️', label:'طباعة سند المصروف', action:()=>printExpenseVoucher(id, fn)},
     {icon:'✏️', label:'تعديل', action:()=>openEditExpenseModal(id)},
+    {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'expenses', fileNo:fn, id, title:'مصروف'})},
     'divider',
     {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء مصروف','سيتم إلغاء المصروف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deleteExpenseEntry(id,fn))}
   ]);
@@ -152,6 +154,7 @@ function _ctxCollection(btn) {
   const items = [];
   if (!paid) items.push({icon:'✅', label:'تسجيل دفع', action:()=>markCollectionPaid(id,fn)});
   items.push({icon:'✏️', label:'تعديل', action:()=>openEditCollectionModal(id)});
+  items.push({icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'collections', fileNo:fn, id, title:'تحصيل'})});
   items.push('divider');
   items.push({icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء تحصيل','سيتم إلغاء التحصيل بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deleteCollectionEntry(id,fn))});
   showCtxMenu(btn, items);
@@ -163,6 +166,7 @@ function _ctxPayout(btn) {
   const items = [
     {icon:'🖨️', label:'طباعة سند', action:()=>printPayoutVoucher(id)},
     {icon:'✏️', label:'تعديل', action:()=>openEditPayoutModal(id)},
+    {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'partner_payouts', fileNo:fn, id, title:'صرف شريك'})},
     'divider',
   ];
   if (can('delete')) items.push({icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء صرف شريك','سيتم إلغاء الصرف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePayoutEntry(id,fn))});
@@ -172,7 +176,7 @@ function _ctxPayout(btn) {
 // مصاريف تشغيلية (operations)
 function _ctxOpex(btn) {
   const id = btn.dataset.id;
-  const items = [{icon:'✏️', label:'تعديل', action:()=>openEditOpexModal(id)}, 'divider'];
+  const items = [{icon:'✏️', label:'تعديل', action:()=>openEditOpexModal(id)}, {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'operating_expenses', id, title:'مصروف تشغيلي'})}, 'divider'];
   if (can('delete')) items.push({icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>deleteOpex(id)});
   showCtxMenu(btn, items);
 }
@@ -201,6 +205,7 @@ function _ctxDeal(btn) {
   const fn = btn.dataset.fn, id = btn.dataset.id;
   const items = [];
   items.push({icon:'✏️', label:'تعديل بيانات الملف', action:()=>openNewFileModal(fn)});
+  items.push({icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'purchase_orders', fileNo:fn, id:id||null, title:`صفقة ${fn}`})});
   if (can('delete')) {
     items.push('divider');
     items.push({icon:'🗑', label:'حذف الصفقة', danger:true, action:()=>confirmAction('حذف الصفقة','هل أنت متأكد من حذف هذه الصفقة؟',()=>deleteOrphanDeal(id||fn))});
@@ -233,6 +238,7 @@ function _ctxSale(btn) {
   showCtxMenu(btn, [
     {icon:'✏️', label:'تعديل الفاتورة', action:()=>openEditSaleApproval(saleId, fn, invNo)},
     {icon:'🖨️', label:'طباعة الفاتورة', action:()=>reprintInvoice(invNo, fn)},
+    {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'sales', fileNo:fn, refNo:invNo, title:`فاتورة ${invNo}`})},
     'divider',
     {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>voidSaleInvoice(invNo, fn)}
   ]);
