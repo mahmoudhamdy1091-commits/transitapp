@@ -158,8 +158,9 @@ async function loadTransactions() {
 
     rows = rows || [];
 
-    // audit_log لا يحتوي على ref_id — نتجاهل created_by
+    // ✅ "بواسطة": من أنشأ كل سجل (من قيود INSERT في audit_log) — يملأ العمود الموجود
     let auditMap = {};
+    try { auditMap = await getCreatorsMap(cfg.table, null); } catch(_) {}
 
     // KPIs
     const total       = rows.reduce((s,r)=>s+(+r[cfg.amountField]||0), 0);
@@ -254,8 +255,8 @@ function renderTxTable(rows, cfg, auditMap, type) {
       }
       return `<td>${v}</td>`;
     }).join('');
-    const user      = auditMap[String(r.id)] || '—';
-    const shortUser = user.split('@')[0];
+    const user      = auditMap[r.ref_no] || auditMap[r.pay_id] || auditMap[r.inv_no] || '';
+    const shortUser = user ? user.split('@')[0] : '—';
     const rowClick  = type==='deals' ? `onclick="openViewer('${r.file_no}')" style="cursor:pointer"` : '';
     let statusCell  = statusBadge(r);
     let rowStyle = '';

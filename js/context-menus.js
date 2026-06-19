@@ -191,6 +191,20 @@ function _ctxJE(btn) {
   showCtxMenu(btn, items);
 }
 
+// اليومية — قائمة موحّدة لصف القيد (طباعة + تعديل + السجل)
+function _ctxJournal(btn) {
+  const p = btn.closest('.j-entry-actions') || btn;
+  const etype = p.dataset.etype || '', fno = p.dataset.fno || '';
+  const tableMap = { purchase:'purchase_orders', sale:'sales', collection:'collections', payment:'payments', expense:'expenses', payout:'partner_payouts', opex:'operating_expenses' };
+  const items = [
+    {icon:'🖨️', label:'طباعة سند القيد', action:()=>_jPrint(btn)},
+    {icon:'✏️', label:'تعديل', action:()=>_jEdit(btn)},
+  ];
+  const tbl = tableMap[etype];
+  if (tbl) items.push({icon:'📜', label:'السجل', action:()=>showRecordAudit({ table:tbl, fileNo:fno, title:'قيد — '+(p.dataset.etitle||'') })});
+  showCtxMenu(btn, items);
+}
+
 // سيارة (operations)
 function _ctxVehicle(btn) {
   const id = +btn.dataset.id, fn = btn.dataset.fn;
@@ -253,6 +267,7 @@ function _ctxTx(btn, type) {
     case 'expenses':
       showCtxMenu(btn, [
         {icon:'✏️', label:'تعديل', action:()=>openEditExpenseModal(id)},
+        {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'expenses', fileNo:fn, id, title:'مصروف'})},
         'divider',
         {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء مصروف','سيتم إلغاء المصروف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deleteExpenseEntry(id,fn))}
       ]);
@@ -264,6 +279,7 @@ function _ctxTx(btn, type) {
       showCtxMenu(btn, [
         {icon:'🖨️', label:'طباعة سند', action:()=>printPayoutVoucher(id)},
         {icon:'✏️', label:'تعديل', action:()=>openEditPayoutModal(id)},
+        {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'partner_payouts', fileNo:fn, id, title:'صرف شريك'})},
         'divider',
         {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء صرف شريك','سيتم إلغاء الصرف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePayoutEntry(id,fn))}
       ]);
@@ -274,6 +290,7 @@ function _ctxTx(btn, type) {
       showCtxMenu(btn, [
         {icon:'✏️', label:'تعديل الفاتورة', action:()=>openEditSaleApproval(id, fn, invNo)},
         {icon:'🖨️', label:'طباعة الفاتورة', action:()=>openInvoiceModal(invNo)},
+        {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'sales', fileNo:fn, refNo:invNo, title:`فاتورة ${invNo}`})},
         'divider',
         {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>voidSaleInvoice(invNo, fn)}
       ]);

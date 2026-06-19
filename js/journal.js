@@ -393,10 +393,8 @@ function renderJournalEntries() {
               data-amt="${e.amount}"
               data-date="${e.date||''}"
               data-etitle="${(e.title||'')}">
-              <button onclick="event.stopPropagation();_jPrint(this)" 
-                style="background:var(--card2);border:1px solid var(--border);cursor:pointer;color:var(--text2);font-size:12px;padding:3px 8px;border-radius:6px" title="طباعة سند القيد">🖨️</button>
-              <button onclick="event.stopPropagation();_jEdit(this)"
-                style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:13px;padding:2px 4px" title="تعديل">✏️</button>
+              <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxJournal(this)"
+                style="background:var(--card2);border:1px solid var(--border);cursor:pointer;color:var(--text2);font-size:14px;padding:3px 8px;border-radius:6px" title="إجراءات">⋮</button>
             </span>
           </div>
         </div>`;
