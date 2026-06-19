@@ -1425,6 +1425,9 @@ async function submitMarkPaid() {
       notes:      notes || c.notes || null,
     });
 
+    // ✅ سجّل تسجيل الدفع (كان غير مسجَّل — فجوة تتبّع)
+    await logAudit('PAY', 'collections', c.file_no, c, { paid_date:date, pay_method:method }, `تسجيل دفع تحصيل ${c.ref_no||id} — ${fmt(c.amount)}`);
+
     // قيد محاسبي لو مرحّل (posted أو null = بيانات قديمة)
     if (isPosted(c)) {
       try {

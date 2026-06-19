@@ -273,6 +273,8 @@ async function submitEditOpex() {
       newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ المصروف التشغيلي الجديد
     });
 
+    // ✅ سجّل تعديل المصروف التشغيلي (كان غير مسجَّل — فجوة تتبّع)
+    await logAudit('EDIT', 'operating_expenses', old?.file_no || null, old || null, { exp_type:finalType, description:desc, amount, exp_date:date, pay_method:method }, `تعديل مصروف تشغيلي ${old?.ref_no||id}`);
     markSaving('opexModal'); closeModal('opexModal');
     toast('✅ تم تعديل المصروف التشغيلي وقيده','ok');
     await loadOpex();
@@ -1766,6 +1768,8 @@ async function approveItem(type, id) {
         } catch(e) { await revertToDraft(); throw e; }
       }
     }
+    // ✅ سجّل "من وافق" على المسودة (كان غير مسجَّل — فجوة تتبّع)
+    await logAudit('APPROVE', cfg.table, approvedItem?.file_no || null, approvedItem || null, { approved_at: today() }, `موافقة ${cfg.label} ${approvedItem?.ref_no || approvedItem?.inv_no || id}`);
     invalidateCache();
     loadApprovalQueue(); // refresh هادي في الخلفية
     } catch(e) { toast('خطأ في حفظ الموافقة: '+e.message,'err'); } })();
@@ -1989,7 +1993,11 @@ async function approveAll() {
       try {
         await _ensureApprovalJE(r, sys);
         const patched = await apiPatch(cfg.table, { id:`eq.${r.id}`, post_status:`eq.draft` }, { post_status:'posted' });
-        if (patched?.length) okCount++;
+        if (patched?.length) {
+          okCount++;
+          // ✅ سجّل "من وافق" (موافقة جماعية)
+          await logAudit('APPROVE', cfg.table, r.file_no||null, r, { approved_at: today(), bulk:true }, `موافقة جماعية ${cfg.label} ${r.ref_no||r.inv_no||r.id}`);
+        }
       } catch(jeErr) {
         failCount++;
         console.warn(`approveAll failed ${r._type} ${r.id}:`, jeErr.message);
