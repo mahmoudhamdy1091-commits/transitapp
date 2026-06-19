@@ -470,6 +470,62 @@ async function logAudit(action, tableName, fileNo, oldVal, newVal, notes='') {
 }
 
 // ════════════════════════════════════════
+// AUDIT TRAIL — جلب تتبّع سجل واحد (المرحلة ب)
+// audit_log لا يحوي عمود record_id؛ نربط بالجدول + الملف + مطابقة
+// ref_no/id داخل old_value/new_value/notes. الأنسب: تمرير ref_no.
+// ════════════════════════════════════════
+const AUDIT_ACTION_LABELS = {
+  INSERT:'أُنشئ', EDIT:'عُدّل', EDIT_REQUEST:'طلب تعديل', EDIT_APPROVED:'اعتُمد التعديل',
+  EDIT_REJECTED:'رُفض التعديل', APPROVE:'وُوفق عليه', REJECT:'رُفض', VOID:'أُلغي',
+  VOID_REQUEST:'طلب إلغاء', VOID_REJECTED:'رُفض الإلغاء', DELETE:'حُذف', PAY:'سُجّل دفعه',
+  DELETE_DRAFT_LEFTOVER:'حُذفت مسودة', MIGRATION:'ترحيل', IMPORT:'استيراد', UPDATE:'تحديث',
+};
+const AUDIT_ACTION_ICONS = {
+  INSERT:'➕', EDIT:'✏️', EDIT_REQUEST:'📝', EDIT_APPROVED:'✅', EDIT_REJECTED:'🚫',
+  APPROVE:'✅', REJECT:'🚫', VOID:'🔄', VOID_REQUEST:'⏳', VOID_REJECTED:'↩️',
+  DELETE:'🗑', PAY:'💰', DELETE_DRAFT_LEFTOVER:'🗑', MIGRATION:'📦', IMPORT:'📥', UPDATE:'🔁',
+};
+
+/**
+ * يجلب الخط الزمني (audit trail) لسجل محدّد، مرتّباً زمنياً.
+ * @param {object} opts { table, fileNo, refNo, id } — table إلزامي؛ refNo هو الأدق للربط.
+ * @returns {Promise<Array<{action,label,icon,email,user,date,notes}>>}
+ */
+async function getRecordAuditTrail({ table, fileNo, refNo, id } = {}) {
+  if (!table) return [];
+  const sys = state.system;
+  const params = {
+    select: 'action,table_name,file_no,old_value,new_value,notes,user_email,created_at',
+    system_type: `eq.${sys}`,
+    table_name: `eq.${table}`,
+    order: 'created_at.asc',
+    limit: 300,
+  };
+  if (fileNo) params.file_no = `eq.${fileNo}`;
+  let rows = [];
+  try { rows = (await apiGetAll('audit_log', params)) || []; }
+  catch(e) { console.warn('getRecordAuditTrail:', e.message); return []; }
+
+  // فلترة دقيقة بالسجل: مطابقة ref_no/id داخل القيم أو الملاحظات
+  const keys = [refNo, id].filter(v => v != null && v !== '').map(String);
+  const belongs = (r) => {
+    if (!keys.length) return true; // بلا مفتاح → كل سجلات الجدول/الملف
+    const hay = `${r.old_value || ''}\n${r.new_value || ''}\n${r.notes || ''}`;
+    return keys.some(k => hay.includes(k));
+  };
+
+  return rows.filter(belongs).map(r => ({
+    action: r.action,
+    label:  AUDIT_ACTION_LABELS[r.action] || r.action,
+    icon:   AUDIT_ACTION_ICONS[r.action]  || '•',
+    email:  r.user_email || 'unknown',
+    user:   (r.user_email || 'unknown').split('@')[0],
+    date:   r.created_at,
+    notes:  r.notes || '',
+  }));
+}
+
+// ════════════════════════════════════════
 // AUTH
 // ════════════════════════════════════════
 async function login() {
