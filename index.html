@@ -3160,6 +3160,9 @@
           <select id="ee-method"><option>تحويل بنكي</option><option>نقد</option><option>شيك</option></select>
         </div>
         <div class="field"><label>رقم المستند</label><input type="text" id="ee-doc" placeholder="رقم المستند"></div>
+        <div class="field"><label>دُفع بواسطة</label>
+          <select id="ee-paidBy"><option value="الصندوق">الصندوق</option></select>
+        </div>
       </div>
       <div class="field"><label>ملاحظات</label><textarea id="ee-notes" rows="2" placeholder="..."></textarea></div>
       <div id="eeError" class="alert alert-err" style="display:none"></div>
@@ -3189,6 +3192,9 @@
         <div class="field"><label>المبلغ *</label><input type="number" id="ec-amount" placeholder="0.00" min="0" step="0.01"></div>
         <div class="field"><label>طريقة الدفع</label>
           <select id="ec-method"><option>تحويل بنكي</option><option>نقد</option><option>شيك</option></select>
+        </div>
+        <div class="field"><label>استلمه</label>
+          <select id="ec-receivedBy"><option value="الصندوق">الصندوق</option></select>
         </div>
       </div>
       <div class="form-row">

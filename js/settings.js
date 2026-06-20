@@ -1269,6 +1269,17 @@ async function openEditExpenseModal(expenseId) {
     el('ee-notes').value  = e.notes        || '';
     el('eeError').style.display = 'none';
     openModal('editExpenseModal');
+    // populate paid_by dropdown
+    const paidByEl = el('ee-paidBy');
+    if (paidByEl && e.file_no) {
+      const partners = await apiGetAll('partners_master', {
+        select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${e.file_no}`
+      });
+      const raw = (partners||[]).map(p => p.partner);
+      const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+      paidByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
+      paidByEl.value = e.paid_by?.trim() || TREASURY_PARTNER;
+    }
   } catch(err) { toast('خطأ: '+err.message,'err'); }
 }
 
@@ -1281,6 +1292,7 @@ async function submitEditExpense() {
   const method = el('ee-method').value;
   const doc    = el('ee-doc').value.trim();
   const notes  = el('ee-notes').value.trim();
+  const paidBy = el('ee-paidBy')?.value?.trim() || null;
   if (!desc || !amount || !date) { showFieldErr('eeError','يرجى ملء الحقول المطلوبة'); return; }
   try {
     const oldData = await apiGetAll('expenses', { select:'*', id:`eq.${id}` });
@@ -1291,27 +1303,42 @@ async function submitEditExpense() {
       // ── تعديل مباشر في السجل + القيد الأصلي + إرسال للموافقة ──
       const oldAmount = +old.amount;
 
+      const oldPaidByNorm = old.paid_by?.trim() || TREASURY_PARTNER;
+      const newPaidByNorm = paidBy || TREASURY_PARTNER;
+      const routingChanged = oldPaidByNorm !== newPaidByNorm;
+
       // 1. تحديث السجل
       await apiPatch('expenses', { id:`eq.${id}` }, {
-        description:desc, exp_type:type, amount, exp_date:date,
+        description:desc, exp_type:type||old.exp_type, amount, exp_date:date,
         pay_method:method, document:doc||null, notes:notes||null,
+        paid_by: paidBy || null,
         post_status: 'pending_edit',
       });
 
-      // 2. تحديث القيد في مكانه
-      await updateJEInPlace({
-        sys: state.system, fileNo: old.file_no,
-        refTable: 'expenses', refId: id,
-        oldAmount, newAmount: amount,
-        newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ المصروف الجديد
-      });
+      if (routingChanged) {
+        // 2a. عكس القيد القديم بناءً على بيانات السجل القديم (قبل التعديل)
+        await voidTransaction('expense', old, true);
+        // 2b. إنشاء قيد جديد بالتوجيه الجديد
+        await je_expense({ sys:state.system, date, amount, fileNo:old.file_no, refId:id,
+          desc, expType:type||old.exp_type||'أخرى', method, paidBy: paidBy||null });
+        // 2c. إعادة status إلى pending_edit (voidTransaction يضع 'voided' على السجل لكننا نريد void للقيود فقط)
+        await apiPatch('expenses', { id:`eq.${id}` }, { post_status: 'pending_edit' });
+      } else {
+        // 2c. تحديث المبلغ والتاريخ في مكانهم
+        await updateJEInPlace({
+          sys: state.system, fileNo: old.file_no,
+          refTable: 'expenses', refId: id,
+          oldAmount, newAmount: amount,
+          newDate: date,
+        });
+      }
 
       await logAudit('EDIT', 'expenses', old.file_no, old, {desc,type,amount,date,method,doc}, `تعديل مصروف ${old.ref_no||id}`);
       await updateApprovalBadge();
       markSaving('editExpenseModal'); closeModal('editExpenseModal');
       toast('⚠️ تم تعديل المصروف والقيد — في انتظار الموافقة', 'warn');
     } else {
-      await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null });
+      await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null, paid_by:paidBy||null });
       markSaving('editExpenseModal'); closeModal('editExpenseModal');
       toast('✅ تم تعديل المصروف','ok');
     }
@@ -1340,6 +1367,17 @@ async function openEditCollectionModal(collectionId) {
     el('ec-notes').value    = c.notes     || '';
     el('ecError').style.display = 'none';
     openModal('editCollectionModal');
+    // populate received_by dropdown
+    const recByEl = el('ec-receivedBy');
+    if (recByEl && c.file_no) {
+      const partners = await apiGetAll('partners_master', {
+        select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${c.file_no}`
+      });
+      const raw = (partners||[]).map(p => p.partner);
+      const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+      recByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
+      recByEl.value = c.received_by?.trim() || TREASURY_PARTNER;
+    }
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
@@ -1349,8 +1387,9 @@ async function submitEditCollection() {
   const method = el('ec-method').value;
   const due    = el('ec-dueDate').value;
   const paid   = el('ec-paidDate').value;
-  const doc    = el('ec-doc').value.trim();
-  const notes  = el('ec-notes').value.trim();
+  const doc        = el('ec-doc').value.trim();
+  const notes      = el('ec-notes').value.trim();
+  const receivedBy = el('ec-receivedBy')?.value?.trim() || null;
   if (!amount) { showFieldErr('ecError','يرجى إدخال المبلغ'); return; }
   try {
     const oldData = await apiGetAll('collections', { select:'*', id:`eq.${id}` });
@@ -1360,21 +1399,37 @@ async function submitEditCollection() {
       // ── تعديل مباشر في السجل + القيد الأصلي + إرسال للموافقة ──
       const oldAmount = +old.amount;
 
+      const oldRecByNorm = old.received_by?.trim() || TREASURY_PARTNER;
+      const newRecByNorm = receivedBy || TREASURY_PARTNER;
+      const routingChanged = oldRecByNorm !== newRecByNorm;
+
       // 1. تحديث السجل
       await apiPatch('collections', { id:`eq.${id}` }, {
         amount, pay_method:method,
         due_date: due||null, paid_date: paid||old.paid_date,
         document: doc||null, notes: notes||null,
+        received_by: receivedBy || null,
         post_status: 'pending_edit',
       });
 
-      // 2. تحديث القيد في مكانه
-      await updateJEInPlace({
-        sys: state.system, fileNo: old.file_no,
-        refTable: 'collections', refId: id,
-        oldAmount, newAmount: amount,
-        newDate: paid || old.paid_date,   // ✅ مزامنة تاريخ القيد مع تاريخ التحصيل الجديد
-      });
+      if (routingChanged) {
+        // 2a. عكس القيد القديم بناءً على السجل القديم
+        await voidTransaction('collection', old, true);
+        // 2b. قيد جديد بالتوجيه الجديد
+        await je_collection({ sys:state.system, date:paid||old.paid_date, amount,
+          fileNo:old.file_no, refId:id, customer:old.customer||'—',
+          invNo:old.inv_no||'', method, receivedBy: receivedBy||null });
+        // 2c. إعادة status إلى pending_edit
+        await apiPatch('collections', { id:`eq.${id}` }, { post_status: 'pending_edit' });
+      } else {
+        // 2c. تحديث المبلغ والتاريخ في مكانهم
+        await updateJEInPlace({
+          sys: state.system, fileNo: old.file_no,
+          refTable: 'collections', refId: id,
+          oldAmount, newAmount: amount,
+          newDate: paid || old.paid_date,
+        });
+      }
 
       await logAudit('EDIT', 'collections', old.file_no, old, {amount,method,due,paid}, `تعديل تحصيل ${old.ref_no||id}`);
       await updateApprovalBadge();
@@ -1392,20 +1447,21 @@ async function submitEditCollection() {
     const isPostedRecord = old.post_status !== 'draft';
     const effectivePaidDate = (paid && isPostedRecord) ? paid : null;
 
-    await apiPatch('collections', { id:`eq.${id}` }, { amount, pay_method:method, due_date:due||null, paid_date:effectivePaidDate, document:doc||null, notes:notes||null });
+    await apiPatch('collections', { id:`eq.${id}` }, { amount, pay_method:method, due_date:due||null, paid_date:effectivePaidDate, document:doc||null, notes:notes||null, received_by:receivedBy||null });
 
     // إذا كانت غير مدفوعة وأصبحت مدفوعة الآن → أنشئ قيد تحصيل
     if (wasUnpaid && nowPaid && isPostedRecord) {
       try {
         await je_collection({
-          sys:      state.system,
-          date:     paid,
-          amount:   amount,
-          fileNo:   old.file_no,
-          refId:    old.id || null,
-          customer: old.customer || '—',
-          invNo:    old.inv_no   || '',
-          method:   method,
+          sys:        state.system,
+          date:       paid,
+          amount:     amount,
+          fileNo:     old.file_no,
+          refId:      old.id || null,
+          customer:   old.customer || '—',
+          invNo:      old.inv_no   || '',
+          method:     method,
+          receivedBy: receivedBy || null,
         });
       } catch(jeErr) {
         await apiPatch('collections', { id:`eq.${old.id}` }, { post_status:'draft' });
