@@ -1647,20 +1647,37 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       // ما دفعه / استرده الشريك — من القيود (2400) أولاً
       const hasJEPartner = (jePartner||[]).length > 0;
 
+      // مصروفات دفعها هذا الشريك من جيبه (الصندوق: paid_by=null؛ غيره: paid_by=اسمه)
+      const expPaidByHere = (expenses||[]).filter(isPosted).filter(e =>
+        partnerName === TREASURY_PARTNER
+          ? (!e.paid_by || e.paid_by.trim() === TREASURY_PARTNER)
+          : (e.paid_by && e.paid_by.trim() === partnerName)
+      );
+      const expCapital = expPaidByHere.reduce((s,e) => s + (+e.amount||0), 0);
+      const expMovements = expPaidByHere.map(e => ({
+        date:   (e.exp_date||e.expense_date||'').split('T')[0] || '—',
+        desc:   `مصروف — ${e.description||e.exp_type||'—'}`,
+        ref:    e.ref_no||'',
+        debit:  0,
+        credit: +e.amount||0,
+        isExp:  true,
+      }));
+
       let capitalPaid, totalWithdrawn, capitalRet=0, profitTaken=0, advances=0;
       let jeMovements = []; // للعرض في جدول الحركات
 
       if (hasJEPartner) {
         // ✅ مصدر موثوق: من journal_entries حساب 2400
         capitalPaid    = (jePartner||[]).reduce((s,r)=>s+(+r.cr_amount||0),0); // CR = الشريك دفع
+        capitalPaid   += expCapital; // مصروفات دفعها من جيبه (لا تمرّ بحساب 2400)
         totalWithdrawn = (jePartner||[]).reduce((s,r)=>s+(+r.dr_amount||0),0); // DR = الشريك استرد
-        jeMovements    = (jePartner||[]).map(r=>({
+        jeMovements    = [...(jePartner||[]).map(r=>({
           date:   (r.entry_date||'').split('T')[0],
           desc:   r.description||'—',
           ref:    r.entry_no||'',
           debit:  +r.dr_amount||0,
           credit: +r.cr_amount||0,
-        }));
+        })), ...expMovements].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
         // توزيع المسحوبات من payouts للعرض فقط
         capitalRet  = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
         profitTaken = (payouts||[]).reduce((s,p)=>s+(+p.profit_amount||0),0);
@@ -1674,17 +1691,18 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         capitalPaid    = (partnerPayments||[]).filter(isEffective)
           .filter(p => allPartnersCount <= 1 || p.payer === partnerName)
           .reduce((s,p)=>s+(+p.amount||0), 0);
+        capitalPaid   += expCapital; // مصروفات دفعها من جيبه
         capitalRet     = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
         profitTaken    = (payouts||[]).reduce((s,p)=>s+(+p.profit_amount||0),0);
         advances       = (payouts||[]).reduce((s,p)=>s+(+p.advance_amount||0),0);
         totalWithdrawn = capitalRet + profitTaken + advances;
-        jeMovements    = (partnerPayments||[]).filter(isEffective).map(p=>({
+        jeMovements    = [...(partnerPayments||[]).filter(isEffective).map(p=>({
           date:   (p.pay_date||'').split('T')[0],
           desc:   'دفع رأس مال (بيانات قديمة)',
           ref:    p.ref_no||'',
           debit:  0,
           credit: +p.amount||0,
-        }));
+        })), ...expMovements].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
       }
 
       const netDue = capitalPaid + myProfit - totalWithdrawn;
@@ -1710,7 +1728,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         totalPurchase, totalExp, totalSales,
         fullCost: totalPurchase+totalExp, dealProfit,
         myPurchase, myExpenses, myFullCost, mySales, myProfit,
-        capitalPaid, capitalRet, profitTaken, advances, totalWithdrawn, netDue,
+        capitalPaid, expCapital, capitalRet, profitTaken, advances, totalWithdrawn, netDue,
         status: poData.status || '—', supplier: poData.supplier || '—',
         poDate: poData.po_date || poData.created_at || '',
         partnerDebts, paidByPartner, shouldPayMap,
@@ -1813,6 +1831,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #fecaca;color:#dc2626">البيان</th>
                   <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #fecaca;color:#dc2626">النوع</th>
                   <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #fecaca;color:#dc2626">التاريخ</th>
+                  <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #fecaca;color:#dc2626">دفعها</th>
                   <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #fecaca;color:#dc2626">المبلغ</th>
                   <th style="padding:6px 10px;text-align:right;border-bottom:1px solid #fecaca;color:#dc2626">حصة الشريك</th>
                 </tr>
@@ -1823,11 +1842,12 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   <td style="padding:6px 10px">${e.description||'—'}</td>
                   <td style="padding:6px 10px"><span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:10px;font-size:12px">${e.exp_type||e.category||'—'}</span></td>
                   <td style="padding:6px 10px;color:#94a3b8">${(e.exp_date||e.expense_date||'').split('T')[0]||'—'}</td>
+                  <td style="padding:6px 10px"><span style="background:${(!e.paid_by||e.paid_by.trim()===TREASURY_PARTNER)?'#eff6ff':'#fef3c7'};color:${(!e.paid_by||e.paid_by.trim()===TREASURY_PARTNER)?'#1d4ed8':'#92400e'};padding:1px 6px;border-radius:10px;font-size:11px;font-weight:700">${e.paid_by||TREASURY_PARTNER}</span></td>
                   <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2(e.amount)}</td>
                   <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2((+e.amount||0)*d.share)}</td>
                 </tr>`).join('')}
                 <tr style="background:#fff1f2;font-weight:700">
-                  <td colspan="3" style="padding:7px 10px;color:#dc2626">إجمالي المصاريف</td>
+                  <td colspan="4" style="padding:7px 10px;color:#dc2626">إجمالي المصاريف</td>
                   <td style="padding:7px 10px;font-family:monospace;color:#dc2626">${fmt2(effExp.reduce((s,e)=>s+(+e.amount||0),0))}</td>
                   <td style="padding:7px 10px;font-family:monospace;color:#dc2626">${fmt2(effExp.reduce((s,e)=>s+(+e.amount||0),0)*d.share)}</td>
                 </tr>
@@ -1997,8 +2017,8 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
             <div style="margin-top:10px;background:${d.netDue>=0?'#f0fdf4':'#fff1f2'};border:2px solid ${d.netDue>=0?'#86efac':'#fca5a5'};border-radius:10px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
               <div>
                 <div style="font-size:12px;color:#64748b;margin-bottom:2px">الرصيد المستحق للشريك من هذه الصفقة</div>
-                <div style="font-size:12px;color:#94a3b8">رأس مال مدفوع + أرباح - إجمالي المسحوبات</div>
-                <div style="font-size:12px;color:#94a3b8">${fmt2(d.capitalPaid)} + ${fmt2(d.myProfit)} - ${fmt2(d.totalWithdrawn)}</div>
+                <div style="font-size:12px;color:#94a3b8">رأس مال + مصروفات دفعها + أرباح − مسحوبات</div>
+                <div style="font-size:12px;color:#94a3b8">${fmt2(d.capitalPaid-d.expCapital)} + ${fmt2(d.expCapital)} + ${fmt2(d.myProfit)} − ${fmt2(d.totalWithdrawn)}</div>
               </div>
               <div style="font-size:24px;font-weight:900;font-family:monospace;color:${d.netDue>=0?'#16a34a':'#dc2626'}">${d.netDue>=0?'+':''}${fmt2(d.netDue)}</div>
             </div>
