@@ -4871,7 +4871,7 @@ async function loadVehiclesTab(fn, sys) {
       apiGetAll('stock_locations',{ select:'vin,location_name', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
     state.currentVehicles = data || [];
-    const soldVins   = new Set((state.currentSales||[]).map(s=>s.vin));
+    const soldVins   = new Set((state.currentSales||[]).map(s=>s.vin).filter(Boolean));
     const locMap     = {};
     (locations||[]).forEach(t => { locMap[t.vin] = t.location_name; });
 

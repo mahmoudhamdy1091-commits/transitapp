@@ -716,7 +716,7 @@ async function printDealSummary(fn) {
     const profit         = totalSales - fullCost;
     const margin         = totalSales > 0 ? Math.round(profit/totalSales*100) : 0;
     const remaining      = totalPurchase - totalPaid;
-    const soldVins       = new Set(postedSal.map(s=>s.vin));
+    const soldVins       = new Set(postedSal.map(s=>s.vin).filter(Boolean));
     const totalV         = (vehicles||[]).length;
     const soldV          = soldVins.size;
     const pDate          = new Date().toLocaleDateString('en-GB');

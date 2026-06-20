@@ -25,10 +25,12 @@ async function submitAddVehicle() {
   if (!type) { showFieldErr('avError','يرجى إدخال نوع السيارة'); return; }
 
   try {
+    let finalVin = vin;
+    if (!finalVin) { const _a = [{ vin:'' }]; await _assignPartVins(fn, _a); finalVin = _a[0].vin; }  // ✅ كود فريد لقطعة بلا VIN
     const data = {
       system_type: state.system, file_no: fn,
       po_no: state.currentDeal?.po_no || null,
-      vin: vin||null, vehicle_type: type, model: model||type,
+      vin: finalVin||null, vehicle_type: type, model: model||type,
       plate: plate||null, color: color||null,
       purchase_price: price, purchase_date: date||null, notes: notes||null
     };
@@ -150,7 +152,7 @@ async function loadQuickVins(fileNo) {
     try {
       const vehicles = await apiGetAll('vehicles', { select:'vin,model,vehicle_type', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
       const sales    = await apiGetAll('sales', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
-      const soldVins = new Set((sales||[]).map(s=>s.vin));
+      const soldVins = new Set((sales||[]).map(s=>s.vin).filter(Boolean));
       const unsold   = (vehicles||[]).filter(v => !soldVins.has(v.vin));
       el('qs-vin').innerHTML = unsold.length
         ? unsold.map(v=>`<option value="${v.vin}" title="${v.model||v.vehicle_type||''}">${v.vin}</option>`).join('')

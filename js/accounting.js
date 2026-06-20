@@ -1545,7 +1545,7 @@ async function loadViewerKpis(fn, sys) {
     // ✅ pending_edit = مرحّلة في طور التعديل → تُحسب كمدفوع
     const totalPaid    = (payments||[]).filter(isEffective).reduce((s,p)=>s+(+p.amount||0),0);
     const profit       = totalSales - fullCost;
-    const soldVins     = new Set((sales||[]).filter(isPosted).map(s=>s.vin));
+    const soldVins     = new Set((sales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
     const unsold       = (vehicles||[]).filter(v=>!soldVins.has(v.vin)).length;
     const uncollected  = totalSales - totalColl;
     const supplierLeft = totalCost - totalPaid;

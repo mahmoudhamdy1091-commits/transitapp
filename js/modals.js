@@ -412,6 +412,22 @@ function checkShareTotal() {
   updatePartnerSummary();
 }
 
+// ✅ يفرض كوداً فريداً (PART-{ملف}-{رقم}) لأي قطعة/سيارة بلا VIN عند الإدخال
+// يمنع تصادم المفتاح (vin فاضي/مكرر) في فلاتر "مباع/متاح" بكل الشاشات.
+async function _assignPartVins(fileNo, vehiclesArr) {
+  if (!vehiclesArr?.some(v => !v.vin || !String(v.vin).trim())) return;
+  let existing = [];
+  try { existing = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` }); } catch(_) {}
+  const used = new Set((existing||[]).map(v => (v.vin||'').trim()).filter(Boolean));
+  let n = 1;
+  vehiclesArr.forEach(v => {
+    if (!v.vin || !String(v.vin).trim()) {
+      let code; do { code = `PART-${fileNo}-${n++}`; } while (used.has(code));
+      used.add(code); v.vin = code;
+    }
+  });
+}
+
 async function submitNewFile() {
   // ✅ منع التنفيذ المزدوج (مثلاً عند ضغط الحفظ مرتين أو ظهور الديالوج مرتين)
   if (_nfSaving) return;
@@ -490,6 +506,7 @@ async function _submitNewFileInner() {
   btn.disabled = true; btn.textContent = '⏳ جاري الحفظ...';
 
   try {
+    await _assignPartVins(fileNo, vehicles);  // ✅ كود فريد للقطع بلا VIN
     // 1. Insert PO
     const poData = {
       system_type:    state.system,
@@ -668,6 +685,7 @@ async function submitEditFileFull() {
   btn.disabled = true; btn.textContent = '⏳ جاري الحفظ...';
 
   try {
+    await _assignPartVins(newFileNo, vehicles);  // ✅ كود فريد للقطع بلا VIN
     // 1. Update PO
     const poPatch = await apiPatch('purchase_orders',
       { system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}` },
@@ -1246,7 +1264,7 @@ async function onSaleFileChange(fn) {
 async function loadAvailableVehicles(fn, sys) {
   const vehicles = await apiGetAll('vehicles', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
   const sales    = await apiGetAll('sales', { select:'vin', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
-  const soldVins = new Set((sales||[]).map(s=>s.vin));
+  const soldVins = new Set((sales||[]).map(s=>s.vin).filter(Boolean));
   return (vehicles||[]).filter(v=>!soldVins.has(v.vin));
 }
 
@@ -1596,7 +1614,7 @@ async function submitSale() {
     // ── تحديث حالة الصفقة ──
     const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const allS = await apiGetAll('sales', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
-    const soldSet = new Set((allS||[]).map(s=>s.vin));
+    const soldSet = new Set((allS||[]).map(s=>s.vin).filter(Boolean));
     const allSold = (allV||[]).every(v=>soldSet.has(v.vin));
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` },
       { status: allSold ? 'CLOSED' : 'IN PROGRESS' });

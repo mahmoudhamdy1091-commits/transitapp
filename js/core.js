@@ -96,7 +96,7 @@ async function _doLoadCache() {
     const totalCost   = +d.total_purchase || vList.reduce((s,v)=>s+(+v.purchase_price||0),0);
     const totalExp    = postedExp.reduce((s,e)=>s+(+e.amount||0),0);
     const totalSale   = postedSales.reduce((s,s2)=>s+(+s2.sale_price||0),0);
-    const soldVins    = new Set(postedSales.map(s=>s.vin));
+    const soldVins    = new Set(postedSales.map(s=>s.vin).filter(Boolean));
     const fullCost    = totalCost + totalExp;
     return { ...d,
       _vTotal:vList.length, _vSold:soldCount, _vLeft:Math.max(0,vList.length-soldCount),

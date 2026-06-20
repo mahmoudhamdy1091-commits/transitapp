@@ -54,7 +54,7 @@ async function loadDashboard() {
       return dt >= from && dt <= to;
     });
 
-    const soldVinsAll   = new Set((allSales||[]).filter(isPosted).map(s=>s.vin));
+    const soldVinsAll   = new Set((allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
     const stockVehicles = (vehicles||[]).filter(v => !soldVinsAll.has(v.vin));
     const overdueList   = (collections||[]).filter(c => isPosted(c) && !c.paid_date && c.due_date && c.due_date <= todayStr);
     const upcomingList  = (collections||[]).filter(c => isPosted(c) && !c.paid_date && c.due_date && c.due_date > todayStr && c.due_date <= in7);
@@ -668,8 +668,8 @@ async function loadSummaryTab(fn, sys) {
     const remaining      = totalPurchase - totalPaid;
     // المستحق = التحصيلات المسجلة غير المدفوعة بعد (يشمل المصاريف المضافة على الفاتورة)
     const uncollected    = totalPending;
-    const soldVins       = new Set(postedSal.map(s=>s.vin));
-    const draftSoldVins  = new Set((sales||[]).filter(isDraft).map(s=>s.vin));
+    const soldVins       = new Set(postedSal.map(s=>s.vin).filter(Boolean));
+    const draftSoldVins  = new Set((sales||[]).filter(isDraft).map(s=>s.vin).filter(Boolean));
     const totalV         = (vehicles||[]).length;
     const soldV          = soldVins.size;
     const unsoldV        = totalV - soldV - draftSoldVins.size;
@@ -1151,7 +1151,7 @@ async function deleteSaleInvoice(invNo, fileNo) {
         try {
           const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
           const allS = await apiGetAll('sales', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
-          const soldSet = new Set((allS||[]).map(s=>s.vin));
+          const soldSet = new Set((allS||[]).map(s=>s.vin).filter(Boolean));
           const hasAnySales = (allS||[]).length > 0;
           const allSold = hasAnySales && (allV||[]).every(v=>soldSet.has(v.vin));
           await apiPatch('purchase_orders',
