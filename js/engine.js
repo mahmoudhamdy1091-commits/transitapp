@@ -195,27 +195,27 @@ async function voidTransaction(type, record, force=false) {
     ];
 
   } else if (type === 'expense') {
-    // القيد الأصلي: Dr 6xxx / Cr 1110|1120
-    // العكس:        Dr 1110|1120 / Cr 6xxx
+    // الأصلي: Dr 6xxx / Cr (نقد/بنك أو 2400 لو دفعها شريك) — العكس بالمقابل تماماً
     const eAcc    = EXPENSE_ACCOUNT_MAP[record.exp_type||record.category] || '6500';
-    const cashAcc = (record.pay_method||'') === 'نقد' ? '1110' : '1120';
-    const cashNm  = (record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك';
+    const dr = _isPartnerPocket(record.paid_by)
+      ? { acc:'2400', name:'حسابات الشركاء', dr:amount, cr:0, contact:record.paid_by.trim() }
+      : { acc:((record.pay_method||'')==='نقد'?'1110':'1120'), name:((record.pay_method||'')==='نقد'?'النقد':'البنك'), dr:amount, cr:0, contact:null };
     reversalDesc  = `عكس مصروف ${record.ref_no||''} — ${record.description||''} — ملف ${record.file_no}`;
     reversalLines = [
-      { acc: cashAcc, name: cashNm,                         dr: amount, cr: 0,      contact: null },
-      { acc: eAcc,    name: record.exp_type || 'مصروف',     dr: 0,      cr: amount, contact: null },
+      dr,
+      { acc: eAcc, name: record.exp_type || 'مصروف', dr: 0, cr: amount, contact: null },
     ];
 
   } else if (type === 'collection') {
-    // القيد الأصلي: Dr 1110|1120 / Cr 1200 ذمم عملاء
-    // العكس:        Dr 1200 / Cr 1110|1120
-    const cashAcc = (record.pay_method||'') === 'نقد' ? '1110' : '1120';
-    const cashNm  = (record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك';
+    // الأصلي: Dr (نقد/بنك أو 2400 لو احتفظ بها شريك) / Cr 1200 — العكس بالمقابل تماماً
     const cust    = record.customer || 'عميل';
+    const cr = _isPartnerPocket(record.received_by)
+      ? { acc:'2400', name:'حسابات الشركاء', dr:0, cr:amount, contact:record.received_by.trim() }
+      : { acc:((record.pay_method||'')==='نقد'?'1110':'1120'), name:((record.pay_method||'')==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null };
     reversalDesc  = `عكس تحصيل ${record.ref_no||''} — ${cust} — فاتورة ${record.inv_no||''}`;
     reversalLines = [
-      { acc: '1200',  name: 'ذمم العملاء', dr: amount, cr: 0,      contact: cust },
-      { acc: cashAcc, name: cashNm,         dr: 0,      cr: amount, contact: null },
+      { acc: '1200', name: 'ذمم العملاء', dr: amount, cr: 0, contact: cust },
+      cr,
     ];
 
   } else if (type === 'payout') {
@@ -433,12 +433,22 @@ async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
 }
 
 // تحصيل: نقد Dr / عميل Cr
-async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method}) {
+// ════════════════════════════════════════
+// نموذج الشركاء: الصندوق = الخزينة (نقد 1110 + بنك 1120).
+// أي شريك آخر يدفع/يستلم من جيبه → القيد على حسابه 2400 بدل النقدية.
+// ════════════════════════════════════════
+const TREASURY_PARTNER = 'الصندوق';
+function _isPartnerPocket(name) { return !!(name && name.trim() && name.trim() !== TREASURY_PARTNER); }
+
+async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method,receivedBy}) {
   if(!amount||amount<=0) return;
-  const cashAcc = method==='نقد'?'1110':'1120';
-  const cashNm  = method==='نقد'?'النقد':'البنك';
-  await postDoubleEntry({sys,date,fileNo,refTable:'collections',refId,desc:`تحصيل ${invNo} — ${customer} — ملف ${fileNo}`,lines:[
-    {acc:cashAcc, name:cashNm,           dr:amount, cr:0,     contact:null     },
+  // المدين: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو احتفظ بالمبلغ خارج الصندوق
+  const debit = _isPartnerPocket(receivedBy)
+    ? {acc:'2400', name:'حسابات الشركاء', dr:amount, cr:0, contact:receivedBy.trim()}
+    : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:amount, cr:0, contact:null};
+  const tail = _isPartnerPocket(receivedBy) ? ` — احتفظ بها ${receivedBy.trim()}` : '';
+  await postDoubleEntry({sys,date,fileNo,refTable:'collections',refId,desc:`تحصيل ${invNo} — ${customer} — ملف ${fileNo}${tail}`,lines:[
+    debit,
     {acc:'1200',  name:`ذمم العملاء`,    dr:0,      cr:amount, contact:customer },
   ]});
 }
@@ -484,14 +494,17 @@ async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,pa
 }
 
 // مصروف: مصروف Dr / نقد Cr
-async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method}) {
+async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy}) {
   if(!amount||amount<=0) return;
   const eAcc     = EXPENSE_ACCOUNT_MAP[expType]||'6500';
-  const cashAcc  = method==='نقد'?'1110':'1120';
-  const cashNm   = method==='نقد'?'النقد':'البنك';
-  await postDoubleEntry({sys,date,fileNo,refTable:'expenses',refId,desc:`${desc} — ملف ${fileNo||'عام'}`,lines:[
+  // الدائن: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو دفعها من جيبه
+  const credit = _isPartnerPocket(paidBy)
+    ? {acc:'2400', name:'حسابات الشركاء', dr:0, cr:amount, contact:paidBy.trim()}
+    : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null};
+  const tail = _isPartnerPocket(paidBy) ? ` — دفعها ${paidBy.trim()}` : '';
+  await postDoubleEntry({sys,date,fileNo,refTable:'expenses',refId,desc:`${desc} — ملف ${fileNo||'عام'}${tail}`,lines:[
     {acc:eAcc,    name:expType||'مصروف', dr:amount, cr:0,     contact:null},
-    {acc:cashAcc, name:cashNm,           dr:0,      cr:amount, contact:null},
+    credit,
   ]});
 }
 
