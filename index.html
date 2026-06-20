@@ -1994,6 +1994,12 @@
           <label>رقم المستند المرجعي</label>
           <input type="text" id="exp-doc" placeholder="رقم الفاتورة">
         </div>
+        <div class="field">
+          <label>دُفع بواسطة</label>
+          <select id="exp-paidBy">
+            <option value="الصندوق">الصندوق</option>
+          </select>
+        </div>
       </div>
 
       <!-- Expenses Table -->
@@ -2259,6 +2265,12 @@
                 <option>تحويل بنكي</option>
                 <option>نقد</option>
                 <option>شيك</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>استلمه</label>
+              <select id="col-receivedBy">
+                <option value="الصندوق">الصندوق</option>
               </select>
             </div>
           </div>

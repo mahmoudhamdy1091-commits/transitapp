@@ -965,7 +965,7 @@ async function _loadPaymentModalData(fn, sys) {
 // ════════════════════════════════════════
 // EXPENSE MODAL — multi-row
 // ════════════════════════════════════════
-function openExpenseModal() {
+async function openExpenseModal() {
   const fn = state.currentFileNo;
   el('exp-date').value   = today();
   el('exp-method').value = 'تحويل بنكي';
@@ -974,6 +974,21 @@ function openExpenseModal() {
   el('expenseRowsContainer').innerHTML = '';
   addExpenseRow({ fileNo: fn });
   openModal('expenseModal');
+  // populate paid_by dropdown async (بعد فتح المودال مباشرة)
+  const paidByEl = el('exp-paidBy');
+  if (paidByEl && fn) {
+    try {
+      const partners = await apiGetAll('partners_master', {
+        select: 'partner', system_type: `eq.${state.system}`, file_no: `eq.${fn}`
+      });
+      const raw = (partners||[]).map(p => p.partner);
+      const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+      paidByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
+      paidByEl.value = TREASURY_PARTNER;
+    } catch(_) {
+      paidByEl.innerHTML = `<option value="${TREASURY_PARTNER}">${TREASURY_PARTNER}</option>`;
+    }
+  }
 }
 
 function addExpenseRow(prefill={}) {
@@ -1040,9 +1055,10 @@ async function submitExpense() {
   const dateEl   = document.getElementById('exp-date');
   const methodEl = document.getElementById('exp-method');
   const docEl    = document.getElementById('exp-doc');
-  const date   = dateEl?.value   || today();
-  const method = methodEl?.value || 'تحويل بنكي';
-  const docRef = docEl?.value?.trim() || '';
+  const date    = dateEl?.value   || today();
+  const method  = methodEl?.value || 'تحويل بنكي';
+  const docRef  = docEl?.value?.trim() || '';
+  const paidBy  = el('exp-paidBy')?.value?.trim() || null;
 
   if (!date) { showFieldErr('expError','يرجى إدخال التاريخ'); return; }
 
@@ -1083,14 +1099,15 @@ async function submitExpense() {
         exp_date:    date,
         expense_date:date,
         notes:       exp.notes || null,
-        ref_no:      refNo
-      , post_status:entryStatus()};
+        ref_no:      refNo,
+        paid_by:     paidBy    || null,
+        post_status: entryStatus()};
       const expIns = await apiPost('expenses', data);
       await logAudit('INSERT','expenses', expFileNo, null, data);
       if (entryStatus()==='posted') {
         const expId = expIns?.[0]?.id || null;
         try {
-          await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,refId:expId,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method});
+          await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,refId:expId,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method,paidBy});
         } catch(jeErr) {
           console.error('je_expense failed:', jeErr.message);
           if (expId) await apiPatch('expenses', { id:`eq.${expId}` }, { post_status:'draft' });
@@ -1726,6 +1743,8 @@ async function openCollectionModal() {
   el('col-doc').value      = '';
   el('col-notes').value    = '';
   el('colError').style.display = 'none';
+  const recByEl = el('col-receivedBy');
+  if (recByEl) recByEl.innerHTML = `<option value="${TREASURY_PARTNER}">${TREASURY_PARTNER}</option>`;
   openModal('collectionModal');
 
   try {
@@ -1736,11 +1755,23 @@ async function openCollectionModal() {
     const colParams = fn
       ? { select:'inv_no,amount,paid_date,file_no,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }
       : { select:'inv_no,amount,paid_date,file_no,post_status', system_type:`eq.${sys}` };
+    const partnerParams = fn
+      ? { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` }
+      : null;
 
-    const [sales, collections] = await Promise.all([
+    const [sales, collections, partnersRes] = await Promise.all([
       apiGetAll('sales',       salesParams),
       apiGetAll('collections', colParams),
+      partnerParams ? apiGetAll('partners_master', partnerParams) : Promise.resolve([]),
     ]);
+
+    // populate receivedBy if file known at open time
+    if (recByEl) {
+      const raw = (partnersRes||[]).map(p => p.partner);
+      const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+      recByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
+      recByEl.value = TREASURY_PARTNER;
+    }
 
     // مجموع المدفوع فعلاً (paid_date موجود) لكل فاتورة
     const collectedMap = {};
@@ -1838,6 +1869,22 @@ function onCollectionInvChange() {
   el('col-inv-card').style.display    = 'block';
   el('col-form-fields').style.display = 'block';
   el('col-submit-btn').style.display  = '';
+
+  // populate receivedBy based on selected invoice's file
+  const fileFromOpt = opt.dataset.file || state.currentFileNo;
+  if (fileFromOpt) {
+    apiGetAll('partners_master', {
+      select: 'partner', system_type: `eq.${state.system}`, file_no: `eq.${fileFromOpt}`
+    }).then(partners => {
+      const rb = el('col-receivedBy');
+      if (rb) {
+        const raw = (partners||[]).map(p => p.partner);
+        const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+        rb.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
+        rb.value = TREASURY_PARTNER;
+      }
+    }).catch(() => {});
+  }
 }
 
 async function submitCollection() {
@@ -1847,9 +1894,10 @@ async function submitCollection() {
   const amount = parseFloat(el('col-amount').value);
   const method = el('col-method').value;
   const doc    = el('col-doc').value.trim();
-  const due    = el('col-dueDate').value;
-  const paid   = el('col-paidDate').value;
-  const notes  = el('col-notes').value.trim();
+  const due        = el('col-dueDate').value;
+  const paid       = el('col-paidDate').value;
+  const notes      = el('col-notes').value.trim();
+  const receivedBy = el('col-receivedBy')?.value?.trim() || null;
 
   // file_no: من الـ state لو داخل ملف، ولا من الـ option المختار
   const sel2   = el('col-invNo');
@@ -1877,6 +1925,7 @@ async function submitCollection() {
       pay_method: method, document: doc||null,
       due_date: due||null, paid_date: (paid && isPostedNow) ? paid : null,
       notes: notes||null, ref_no: refNo, post_status: entryStatus(),
+      received_by: receivedBy || null,
     };
     const colIns = await apiPost('collections', data);
     await logAudit('INSERT','collections',fn,null,data);
@@ -1884,7 +1933,7 @@ async function submitCollection() {
     if (isPostedNow && cust && paid) {
       const colId = colIns?.[0]?.id || null;
       try {
-        await je_collection({sys:state.system,date:paid,amount,fileNo:fn,refId:colId,customer:cust,invNo:invNo||'',method});
+        await je_collection({sys:state.system,date:paid,amount,fileNo:fn,refId:colId,customer:cust,invNo:invNo||'',method,receivedBy});
       } catch(jeErr) {
         if (colId) await apiPatch('collections', { id:`eq.${colId}` }, { post_status:'draft' });
         toast(`⚠️ تم حفظ التحصيل بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
