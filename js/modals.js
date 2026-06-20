@@ -1592,7 +1592,7 @@ async function submitSale() {
     if (entryStatus()==='posted') {
       try {
         // ✅ COGS = (إجمالي الشراء + المصاريف المرحّلة) ÷ عدد السيارات × عدد المباعة في الفاتورة
-        const totalCOGS = await calcCOGS(state.system, fn, saleItems.length);
+        const totalCOGS = await calcCOGS(state.system, fn, saleItems.length, { soldVins: saleItems.map(i=>i.vin) });
         // ✅ القيد يستخدم grandTotal (شامل extra charges) لتطابق قيمة التحصيل
         await je_sale({sys:state.system, date, amount:grandTotal, cost:totalCOGS, fileNo:fn, customer, invNo});
       } catch(jeErr) {

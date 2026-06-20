@@ -343,39 +343,66 @@ async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}
 //   sys, fileNo, soldCount  — كالمعتاد
 //   alreadySold (optional)  — للمهاجر (migration) الذي يتتبع الحالة داخلياً
 //   alreadyCOGS (optional)  — نفس الغرض؛ لو null يُجلب من journal_entries
-async function calcCOGS(sys, fileNo, soldCount, { alreadySold = null, alreadyCOGS = null } = {}) {
+// ✅ الخيار ②: فصل تكلفة القطع (vin يبدأ بـ PART-) عن متوسط الشاحنات.
+//   - القطعة COGS = سعر شرائها الفعلي (لا متوسط).
+//   - الشاحنات تأخذ المتوسط على تكلفتها وعددها فقط (بعد طرح القطع).
+//   - متوافق رجعياً: ملف بلا قطع PART- (وبدون soldVins) ⇒ نفس النتيجة القديمة حرفياً.
+async function calcCOGS(sys, fileNo, soldCount, { alreadySold = null, alreadyCOGS = null, soldVins = null } = {}) {
   if (!soldCount || soldCount <= 0) return 0;
   try {
-    // جلب بيانات الملف
+    // جلب بيانات الملف (vin + سعر الشراء لازمان لفصل القطع)
     const [poRows, vehRows, expRows] = await Promise.all([
-      apiGetAll('purchase_orders', { select:'total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGetAll('vehicles',        { select:'id',             system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
-      apiGetAll('expenses',        { select:'amount',         system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
+      apiGetAll('purchase_orders', { select:'total_purchase',    system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('vehicles',        { select:'vin,purchase_price', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('expenses',        { select:'amount',            system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
     ]);
     const totalPurchase = +((poRows||[])[0]?.total_purchase || 0);
     const totalExp      = (expRows||[]).reduce((s,e) => s + (+e.amount||0), 0);
-    const totalVeh      = (vehRows||[]).length || 1;
     const fullCost      = totalPurchase + totalExp;
 
-    // إذا لم تُمرَّر قيم جاهزة — اجلبها من القيود المرحّلة
-    let _alreadyCOGS = alreadyCOGS;
-    let _alreadySold = alreadySold;
+    // ✅ فصل القطع عن الشاحنات
+    const _isPart = vin => (vin||'').startsWith('PART-');
+    const allVeh  = vehRows || [];
+    const priceByVin = {};
+    allVeh.forEach(v => { if (v.vin) priceByVin[v.vin] = +v.purchase_price || 0; });
+    const partsCost  = allVeh.filter(v => _isPart(v.vin)).reduce((s,v)=>s+(+v.purchase_price||0),0);
+    const truckCount = allVeh.filter(v => !_isPart(v.vin)).length;
+    const truckCost  = Math.max(fullCost - partsCost, 0);
 
-    if (_alreadyCOGS === null || _alreadySold === null) {
-      const [jeRows, soldRows] = await Promise.all([
-        apiGetAll('journal_entries', { select:'dr_amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, account_code:'eq.5100', post_status:'eq.posted' }),
-        apiGetAll('sales',           { select:'id',        system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
-      ]);
-      if (_alreadyCOGS === null) _alreadyCOGS = (jeRows||[]).reduce((s,r) => s + (+r.dr_amount||0), 0);
-      if (_alreadySold === null) _alreadySold  = (soldRows||[]).length;
+    // تصنيف بنود هذه الفاتورة (قطع vs شاحنات)
+    let soldPartVins = [], soldTruckCount = soldCount;
+    if (Array.isArray(soldVins)) {
+      soldPartVins   = soldVins.filter(_isPart);
+      soldTruckCount = soldVins.filter(v => !_isPart(v)).length;
+    }
+    // COGS القطع = سعر شرائها الفعلي
+    const partCOGS = soldPartVins.reduce((s,vin) => s + (priceByVin[vin] ?? 0), 0);
+
+    // COGS الشاحنات = متوسط "المتبقي" على الشاحنات فقط
+    let truckCOGS = 0;
+    if (soldTruckCount > 0) {
+      let _alreadyCOGS = alreadyCOGS;
+      let _alreadySold = alreadySold;
+      if (_alreadyCOGS === null || _alreadySold === null) {
+        const [jeRows, soldRows] = await Promise.all([
+          apiGetAll('journal_entries', { select:'dr_amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, account_code:'eq.5100', post_status:'eq.posted' }),
+          apiGetAll('sales',           { select:'vin',       system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
+        ]);
+        const totalAlreadyCOGS = (jeRows||[]).reduce((s,r) => s + (+r.dr_amount||0), 0);
+        const soldRowsArr      = soldRows || [];
+        const soldPartsPrev    = soldRowsArr.filter(s => _isPart(s.vin));
+        const alreadyPartCOGS  = soldPartsPrev.reduce((s,row) => s + (priceByVin[row.vin] ?? 0), 0);
+        // نطرح حصة القطع لنحصل على قيم الشاحنات فقط
+        if (_alreadyCOGS === null) _alreadyCOGS = Math.max(totalAlreadyCOGS - alreadyPartCOGS, 0);
+        if (_alreadySold === null) _alreadySold = soldRowsArr.length - soldPartsPrev.length;
+      }
+      const remainingTrucks = Math.max(truckCount - _alreadySold, soldTruckCount);
+      const remainingCost   = Math.max(truckCost - _alreadyCOGS, 0);
+      const costPerTruck    = remainingTrucks > 0 ? remainingCost / remainingTrucks : 0;
+      truckCOGS = costPerTruck * soldTruckCount;
     }
 
-    // التكلفة والسيارات المتبقية قبل هذا البيع
-    const remainingVeh  = Math.max(totalVeh - _alreadySold, soldCount);
-    const remainingCost = Math.max(fullCost  - _alreadyCOGS, 0);
-    const costPerVeh    = remainingVeh > 0 ? remainingCost / remainingVeh : 0;
-
-    return Math.round(costPerVeh * soldCount * 100) / 100;
+    return Math.round((partCOGS + truckCOGS) * 100) / 100;
   } catch(e) {
     console.warn('calcCOGS error:', e.message);
     return 0;
@@ -638,7 +665,7 @@ async function simulateDraftJE(sys, from, to) {
       const totalAmount = grp.rows.reduce((s,r)=>s+(+r.sale_price||0),0);
       if (!(totalAmount>0)) continue;
       let cost = 0;
-      try { cost = await calcCOGS(sys, grp.file_no, grp.rows.length); } catch(_) {}
+      try { cost = await calcCOGS(sys, grp.file_no, grp.rows.length, { soldVins: grp.rows.map(r=>r.vin) }); } catch(_) {}
       const lines = [
         {acc:'1200', name:'ذمم العملاء',          dr:totalAmount, cr:0, contact:grp.customer, desc:`فاتورة ${grp.inv_no}`},
         {acc:'4100', name:getAccountName('4100'), dr:0, cr:totalAmount, contact:null,          desc:`فاتورة ${grp.inv_no}`},

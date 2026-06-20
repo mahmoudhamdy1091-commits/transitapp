@@ -316,7 +316,7 @@ async function submitQuickSale() {
       const saleId = qsIns?.[0]?.id || null;
       try {
         // COGS = (إجمالي الشراء + المصاريف) ÷ عدد السيارات × 1 (سيارة واحدة في البيع السريع)
-        const _qsCOGS = await calcCOGS(state.system, fileNo, 1);
+        const _qsCOGS = await calcCOGS(state.system, fileNo, 1, { soldVins:[vin] });
         await je_sale({sys:state.system,date,amount:price,cost:_qsCOGS,fileNo,customer,invNo:invNo||'QS'});
       } catch(jeErr) {
         if (saleId) await apiPatch('sales', { id:`eq.${saleId}` }, { post_status:'draft' });
