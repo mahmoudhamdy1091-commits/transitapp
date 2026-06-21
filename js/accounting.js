@@ -1589,14 +1589,15 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       const share = (pm.share_percent||0) / 100;
 
       // ── أ. بيانات العرض (سيارات، مصاريف، مبيعات، شركاء) من الجداول المصدرية ──
-      const [po, vehicles, expenses, sales, allPartners, allPartnersPayments, payouts] = await Promise.all([
+      const [po, vehicles, expenses, sales, allPartners, allPartnersPayments, payouts, collections] = await Promise.all([
         apiGetAll('purchase_orders',  { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
         apiGetAll('vehicles',         { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
         apiGetAll('expenses',         { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
         apiGetAll('sales',            { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
         apiGetAll('partners_master',  { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
         apiGetAll('payments',         { select:'payer,amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGetAll('partner_payouts',  { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, partner:`eq.${partnerName}` }),
+        apiGetAll('partner_payouts',  { select:'partner,amount,capital_amount,profit_amount,advance_amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('collections',      { select:'amount,received_by,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       ]);
 
       // ── ب. القيود المحاسبية من journal_entries — المصدر الموثوق ──
@@ -1678,10 +1679,11 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
           debit:  +r.dr_amount||0,
           credit: +r.cr_amount||0,
         })), ...expMovements].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-        // توزيع المسحوبات من payouts للعرض فقط
-        capitalRet  = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
-        profitTaken = (payouts||[]).reduce((s,p)=>s+(+p.profit_amount||0),0);
-        advances    = (payouts||[]).reduce((s,p)=>s+(+p.advance_amount||0),0);
+        // توزيع المسحوبات من payouts للعرض فقط (مفلتر للشريك الحالي)
+        const myPayouts = (payouts||[]).filter(py => py.partner === partnerName);
+        capitalRet  = myPayouts.reduce((s,p)=>s+(+p.capital_amount||0),0);
+        profitTaken = myPayouts.reduce((s,p)=>s+(+p.profit_amount||0),0);
+        advances    = myPayouts.reduce((s,p)=>s+(+p.advance_amount||0),0);
       } else {
         // ⚠️ Fallback: بيانات قديمة — من الجداول المصدرية
         const allPartnersCount = (allPartners||[]).length;
@@ -1692,9 +1694,10 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
           .filter(p => allPartnersCount <= 1 || p.payer === partnerName)
           .reduce((s,p)=>s+(+p.amount||0), 0);
         capitalPaid   += expCapital; // مصروفات دفعها من جيبه
-        capitalRet     = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
-        profitTaken    = (payouts||[]).reduce((s,p)=>s+(+p.profit_amount||0),0);
-        advances       = (payouts||[]).reduce((s,p)=>s+(+p.advance_amount||0),0);
+        const myPayoutsFb = (payouts||[]).filter(py => py.partner === partnerName);
+        capitalRet     = myPayoutsFb.reduce((s,p)=>s+(+p.capital_amount||0),0);
+        profitTaken    = myPayoutsFb.reduce((s,p)=>s+(+p.profit_amount||0),0);
+        advances       = myPayoutsFb.reduce((s,p)=>s+(+p.advance_amount||0),0);
         totalWithdrawn = capitalRet + profitTaken + advances;
         jeMovements    = [...(partnerPayments||[]).filter(isEffective).map(p=>({
           date:   (p.pay_date||'').split('T')[0],
@@ -1725,13 +1728,17 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         const pWithdrawn = (payouts||[])
           .filter(py => py.partner === pName && isActive(py))
           .reduce((s,py) => s + (+py.amount||0), 0);
+        const pCollectedDirect = pName === TREASURY_PARTNER ? 0 :
+          (collections||[]).filter(isPosted)
+            .filter(c => c.received_by && c.received_by.trim() === pName)
+            .reduce((s,c) => s + (+c.amount||0), 0);
         const pProfit  = dealProfit * pShare;
-        const pNetDue  = pCapitalPaid + pExpPaid + pProfit - pWithdrawn;
+        const pNetDue  = pCapitalPaid + pExpPaid + pProfit - pWithdrawn - pCollectedDirect;
         return {
           name: pName, share: pShare, sharePercent: +p.share_percent,
           capitalPaid: pCapitalPaid, capitalShould: totalPurchase * pShare,
           expPaid: pExpPaid, expShould: pExpShould, expDiff: pExpDiff,
-          profit: pProfit, withdrawn: pWithdrawn, netDue: pNetDue,
+          profit: pProfit, withdrawn: pWithdrawn, collectedDirect: pCollectedDirect, netDue: pNetDue,
         };
       });
 
@@ -1951,67 +1958,78 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
             <!-- بطاقة لكل شريك -->
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px">
               ${(d.partnerSettlement||[]).map(ps => {
-                const isMe = ps.name === partnerName;
-                const bdr  = isMe ? '2px solid #f59e0b' : '1px solid #e2e8f0';
+                const isMe   = ps.name === partnerName;
+                const bdr    = isMe ? '2px solid #f59e0b' : '1px solid #e2e8f0';
+                const owed   = ps.capitalPaid + ps.expPaid + ps.profit;
+                const got    = ps.withdrawn + ps.collectedDirect;
+                const row = (label, val, color) =>
+                  `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0">
+                    <span style="color:#64748b">${label}</span>
+                    <span style="font-family:monospace;font-weight:600;color:${color||'var(--text)'}">${fmt2(val)}</span>
+                  </div>`;
+                const divider = `<div style="border-top:1px dashed #e2e8f0;margin:5px 0"></div>`;
+                const totalRow = (label, val, color) =>
+                  `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0">
+                    <span style="font-weight:700;color:${color}">${label}</span>
+                    <span style="font-family:monospace;font-weight:800;color:${color}">${fmt2(val)}</span>
+                  </div>`;
                 return `
                 <div style="border:${bdr};border-radius:10px;overflow:hidden;background:#fff">
-                  <div style="background:${isMe?'#fef3c7':'#1e293b'};color:${isMe?'#92400e':'#fff'};padding:8px 12px;font-weight:700;font-size:13px">
-                    ${ps.name}${isMe?' ★':''} — ${ps.sharePercent}%
+                  <!-- رأس البطاقة -->
+                  <div style="background:${isMe?'#fef3c7':'#1e293b'};color:${isMe?'#92400e':'#fff'};padding:8px 14px;font-weight:700;font-size:13px;display:flex;justify-content:space-between;align-items:center">
+                    <span>${ps.name}${isMe?' ★':''}</span>
+                    <span style="font-size:12px;opacity:.85">${ps.sharePercent}%</span>
                   </div>
-                  <div style="padding:10px 12px;font-size:12px">
-                    <!-- رأس المال -->
-                    <div style="border-bottom:1px solid #f1f5f9;padding-bottom:7px;margin-bottom:7px">
-                      <div style="color:#64748b;margin-bottom:4px;font-weight:600">💰 رأس المال</div>
-                      <div style="display:flex;justify-content:space-between">
-                        <span style="color:#64748b">حصته المفروضة</span>
-                        <span style="font-family:monospace">${fmt2(ps.capitalShould)}</span>
-                      </div>
-                      <div style="display:flex;justify-content:space-between">
-                        <span style="color:#64748b">دفع فعلاً</span>
-                        <span style="font-family:monospace;font-weight:700;color:${ps.capitalPaid>=ps.capitalShould-0.001?'#16a34a':'#dc2626'}">${fmt2(ps.capitalPaid)}</span>
-                      </div>
-                      ${Math.abs(ps.capitalPaid-ps.capitalShould)>0.001?`
-                      <div style="display:flex;justify-content:space-between;margin-top:2px">
-                        <span style="color:#64748b">الفرق</span>
-                        <span style="font-family:monospace;font-weight:700;color:${ps.capitalPaid>ps.capitalShould?'#16a34a':'#dc2626'}">
-                          ${ps.capitalPaid>ps.capitalShould?'+':''}${fmt2(ps.capitalPaid-ps.capitalShould)}
-                        </span>
-                      </div>`:''}
+                  <div style="padding:10px 14px;font-size:12px">
+
+                    <!-- قسم: يستحق -->
+                    <div style="background:#f0fdf4;border-radius:7px;padding:8px 10px;margin-bottom:8px">
+                      <div style="font-weight:700;color:#15803d;margin-bottom:4px">➕ يستحق</div>
+                      ${row('رأس ماله المدفوع', ps.capitalPaid, '#15803d')}
+                      ${ps.expPaid > 0 ? row('مصروفات من جيبه', ps.expPaid, '#15803d') : ''}
+                      ${row(ps.profit>=0?'حصة الربح':'حصة الخسارة', ps.profit, ps.profit>=0?'#15803d':'#dc2626')}
+                      ${divider}
+                      ${totalRow('الإجمالي المستحق', owed, '#15803d')}
                     </div>
-                    <!-- المصروفات -->
-                    <div style="border-bottom:1px solid #f1f5f9;padding-bottom:7px;margin-bottom:7px">
-                      <div style="color:#64748b;margin-bottom:4px;font-weight:600">💸 المصروفات</div>
-                      <div style="display:flex;justify-content:space-between">
-                        <span style="color:#64748b">حصته المفروضة</span>
-                        <span style="font-family:monospace">${fmt2(ps.expShould)}</span>
-                      </div>
-                      <div style="display:flex;justify-content:space-between">
-                        <span style="color:#64748b">دفع فعلاً</span>
-                        <span style="font-family:monospace;font-weight:700;color:${ps.expPaid>=ps.expShould-0.001?'#16a34a':'#dc2626'}">${fmt2(ps.expPaid)}</span>
-                      </div>
-                      ${Math.abs(ps.expDiff)>0.001?`
-                      <div style="display:flex;justify-content:space-between;margin-top:4px;padding:3px 6px;border-radius:6px;background:${ps.expDiff>0?'#f0fdf4':'#fef2f2'}">
-                        <span style="font-weight:700;color:${ps.expDiff>0?'#16a34a':'#dc2626'}">${ps.expDiff>0?'دفع زيادة ← يستحق':'مدين بـ'}</span>
-                        <span style="font-family:monospace;font-weight:700;color:${ps.expDiff>0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(ps.expDiff))}</span>
-                      </div>`:'<div style="color:#16a34a;font-size:11px;margin-top:2px">✓ مسوّى</div>'}
+
+                    <!-- قسم: استلم -->
+                    <div style="background:#fff1f2;border-radius:7px;padding:8px 10px;margin-bottom:8px">
+                      <div style="font-weight:700;color:#b91c1c;margin-bottom:4px">➖ استلم</div>
+                      ${ps.withdrawn > 0 ? row('مسحوبات رسمية', ps.withdrawn, '#b91c1c') : ''}
+                      ${ps.collectedDirect > 0 ? row('تحصيلات مبيعات مباشرة', ps.collectedDirect, '#b91c1c') : ''}
+                      ${got === 0 ? `<div style="color:#94a3b8;font-size:11px">لم يستلم شيئاً بعد</div>` : ''}
+                      ${got > 0 ? divider : ''}
+                      ${got > 0 ? totalRow('الإجمالي المستلم', got, '#b91c1c') : ''}
                     </div>
-                    <!-- الربح والمسحوبات -->
-                    <div style="border-bottom:1px solid #f1f5f9;padding-bottom:7px;margin-bottom:7px">
-                      <div style="display:flex;justify-content:space-between">
-                        <span style="color:#64748b">📈 حصة الربح/الخسارة</span>
-                        <span style="font-family:monospace;font-weight:700;color:${ps.profit>=0?'#16a34a':'#dc2626'}">${ps.profit>=0?'+':''}${fmt2(ps.profit)}</span>
+
+                    <!-- الرصيد النهائي -->
+                    <div style="background:${ps.netDue>=0?'#dbeafe':'#fef2f2'};border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center">
+                      <div>
+                        <div style="font-size:11px;color:#64748b">${ps.netDue>=0?'الرصيد المستحق له':'الرصيد المدين عليه'}</div>
+                        <div style="font-size:10px;color:#94a3b8">${fmt2(owed)} − ${fmt2(got)}</div>
                       </div>
-                      ${ps.withdrawn>0?`
-                      <div style="display:flex;justify-content:space-between;margin-top:3px">
-                        <span style="color:#64748b">💳 المسحوبات</span>
-                        <span style="font-family:monospace;color:#dc2626">−${fmt2(ps.withdrawn)}</span>
-                      </div>`:''}
+                      <div style="font-family:monospace;font-weight:900;font-size:18px;color:${ps.netDue>=0?'#1d4ed8':'#dc2626'}">${ps.netDue>=0?'+':''}${fmt2(ps.netDue)}</div>
                     </div>
-                    <!-- الصافي -->
-                    <div style="background:${ps.netDue>=0?'#f0fdf4':'#fff1f2'};border-radius:8px;padding:8px;text-align:center">
-                      <div style="font-size:11px;color:#64748b;margin-bottom:2px">${ps.netDue>=0?'✅ الصافي المستحق له':'⚠️ الصافي المدين عليه'}</div>
-                      <div style="font-family:monospace;font-weight:900;font-size:16px;color:${ps.netDue>=0?'#16a34a':'#dc2626'}">${ps.netDue>=0?'+':''}${fmt2(ps.netDue)}</div>
-                    </div>
+
+                    <!-- تنبيهات الفروق -->
+                    ${(() => {
+                      const capDiff = ps.capitalPaid - ps.capitalShould;
+                      const notes = [];
+                      if (Math.abs(capDiff) > 0.001)
+                        notes.push({ positive: capDiff > 0,
+                          text: capDiff > 0 ? '⬆ دفع رأس مال زيادة — يستحق' : '⬇ لم يكمل حصته من رأس المال — ناقص',
+                          val: Math.abs(capDiff) });
+                      if (Math.abs(ps.expDiff) > 0.001)
+                        notes.push({ positive: ps.expDiff > 0,
+                          text: ps.expDiff > 0 ? '⬆ دفع مصروفات زيادة — يستحق' : '⬇ لم يدفع حصته من المصروفات — مدين بـ',
+                          val: Math.abs(ps.expDiff) });
+                      return notes.map(n => `
+                      <div style="margin-top:5px;padding:4px 8px;border-radius:6px;background:${n.positive?'#f0fdf4':'#fef2f2'};font-size:11px;display:flex;justify-content:space-between;gap:6px">
+                        <span style="color:${n.positive?'#15803d':'#dc2626'}">${n.text}</span>
+                        <span style="font-family:monospace;font-weight:700;color:${n.positive?'#15803d':'#dc2626'}">${fmt2(n.val)}</span>
+                      </div>`).join('');
+                    })()}
+
                   </div>
                 </div>`;
               }).join('')}
