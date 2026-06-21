@@ -1732,13 +1732,17 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
           (collections||[]).filter(isPosted)
             .filter(c => c.received_by && c.received_by.trim() === pName)
             .reduce((s,c) => s + (+c.amount||0), 0);
-        const pProfit  = dealProfit * pShare;
-        const pNetDue  = pCapitalPaid + pExpPaid + pProfit - pWithdrawn - pCollectedDirect;
+        const pProfit     = dealProfit * pShare;
+        const pNetDue     = pCapitalPaid + pExpPaid + pProfit - pWithdrawn - pCollectedDirect;
+        const pSalesShare = jeSales    * pShare;
+        const pCOGSShare  = jeCOGS     * pShare;
+        const pExpShare   = jeDealExp  * pShare;
         return {
           name: pName, share: pShare, sharePercent: +p.share_percent,
           capitalPaid: pCapitalPaid, capitalShould: totalPurchase * pShare,
           expPaid: pExpPaid, expShould: pExpShould, expDiff: pExpDiff,
           profit: pProfit, withdrawn: pWithdrawn, collectedDirect: pCollectedDirect, netDue: pNetDue,
+          pSalesShare, pCOGSShare, pExpShare,
         };
       });
 
@@ -1974,10 +1978,30 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                       ${maleTotal !== ps.capitalPaid ? `${divider}${totalRow('الإجمالي', maleTotal, '#15803d')}` : ''}
                     </div>
 
-                    <!-- نتيجة الصفقة -->
-                    <div style="background:${ps.profit>=0?'#f0fdf4':'#fff1f2'};border:1px dashed ${ps.profit>=0?'#86efac':'#fca5a5'};border-radius:7px;padding:8px 10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
-                      <span style="color:#64748b;font-weight:600">📊 ${ps.profit>=0?'حصة الربح':'حصة الخسارة'}</span>
-                      <span style="font-family:monospace;font-weight:700;font-size:13px;color:${ps.profit>=0?'#15803d':'#dc2626'}">${ps.profit>=0?'+':''}${fmt2(ps.profit)}</span>
+                    <!-- نتيجة الصفقة — تفاصيل طريقة الحساب -->
+                    <div style="background:${ps.profit>=0?'#f0fdf4':'#fff1f2'};border:1px dashed ${ps.profit>=0?'#86efac':'#fca5a5'};border-radius:7px;padding:8px 10px;margin-bottom:6px">
+                      <div style="font-weight:700;color:${ps.profit>=0?'#15803d':'#dc2626'};margin-bottom:6px;font-size:12px">📊 حصة الربح / الخسارة (${ps.sharePercent}%)</div>
+                      ${d.hasJEData ? `
+                      <div style="display:flex;justify-content:space-between;padding:2px 0">
+                        <span style="color:#64748b">إيرادات المبيعات &nbsp;${ps.sharePercent}% × ${fmt2(d.mySales/ps.share||0)}</span>
+                        <span style="font-family:monospace;font-weight:600;color:#15803d">+ ${fmt2(ps.pSalesShare)}</span>
+                      </div>
+                      <div style="display:flex;justify-content:space-between;padding:2px 0">
+                        <span style="color:#64748b">تكلفة البضاعة المباعة &nbsp;${ps.sharePercent}% × ${fmt2(ps.pCOGSShare/ps.share||0)}</span>
+                        <span style="font-family:monospace;font-weight:600;color:#dc2626">− ${fmt2(ps.pCOGSShare)}</span>
+                      </div>
+                      <div style="display:flex;justify-content:space-between;padding:2px 0">
+                        <span style="color:#64748b">مصروفات الصفقة &nbsp;${ps.sharePercent}% × ${fmt2(ps.pExpShare/ps.share||0)}</span>
+                        <span style="font-family:monospace;font-weight:600;color:#dc2626">− ${fmt2(ps.pExpShare)}</span>
+                      </div>
+                      <div style="border-top:1px dashed #cbd5e1;margin-top:5px;padding-top:5px;display:flex;justify-content:space-between;align-items:center">
+                        <span style="font-weight:700;color:#64748b">= ${ps.profit>=0?'حصة الربح':'حصة الخسارة'}</span>
+                        <span style="font-family:monospace;font-weight:800;font-size:13px;color:${ps.profit>=0?'#15803d':'#dc2626'}">${ps.profit>=0?'+':''}${fmt2(ps.profit)}</span>
+                      </div>` : `
+                      <div style="display:flex;justify-content:space-between;align-items:center">
+                        <span style="color:#64748b">${ps.profit>=0?'حصة الربح':'حصة الخسارة'}</span>
+                        <span style="font-family:monospace;font-weight:700;font-size:13px;color:${ps.profit>=0?'#15803d':'#dc2626'}">${ps.profit>=0?'+':''}${fmt2(ps.profit)}</span>
+                      </div>`}
                     </div>
 
                     <!-- ما عليه -->
