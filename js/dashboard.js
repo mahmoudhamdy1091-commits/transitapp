@@ -554,6 +554,27 @@ async function openViewer(fileNo) {
     <span class="vh-meta-item"><strong>عدد السيارات:</strong> ${deal?.vehicle_count || '—'}</span>
   `;
   el('vh-status-badge').innerHTML = `<span class="badge badge-${statusClass(deal?.status)}">${deal?.status}</span>`;
+
+  // جلب منشئ الملف وآخر محرر من audit_log (غير متزامن — لا يبطّئ فتح الـ viewer)
+  apiGetAll('audit_log', {
+    select: 'action,user_email,created_at',
+    system_type: `eq.${state.system}`,
+    file_no: `eq.${fileNo}`,
+    table_name: 'eq.purchase_orders',
+    order: 'created_at.asc',
+  }).then(logs => {
+    const created  = (logs||[]).find(l => l.action === 'INSERT');
+    const edits    = (logs||[]).filter(l => l.action === 'EDIT');
+    const lastEdit = edits[edits.length - 1];
+    const fmtUser  = email => (email||'unknown').replace(/@.*/, '');
+    const fmtTs    = ts => (ts||'').split('T')[0];
+    let auditHtml  = '';
+    if (created)  auditHtml += `<span class="vh-meta-item" title="${created.user_email}">📌 <strong>أنشأه:</strong> ${fmtUser(created.user_email)} · <span class="ltr-num">${fmtTs(created.created_at)}</span></span>`;
+    if (lastEdit) auditHtml += `<span class="vh-meta-item" title="${lastEdit.user_email}">✏️ <strong>آخر تعديل:</strong> ${fmtUser(lastEdit.user_email)} · <span class="ltr-num">${fmtTs(lastEdit.created_at)}</span></span>`;
+    const meta = el('vh-meta');
+    if (meta && auditHtml) meta.innerHTML += auditHtml;
+  }).catch(() => {});
+
   el('vh-actions').innerHTML = `
     <div class="vh-action-group">
       <button class="btn btn-secondary btn-sm" onclick="openPaymentModal()">💳 دفعة</button>
