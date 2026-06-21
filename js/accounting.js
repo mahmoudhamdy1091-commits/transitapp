@@ -1707,15 +1707,41 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
       const netDue = capitalPaid + myProfit - totalWithdrawn;
 
-      // ── هـ. تسوية بين الشركاء ──
+      // ── هـ. تسوية شاملة لكل الشركاء ──
+      const postedExpAll = (expenses||[]).filter(isPosted);
+      const partnerSettlement = (allPartners||[]).map(p => {
+        const pName  = p.partner;
+        const pShare = (+p.share_percent||0) / 100;
+        const pCapitalPaid = (allPartnersPayments||[]).filter(isEffective)
+          .filter(py => py.payer === pName)
+          .reduce((s,py) => s + (+py.amount||0), 0);
+        const pExpPaid = postedExpAll
+          .filter(e => pName === TREASURY_PARTNER
+            ? (!e.paid_by || e.paid_by.trim() === TREASURY_PARTNER)
+            : (e.paid_by && e.paid_by.trim() === pName))
+          .reduce((s,e) => s + (+e.amount||0), 0);
+        const pExpShould = totalExp * pShare;
+        const pExpDiff   = pExpPaid - pExpShould; // موجب=دفع زيادة، سالب=عليه دين
+        const pWithdrawn = (payouts||[])
+          .filter(py => py.partner === pName && isActive(py))
+          .reduce((s,py) => s + (+py.amount||0), 0);
+        const pProfit  = dealProfit * pShare;
+        const pNetDue  = pCapitalPaid + pExpPaid + pProfit - pWithdrawn;
+        return {
+          name: pName, share: pShare, sharePercent: +p.share_percent,
+          capitalPaid: pCapitalPaid, capitalShould: totalPurchase * pShare,
+          expPaid: pExpPaid, expShould: pExpShould, expDiff: pExpDiff,
+          profit: pProfit, withdrawn: pWithdrawn, netDue: pNetDue,
+        };
+      });
+
+      // للتوافق مع الكود القديم
       const paidByPartner = {};
       (allPartnersPayments||[]).filter(isEffective).forEach(p => {
         paidByPartner[p.payer] = (paidByPartner[p.payer]||0) + (+p.amount||0);
       });
       const shouldPayMap = {};
-      (allPartners||[]).forEach(p => {
-        shouldPayMap[p.partner] = totalPurchase * ((+p.share_percent||0)/100);
-      });
+      (allPartners||[]).forEach(p => { shouldPayMap[p.partner] = totalPurchase * ((+p.share_percent||0)/100); });
       const partnerDebts = [];
       (allPartners||[]).forEach(p => {
         const diff = (paidByPartner[p.partner]||0) - (shouldPayMap[p.partner]||0);
@@ -1731,7 +1757,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         capitalPaid, expCapital, capitalRet, profitTaken, advances, totalWithdrawn, netDue,
         status: poData.status || '—', supplier: poData.supplier || '—',
         poDate: poData.po_date || poData.created_at || '',
-        partnerDebts, paidByPartner, shouldPayMap,
+        partnerDebts, paidByPartner, shouldPayMap, partnerSettlement,
         hasJEPartner, hasJEData, jeMovements,
       };
     }));
@@ -1918,60 +1944,96 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
             </div>
           </div>
 
-          <!-- ديون بين الشركاء -->
-          ${d.partnerDebts && d.partnerDebts.length ? `
+          <!-- ⚖️ تسوية شاملة بين الشركاء -->
+          ${(d.partnerSettlement||[]).length > 1 ? `
           <div style="margin-bottom:14px">
-            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">⚖️ تسوية بين الشركاء</div>
-            <div style="background:#f8fafc;border-radius:8px;padding:12px;border:1px solid #e2e8f0">
-              <table style="width:100%;border-collapse:collapse;font-size:12px">
-                <thead>
-                  <tr style="background:#f1f5f9">
-                    <th style="padding:7px 10px;text-align:right;color:#64748b">الشريك</th>
-                    <th style="padding:7px 10px;text-align:right;color:#64748b">حصته المفروض</th>
-                    <th style="padding:7px 10px;text-align:right;color:#64748b">دفع فعلاً</th>
-                    <th style="padding:7px 10px;text-align:right;color:#64748b">الفرق</th>
-                    <th style="padding:7px 10px;text-align:right;color:#64748b">الوضع</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${(d.allPartners||[]).map(p => {
-                    const should = d.shouldPayMap[p.partner] || 0;
-                    const did    = d.paidByPartner[p.partner] || 0;
-                    const diff   = did - should;
-                    const isMe   = p.partner === partnerName;
-                    return `<tr style="border-bottom:1px solid #f1f5f9;${isMe?'background:#fef9ec;font-weight:700':''}">
-                      <td style="padding:7px 10px">${p.partner}${isMe?' ★':''}</td>
-                      <td style="padding:7px 10px;font-family:monospace">${fmt2(should)}</td>
-                      <td style="padding:7px 10px;font-family:monospace">${fmt2(did)}</td>
-                      <td style="padding:7px 10px;font-family:monospace;color:${diff>0?'#16a34a':diff<0?'#dc2626':'#64748b'};font-weight:700">
-                        ${diff>0?'+':''}${fmt2(diff)}
-                      </td>
-                      <td style="padding:7px 10px">
-                        ${diff > 0.001 
-                          ? `<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700">دفع زيادة — يستحق ${fmt2(diff)}</span>`
-                          : diff < -0.001
-                          ? `<span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700">مدين بـ ${fmt2(Math.abs(diff))}</span>`
-                          : `<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700">✓ مسوّى</span>`}
-                      </td>
-                    </tr>`;
-                  }).join('')}
-                </tbody>
-              </table>
-              ${d.partnerDebts.length ? `
-              <div style="margin-top:10px;padding:10px;background:#fff;border-radius:6px;border:1px solid #e2e8f0;font-size:12px">
-                ${d.partnerDebts.filter(x=>x.diff>0).map(creditor => {
-                  const debtors = d.partnerDebts.filter(x=>x.diff<0);
-                  return debtors.map(debtor => `
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                      <span style="color:#dc2626;font-weight:700">${debtor.name}</span>
-                      <span style="color:#64748b">مدين لـ</span>
-                      <span style="color:#16a34a;font-weight:700">${creditor.name}</span>
-                      <span style="color:#64748b">بمبلغ</span>
-                      <span style="font-family:monospace;font-weight:700;color:#1d4ed8">${fmt2(Math.min(Math.abs(debtor.diff), creditor.diff))}</span>
-                    </div>`).join('');
-                }).join('')}
-              </div>` : ''}
+            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">⚖️ تسوية شاملة بين الشركاء</div>
+            <!-- بطاقة لكل شريك -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px">
+              ${(d.partnerSettlement||[]).map(ps => {
+                const isMe = ps.name === partnerName;
+                const bdr  = isMe ? '2px solid #f59e0b' : '1px solid #e2e8f0';
+                return `
+                <div style="border:${bdr};border-radius:10px;overflow:hidden;background:#fff">
+                  <div style="background:${isMe?'#fef3c7':'#1e293b'};color:${isMe?'#92400e':'#fff'};padding:8px 12px;font-weight:700;font-size:13px">
+                    ${ps.name}${isMe?' ★':''} — ${ps.sharePercent}%
+                  </div>
+                  <div style="padding:10px 12px;font-size:12px">
+                    <!-- رأس المال -->
+                    <div style="border-bottom:1px solid #f1f5f9;padding-bottom:7px;margin-bottom:7px">
+                      <div style="color:#64748b;margin-bottom:4px;font-weight:600">💰 رأس المال</div>
+                      <div style="display:flex;justify-content:space-between">
+                        <span style="color:#64748b">حصته المفروضة</span>
+                        <span style="font-family:monospace">${fmt2(ps.capitalShould)}</span>
+                      </div>
+                      <div style="display:flex;justify-content:space-between">
+                        <span style="color:#64748b">دفع فعلاً</span>
+                        <span style="font-family:monospace;font-weight:700;color:${ps.capitalPaid>=ps.capitalShould-0.001?'#16a34a':'#dc2626'}">${fmt2(ps.capitalPaid)}</span>
+                      </div>
+                      ${Math.abs(ps.capitalPaid-ps.capitalShould)>0.001?`
+                      <div style="display:flex;justify-content:space-between;margin-top:2px">
+                        <span style="color:#64748b">الفرق</span>
+                        <span style="font-family:monospace;font-weight:700;color:${ps.capitalPaid>ps.capitalShould?'#16a34a':'#dc2626'}">
+                          ${ps.capitalPaid>ps.capitalShould?'+':''}${fmt2(ps.capitalPaid-ps.capitalShould)}
+                        </span>
+                      </div>`:''}
+                    </div>
+                    <!-- المصروفات -->
+                    <div style="border-bottom:1px solid #f1f5f9;padding-bottom:7px;margin-bottom:7px">
+                      <div style="color:#64748b;margin-bottom:4px;font-weight:600">💸 المصروفات</div>
+                      <div style="display:flex;justify-content:space-between">
+                        <span style="color:#64748b">حصته المفروضة</span>
+                        <span style="font-family:monospace">${fmt2(ps.expShould)}</span>
+                      </div>
+                      <div style="display:flex;justify-content:space-between">
+                        <span style="color:#64748b">دفع فعلاً</span>
+                        <span style="font-family:monospace;font-weight:700;color:${ps.expPaid>=ps.expShould-0.001?'#16a34a':'#dc2626'}">${fmt2(ps.expPaid)}</span>
+                      </div>
+                      ${Math.abs(ps.expDiff)>0.001?`
+                      <div style="display:flex;justify-content:space-between;margin-top:4px;padding:3px 6px;border-radius:6px;background:${ps.expDiff>0?'#f0fdf4':'#fef2f2'}">
+                        <span style="font-weight:700;color:${ps.expDiff>0?'#16a34a':'#dc2626'}">${ps.expDiff>0?'دفع زيادة ← يستحق':'مدين بـ'}</span>
+                        <span style="font-family:monospace;font-weight:700;color:${ps.expDiff>0?'#16a34a':'#dc2626'}">${fmt2(Math.abs(ps.expDiff))}</span>
+                      </div>`:'<div style="color:#16a34a;font-size:11px;margin-top:2px">✓ مسوّى</div>'}
+                    </div>
+                    <!-- الربح والمسحوبات -->
+                    <div style="border-bottom:1px solid #f1f5f9;padding-bottom:7px;margin-bottom:7px">
+                      <div style="display:flex;justify-content:space-between">
+                        <span style="color:#64748b">📈 حصة الربح/الخسارة</span>
+                        <span style="font-family:monospace;font-weight:700;color:${ps.profit>=0?'#16a34a':'#dc2626'}">${ps.profit>=0?'+':''}${fmt2(ps.profit)}</span>
+                      </div>
+                      ${ps.withdrawn>0?`
+                      <div style="display:flex;justify-content:space-between;margin-top:3px">
+                        <span style="color:#64748b">💳 المسحوبات</span>
+                        <span style="font-family:monospace;color:#dc2626">−${fmt2(ps.withdrawn)}</span>
+                      </div>`:''}
+                    </div>
+                    <!-- الصافي -->
+                    <div style="background:${ps.netDue>=0?'#f0fdf4':'#fff1f2'};border-radius:8px;padding:8px;text-align:center">
+                      <div style="font-size:11px;color:#64748b;margin-bottom:2px">${ps.netDue>=0?'✅ الصافي المستحق له':'⚠️ الصافي المدين عليه'}</div>
+                      <div style="font-family:monospace;font-weight:900;font-size:16px;color:${ps.netDue>=0?'#16a34a':'#dc2626'}">${ps.netDue>=0?'+':''}${fmt2(ps.netDue)}</div>
+                    </div>
+                  </div>
+                </div>`;
+              }).join('')}
             </div>
+            <!-- تسوية المصروفات بين الشركاء -->
+            ${(() => {
+              const expDebts = (d.partnerSettlement||[]).filter(ps=>ps.expDiff<-0.001);
+              const expCreditors = (d.partnerSettlement||[]).filter(ps=>ps.expDiff>0.001);
+              if (!expDebts.length || !expCreditors.length) return '';
+              return `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px;font-size:12px">
+                <div style="font-weight:700;color:#92400e;margin-bottom:6px">💡 تسوية المصروفات بين الشركاء</div>
+                ${expDebts.map(debtor => expCreditors.map(creditor => `
+                  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                    <span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:10px;font-weight:700">${debtor.name}</span>
+                    <span style="color:#64748b">مدين لـ</span>
+                    <span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:10px;font-weight:700">${creditor.name}</span>
+                    <span style="color:#64748b">بمبلغ</span>
+                    <span style="font-family:monospace;font-weight:700;color:#1d4ed8">${fmt2(Math.min(Math.abs(debtor.expDiff),creditor.expDiff))}</span>
+                    <span style="color:#94a3b8;font-size:11px">(حصته ${debtor.sharePercent}% من المصروفات دفعها ${creditor.name})</span>
+                  </div>`).join('')).join('')}
+              </div>`;
+            })()}
           </div>` : ''}
 
           <!-- الحركات المالية للشريك -->
