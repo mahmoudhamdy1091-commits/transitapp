@@ -1589,7 +1589,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       const share = (pm.share_percent||0) / 100;
 
       // ── أ. بيانات العرض (سيارات، مصاريف، مبيعات، شركاء) من الجداول المصدرية ──
-      const [po, vehicles, expenses, sales, allPartners, allPartnersPayments, payouts, collections] = await Promise.all([
+      const [po, vehicles, expenses, sales, allPartners, allPartnersPayments, payouts, collections, saleCharges] = await Promise.all([
         apiGetAll('purchase_orders',  { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
         apiGetAll('vehicles',         { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
         apiGetAll('expenses',         { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
@@ -1597,7 +1597,8 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         apiGetAll('partners_master',  { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
         apiGetAll('payments',         { select:'payer,amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
         apiGetAll('partner_payouts',  { select:'partner,amount,capital_amount,profit_amount,advance_amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-        apiGetAll('collections',      { select:'amount,received_by,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('collections',      { select:'amount,received_by,post_status,paid_date', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+        apiGetAll('sale_charges',     { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       ]);
 
       // ── ب. القيود المحاسبية من journal_entries — المصدر الموثوق ──
@@ -1634,7 +1635,8 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       const poData       = po?.[0] || {};
       const totalPurchase= +poData.total_purchase || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
       const totalExp     = (expenses||[]).filter(isPosted).reduce((s,e)=>s+(+e.amount||0),0);
-      const totalSales   = (sales||[]).filter(isPosted).reduce((s,s2)=>s+(+s2.sale_price||0),0);
+      const totalSales   = (sales||[]).filter(isPosted).reduce((s,s2)=>s+(+s2.sale_price||0),0)
+        + (saleCharges||[]).reduce((s,c)=>s+(+c.amount||0),0);
 
       // الربح: من القيود لو موجودة، وإلا من الجداول
       const hasJEData    = (jeAll||[]).length > 0;
@@ -1747,11 +1749,11 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
       });
 
       // ── و. تتبع النقدية ──
-      const totalColl = (collections||[]).filter(isPosted).reduce((s,c)=>s+(+c.amount||0),0);
+      const totalColl = (collections||[]).filter(c => isPosted(c) && !!c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
       const uncollected = totalSales - totalColl;
       const collPct = totalSales > 0 ? (totalColl / totalSales) * 100 : 0;
       const collByReceiver = Object.entries(
-        (collections||[]).filter(isPosted).reduce((acc,c) => {
+        (collections||[]).filter(c => isPosted(c) && !!c.paid_date).reduce((acc,c) => {
           const name = (c.received_by && c.received_by.trim()) || TREASURY_PARTNER;
           acc[name] = (acc[name]||0) + (+c.amount||0);
           return acc;
