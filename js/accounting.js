@@ -1792,6 +1792,13 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
     const grandWithdrawn  = dealDetails.reduce((s,d)=>s+d.totalWithdrawn,0);
     const grandNetDue     = dealDetails.reduce((s,d)=>s+d.netDue,        0);
     const grandDealProfit = dealDetails.reduce((s,d)=>s+d.dealProfit,    0);
+    const grandTransferable = dealDetails.reduce((sum, d) => {
+      const ps2 = (d.partnerSettlement||[]).find(p => p.name === partnerName);
+      if (!ps2) return sum;
+      if (d.status === 'CLOSED') return sum + ps2.netDue;
+      if (d.totalSales < 0.01) return sum;
+      return sum + Math.max(0, (d.totalColl * ps2.share) - ps2.withdrawn - ps2.collectedDirect);
+    }, 0);
 
     // ── 4. بناء الـ HTML ──
     const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3});
@@ -2041,17 +2048,36 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                     })()}
 
                     <!-- الإجراء المطلوب — للشريك الحالي فقط -->
-                    ${isMe ? `
-                    <div style="margin-top:10px;border:2px solid ${ps.netDue>0.01?'#3b82f6':ps.netDue<-0.01?'#ef4444':'#22c55e'};border-radius:8px;padding:10px 12px;text-align:center;background:${ps.netDue>0.01?'#eff6ff':ps.netDue<-0.01?'#fef2f2':'#f0fdf4'}">
-                      <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">الإجراء المطلوب</div>
-                      <div style="font-size:15px;font-weight:800;color:${ps.netDue>0.01?'#1d4ed8':ps.netDue<-0.01?'#dc2626':'#16a34a'}">
-                        ${ps.netDue > 0.01
-                          ? `💸 يُحوَّل له ${fmt2(ps.netDue)}`
-                          : ps.netDue < -0.01
-                          ? `⚠️ مدين للشركة بـ ${fmt2(Math.abs(ps.netDue))}`
-                          : '✅ حساب متوازن'}
-                      </div>
-                    </div>` : ''}
+                    ${isMe ? (() => {
+                      const noSales  = d.totalSales < 0.01;
+                      const isClosed = d.status === 'CLOSED';
+                      if (noSales && !isClosed) {
+                        return '<div style="margin-top:10px;border:2px solid #94a3b8;border-radius:8px;padding:10px 12px;text-align:center;background:#f8fafc">'
+                          + '<div style="font-size:10px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">الإجراء المطلوب</div>'
+                          + '<div style="font-size:14px;font-weight:700;color:#64748b">⏳ الصفقة لم تبدأ — لا يوجد مبلغ للتحويل</div></div>';
+                      }
+                      if (!isClosed) {
+                        const tNow = (d.totalColl * ps.share) - ps.withdrawn - ps.collectedDirect;
+                        if (tNow > 0.01) {
+                          return '<div style="margin-top:10px;border:2px solid #3b82f6;border-radius:8px;padding:10px 12px;text-align:center;background:#eff6ff">'
+                            + '<div style="font-size:10px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">الإجراء المطلوب — صفقة جارية</div>'
+                            + '<div style="font-size:15px;font-weight:800;color:#1d4ed8">💸 القابل للتحويل الآن: ' + fmt2(tNow) + '</div>'
+                            + '<div style="font-size:11px;color:#64748b;margin-top:5px">المستحق الإجمالي (تقديري): ' + fmt2(ps.netDue) + '</div></div>';
+                        } else {
+                          return '<div style="margin-top:10px;border:2px solid #e2e8f0;border-radius:8px;padding:10px 12px;text-align:center;background:#f8fafc">'
+                            + '<div style="font-size:10px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">الإجراء المطلوب — صفقة جارية</div>'
+                            + '<div style="font-size:14px;font-weight:700;color:#64748b">✅ لا يوجد مبلغ إضافي للتحويل حالياً</div>'
+                            + '<div style="font-size:11px;color:#64748b;margin-top:5px">المستحق الإجمالي (تقديري): ' + fmt2(ps.netDue) + '</div></div>';
+                        }
+                      }
+                      const bc  = ps.netDue>0.01?'#3b82f6':ps.netDue<-0.01?'#ef4444':'#22c55e';
+                      const bg  = ps.netDue>0.01?'#eff6ff':ps.netDue<-0.01?'#fef2f2':'#f0fdf4';
+                      const tc  = ps.netDue>0.01?'#1d4ed8':ps.netDue<-0.01?'#dc2626':'#16a34a';
+                      const lbl = ps.netDue>0.01?'💸 يُحوَّل له '+fmt2(ps.netDue):ps.netDue<-0.01?'⚠️ مدين للشركة بـ '+fmt2(Math.abs(ps.netDue)):'✅ حساب متوازن';
+                      return '<div style="margin-top:10px;border:2px solid '+bc+';border-radius:8px;padding:10px 12px;text-align:center;background:'+bg+'">'
+                        + '<div style="font-size:10px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">الإجراء المطلوب</div>'
+                        + '<div style="font-size:15px;font-weight:800;color:'+tc+'">'+lbl+'</div></div>';
+                    })() : ''}
 
                   </div>
                 </div>`;
@@ -2233,13 +2259,14 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         <!-- الإجراء الإجمالي النهائي -->
         <div style="margin-top:16px;border-top:2px solid #ffffff22;padding-top:16px;text-align:center">
           <div style="font-size:11px;opacity:.5;margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase">الإجراء الإجمالي — كل الصفقات</div>
-          <div style="font-size:20px;font-weight:900;color:${grandNetDue>0.01?'#4ade80':grandNetDue<-0.01?'#f87171':'#a3e635'}">
-            ${grandNetDue > 0.01
-              ? `💸 يُحوَّل لـ ${partnerName}: ${fmt2(grandNetDue)}`
+          <div style="font-size:20px;font-weight:900;color:${grandTransferable>0.01?'#4ade80':grandNetDue<-0.01?'#f87171':'#a3e635'}">
+            ${grandTransferable > 0.01
+              ? `💸 القابل للتحويل الآن لـ ${partnerName}: ${fmt2(grandTransferable)}`
               : grandNetDue < -0.01
               ? `⚠️ ${partnerName} مدين بـ: ${fmt2(Math.abs(grandNetDue))}`
               : '✅ الحساب متوازن تماماً — لا يوجد تحويل'}
           </div>
+          ${Math.abs(grandNetDue - grandTransferable) > 0.01 ? `<div style="font-size:12px;opacity:.6;margin-top:6px">المستحق الإجمالي (عند إغلاق كل الصفقات): ${fmt2(grandNetDue)}</div>` : ''}
         </div>
       </div>` : '';
 
