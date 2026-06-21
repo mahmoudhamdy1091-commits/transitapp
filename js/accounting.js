@@ -2003,6 +2003,38 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${m.credit>0?'#2563eb':'#94a3b8'};font-weight:${m.credit>0?'700':'400'}">${m.credit>0?fmt2(m.credit):'—'}</td>
                 </tr>`).join('')
                 : `<tr><td colspan="5" style="padding:12px;text-align:center;color:#94a3b8">لا توجد حركات مسجّلة</td></tr>`}
+                <!-- صفوف معلوماتية: حصة الشريك في أرقام الصفقة -->
+                <tr style="background:#f8fafc;border-top:2px dashed #cbd5e1">
+                  <td colspan="5" style="padding:5px 10px;font-size:11px;color:#64748b;font-weight:700">ℹ️ تفاصيل حصة الشريك التقديرية (معلوماتي — لا تؤثر على الرصيد)</td>
+                </tr>
+                ${d.mySales > 0 ? `
+                <tr style="border-bottom:1px solid #f1f5f9;background:#f0fdf4;opacity:.85">
+                  <td style="padding:6px 10px;color:#64748b;font-style:italic">—</td>
+                  <td style="padding:6px 10px;font-size:12px;color:#15803d;font-style:italic">حصة ${fmtP(d.share)} من المبيعات <span style="color:#94a3b8">(إجمالي ${fmt2(d.totalSales)})</span></td>
+                  <td style="padding:6px 10px;color:#94a3b8;font-size:11px">معلوماتي</td>
+                  <td style="padding:6px 10px;text-align:center;color:#94a3b8">—</td>
+                  <td style="padding:6px 10px;text-align:center;font-family:monospace;color:#15803d;font-weight:700">${fmt2(d.mySales)}</td>
+                </tr>` : ''}
+                ${d.myPurchase > 0 ? `
+                <tr style="border-bottom:1px solid #f1f5f9;background:#fff7ed;opacity:.85">
+                  <td style="padding:6px 10px;color:#64748b;font-style:italic">—</td>
+                  <td style="padding:6px 10px;font-size:12px;color:#c2410c;font-style:italic">حصة ${fmtP(d.share)} من تكلفة الشراء <span style="color:#94a3b8">(إجمالي ${fmt2(d.totalPurchase)})</span></td>
+                  <td style="padding:6px 10px;color:#94a3b8;font-size:11px">معلوماتي</td>
+                  <td style="padding:6px 10px;text-align:center;font-family:monospace;color:#c2410c;font-weight:700">${fmt2(d.myPurchase)}</td>
+                  <td style="padding:6px 10px;text-align:center;color:#94a3b8">—</td>
+                </tr>` : ''}
+                ${d.myExpenses > 0 ? `
+                <tr style="border-bottom:1px solid #f1f5f9;background:#fff7ed;opacity:.85">
+                  <td style="padding:6px 10px;color:#64748b;font-style:italic">—</td>
+                  <td style="padding:6px 10px;font-size:12px;color:#c2410c;font-style:italic">حصة ${fmtP(d.share)} من المصروفات <span style="color:#94a3b8">(إجمالي ${fmt2(d.totalExp)})</span></td>
+                  <td style="padding:6px 10px;color:#94a3b8;font-size:11px">معلوماتي</td>
+                  <td style="padding:6px 10px;text-align:center;font-family:monospace;color:#c2410c;font-weight:700">${fmt2(d.myExpenses)}</td>
+                  <td style="padding:6px 10px;text-align:center;color:#94a3b8">—</td>
+                </tr>` : ''}
+                <tr style="background:#f8fafc">
+                  <td colspan="3" style="padding:6px 10px;font-size:12px;font-weight:700;color:#475569">صافي حصة الشريك التقديرية</td>
+                  <td colspan="2" style="padding:6px 10px;text-align:center;font-family:monospace;font-weight:900;font-size:13px;color:${d.myProfit>=0?'#16a34a':'#dc2626'}">${d.myProfit>=0?'+':''}${fmt2(d.myProfit)}</td>
+                </tr>
               </tbody>
               <tfoot>
                 <tr style="background:#1e293b;color:#fff;font-weight:700">
