@@ -95,7 +95,7 @@ async function loadJournal() {
       if (!grouped[no]) {
         const cfg = RT[r.ref_table] || RT['manual'];
         grouped[no] = { no, date: r.entry_date, desc: r.description,
-          file_no: r.file_no, ref_table: r.ref_table,
+          file_no: r.file_no, ref_table: r.ref_table, ref_id: r.ref_id,
           type: cfg.type, sign: cfg.sign, icon: cfg.icon,
           color: cfg.color, label: cfg.label,
           lines: [], totalDr: 0, totalCr: 0 };
@@ -125,7 +125,7 @@ async function loadJournal() {
         type:    g.type, date: g.date,
         amount:  displayAmount, sign: g.sign,
         title:   g.desc || '—',
-        entryNo: g.no,  fileNo: g.file_no,
+        entryNo: g.no,  fileNo: g.file_no, refId: g.ref_id,
         meta,   raw: g,
         status: 'posted',
       };
@@ -392,7 +392,8 @@ function renderJournalEntries() {
               data-fno="${e.fileNo||''}"
               data-amt="${e.amount}"
               data-date="${e.date||''}"
-              data-etitle="${(e.title||'')}">
+              data-etitle="${(e.title||'')}"
+              data-erefid="${e.refId||''}">
               <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxJournal(this)"
                 style="background:var(--card2);border:1px solid var(--border);cursor:pointer;color:var(--text2);font-size:14px;padding:3px 8px;border-radius:6px" title="إجراءات">⋮</button>
             </span>
