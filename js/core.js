@@ -111,10 +111,12 @@ async function _doLoadCache() {
     const fullCost    = totalCost + totalExp;
     const je          = jeMap[fn];
     const jeProfit    = je ? (je.sales - je.cogs - je.exp) : null;
+    const jeTotalSale = je ? je.sales : null;  // يشمل sale_charges (CR 4xxx من القيود)
     return { ...d,
       _vTotal:vList.length, _vSold:soldCount, _vLeft:Math.max(0,vList.length-soldCount),
       _totalCost:totalCost, _totalExp:totalExp, _fullCost:fullCost,
-      _totalSale:totalSale, _profit: jeProfit !== null ? jeProfit : (totalSale - fullCost),
+      _totalSale: jeTotalSale !== null ? jeTotalSale : totalSale,
+      _profit: jeProfit !== null ? jeProfit : (totalSale - fullCost),
       _remaining:fullCost-totalSale,
       _stockVehicles: vList.filter(v => !soldVins.has(v.vin)),
     };
