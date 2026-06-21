@@ -795,7 +795,12 @@ async function loadSummaryTab(fn, sys) {
       const profitShare  = profit * (share/100);
       const pPayouts     = (payouts||[]).filter(px=>isPosted(px)&&px.partner===p.partner);
       const totalOut     = pPayouts.reduce((s,px)=>s+(+px.amount||0),0);
-      const netDue       = capitalIn + profitShare - totalOut;
+      const expPaid      = (expenses||[]).filter(isPosted).filter(e =>
+        p.partner === TREASURY_PARTNER
+          ? (!e.paid_by || e.paid_by.trim() === TREASURY_PARTNER)
+          : (e.paid_by && e.paid_by.trim() === p.partner)
+      ).reduce((s,e)=>s+(+e.amount||0),0);
+      const netDue       = capitalIn + expPaid + profitShare - totalOut;
       const pc           = profitShare >= 0 ? 'var(--green)' : 'var(--red)';
       const nc           = netDue >= 0 ? 'var(--green)' : 'var(--red)';
 
@@ -843,10 +848,10 @@ async function loadSummaryTab(fn, sys) {
         <!-- المستحق النهائي -->
         <div style="background:var(--card2);padding:12px 16px;border-top:1px solid var(--border)">
           <div style="font-size:12px;color:var(--text2);margin-bottom:6px">
-            المستحق = رأس مال مدفوع + حصة الربح − مسحوبات
+            المستحق = رأس مال مدفوع${expPaid>0?' + مصروفات من جيبه':''} + حصة الربح − مسحوبات
           </div>
           <div style="font-size:13px;color:var(--text2);font-family:var(--mono);margin-bottom:10px">
-            ${fmt(capitalIn)} + (${fmt(profitShare)}) − ${fmt(totalOut)} = <strong>${fmt(Math.abs(netDue))}</strong>
+            ${fmt(capitalIn)}${expPaid>0?` + ${fmt(expPaid)}`:''} + (${fmt(profitShare)}) − ${fmt(totalOut)} = <strong>${fmt(Math.abs(netDue))}</strong>
           </div>
           ${totalOut > 0 ? `<div style="font-size:13px;color:var(--text2);margin-bottom:8px">تم الصرف: <strong style="color:var(--accent)">${fmt(totalOut)}</strong></div>` : ''}
           <div style="display:flex;justify-content:space-between;align-items:center">
