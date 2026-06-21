@@ -628,7 +628,7 @@ async function loadViewerTab(idx) {
 
 async function loadSummaryTab(fn, sys) {
   try {
-    const [vehicles, payments, expenses, sales, collections, partners, payouts, poArr] = await Promise.all([
+    const [vehicles, payments, expenses, sales, collections, partners, payouts, poArr, jeAll] = await Promise.all([
       apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
@@ -637,6 +637,7 @@ async function loadSummaryTab(fn, sys) {
       apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('purchase_orders', { select:'total_purchase,supplier,po_date,status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('journal_entries', { select:'account_code,dr_amount,cr_amount', system_type:`eq.${sys}`, file_no:`eq.${fn}`, post_status:'eq.posted' }),
     ]);
 
     state.currentVehicles = vehicles || [];
@@ -685,7 +686,16 @@ async function loadSummaryTab(fn, sys) {
     const totalSales     = totalInvoiced; // للعرض والربحية
     const totalPayouts   = postedPout.reduce((s,p)=>s+(+p.amount||0),0);
     const fullCost       = totalPurchase + totalExp;
-    const profit         = totalSales - fullCost;
+    let jeSales=0, jeCOGS=0, jeDealExp=0;
+    (jeAll||[]).forEach(r => {
+      const acc = r.account_code||'';
+      if (acc.startsWith('4') && (+r.cr_amount||0)>0) jeSales   += +r.cr_amount;
+      if (acc.startsWith('5') && (+r.dr_amount||0)>0) jeCOGS    += +r.dr_amount;
+      if (acc.startsWith('6') && (+r.dr_amount||0)>0) jeDealExp += +r.dr_amount;
+    });
+    const hasJEData      = (jeAll||[]).length > 0;
+    const jeDealProfit   = jeSales - jeCOGS - jeDealExp;
+    const profit         = hasJEData ? jeDealProfit : (totalSales - fullCost);
     const remaining      = totalPurchase - totalPaid;
     // المستحق = التحصيلات المسجلة غير المدفوعة بعد (يشمل المصاريف المضافة على الفاتورة)
     const uncollected    = totalPending;
