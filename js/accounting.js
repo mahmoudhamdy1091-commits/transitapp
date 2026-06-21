@@ -1922,46 +1922,17 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
             </table>
           </div>`; })() : ''}
 
-          <!-- ملخص الصفقة للشريك -->
-          <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:14px">
-            <div style="font-size:13px;font-weight:700;color:#888;margin-bottom:10px">ملخص الصفقة — حصة ${partnerName} (${fmtP(d.share)})</div>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-              <div style="background:#fff;border-radius:8px;padding:10px;text-align:center;border:1px solid #e2e8f0">
-                <div style="font-size:12px;color:#888;margin-bottom:4px">حصته من تكلفة الشراء</div>
-                <div style="font-family:monospace;font-weight:700;color:#2563eb">${fmt2(d.myPurchase)}</div>
-              </div>
-              <div style="background:#fff;border-radius:8px;padding:10px;text-align:center;border:1px solid #e2e8f0">
-                <div style="font-size:12px;color:#888;margin-bottom:4px">حصته من المصاريف</div>
-                <div style="font-family:monospace;font-weight:700;color:#dc2626">${fmt2(d.myExpenses)}</div>
-              </div>
-              <div style="background:#fff;border-radius:8px;padding:10px;text-align:center;border:1px solid #e2e8f0">
-                <div style="font-size:12px;color:#888;margin-bottom:4px">حصته من المبيعات</div>
-                <div style="font-family:monospace;font-weight:700;color:#16a34a">${fmt2(d.mySales)}</div>
-              </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-              <div style="background:${d.myProfit>=0?'#f0fdf4':'#fff1f2'};border-radius:8px;padding:10px;text-align:center;border:1px solid ${d.myProfit>=0?'#86efac':'#fca5a5'}">
-                <div style="font-size:12px;color:#888;margin-bottom:4px">ربح / خسارة الشريك</div>
-                <div style="font-family:monospace;font-weight:900;font-size:16px;color:${d.myProfit>=0?'#16a34a':'#dc2626'}">${d.myProfit>=0?'+':''}${fmt2(d.myProfit)}</div>
-              </div>
-              <div style="background:#f0fdf4;border-radius:8px;padding:10px;text-align:center;border:1px solid #86efac">
-                <div style="font-size:12px;color:#888;margin-bottom:4px">ربح الصفقة الكلي</div>
-                <div style="font-family:monospace;font-weight:700;color:${d.dealProfit>=0?'#16a34a':'#dc2626'}">${fmt2(d.dealProfit)}</div>
-              </div>
-            </div>
-          </div>
-
           <!-- ⚖️ تسوية شاملة بين الشركاء -->
-          ${(d.partnerSettlement||[]).length > 1 ? `
+          ${(d.partnerSettlement||[]).length >= 1 ? `
           <div style="margin-bottom:14px">
             <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">⚖️ تسوية شاملة بين الشركاء</div>
             <!-- بطاقة لكل شريك -->
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px">
               ${(d.partnerSettlement||[]).map(ps => {
-                const isMe   = ps.name === partnerName;
-                const bdr    = isMe ? '2px solid #f59e0b' : '1px solid #e2e8f0';
-                const owed   = ps.capitalPaid + ps.expPaid + ps.profit;
-                const got    = ps.withdrawn + ps.collectedDirect;
+                const isMe  = ps.name === partnerName;
+                const bdr   = isMe ? '2px solid #f59e0b' : '1px solid #e2e8f0';
+                const maleTotal = ps.capitalPaid + ps.expPaid;   // ما له (بدون نتيجة)
+                const got   = ps.withdrawn + ps.collectedDirect; // ما عليه
                 const row = (label, val, color) =>
                   `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0">
                     <span style="color:#64748b">${label}</span>
@@ -1982,33 +1953,35 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   </div>
                   <div style="padding:10px 14px;font-size:12px">
 
-                    <!-- قسم: يستحق -->
-                    <div style="background:#f0fdf4;border-radius:7px;padding:8px 10px;margin-bottom:8px">
-                      <div style="font-weight:700;color:#15803d;margin-bottom:4px">➕ يستحق</div>
-                      ${row('رأس ماله المدفوع', ps.capitalPaid, '#15803d')}
-                      ${ps.expPaid > 0 ? row('مصروفات من جيبه', ps.expPaid, '#15803d') : ''}
-                      ${row(ps.profit>=0?'حصة الربح':'حصة الخسارة', ps.profit, ps.profit>=0?'#15803d':'#dc2626')}
-                      ${divider}
-                      ${totalRow('الإجمالي المستحق', owed, '#15803d')}
+                    <!-- ما له -->
+                    <div style="background:#f0fdf4;border-radius:7px;padding:8px 10px;margin-bottom:6px">
+                      <div style="font-weight:700;color:#15803d;margin-bottom:4px">✅ ما له</div>
+                      ${row('رأس المال المدفوع', ps.capitalPaid, '#15803d')}
+                      ${ps.expPaid > 0 ? row('مصروفات دفعها من جيبه', ps.expPaid, '#15803d') : ''}
+                      ${maleTotal !== ps.capitalPaid ? `${divider}${totalRow('الإجمالي', maleTotal, '#15803d')}` : ''}
                     </div>
 
-                    <!-- قسم: استلم -->
-                    <div style="background:#fff1f2;border-radius:7px;padding:8px 10px;margin-bottom:8px">
-                      <div style="font-weight:700;color:#b91c1c;margin-bottom:4px">➖ استلم</div>
+                    <!-- نتيجة الصفقة -->
+                    <div style="background:${ps.profit>=0?'#f0fdf4':'#fff1f2'};border:1px dashed ${ps.profit>=0?'#86efac':'#fca5a5'};border-radius:7px;padding:8px 10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+                      <span style="color:#64748b;font-weight:600">📊 ${ps.profit>=0?'حصة الربح':'حصة الخسارة'}</span>
+                      <span style="font-family:monospace;font-weight:700;font-size:13px;color:${ps.profit>=0?'#15803d':'#dc2626'}">${ps.profit>=0?'+':''}${fmt2(ps.profit)}</span>
+                    </div>
+
+                    <!-- ما عليه -->
+                    <div style="background:#fff1f2;border-radius:7px;padding:8px 10px;margin-bottom:6px">
+                      <div style="font-weight:700;color:#b91c1c;margin-bottom:4px">❌ ما عليه</div>
                       ${ps.withdrawn > 0 ? row('مسحوبات رسمية', ps.withdrawn, '#b91c1c') : ''}
                       ${ps.collectedDirect > 0 ? row('تحصيلات مبيعات مباشرة', ps.collectedDirect, '#b91c1c') : ''}
-                      ${got === 0 ? `<div style="color:#94a3b8;font-size:11px">لم يستلم شيئاً بعد</div>` : ''}
-                      ${got > 0 ? divider : ''}
-                      ${got > 0 ? totalRow('الإجمالي المستلم', got, '#b91c1c') : ''}
+                      ${got === 0 ? `<div style="color:#94a3b8;font-size:11px">لم يستلم شيئاً بعد</div>` : `${divider}${totalRow('الإجمالي', got, '#b91c1c')}`}
                     </div>
 
                     <!-- الرصيد النهائي -->
                     <div style="background:${ps.netDue>=0?'#dbeafe':'#fef2f2'};border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center">
                       <div>
-                        <div style="font-size:11px;color:#64748b">${ps.netDue>=0?'الرصيد المستحق له':'الرصيد المدين عليه'}</div>
-                        <div style="font-size:10px;color:#94a3b8">${fmt2(owed)} − ${fmt2(got)}</div>
+                        <div style="font-weight:700;font-size:12px;color:${ps.netDue>=0?'#1d4ed8':'#dc2626'}">${ps.netDue>=0?'🔵 الرصيد المستحق له':'🔴 الرصيد المدين عليه'}</div>
+                        <div style="font-size:10px;color:#94a3b8;margin-top:2px">ما له ${fmt2(maleTotal)} ${ps.profit>=0?'+ ربح':'− خسارة'} ${fmt2(Math.abs(ps.profit))} − ما عليه ${fmt2(got)}</div>
                       </div>
-                      <div style="font-family:monospace;font-weight:900;font-size:18px;color:${ps.netDue>=0?'#1d4ed8':'#dc2626'}">${ps.netDue>=0?'+':''}${fmt2(ps.netDue)}</div>
+                      <div style="font-family:monospace;font-weight:900;font-size:20px;color:${ps.netDue>=0?'#1d4ed8':'#dc2626'}">${ps.netDue>=0?'+':''}${fmt2(ps.netDue)}</div>
                     </div>
 
                     <!-- تنبيهات الفروق -->
@@ -2017,17 +1990,17 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                       const notes = [];
                       if (Math.abs(capDiff) > 0.001)
                         notes.push({ positive: capDiff > 0,
-                          text: capDiff > 0 ? '⬆ دفع رأس مال زيادة — يستحق' : '⬇ لم يكمل حصته من رأس المال — ناقص',
+                          text: capDiff > 0 ? '⬆ دفع رأس مال زيادة' : '⬇ باقي من حصته في رأس المال',
                           val: Math.abs(capDiff) });
                       if (Math.abs(ps.expDiff) > 0.001)
                         notes.push({ positive: ps.expDiff > 0,
-                          text: ps.expDiff > 0 ? '⬆ دفع مصروفات زيادة — يستحق' : '⬇ لم يدفع حصته من المصروفات — مدين بـ',
+                          text: ps.expDiff > 0 ? '⬆ دفع مصروفات زيادة' : '⬇ لم يدفع حصته من المصروفات',
                           val: Math.abs(ps.expDiff) });
-                      return notes.map(n => `
-                      <div style="margin-top:5px;padding:4px 8px;border-radius:6px;background:${n.positive?'#f0fdf4':'#fef2f2'};font-size:11px;display:flex;justify-content:space-between;gap:6px">
-                        <span style="color:${n.positive?'#15803d':'#dc2626'}">${n.text}</span>
-                        <span style="font-family:monospace;font-weight:700;color:${n.positive?'#15803d':'#dc2626'}">${fmt2(n.val)}</span>
-                      </div>`).join('');
+                      return notes.length ? `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${notes.map(n => `
+                        <div style="padding:3px 8px;border-radius:6px;background:${n.positive?'#f0fdf4':'#fef2f2'};font-size:11px;display:flex;justify-content:space-between;gap:6px">
+                          <span style="color:${n.positive?'#15803d':'#dc2626'}">${n.text}</span>
+                          <span style="font-family:monospace;font-weight:700;color:${n.positive?'#15803d':'#dc2626'}">${fmt2(n.val)}</span>
+                        </div>`).join('')}</div>` : '';
                     })()}
 
                   </div>
@@ -2083,38 +2056,6 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${m.credit>0?'#2563eb':'#94a3b8'};font-weight:${m.credit>0?'700':'400'}">${m.credit>0?fmt2(m.credit):'—'}</td>
                 </tr>`).join('')
                 : `<tr><td colspan="5" style="padding:12px;text-align:center;color:#94a3b8">لا توجد حركات مسجّلة</td></tr>`}
-                <!-- صفوف معلوماتية: حصة الشريك في أرقام الصفقة -->
-                <tr style="background:#f8fafc;border-top:2px dashed #cbd5e1">
-                  <td colspan="5" style="padding:5px 10px;font-size:11px;color:#64748b;font-weight:700">ℹ️ تفاصيل حصة الشريك التقديرية (معلوماتي — لا تؤثر على الرصيد)</td>
-                </tr>
-                ${d.mySales > 0 ? `
-                <tr style="border-bottom:1px solid #f1f5f9;background:#f0fdf4;opacity:.85">
-                  <td style="padding:6px 10px;color:#64748b;font-style:italic">—</td>
-                  <td style="padding:6px 10px;font-size:12px;color:#15803d;font-style:italic">حصة ${fmtP(d.share)} من المبيعات <span style="color:#94a3b8">(إجمالي ${fmt2(d.totalSales)})</span></td>
-                  <td style="padding:6px 10px;color:#94a3b8;font-size:11px">معلوماتي</td>
-                  <td style="padding:6px 10px;text-align:center;color:#94a3b8">—</td>
-                  <td style="padding:6px 10px;text-align:center;font-family:monospace;color:#15803d;font-weight:700">${fmt2(d.mySales)}</td>
-                </tr>` : ''}
-                ${d.myPurchase > 0 ? `
-                <tr style="border-bottom:1px solid #f1f5f9;background:#fff7ed;opacity:.85">
-                  <td style="padding:6px 10px;color:#64748b;font-style:italic">—</td>
-                  <td style="padding:6px 10px;font-size:12px;color:#c2410c;font-style:italic">حصة ${fmtP(d.share)} من تكلفة الشراء <span style="color:#94a3b8">(إجمالي ${fmt2(d.totalPurchase)})</span></td>
-                  <td style="padding:6px 10px;color:#94a3b8;font-size:11px">معلوماتي</td>
-                  <td style="padding:6px 10px;text-align:center;font-family:monospace;color:#c2410c;font-weight:700">${fmt2(d.myPurchase)}</td>
-                  <td style="padding:6px 10px;text-align:center;color:#94a3b8">—</td>
-                </tr>` : ''}
-                ${d.myExpenses > 0 ? `
-                <tr style="border-bottom:1px solid #f1f5f9;background:#fff7ed;opacity:.85">
-                  <td style="padding:6px 10px;color:#64748b;font-style:italic">—</td>
-                  <td style="padding:6px 10px;font-size:12px;color:#c2410c;font-style:italic">حصة ${fmtP(d.share)} من المصروفات <span style="color:#94a3b8">(إجمالي ${fmt2(d.totalExp)})</span></td>
-                  <td style="padding:6px 10px;color:#94a3b8;font-size:11px">معلوماتي</td>
-                  <td style="padding:6px 10px;text-align:center;font-family:monospace;color:#c2410c;font-weight:700">${fmt2(d.myExpenses)}</td>
-                  <td style="padding:6px 10px;text-align:center;color:#94a3b8">—</td>
-                </tr>` : ''}
-                <tr style="background:#f8fafc">
-                  <td colspan="3" style="padding:6px 10px;font-size:12px;font-weight:700;color:#475569">صافي حصة الشريك التقديرية</td>
-                  <td colspan="2" style="padding:6px 10px;text-align:center;font-family:monospace;font-weight:900;font-size:13px;color:${d.myProfit>=0?'#16a34a':'#dc2626'}">${d.myProfit>=0?'+':''}${fmt2(d.myProfit)}</td>
-                </tr>
               </tbody>
               <tfoot>
                 <tr style="background:#1e293b;color:#fff;font-weight:700">
@@ -2125,15 +2066,6 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
               </tfoot>
             </table>
 
-            <!-- الرصيد النهائي للصفقة -->
-            <div style="margin-top:10px;background:${d.netDue>=0?'#f0fdf4':'#fff1f2'};border:2px solid ${d.netDue>=0?'#86efac':'#fca5a5'};border-radius:10px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
-              <div>
-                <div style="font-size:12px;color:#64748b;margin-bottom:2px">الرصيد المستحق للشريك من هذه الصفقة</div>
-                <div style="font-size:12px;color:#94a3b8">رأس مال + مصروفات دفعها + أرباح − مسحوبات</div>
-                <div style="font-size:12px;color:#94a3b8">${fmt2(d.capitalPaid-d.expCapital)} + ${fmt2(d.expCapital)} + ${fmt2(d.myProfit)} − ${fmt2(d.totalWithdrawn)}</div>
-              </div>
-              <div style="font-size:24px;font-weight:900;font-family:monospace;color:${d.netDue>=0?'#16a34a':'#dc2626'}">${d.netDue>=0?'+':''}${fmt2(d.netDue)}</div>
-            </div>
           </div>
 
         </div>
