@@ -201,7 +201,7 @@ function _ctxJournal(btn) {
     {icon:'✏️', label:'تعديل', action:()=>_jEdit(btn)},
   ];
   const tbl = tableMap[etype];
-  if (tbl) items.push({icon:'📜', label:'السجل', action:()=>showRecordAudit({ table:tbl, fileNo:fno, title:'قيد — '+(p.dataset.etitle||'') })});
+  if (tbl) items.push({icon:'📜', label:'السجل', action:()=>showRecordAudit({ table:tbl, fileNo:fno, refNo:p.dataset.eno||'', title:'قيد — '+(p.dataset.etitle||'') })});
   showCtxMenu(btn, items);
 }
 
