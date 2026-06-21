@@ -782,17 +782,25 @@ async function loadDealStatement(fn, sys) {
             .filter(py => isActive(py))
             .filter(py => _singlePartner || py.payer === p.partner)
             .reduce((s,py)=>s+(+py.amount||0),0);
+          // مصروفات دفعها هذا الشريك من جيبه
+          const expCapital   = (expenses||[])
+            .filter(isSettled)
+            .filter(e => p.partner === TREASURY_PARTNER
+              ? (!e.paid_by || e.paid_by.trim() === TREASURY_PARTNER)
+              : (e.paid_by && e.paid_by.trim() === p.partner))
+            .reduce((s,e) => s + (+e.amount||0), 0);
           // حصته في الربح
           const profitShare  = profit * pctShare;
           // ما استرده (كل payouts بغض النظر عن النوع)
           const withdrawn    = (payouts||[]).filter(py=>py.partner===p.partner && isActive(py)).reduce((s,py)=>s+(+py.amount||0),0);
-          // ✅ المستحق الكامل = رأس المال المدفوع + حصة الربح - ما استرده
-          const totalDue     = capitalPaid + profitShare - withdrawn;
+          // المستحق = (رأس المال + مصروفات من جيبه) + حصة الربح - ما استرده
+          const totalDue     = capitalPaid + expCapital + profitShare - withdrawn;
           const dueColor     = totalDue > 0.01 ? 'var(--green)' : totalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
           return `<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
             <div style="flex:1;font-weight:700;min-width:100px">${p.partner}</div>
             <div style="font-size:12px;color:var(--text2)">حصة: <b>${p.share_percent}%</b></div>
             <div style="font-size:12px;color:var(--blue)">رأس المال المدفوع: <b>${fmt(capitalPaid)}</b></div>
+            ${expCapital > 0 ? `<div style="font-size:12px;color:var(--cyan)">مصروفات من جيبه: <b>${fmt(expCapital)}</b></div>` : ''}
             <div style="font-size:12px;color:var(--green)">ربح مستحق: <b>${fmt(profitShare)}</b></div>
             <div style="font-size:12px;color:var(--accent)">تم الصرف: <b>${fmt(withdrawn)}</b></div>
             <div style="font-size:12px;font-weight:700;color:${dueColor}">المستحق: <b>${fmt(totalDue)}</b></div>
