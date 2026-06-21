@@ -1949,7 +1949,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                 const isMe  = ps.name === partnerName;
                 const bdr   = isMe ? '2px solid #f59e0b' : '1px solid #e2e8f0';
                 const maleTotal = ps.capitalPaid + ps.expPaid;   // ما له (بدون نتيجة)
-                const got   = ps.withdrawn + ps.collectedDirect; // ما عليه
+                const got   = ps.withdrawn + ps.collectedDirect; // ما استلمه
                 const row = (label, val, color) =>
                   `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0">
                     <span style="color:#64748b">${label}</span>
@@ -2006,7 +2006,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
                     <!-- ما عليه -->
                     <div style="background:#fff1f2;border-radius:7px;padding:8px 10px;margin-bottom:6px">
-                      <div style="font-weight:700;color:#b91c1c;margin-bottom:4px">❌ ما عليه</div>
+                      <div style="font-weight:700;color:#b91c1c;margin-bottom:4px">❌ ما استلمه</div>
                       ${ps.withdrawn > 0 ? row('مسحوبات رسمية', ps.withdrawn, '#b91c1c') : ''}
                       ${ps.collectedDirect > 0 ? row('تحصيلات مبيعات مباشرة', ps.collectedDirect, '#b91c1c') : ''}
                       ${got === 0 ? `<div style="color:#94a3b8;font-size:11px">لم يستلم شيئاً بعد</div>` : `${divider}${totalRow('الإجمالي', got, '#b91c1c')}`}
@@ -2016,7 +2016,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                     <div style="background:${ps.netDue>=0?'#dbeafe':'#fef2f2'};border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center">
                       <div>
                         <div style="font-weight:700;font-size:12px;color:${ps.netDue>=0?'#1d4ed8':'#dc2626'}">${ps.netDue>=0?'🔵 الرصيد المستحق له':'🔴 الرصيد المدين عليه'}</div>
-                        <div style="font-size:10px;color:#94a3b8;margin-top:2px">ما له ${fmt2(maleTotal)} ${ps.profit>=0?'+ ربح':'− خسارة'} ${fmt2(Math.abs(ps.profit))} − ما عليه ${fmt2(got)}</div>
+                        <div style="font-size:10px;color:#94a3b8;margin-top:2px">ما له ${fmt2(maleTotal)} ${ps.profit>=0?'+ ربح':'− خسارة'} ${fmt2(Math.abs(ps.profit))} − ما استلمه ${fmt2(got)}</div>
                       </div>
                       <div style="font-family:monospace;font-weight:900;font-size:20px;color:${ps.netDue>=0?'#1d4ed8':'#dc2626'}">${ps.netDue>=0?'+':''}${fmt2(ps.netDue)}</div>
                     </div>
