@@ -351,4 +351,13 @@ function confirmAction(title, msg, onConfirm, danger = true) {
   }
 }
 
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
 // ── CTX MENU REGISTRY + BUILDERS: نُقلت كلها إلى context-menus.js (Phase 1) ──
