@@ -589,12 +589,29 @@ function printVehiclesReport() {
 function printPartnerStatement() {
   const content = document.getElementById('partnerStatementContent');
   if (!content) return;
-  // اطبع المحتوى فقط (الـ scrollDiv) بدون الهيدر الداكن مع الأزرار
   const scrollDiv = content.querySelector('div[style*="max-height"]');
-  const target = scrollDiv || content;
   const origStyle = scrollDiv ? scrollDiv.style.cssText : null;
   if (scrollDiv) { scrollDiv.style.maxHeight = 'none'; scrollDiv.style.overflow = 'visible'; }
-  renderPrint(`${docHeader('كشف حساب شريك','Partner Statement','')}${target.innerHTML}`, 'كشف حساب شريك');
+
+  // تحويل ألوان الـ overlay الداكنة → ألوان قابلة للطباعة بدون "Background graphics"
+  let html = (scrollDiv || content).innerHTML;
+  html = html
+    .replace(/background:#1a1a2e/gi,         'background:#2c3e50')
+    .replace(/color:#fff(?=[;"' ])/gi,        'color:#000')
+    .replace(/color: #fff(?=[;"' ])/gi,       'color:#000')
+    .replace(/opacity:\.(5|6|7)\b/g,          'opacity:1')
+    .replace(/background:#ffffff11/gi,        'background:#f0f0f0')
+    .replace(/background:#ffffff22/gi,        'background:#e8e8e8')
+    .replace(/background:#ffffff33/gi,        'background:#ddd')
+    .replace(/border:1px solid #ffffff44/gi,  'border:1px solid #aaa')
+    .replace(/border-top:1px solid #ffffff22/gi, 'border-top:1px solid #ccc')
+    .replace(/border-top:2px solid #ffffff22/gi, 'border-top:2px solid #999')
+    .replace(/background:#16a34a33/gi,        'background:#d1fae5')
+    .replace(/background:#dc262633/gi,        'background:#fee2e2')
+    .replace(/background:#16a34a22/gi,        'background:#d1fae5')
+    .replace(/background:#dc262622/gi,        'background:#fee2e2');
+
+  renderPrint(`${docHeader('كشف حساب شريك','Partner Statement','')}${html}`, 'كشف حساب شريك');
   if (scrollDiv && origStyle !== null) scrollDiv.style.cssText = origStyle;
 }
 
