@@ -2321,71 +2321,79 @@ async function exportPartnerStatementPDF() {
     if (!window.jspdf) {
       await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
     }
-
     const { jsPDF } = window.jspdf;
 
-    // ① إخفاء الأزرار + فتح الـ scrollDivs لقراءة الـ HTML كاملاً
-    const btnBar     = content.querySelector('div[style*="display:flex;gap:8px"]');
+    // ① إخفاء الأزرار + فتح الـ scrollDivs للـ capture الكامل
+    const btnBar      = content.querySelector('div[style*="display:flex;gap:8px"]');
     const innerScroll = content.querySelector('div[style*="max-height:75vh"]');
-    const scrollEl   = content.closest('[style*="overflow"]');
-    if (btnBar)       btnBar.style.display = 'none';
-    const origInner  = innerScroll ? innerScroll.style.cssText : null;
+    const scrollEl    = content.closest('[style*="overflow"]');
+    if (btnBar) btnBar.style.visibility = 'hidden';
+    const origInner = innerScroll ? innerScroll.style.cssText : null;
     if (innerScroll) { innerScroll.style.maxHeight = 'none'; innerScroll.style.overflow = 'visible'; }
-    const origMaxH   = scrollEl ? scrollEl.style.maxHeight   : null;
-    const origOvfl   = scrollEl ? scrollEl.style.overflow     : null;
+    const origMaxH = scrollEl ? scrollEl.style.maxHeight : null;
+    const origOvfl = scrollEl ? scrollEl.style.overflow  : null;
     if (scrollEl) { scrollEl.style.maxHeight = 'none'; scrollEl.style.overflow = 'visible'; }
 
-    // ② بناء HTML نظيف (ألوان فاتحة مناسبة للطباعة)
-    let html = content.outerHTML;
+    const canvas = await html2canvas(content, {
+      scale: 2, useCORS: true, backgroundColor: '#f8fafc',
+      logging: false, scrollX: 0, scrollY: -window.scrollY,
+    });
 
-    // ③ إعادة الحالة الأصلية فوراً
-    if (btnBar)       btnBar.style.display = '';
+    // ② إعادة الحالة الأصلية
+    if (btnBar) btnBar.style.visibility = '';
     if (innerScroll && origInner !== null) innerScroll.style.cssText = origInner;
     if (scrollEl) { scrollEl.style.maxHeight = origMaxH; scrollEl.style.overflow = origOvfl; }
 
-    html = html
-      .replace(/background:#1a1a2e/gi,            'background:#2c3e50')
-      .replace(/color:#fff(?=[;"' ])/gi,           'color:#1a1a1a')
-      .replace(/color: #fff(?=[;"' ])/gi,          'color:#1a1a1a')
-      .replace(/opacity:\.(5|6|7)\b/g,             'opacity:1')
-      .replace(/background:#ffffff11/gi,           'background:#f0f0f0')
-      .replace(/background:#ffffff22/gi,           'background:#e8e8e8')
-      .replace(/background:#ffffff33/gi,           'background:#ddd')
-      .replace(/border:1px solid #ffffff44/gi,     'border:1px solid #aaa')
-      .replace(/border-top:1px solid #ffffff22/gi, 'border-top:1px solid #ccc')
-      .replace(/border-top:2px solid #ffffff22/gi, 'border-top:2px solid #999')
-      .replace(/background:#16a34a33/gi,           'background:#d1fae5')
-      .replace(/background:#dc262633/gi,           'background:#fee2e2')
-      .replace(/background:#16a34a22/gi,           'background:#d1fae5')
-      .replace(/background:#dc262622/gi,           'background:#fee2e2');
+    // ③ قراءة كل البكسلات مرة واحدة في الذاكرة (أسرع من getImageData متكرر)
+    const ctx = canvas.getContext('2d');
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
-    // ④ container مؤقت خارج الشاشة
-    const tmp = document.createElement('div');
-    tmp.setAttribute('dir', 'rtl');
-    tmp.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;background:#fff;font-family:Cairo,sans-serif';
-    tmp.innerHTML = html;
+    // ④ دالة تبحث عن أقرب صف متجانس (فراغ بين العناصر) لنقطة القطع
+    function bestCutY(idealY) {
+      const W = canvas.width, H = canvas.height;
+      for (let d = 0; d <= 100; d++) {
+        for (const y of (d === 0 ? [idealY] : [idealY - d, idealY + d])) {
+          if (y <= 5 || y >= H - 5) continue;
+          const base = y * W * 4;
+          const r0 = pixels[base], g0 = pixels[base+1], b0 = pixels[base+2];
+          let ok = true;
+          for (let x = 0; x < W && ok; x += 16) {
+            const i = base + x * 4;
+            if (Math.abs(pixels[i]-r0)>18 || Math.abs(pixels[i+1]-g0)>18 || Math.abs(pixels[i+2]-b0)>18) ok = false;
+          }
+          if (ok) return y;
+        }
+      }
+      return idealY; // لم يجد فراغاً → يقطع عند النقطة الأصلية
+    }
 
-    // page-break-inside:avoid على كل صف (يمنع تقطيع الصفوف بين الصفحات)
-    tmp.querySelectorAll('div[style*="border-top"], div[style*="border-bottom"]').forEach(el => {
-      el.style.pageBreakInside = 'avoid';
-      el.style.breakInside     = 'avoid';
-    });
-    document.body.appendChild(tmp);
+    // ⑤ بناء نقاط القطع الذكية
+    const pdf   = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    const imgW   = pageW - margin * 2;
+    const pagePixH = Math.floor((pageH - margin * 2) * canvas.width / imgW);
 
-    // ⑤ تحويل HTML → PDF مع autoPaging:'text' لتجنب تقطيع المحتوى
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    await new Promise((resolve, reject) => {
-      pdf.html(tmp, {
-        callback: resolve,
-        x: 8, y: 8,
-        width: 194,
-        windowWidth: 800,
-        autoPaging: 'text',
-        margin: [8, 8, 8, 8],
-        html2canvas: { scale: 1, useCORS: true, logging: false, backgroundColor: '#fff' },
-      });
-    });
-    document.body.removeChild(tmp);
+    const cuts = [0];
+    let nextIdeal = pagePixH;
+    while (nextIdeal < canvas.height) {
+      cuts.push(bestCutY(nextIdeal));
+      nextIdeal = cuts[cuts.length - 1] + pagePixH;
+    }
+    cuts.push(canvas.height);
+
+    // ⑥ توليد صفحات الـ PDF
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const srcY   = cuts[i];
+      const sliceH = cuts[i + 1] - srcY;
+      if (sliceH < 20) continue;
+      if (i > 0) pdf.addPage();
+      const sc = document.createElement('canvas');
+      sc.width = canvas.width; sc.height = sliceH;
+      sc.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+      pdf.addImage(sc.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, imgW, sliceH * imgW / canvas.width);
+    }
 
     const partnerName = content.querySelector('[style*="font-size:22px"]')?.textContent?.trim() || 'شريك';
     const dateStr = new Date().toISOString().split('T')[0];
