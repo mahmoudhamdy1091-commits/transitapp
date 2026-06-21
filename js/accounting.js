@@ -2315,7 +2315,6 @@ async function exportPartnerStatementPDF() {
   if (btn) { btn.textContent = '⏳ جاري التصدير...'; btn.disabled = true; }
 
   try {
-    // Load libraries if not loaded
     if (!window.html2canvas) {
       await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
     }
@@ -2325,22 +2324,33 @@ async function exportPartnerStatementPDF() {
 
     const { jsPDF } = window.jspdf;
 
-    // Temporarily expand content for capture
+    // ① إخفاء شريط الأزرار أثناء التصدير
+    const btnBar = content.querySelector('div[style*="display:flex;gap:8px"]');
+    if (btnBar) btnBar.style.visibility = 'hidden';
+
+    // ② فتح الـ inner scrollDiv (max-height:75vh)
+    const innerScroll = content.querySelector('div[style*="max-height:75vh"]');
+    const origInnerStyle = innerScroll ? innerScroll.style.cssText : null;
+    if (innerScroll) { innerScroll.style.maxHeight = 'none'; innerScroll.style.overflow = 'visible'; }
+
+    // ③ فتح الـ outer wrapper (max-height:90vh overflow:hidden)
     const scrollEl = content.closest('[style*="overflow"]');
-    const origMaxH = scrollEl ? scrollEl.style.maxHeight : null;
-    const origOverflow = scrollEl ? scrollEl.style.overflow : null;
+    const origMaxH    = scrollEl ? scrollEl.style.maxHeight : null;
+    const origOverflow = scrollEl ? scrollEl.style.overflow  : null;
     if (scrollEl) { scrollEl.style.maxHeight = 'none'; scrollEl.style.overflow = 'visible'; }
 
     const canvas = await html2canvas(content, {
       scale: 2,
       useCORS: true,
-      backgroundColor: '#f8fafc',
+      backgroundColor: '#1a1a2e',
       logging: false,
       scrollX: 0,
       scrollY: -window.scrollY,
     });
 
-    // Restore
+    // ④ إعادة الحالة الأصلية
+    if (btnBar)       btnBar.style.visibility = '';
+    if (innerScroll && origInnerStyle !== null) innerScroll.style.cssText = origInnerStyle;
     if (scrollEl) { scrollEl.style.maxHeight = origMaxH; scrollEl.style.overflow = origOverflow; }
 
     const imgData  = canvas.toDataURL('image/jpeg', 0.92);
