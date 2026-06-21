@@ -2016,6 +2016,19 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                         </div>`).join('')}</div>` : '';
                     })()}
 
+                    <!-- الإجراء المطلوب — للشريك الحالي فقط -->
+                    ${isMe ? `
+                    <div style="margin-top:10px;border:2px solid ${ps.netDue>0.01?'#3b82f6':ps.netDue<-0.01?'#ef4444':'#22c55e'};border-radius:8px;padding:10px 12px;text-align:center;background:${ps.netDue>0.01?'#eff6ff':ps.netDue<-0.01?'#fef2f2':'#f0fdf4'}">
+                      <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">الإجراء المطلوب</div>
+                      <div style="font-size:15px;font-weight:800;color:${ps.netDue>0.01?'#1d4ed8':ps.netDue<-0.01?'#dc2626':'#16a34a'}">
+                        ${ps.netDue > 0.01
+                          ? `💸 يُحوَّل له ${fmt2(ps.netDue)}`
+                          : ps.netDue < -0.01
+                          ? `⚠️ مدين للشركة بـ ${fmt2(Math.abs(ps.netDue))}`
+                          : '✅ حساب متوازن'}
+                      </div>
+                    </div>` : ''}
+
                   </div>
                 </div>`;
               }).join('')}
@@ -2192,6 +2205,18 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         <div style="margin-top:10px;border-top:1px solid #ffffff22;padding-top:10px;text-align:center;font-size:13px;opacity:.6">
           ✓ التسوية مع الشركاء مكتملة
         </div>`}
+
+        <!-- الإجراء الإجمالي النهائي -->
+        <div style="margin-top:16px;border-top:2px solid #ffffff22;padding-top:16px;text-align:center">
+          <div style="font-size:11px;opacity:.5;margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase">الإجراء الإجمالي — كل الصفقات</div>
+          <div style="font-size:20px;font-weight:900;color:${grandNetDue>0.01?'#4ade80':grandNetDue<-0.01?'#f87171':'#a3e635'}">
+            ${grandNetDue > 0.01
+              ? `💸 يُحوَّل لـ ${partnerName}: ${fmt2(grandNetDue)}`
+              : grandNetDue < -0.01
+              ? `⚠️ ${partnerName} مدين بـ: ${fmt2(Math.abs(grandNetDue))}`
+              : '✅ الحساب متوازن تماماً — لا يوجد تحويل'}
+          </div>
+        </div>
       </div>` : '';
 
     // ── التجميع الكامل ──
