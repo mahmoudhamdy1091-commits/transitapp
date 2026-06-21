@@ -600,17 +600,15 @@ async function login() {
       localStorage.setItem('tm_refresh', data.refresh_token || '');
       localStorage.setItem('tm_user',    JSON.stringify(data.user));
 
-      // ── تذكرني: نحفظ الـ email فقط — لا كلمة المرور أبداً ──
       if (remember) {
         localStorage.setItem('tm_saved_email', email);
+        localStorage.setItem('tm_saved_pass',  btoa(unescape(encodeURIComponent(pass))));
         localStorage.setItem('tm_remember', '1');
-        // tm_saved_pass حُذف بالكامل — btoa/atob غير آمن
       } else {
         localStorage.removeItem('tm_saved_email');
+        localStorage.removeItem('tm_saved_pass');
         localStorage.removeItem('tm_remember');
       }
-      // مسح أي كلمة مرور قديمة محفوظة من النسخ السابقة
-      localStorage.removeItem('tm_saved_pass');
 
       initApp();
     } else {
@@ -635,5 +633,5 @@ function logout() {
   state.user         = null;
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('appScreen').style.display   = 'none';
-  document.getElementById('loginPass').value = '';
+  if (!localStorage.getItem('tm_remember')) document.getElementById('loginPass').value = '';
 }

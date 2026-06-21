@@ -746,15 +746,17 @@ let _pwaInstallPrompt = null;
   const remember    = localStorage.getItem('tm_remember');
   const savedEmail  = localStorage.getItem('tm_saved_email');
   const savedPass   = localStorage.getItem('tm_saved_pass');
-  // ── تذكرني: email فقط — كلمة المرور لا تُحفظ ──
   if (remember && savedEmail) {
     document.getElementById('loginEmail').value   = savedEmail;
     document.getElementById('rememberMe').checked = true;
     document.getElementById('savedBadge').style.display    = 'inline-block';
     document.getElementById('clearSavedBtn').style.display = 'block';
+    if (savedPass) {
+      try {
+        document.getElementById('loginPass').value = decodeURIComponent(escape(atob(savedPass)));
+      } catch(e) {}
+    }
   }
-  // مسح أي كلمة مرور قديمة محفوظة من نسخ سابقة
-  localStorage.removeItem('tm_saved_pass');
 
   // Set today as default dates
   const dateInputs = document.querySelectorAll('input[type="date"]');
