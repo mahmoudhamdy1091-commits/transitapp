@@ -32,6 +32,7 @@ const state = {
   allExpenses: [],
   allCollections: [],
   allPayments: [],
+  allJEs: [],
   currentDeal: null,
   currentVehicles: [],
   currentSales: [],
@@ -65,13 +66,14 @@ async function ensureCache() {
 
 async function _doLoadCache() {
   const sys = state.system;
-  const [deals, vehicles, sales, expenses, collections, payments] = await Promise.all([
+  const [deals, vehicles, sales, expenses, collections, payments, jes] = await Promise.all([
     apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, order:'created_at.desc' }),
     apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}` }),
     apiGetAll('sales',           { select:'*', system_type:`eq.${sys}` }),
     apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}` }),
     apiGetAll('collections',     { select:'*', system_type:`eq.${sys}` }),
     apiGetAll('payments',        { select:'*', system_type:`eq.${sys}` }),
+    apiGetAll('journal_entries', { select:'file_no,account_code,dr_amount,cr_amount', system_type:`eq.${sys}`, post_status:'eq.posted' }),
   ]);
   state.allDeals       = deals       || [];
   state.allVehicles    = vehicles    || [];
@@ -79,13 +81,22 @@ async function _doLoadCache() {
   state.allExpenses    = expenses    || [];
   state.allCollections = collections || [];
   state.allPayments    = payments    || [];
+  state.allJEs         = jes         || [];
   state._cacheSystem   = sys;
   state._cacheTime     = Date.now();
 
-  const vehicleMap = {}, salesMap = {}, expMap = {};
+  const vehicleMap = {}, salesMap = {}, expMap = {}, jeMap = {};
   state.allVehicles.forEach(v => { vehicleMap[v.file_no]=vehicleMap[v.file_no]||[]; vehicleMap[v.file_no].push(v); });
   state.allSales.forEach(s   => { salesMap[s.file_no]=salesMap[s.file_no]||[];      salesMap[s.file_no].push(s); });
   state.allExpenses.forEach(e=> { expMap[e.file_no]=expMap[e.file_no]||[];          expMap[e.file_no].push(e); });
+  state.allJEs.forEach(r => {
+    if (!r.file_no) return;
+    jeMap[r.file_no] = jeMap[r.file_no] || { sales:0, cogs:0, exp:0 };
+    const acc = r.account_code || '';
+    if (acc.startsWith('4') && (+r.cr_amount||0) > 0) jeMap[r.file_no].sales += +r.cr_amount;
+    if (acc.startsWith('5') && (+r.dr_amount||0) > 0) jeMap[r.file_no].cogs  += +r.dr_amount;
+    if (acc.startsWith('6') && (+r.dr_amount||0) > 0) jeMap[r.file_no].exp   += +r.dr_amount;
+  });
 
   state.allDealsEnriched = state.allDeals.map(d => {
     const fn = d.file_no;
@@ -98,10 +109,13 @@ async function _doLoadCache() {
     const totalSale   = postedSales.reduce((s,s2)=>s+(+s2.sale_price||0),0);
     const soldVins    = new Set(postedSales.map(s=>s.vin).filter(Boolean));
     const fullCost    = totalCost + totalExp;
+    const je          = jeMap[fn];
+    const jeProfit    = je ? (je.sales - je.cogs - je.exp) : null;
     return { ...d,
       _vTotal:vList.length, _vSold:soldCount, _vLeft:Math.max(0,vList.length-soldCount),
       _totalCost:totalCost, _totalExp:totalExp, _fullCost:fullCost,
-      _totalSale:totalSale, _profit:totalSale-fullCost, _remaining:fullCost-totalSale,
+      _totalSale:totalSale, _profit: jeProfit !== null ? jeProfit : (totalSale - fullCost),
+      _remaining:fullCost-totalSale,
       _stockVehicles: vList.filter(v => !soldVins.has(v.vin)),
     };
   });
