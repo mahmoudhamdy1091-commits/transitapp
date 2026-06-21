@@ -2324,59 +2324,69 @@ async function exportPartnerStatementPDF() {
 
     const { jsPDF } = window.jspdf;
 
-    // ① إخفاء شريط الأزرار أثناء التصدير
-    const btnBar = content.querySelector('div[style*="display:flex;gap:8px"]');
-    if (btnBar) btnBar.style.visibility = 'hidden';
-
-    // ② فتح الـ inner scrollDiv (max-height:75vh)
+    // ① إخفاء الأزرار + فتح الـ scrollDivs لقراءة الـ HTML كاملاً
+    const btnBar     = content.querySelector('div[style*="display:flex;gap:8px"]');
     const innerScroll = content.querySelector('div[style*="max-height:75vh"]');
-    const origInnerStyle = innerScroll ? innerScroll.style.cssText : null;
+    const scrollEl   = content.closest('[style*="overflow"]');
+    if (btnBar)       btnBar.style.display = 'none';
+    const origInner  = innerScroll ? innerScroll.style.cssText : null;
     if (innerScroll) { innerScroll.style.maxHeight = 'none'; innerScroll.style.overflow = 'visible'; }
-
-    // ③ فتح الـ outer wrapper (max-height:90vh overflow:hidden)
-    const scrollEl = content.closest('[style*="overflow"]');
-    const origMaxH    = scrollEl ? scrollEl.style.maxHeight : null;
-    const origOverflow = scrollEl ? scrollEl.style.overflow  : null;
+    const origMaxH   = scrollEl ? scrollEl.style.maxHeight   : null;
+    const origOvfl   = scrollEl ? scrollEl.style.overflow     : null;
     if (scrollEl) { scrollEl.style.maxHeight = 'none'; scrollEl.style.overflow = 'visible'; }
 
-    const canvas = await html2canvas(content, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#1a1a2e',
-      logging: false,
-      scrollX: 0,
-      scrollY: -window.scrollY,
+    // ② بناء HTML نظيف (ألوان فاتحة مناسبة للطباعة)
+    let html = content.outerHTML;
+
+    // ③ إعادة الحالة الأصلية فوراً
+    if (btnBar)       btnBar.style.display = '';
+    if (innerScroll && origInner !== null) innerScroll.style.cssText = origInner;
+    if (scrollEl) { scrollEl.style.maxHeight = origMaxH; scrollEl.style.overflow = origOvfl; }
+
+    html = html
+      .replace(/background:#1a1a2e/gi,            'background:#2c3e50')
+      .replace(/color:#fff(?=[;"' ])/gi,           'color:#1a1a1a')
+      .replace(/color: #fff(?=[;"' ])/gi,          'color:#1a1a1a')
+      .replace(/opacity:\.(5|6|7)\b/g,             'opacity:1')
+      .replace(/background:#ffffff11/gi,           'background:#f0f0f0')
+      .replace(/background:#ffffff22/gi,           'background:#e8e8e8')
+      .replace(/background:#ffffff33/gi,           'background:#ddd')
+      .replace(/border:1px solid #ffffff44/gi,     'border:1px solid #aaa')
+      .replace(/border-top:1px solid #ffffff22/gi, 'border-top:1px solid #ccc')
+      .replace(/border-top:2px solid #ffffff22/gi, 'border-top:2px solid #999')
+      .replace(/background:#16a34a33/gi,           'background:#d1fae5')
+      .replace(/background:#dc262633/gi,           'background:#fee2e2')
+      .replace(/background:#16a34a22/gi,           'background:#d1fae5')
+      .replace(/background:#dc262622/gi,           'background:#fee2e2');
+
+    // ④ container مؤقت خارج الشاشة
+    const tmp = document.createElement('div');
+    tmp.setAttribute('dir', 'rtl');
+    tmp.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;background:#fff;font-family:Cairo,sans-serif';
+    tmp.innerHTML = html;
+
+    // page-break-inside:avoid على كل صف (يمنع تقطيع الصفوف بين الصفحات)
+    tmp.querySelectorAll('div[style*="border-top"], div[style*="border-bottom"]').forEach(el => {
+      el.style.pageBreakInside = 'avoid';
+      el.style.breakInside     = 'avoid';
     });
+    document.body.appendChild(tmp);
 
-    // ④ إعادة الحالة الأصلية
-    if (btnBar)       btnBar.style.visibility = '';
-    if (innerScroll && origInnerStyle !== null) innerScroll.style.cssText = origInnerStyle;
-    if (scrollEl) { scrollEl.style.maxHeight = origMaxH; scrollEl.style.overflow = origOverflow; }
+    // ⑤ تحويل HTML → PDF مع autoPaging:'text' لتجنب تقطيع المحتوى
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    await new Promise((resolve, reject) => {
+      pdf.html(tmp, {
+        callback: resolve,
+        x: 8, y: 8,
+        width: 194,
+        windowWidth: 800,
+        autoPaging: 'text',
+        margin: [8, 8, 8, 8],
+        html2canvas: { scale: 1, useCORS: true, logging: false, backgroundColor: '#fff' },
+      });
+    });
+    document.body.removeChild(tmp);
 
-    const imgData  = canvas.toDataURL('image/jpeg', 0.92);
-    const pdf      = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
-    const pageW    = pdf.internal.pageSize.getWidth();
-    const pageH    = pdf.internal.pageSize.getHeight();
-    const margin   = 10;
-    const imgW     = pageW - margin * 2;
-    const imgH     = (canvas.height * imgW) / canvas.width;
-    const totalPages = Math.ceil(imgH / (pageH - margin * 2));
-
-    for (let i = 0; i < totalPages; i++) {
-      const srcY  = i * (pageH - margin * 2) * (canvas.width / imgW);
-      if (srcY >= canvas.height) break;             // لا محتوى = لا صفحة
-      const sliceH = Math.min((pageH - margin * 2) * (canvas.width / imgW), canvas.height - srcY);
-      if (sliceH < canvas.width * 0.01) break;      // شريحة أقل من 1% = فراغ تجاهله
-      if (i > 0) pdf.addPage();
-      const sliceCanvas  = document.createElement('canvas');
-      sliceCanvas.width  = canvas.width;
-      sliceCanvas.height = sliceH;
-      sliceCanvas.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-      const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
-      pdf.addImage(sliceData, 'JPEG', margin, margin, imgW, sliceH * (imgW / canvas.width));
-    }
-
-    // Build filename
     const partnerName = content.querySelector('[style*="font-size:22px"]')?.textContent?.trim() || 'شريك';
     const dateStr = new Date().toISOString().split('T')[0];
     pdf.save(`كشف_حساب_${partnerName}_${dateStr}.pdf`);
