@@ -440,6 +440,15 @@ async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
 const TREASURY_PARTNER = 'الصندوق';
 function _isPartnerPocket(name) { return !!(name && name.trim() && name.trim() !== TREASURY_PARTNER); }
 
+const USER_DISPLAY_NAMES = {
+  'mahmoud.hamdy1091@gmail.com': 'محمود حمدي',
+  'transit.co.2002@gmail.com':   'ترانزيت ابو محمد',
+};
+function displayUser(email) {
+  if (!email) return 'غير معروف';
+  return USER_DISPLAY_NAMES[email] || email.split('@')[0];
+}
+
 async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method,receivedBy}) {
   if(!amount||amount<=0) return;
   // المدين: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو احتفظ بالمبلغ خارج الصندوق

@@ -190,7 +190,7 @@ function renderActivityLog() {
   const rows = list.map(r => {
     const dt       = r.created_at ? new Date(r.created_at).toLocaleString('ar-KW',{dateStyle:'short',timeStyle:'short'}) : '—';
     const email    = r.user_email || 'غير معروف';
-    const username = email.split('@')[0];
+    const username = displayUser(r.user_email);
     const initials = username[0]?.toUpperCase() || '?';
     const hasDetail= !!(r.new_value || r.old_value || r.notes);
     const actLabel = _ACT_LABELS[r.action] || r.action;

@@ -585,7 +585,7 @@ async function initApp() {
 
   // User info
   const email = state.user?.email || 'user@tm.com';
-  const name  = email.split('@')[0].replace('.', ' ');
+  const name  = displayUser(email);
   document.getElementById('userAvatar').textContent = name[0].toUpperCase();
   document.getElementById('userName').textContent = name;
   document.getElementById('userEmailDisplay').textContent = email;

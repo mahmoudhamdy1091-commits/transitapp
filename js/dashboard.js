@@ -566,7 +566,7 @@ async function openViewer(fileNo) {
     const created  = (logs||[]).find(l => l.action === 'INSERT');
     const edits    = (logs||[]).filter(l => l.action === 'EDIT');
     const lastEdit = edits[edits.length - 1];
-    const fmtUser  = email => (email||'unknown').replace(/@.*/, '');
+    const fmtUser  = email => displayUser(email);
     const fmtTs    = ts => (ts||'').split('T')[0];
     let auditHtml  = '';
     if (created)  auditHtml += `<span class="vh-meta-item" title="${created.user_email}">📌 <strong>أنشأه:</strong> ${fmtUser(created.user_email)} · <span class="ltr-num">${fmtTs(created.created_at)}</span></span>`;
