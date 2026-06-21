@@ -630,32 +630,30 @@ function renderDrillDown(type) {
     (el('dd-title-main')||el('dd-title')).textContent = `📈 نتائج العمليات — ${periodLabel}`;
     const sales   = d.periodSales  || [];
     const deals   = d.periodDeals  || [];
-    const exps    = d.periodExp    || [];
-    const totS    = sales.reduce((s,r)=>s+(+r.sale_price||0),0);
-    const totPur  = deals.reduce((s,d2)=>s+(+d2.total_purchase||0),0);
-    const totE    = exps.filter(e=>e.file_no).reduce((s,e)=>s+(+e.amount||0),0);
-    const profit  = totS - totPur - totE;
-    const margin  = totS>0?((profit/totS)*100).toFixed(1):0;
-    ddKpis.style.gridTemplateColumns = 'repeat(5,1fr)';
+    // الإجماليات من computeFinancials (نفس الكارد — SSOT)
+    const fin    = d.fin || {};
+    const totS   = fin.totSales   || 0;
+    const profit = fin.netProfit  || 0;
+    const totC   = fin.totCOGS + fin.totDealExp || 0;
+    const margin = totS>0?((profit/totS)*100).toFixed(1):0;
+    // ربح كل صفقة — من _profit (قيود اليومية، COGS المباع فقط)
+    const fileNos  = [...new Set(sales.map(s=>s.file_no))];
+    const fileData = fileNos.map(fn=>{
+      const fd  = deals.find(d2=>d2.file_no===fn);
+      const fs  = +fd?._totalSale || sales.filter(s=>s.file_no===fn).reduce((s,r)=>s+(+r.sale_price||0),0);
+      const pf  = fd?._profit != null ? +fd._profit : 0;
+      return {fn, sales:fs, cost:fs-pf, profit:pf};
+    });
+    ddKpis.style.gridTemplateColumns = 'repeat(4,1fr)';
     ddKpis.innerHTML = `
       <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--green)">${fmt(totS)}</div><div class="dd-kpi-lbl">المبيعات</div></div>
-      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--blue)">${fmt(totPur)}</div><div class="dd-kpi-lbl">تكلفة الشراء</div></div>
-      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--red)">${fmt(totE)}</div><div class="dd-kpi-lbl">المصاريف</div></div>
-      <div class="dd-kpi" style="background:${profit>=0?'var(--green-dim)':'var(--red-dim)'}"><div class="dd-kpi-val" style="color:${profit>=0?'var(--green)':'var(--red)'}">${fmt(profit)}</div><div class="dd-kpi-lbl">صافي الربح</div></div>
+      <div class="dd-kpi"><div class="dd-kpi-val" style="color:var(--blue)">${fmt(totC)}</div><div class="dd-kpi-lbl">تكلفة المبيعات</div></div>
+      <div class="dd-kpi" style="background:${profit>=0?'var(--green-dim)':'var(--red-dim)'}"><div class="dd-kpi-val" style="color:${profit>=0?'var(--green)':'var(--red)'}">${profit>=0?'+':''}${fmt(profit)}</div><div class="dd-kpi-lbl">صافي الربح</div></div>
       <div class="dd-kpi"><div class="dd-kpi-val" style="color:${profit>=0?'var(--green)':'var(--red)'}">${margin}%</div><div class="dd-kpi-lbl">هامش الربح</div></div>`;
-    // ربح كل صفقة
-    const fileNos = [...new Set(sales.map(s=>s.file_no))];
-    const fileData = fileNos.map(fn=>{
-      const fs = sales.filter(s=>s.file_no===fn).reduce((s,r)=>s+(+r.sale_price||0),0);
-      const fd = deals.find(d2=>d2.file_no===fn);
-      const fe = exps.filter(e=>e.file_no===fn).reduce((s,e)=>s+(+e.amount||0),0);
-      const fp = (+fd?.total_purchase||0)+fe;
-      return {fn, sales:fs, cost:fp, profit:fs-fp};
-    });
     renderDDChart(fileData.sort((a,b)=>b.profit-a.profit).map(f=>[f.fn, f.profit]), profit>=0?'var(--accent)':'var(--red)');
     ddTable.innerHTML = fileData.length ? `
       <table class="data-table"><thead><tr>
-        <th>الملف</th><th>المبيعات</th><th>التكلفة الكاملة</th><th>الربح / الخسارة</th><th>الهامش</th>
+        <th>الملف</th><th>المبيعات</th><th>تكلفة المبيعات</th><th>الربح / الخسارة</th><th>الهامش</th>
       </tr></thead><tbody>
       ${fileData.sort((a,b)=>b.profit-a.profit).map(f=>`<tr onclick="openViewer('${f.fn}')" style="cursor:pointer">
         <td class="mono text-amber" style="font-weight:700">${f.fn}</td>

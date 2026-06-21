@@ -80,6 +80,7 @@ async function loadDashboard() {
       allCollections: collections || [],
       allSales: allSales || [],
       stockVehicles, todayStr, from, to,
+      fin: _fin,
     };
 
     // ── KPIs — من journal_entries (SSOT) ──
