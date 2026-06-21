@@ -589,7 +589,12 @@ function printVehiclesReport() {
 function printPartnerStatement() {
   const content = document.getElementById('partnerStatementContent');
   if (!content) return;
+  // شيل max-height/overflow من الـ div الداخلي مؤقتاً عشان يطبع كامل
+  const scrollDiv = content.querySelector('div[style*="max-height"]');
+  const origStyle = scrollDiv ? scrollDiv.style.cssText : null;
+  if (scrollDiv) { scrollDiv.style.maxHeight = 'none'; scrollDiv.style.overflow = 'visible'; }
   renderPrint(`${docHeader('كشف حساب شريك','Partner Statement','')}${content.innerHTML}`, 'كشف حساب شريك');
+  if (scrollDiv && origStyle !== null) scrollDiv.style.cssText = origStyle;
 }
 
 // ════════════════════════════════════════════════════════════
