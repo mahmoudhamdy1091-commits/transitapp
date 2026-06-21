@@ -2363,9 +2363,11 @@ async function exportPartnerStatementPDF() {
     const totalPages = Math.ceil(imgH / (pageH - margin * 2));
 
     for (let i = 0; i < totalPages; i++) {
-      if (i > 0) pdf.addPage();
       const srcY  = i * (pageH - margin * 2) * (canvas.width / imgW);
+      if (srcY >= canvas.height) break;             // لا محتوى = لا صفحة
       const sliceH = Math.min((pageH - margin * 2) * (canvas.width / imgW), canvas.height - srcY);
+      if (sliceH < canvas.width * 0.01) break;      // شريحة أقل من 1% = فراغ تجاهله
+      if (i > 0) pdf.addPage();
       const sliceCanvas  = document.createElement('canvas');
       sliceCanvas.width  = canvas.width;
       sliceCanvas.height = sliceH;
