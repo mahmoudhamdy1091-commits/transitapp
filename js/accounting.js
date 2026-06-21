@@ -1742,6 +1742,18 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         };
       });
 
+      // ── و. تتبع النقدية ──
+      const totalColl = (collections||[]).filter(isPosted).reduce((s,c)=>s+(+c.amount||0),0);
+      const uncollected = totalSales - totalColl;
+      const collPct = totalSales > 0 ? (totalColl / totalSales) * 100 : 0;
+      const collByReceiver = Object.entries(
+        (collections||[]).filter(isPosted).reduce((acc,c) => {
+          const name = (c.received_by && c.received_by.trim()) || TREASURY_PARTNER;
+          acc[name] = (acc[name]||0) + (+c.amount||0);
+          return acc;
+        }, {})
+      ).map(([name,amount])=>({name,amount})).sort((a,b)=>b.amount-a.amount);
+
       // للتوافق مع الكود القديم
       const paidByPartner = {};
       (allPartnersPayments||[]).filter(isEffective).forEach(p => {
@@ -1766,6 +1778,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
         poDate: poData.po_date || poData.created_at || '',
         partnerDebts, paidByPartner, shouldPayMap, partnerSettlement,
         hasJEPartner, hasJEData, jeMovements,
+        totalColl, uncollected, collPct, collByReceiver,
       };
     }));
 
@@ -2025,6 +2038,52 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   </div>`).join('')).join('')}
               </div>`;
             })()}
+          </div>` : ''}
+
+          <!-- 💵 تتبع النقدية -->
+          ${d.totalSales > 0 ? `
+          <div style="margin-bottom:14px">
+            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">💵 تتبع النقدية</div>
+            <div style="background:#f8fafc;border-radius:10px;padding:14px 16px;border:1px solid #e2e8f0">
+              <!-- الأرقام الرئيسية الثلاثة -->
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;text-align:center">
+                <div>
+                  <div style="font-size:11px;color:#64748b;margin-bottom:3px">إجمالي المبيعات</div>
+                  <div style="font-family:monospace;font-weight:700;font-size:15px">${fmt2(d.totalSales)}</div>
+                </div>
+                <div>
+                  <div style="font-size:11px;color:#16a34a;margin-bottom:3px">تم تحصيله</div>
+                  <div style="font-family:monospace;font-weight:700;font-size:15px;color:#16a34a">${fmt2(d.totalColl)}</div>
+                </div>
+                <div>
+                  <div style="font-size:11px;color:${d.uncollected>0.001?'#dc2626':'#16a34a'};margin-bottom:3px">${d.uncollected>0.001?'باقي من العملاء':'تحصيل كامل ✓'}</div>
+                  <div style="font-family:monospace;font-weight:700;font-size:15px;color:${d.uncollected>0.001?'#dc2626':'#16a34a'}">${fmt2(Math.abs(d.uncollected))}</div>
+                </div>
+              </div>
+              <!-- شريط التقدم -->
+              <div style="margin-bottom:${d.collByReceiver.length>1?'12':'0'}px">
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px">
+                  <span style="color:#64748b">نسبة التحصيل</span>
+                  <span style="font-weight:700;color:${d.collPct>=100?'#16a34a':d.collPct>=50?'#d97706':'#dc2626'}">${d.collPct.toFixed(1)}%</span>
+                </div>
+                <div style="background:#e2e8f0;border-radius:10px;height:7px;overflow:hidden">
+                  <div style="background:${d.collPct>=100?'#16a34a':'#22c55e'};height:100%;width:${Math.min(100,d.collPct).toFixed(1)}%;border-radius:10px"></div>
+                </div>
+              </div>
+              <!-- توزيع التحصيل حسب المستلم — فقط لو أكثر من مستلم -->
+              ${d.collByReceiver.length > 1 ? `
+              <div style="border-top:1px solid #e2e8f0;padding-top:10px">
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:6px">توزيع التحصيل</div>
+                ${d.collByReceiver.map(r => `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:12px">
+                  <span style="color:#475569">${r.name}</span>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-family:monospace;font-weight:600;color:#16a34a">${fmt2(r.amount)}</span>
+                    <span style="font-size:10px;color:#94a3b8">${d.totalColl>0?((r.amount/d.totalColl)*100).toFixed(0)+'%':''}</span>
+                  </div>
+                </div>`).join('')}
+              </div>` : ''}
+            </div>
           </div>` : ''}
 
           <!-- الحركات المالية للشريك -->
