@@ -114,12 +114,13 @@ async function loadJournal() {
           : `<span style="color:var(--red)">دائن ${fmt(l.cr_amount)}</span>`;
         return `<span style="font-size:12px;color:var(--text2);display:inline-block;margin-left:8px">${l.account_code||''} ${l.account_name||'—'}: ${side}</span>`;
       });
-      // ✅ قيمة سند البيع = الإيراد (حسابات 4xxx) فقط — بدون تكلفة البضاعة المباعة.
+      // ✅ قيمة سند البيع = صافي الإيراد على حسابات 4xxx: cr − dr
       // قيد البيع مركّب (إيراد + COGS) فمجموع المدين يضخّم القيمة وKPI المبيعات.
+      // القيد العكسي (عكس بيع): 4100 مدين → netRev سالب → يُطرح من إجمالي المبيعات
       let displayAmount = g.totalDr;
       if (g.type === 'sale') {
-        const rev = g.lines.reduce((s,l) => s + ((l.account_code||'').startsWith('4') ? (+l.cr_amount||0) : 0), 0);
-        if (rev > 0) displayAmount = rev;
+        const netRev = g.lines.reduce((s,l) => s + ((l.account_code||'').startsWith('4') ? ((+l.cr_amount||0) - (+l.dr_amount||0)) : 0), 0);
+        if (netRev !== 0) displayAmount = netRev;
       }
       return {
         type:    g.type, date: g.date,
@@ -367,7 +368,7 @@ function renderJournalEntries() {
     dayEntries.forEach(e => {
       const cfg = typeConfig[e.type] || { icon:'📌', bg:'var(--card2)', label:e.type, amountColor:'var(--text)' };
       const metaFiltered = (e.meta||[]).filter(Boolean).join(' · ');
-      const amountSign = e.sign > 0 ? '+' : '-';
+      const amountSign = (e.sign < 0 || e.amount < 0) ? '-' : '+';
       html += `
         <div class="j-entry j-type-${e.type}${e.status==='draft'?' is-draft':''}" style="cursor:pointer"
           onclick="${e.fileNo ? `openViewer('${e.fileNo}')` : ''}">
@@ -384,7 +385,7 @@ function renderJournalEntries() {
           </div>
           <div style="display:flex;align-items:center;gap:6px">
             <div class="j-entry-amount" style="color:${cfg.amountColor}">
-              ${amountSign}${fmt(e.amount)}
+              ${amountSign}${fmt(Math.abs(e.amount))}
             </div>
             <span class="j-entry-actions"
               data-eno="${e.entryNo||''}"
