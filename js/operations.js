@@ -1199,6 +1199,13 @@ async function openApprovalDetail(type, id) {
   const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
   if (!item || !cfg) return;
 
+  // ✅ فتح أصل المستند (الملف الكامل) للمراجعة بدل ملخص سطر واحد —
+  // البنود بلا ملف (مثل مصروف تشغيلي عام) تعرض الملخص القديم كحل احتياطي
+  if (item._file && typeof openViewer === 'function') {
+    await openViewer(item._file);
+    return;
+  }
+
   approvalState.currentItem = { type, id, item };
 
   el('ad-icon').textContent = cfg.icon;
