@@ -607,7 +607,8 @@ function printPartnerStatement() {
     .replace(/background:#1e293b/gi,              'background:#2c3e50')
     .replace(/color:#fff(?=[;"' ])/gi,            'color:#000')
     .replace(/color: #fff(?=[;"' ])/gi,           'color:#000')
-    .replace(/opacity:\.(5|6|7)\b/g,              'opacity:1')
+    .replace(/opacity:\.(5|6|7|8)\b/g,             'opacity:1')
+    .replace(/opacity:\.85\b/g,                   'opacity:1')
     .replace(/background:#ffffff11/gi,            'background:#f0f0f0')
     .replace(/background:#ffffff22/gi,            'background:#e8e8e8')
     .replace(/background:#ffffff33/gi,            'background:#ddd')
@@ -1233,7 +1234,7 @@ async function exportPartnerStatementPDF() {
     const btnBar      = content.querySelector('div[style*="display:flex;gap:8px"]');
     const innerScroll = content.querySelector('div[style*="max-height:75vh"]');
     const scrollEl    = content.closest('[style*="overflow"]');
-    if (btnBar) btnBar.style.visibility = 'hidden';
+    if (btnBar) btnBar.style.display = 'none';
     const origInner = innerScroll ? innerScroll.style.cssText : null;
     if (innerScroll) { innerScroll.style.maxHeight = 'none'; innerScroll.style.overflow = 'visible'; }
     const origMaxH = scrollEl ? scrollEl.style.maxHeight : null;
@@ -1246,7 +1247,7 @@ async function exportPartnerStatementPDF() {
     });
 
     // ② إعادة الحالة الأصلية
-    if (btnBar) btnBar.style.visibility = '';
+    if (btnBar) btnBar.style.display = '';
     if (innerScroll && origInner !== null) innerScroll.style.cssText = origInner;
     if (scrollEl) { scrollEl.style.maxHeight = origMaxH; scrollEl.style.overflow = origOvfl; }
 
