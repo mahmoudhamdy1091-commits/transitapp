@@ -1858,7 +1858,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   return `<tr style="border-bottom:1px solid #f1f5f9">
                     <td style="padding:7px 10px;color:#94a3b8">${i+1}</td>
                     <td style="padding:7px 10px;font-weight:600">${v.model||v.make||'—'} ${v.year||''}</td>
-                    <td style="padding:7px 10px;font-family:monospace;color:#2563eb;font-size:13px">${v.vin||'—'}</td>
+                    <td style="padding:7px 10px;font-family:monospace;color:#334155;font-size:13px">${v.vin||'—'}</td>
                     <td style="padding:7px 10px;font-family:monospace;font-weight:600">${fmt2(v.purchase_price)}</td>
                     <td style="padding:7px 10px;font-family:monospace;color:#d97706">${fmt2((+v.purchase_price||0)*d.share)}</td>
                     <td style="padding:7px 10px">
@@ -1901,7 +1901,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   <td style="padding:6px 10px">${e.description||'—'}</td>
                   <td style="padding:6px 10px"><span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:10px;font-size:12px">${e.exp_type||e.category||'—'}</span></td>
                   <td style="padding:6px 10px;color:#94a3b8">${(e.exp_date||e.expense_date||'').split('T')[0]||'—'}</td>
-                  <td style="padding:6px 10px"><span style="background:${(!e.paid_by||e.paid_by.trim()===TREASURY_PARTNER)?'#eff6ff':'#fef3c7'};color:${(!e.paid_by||e.paid_by.trim()===TREASURY_PARTNER)?'#1d4ed8':'#92400e'};padding:1px 6px;border-radius:10px;font-size:11px;font-weight:700">${e.paid_by||TREASURY_PARTNER}</span></td>
+                  <td style="padding:6px 10px"><span style="background:${(!e.paid_by||e.paid_by.trim()===TREASURY_PARTNER)?'#f1f5f9':'#fef3c7'};color:${(!e.paid_by||e.paid_by.trim()===TREASURY_PARTNER)?'#334155':'#92400e'};padding:1px 6px;border-radius:10px;font-size:11px;font-weight:700">${e.paid_by||TREASURY_PARTNER}</span></td>
                   <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2(e.amount)}</td>
                   <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2((+e.amount||0)*d.share)}</td>
                 </tr>`).join('')}
@@ -1933,7 +1933,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
               <tbody>
                 ${effSales.map(s=>`
                 <tr style="border-bottom:1px solid #f0fdf4">
-                  <td style="padding:6px 10px;font-family:monospace;color:#2563eb;font-size:13px">${s.vin||'—'}</td>
+                  <td style="padding:6px 10px;font-family:monospace;color:#334155;font-size:13px">${s.vin||'—'}</td>
                   <td style="padding:6px 10px">${s.customer||'—'}</td>
                   <td style="padding:6px 10px;color:#94a3b8">${(s.sale_date||'').split('T')[0]||'—'}</td>
                   <td style="padding:6px 10px;font-family:monospace;color:#16a34a;font-weight:700">${fmt2(s.sale_price)}</td>
