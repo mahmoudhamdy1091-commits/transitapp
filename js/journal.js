@@ -365,11 +365,57 @@ function renderJournalEntries() {
         </span>
       </div>`;
 
+    // ✅ تجميع بصري فقط: قيود "بيع" متكررة لنفس الفاتورة (نفس fileNo+رقم الفاتورة)
+    // تُعرض كسطر واحد قابل للتوسعة بدل تكرارها — المجموع محسوب من e.amount الفعلية
+    // (لا تغيير على journalState.entries ولا على dayIn/dayOut/dayNet أدناه، المحسوبة قبل هذا التجميع)
+    const invoiceGroups = {};
+    const renderOrder = [];
     dayEntries.forEach(e => {
-      const cfg = typeConfig[e.type] || { icon:'📌', bg:'var(--card2)', label:e.type, amountColor:'var(--text)' };
-      const metaFiltered = (e.meta||[]).filter(Boolean).join(' · ');
-      const amountSign = (e.sign < 0 || e.amount < 0) ? '-' : '+';
-      html += `
+      let key = e.entryNo || `_solo_${renderOrder.length}`;
+      if (e.type === 'sale') {
+        const token = _extractInvToken(e.title);
+        if (token) key = `${e.fileNo||''}::${token}`;
+      }
+      if (!invoiceGroups[key]) { invoiceGroups[key] = []; renderOrder.push(key); }
+      invoiceGroups[key].push(e);
+    });
+
+    renderOrder.forEach(key => {
+      const items = invoiceGroups[key];
+      if (items.length === 1) {
+        html += _renderSingleJournalEntry(items[0]);
+      } else {
+        html += _renderGroupedSaleEntries(items, key, typeConfig);
+      }
+    });
+
+    html += `</div>`;
+  });
+
+  el('journalTimeline').innerHTML = html;
+}
+
+// استخراج رقم الفاتورة من وصف القيد — يتوقف عند أول em-dash (" — ") أو نهاية النص
+// (يتطابق مع صيغة الوصف في je_sale: "فاتورة INV-..." أو "بيع فاتورة INV-... — العميل — ملف ...")
+function _extractInvToken(desc) {
+  const m = (desc||'').match(/INV-[\s\S]*?(?=\s—|$)/);
+  return m ? m[0].trim() : null;
+}
+
+function _renderSingleJournalEntry(e) {
+  const typeConfig = {
+    purchase:   { icon:'📋', bg:'var(--accent-dim)', label:'سند شراء', amountColor:'var(--accent)' },
+    sale:       { icon:'🤝', bg:'var(--green-dim)',   label:'بيع',            amountColor:'var(--green)'  },
+    collection: { icon:'💰', bg:'var(--blue-dim)',    label:'تحصيل',          amountColor:'var(--blue)'   },
+    expense:    { icon:'💸', bg:'var(--red-dim)',     label:'مصروف',          amountColor:'var(--red)'    },
+    payment:    { icon:'💳', bg:'var(--cyan-dim)',    label:'دفعة مورد',      amountColor:'var(--cyan)'   },
+    payout:     { icon:'👥', bg:'var(--purple-dim)',  label:'صرف شريك',       amountColor:'var(--purple)' },
+    opex:       { icon:'💼', bg:'var(--purple-dim)',  label:'مصروف عام',         amountColor:'var(--purple)' },
+  };
+  const cfg = typeConfig[e.type] || { icon:'📌', bg:'var(--card2)', label:e.type, amountColor:'var(--text)' };
+  const metaFiltered = (e.meta||[]).filter(Boolean).join(' · ');
+  const amountSign = (e.sign < 0 || e.amount < 0) ? '-' : '+';
+  return `
         <div class="j-entry j-type-${e.type}${e.status==='draft'?' is-draft':''}" style="cursor:pointer"
           onclick="${e.fileNo ? `openViewer('${e.fileNo}')` : ''}">
           <div class="j-entry-icon" style="background:${cfg.bg}">${cfg.icon}</div>
@@ -400,12 +446,35 @@ function renderJournalEntries() {
             </span>
           </div>
         </div>`;
-    });
+}
 
-    html += `</div>`;
-  });
-
-  el('journalTimeline').innerHTML = html;
+let _jGroupSeq = 0;
+function _renderGroupedSaleEntries(items, key, typeConfig) {
+  const cfg = typeConfig['sale'];
+  const groupTotal = items.reduce((s,e)=>s+e.amount,0);
+  const amountSign = groupTotal < 0 ? '-' : '+';
+  const token = _extractInvToken(items[0].title) || items[0].title;
+  const gid = `jgrp-${++_jGroupSeq}`;
+  const detailsHtml = items.map(e => _renderSingleJournalEntry(e)).join('');
+  return `
+        <div class="j-entry j-type-sale" style="cursor:default">
+          <div class="j-entry-icon" style="background:${cfg.bg}">${cfg.icon}</div>
+          <div class="j-entry-body">
+            <div class="j-entry-title">${token}</div>
+            <div class="j-entry-meta">
+              <span style="background:var(--card2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">${cfg.label}</span>
+              <span style="background:var(--accent-dim);color:var(--accent);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">📑 مجمّع — ${items.length} قيود</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <div class="j-entry-amount" style="color:${cfg.amountColor}">
+              ${amountSign}${fmt(Math.abs(groupTotal))}
+            </div>
+            <button class="btn-ctx-menu" onclick="event.stopPropagation();const w=document.getElementById('${gid}');const open=w.style.display!=='none';w.style.display=open?'none':'block';this.textContent=open?'👁 عرض التفاصيل':'🔼 إخفاء التفاصيل';"
+              style="background:var(--card2);border:1px solid var(--border);cursor:pointer;color:var(--text2);font-size:13px;padding:3px 10px;border-radius:6px;white-space:nowrap">👁 عرض التفاصيل</button>
+          </div>
+        </div>
+        <div id="${gid}" style="display:none;margin-right:16px;border-right:2px dashed var(--border);padding-right:8px">${detailsHtml}</div>`;
 }
 
 // ════════════════════════════════════════
