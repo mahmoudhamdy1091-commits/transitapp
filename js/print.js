@@ -1257,10 +1257,34 @@ async function exportPartnerStatementPDF() {
     const ctx = canvas.getContext('2d');
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
-    // ④ دالة تبحث عن أقرب صف متجانس اللون (فراغ بين الصفوف) لنقطة القطع
+    // ④ دالة تبحث عن أقرب صف متجانس اللون لنقطة القطع
     function bestCutY(idealY) {
       const W = canvas.width, H = canvas.height;
-      for (let d = 0; d <= 100; d++) {
+
+      function rowUniform(y, r0, g0, b0) {
+        const base = y * W * 4;
+        for (let x = 0; x < W; x += 16) {
+          const i = base + x * 4;
+          if (Math.abs(pixels[i]-r0)>18||Math.abs(pixels[i+1]-g0)>18||Math.abs(pixels[i+2]-b0)>18) return false;
+        }
+        return true;
+      }
+
+      // مرحلة 1: فراغ فاتح حقيقي ≥3px متتالية (يتجنب borders الرفيعة بين صفوف الجدول)
+      for (let d = 0; d <= 130; d++) {
+        for (const y of (d === 0 ? [idealY] : [idealY - d, idealY + d])) {
+          if (y <= 8 || y >= H - 8) continue;
+          const base = y * W * 4;
+          const r0 = pixels[base], g0 = pixels[base+1], b0 = pixels[base+2];
+          if (0.299*r0 + 0.587*g0 + 0.114*b0 < 200) continue; // صف داكن → تجاهل
+          if (!rowUniform(y, r0, g0, b0)) continue;
+          if (!rowUniform(y - 1, r0, g0, b0)) continue;
+          if (!rowUniform(y + 1, r0, g0, b0)) continue;
+          return y;
+        }
+      }
+      // مرحلة 2: fallback — أي صف متجانس (السلوك الأصلي)
+      for (let d = 0; d <= 80; d++) {
         for (const y of (d === 0 ? [idealY] : [idealY - d, idealY + d])) {
           if (y <= 5 || y >= H - 5) continue;
           const base = y * W * 4;
@@ -1268,7 +1292,7 @@ async function exportPartnerStatementPDF() {
           let ok = true;
           for (let x = 0; x < W && ok; x += 16) {
             const i = base + x * 4;
-            if (Math.abs(pixels[i]-r0)>18 || Math.abs(pixels[i+1]-g0)>18 || Math.abs(pixels[i+2]-b0)>18) ok = false;
+            if (Math.abs(pixels[i]-r0)>18||Math.abs(pixels[i+1]-g0)>18||Math.abs(pixels[i+2]-b0)>18) ok = false;
           }
           if (ok) return y;
         }
