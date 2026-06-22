@@ -1312,13 +1312,19 @@ function showJournalReport() {
      <td style="text-align:left">${g.total.toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`
   ).join('');
 
-  const detailRows = entries.map(e => `<tr>
+  const detailRows = entries.map(e => {
+    // القيد العكسي: sign>0 لكن amount<0 — يجب عرضه كـ "-" أحمر لا "+" أخضر
+    const isPositive = e.sign > 0 && e.amount >= 0;
+    const color      = isPositive ? '#16a34a' : '#dc2626';
+    const prefix     = isPositive ? '+' : '−';
+    return `<tr>
     <td>${fmtDate(e.date)}</td>
     <td>${typeLabels[e.type]||e.type||'—'}</td>
     <td>${e.title||e.description||'—'}</td>
     <td>${e.fileNo||'—'}</td>
-    <td style="text-align:left;color:${e.sign>0?'#16a34a':'#dc2626'}">${e.sign>0?'+':'−'}${fmt(e.amount)}</td>
-  </tr>`).join('');
+    <td style="text-align:left;color:${color}">${prefix}${fmt(Math.abs(e.amount))}</td>
+  </tr>`;
+  }).join('');
 
   const html = `
     ${docHeader('التقرير اليومي','Daily Report','')}
