@@ -1243,6 +1243,16 @@ async function exportPartnerStatementPDF() {
     const origOvfl = scrollEl ? scrollEl.style.overflow  : null;
     if (scrollEl) { scrollEl.style.maxHeight = 'none'; scrollEl.style.overflow = 'visible'; }
 
+    // ①-b: رصد مواقع tfoot (الإجمالي) كـ no-cut zones — يُقاس بعد فتح الـ scrollDivs وقبل html2canvas
+    const _cRect     = content.getBoundingClientRect();
+    const noCutZones = [];
+    content.querySelectorAll('tfoot').forEach(tf => {
+      const r   = tf.getBoundingClientRect();
+      const top = (r.top    - _cRect.top) * 2; // scale=2
+      const bot = (r.bottom - _cRect.top) * 2;
+      noCutZones.push({ from: Math.max(0, top - 30), to: bot + 10 });
+    });
+
     const canvas = await html2canvas(content, {
       scale: 2, useCORS: true, backgroundColor: '#f8fafc',
       logging: false, scrollX: 0, scrollY: -window.scrollY,
@@ -1261,6 +1271,11 @@ async function exportPartnerStatementPDF() {
     function bestCutY(idealY) {
       const W = canvas.width, H = canvas.height;
 
+      // تتجنب القطع داخل أو قبل صف الإجمالي (tfoot)
+      function inNoCutZone(y) {
+        return noCutZones.some(z => y >= z.from && y <= z.to);
+      }
+
       function rowUniform(y, r0, g0, b0) {
         const base = y * W * 4;
         for (let x = 0; x < W; x += 16) {
@@ -1274,6 +1289,7 @@ async function exportPartnerStatementPDF() {
       for (let d = 0; d <= 130; d++) {
         for (const y of (d === 0 ? [idealY] : [idealY - d, idealY + d])) {
           if (y <= 8 || y >= H - 8) continue;
+          if (inNoCutZone(y)) continue;
           const base = y * W * 4;
           const r0 = pixels[base], g0 = pixels[base+1], b0 = pixels[base+2];
           if (0.299*r0 + 0.587*g0 + 0.114*b0 < 200) continue; // صف داكن → تجاهل
@@ -1283,10 +1299,11 @@ async function exportPartnerStatementPDF() {
           return y;
         }
       }
-      // مرحلة 2: fallback — أي صف متجانس (السلوك الأصلي)
+      // مرحلة 2: fallback — أي صف متجانس (لكن لا يزال يتجنب no-cut zones)
       for (let d = 0; d <= 80; d++) {
         for (const y of (d === 0 ? [idealY] : [idealY - d, idealY + d])) {
           if (y <= 5 || y >= H - 5) continue;
+          if (inNoCutZone(y)) continue;
           const base = y * W * 4;
           const r0 = pixels[base], g0 = pixels[base+1], b0 = pixels[base+2];
           let ok = true;
