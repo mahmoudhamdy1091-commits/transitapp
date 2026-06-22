@@ -1846,7 +1846,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                 <tr style="background:#f8fafc">
                   <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">#</th>
                   <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">الموديل</th>
-                  <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">رقم الشاصي</th>
+                  <th style="padding:7px 10px;text-align:left;border-bottom:1px solid #e2e8f0;color:#64748b">رقم الشاصي</th>
                   <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">سعر الشراء</th>
                   <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">حصة الشريك (${fmtP(d.share)})</th>
                   <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #e2e8f0;color:#64748b">الحالة</th>
@@ -1858,13 +1858,13 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   return `<tr style="border-bottom:1px solid #f1f5f9">
                     <td style="padding:7px 10px;color:#94a3b8">${i+1}</td>
                     <td style="padding:7px 10px;font-weight:600">${v.model||v.make||'—'} ${v.year||''}</td>
-                    <td style="padding:7px 10px;font-family:monospace;color:#334155;font-size:13px">${v.vin||'—'}</td>
+                    <td style="padding:7px 10px;font-family:monospace;color:#334155;font-size:13px;text-align:left">${v.vin||'—'}</td>
                     <td style="padding:7px 10px;font-family:monospace;font-weight:600">${fmt2(v.purchase_price)}</td>
                     <td style="padding:7px 10px;font-family:monospace;color:#d97706">${fmt2((+v.purchase_price||0)*d.share)}</td>
                     <td style="padding:7px 10px">
                       ${sold
                         ? `<span style="background:#f0fdf4;color:#16a34a;border:1px solid #86efac;padding:2px 8px;border-radius:20px;font-size:12px;font-weight:700">✓ مباع — ${fmt2(sold.sale_price)}</span>`
-                        : `<span style="background:#fef9ec;color:#d97706;border:1px solid #fcd34d;padding:2px 8px;border-radius:20px;font-size:12px;font-weight:700">في المخزن</span>`}
+                        : `<span style="background:#fef3c7;color:#92400e;border:1px solid #f59e0b;padding:2px 8px;border-radius:20px;font-size:12px;font-weight:700">في المخزن</span>`}
                     </td>
                   </tr>`;
                 }).join('')}
@@ -1977,18 +1977,18 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                     <span>${ps.name}${isMe?' ★':''}</span>
                     <span style="font-size:12px;opacity:.85">${ps.sharePercent}%</span>
                   </div>
-                  <div style="padding:10px 14px;font-size:12px">
+                  <div style="padding:7px 12px;font-size:12px">
 
                     <!-- ما له -->
-                    <div style="background:#f0fdf4;border-radius:7px;padding:8px 10px;margin-bottom:6px">
-                      <div style="font-weight:700;color:#15803d;margin-bottom:4px">✅ ما له</div>
+                    <div style="background:#f0fdf4;border-radius:7px;padding:6px 8px;margin-bottom:4px">
+                      <div style="font-weight:700;color:#15803d;margin-bottom:3px">✅ ما له</div>
                       ${row('رأس المال المدفوع', ps.capitalPaid, '#15803d')}
                       ${ps.expPaid > 0 ? row('مصروفات دفعها من جيبه', ps.expPaid, '#15803d') : ''}
                       ${maleTotal !== ps.capitalPaid ? `${divider}${totalRow('الإجمالي', maleTotal, '#15803d')}` : ''}
                     </div>
 
                     <!-- نتيجة الصفقة — تفاصيل طريقة الحساب -->
-                    <div style="background:${ps.profit>=0?'#f0fdf4':'#fff1f2'};border:1px dashed ${ps.profit>=0?'#86efac':'#fca5a5'};border-radius:7px;padding:8px 10px;margin-bottom:6px">
+                    <div style="background:${ps.profit>=0?'#f0fdf4':'#fff1f2'};border:1px dashed ${ps.profit>=0?'#86efac':'#fca5a5'};border-radius:7px;padding:6px 8px;margin-bottom:4px">
                       <div style="font-weight:700;color:${ps.profit>=0?'#15803d':'#dc2626'};margin-bottom:6px;font-size:12px">📊 حصة الربح / الخسارة (${ps.sharePercent}%)</div>
                       ${d.hasJEData ? `
                       <div style="display:flex;justify-content:space-between;padding:2px 0">
@@ -2014,15 +2014,15 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                     </div>
 
                     <!-- ما عليه -->
-                    <div style="background:#fff1f2;border-radius:7px;padding:8px 10px;margin-bottom:6px">
-                      <div style="font-weight:700;color:#b91c1c;margin-bottom:4px">❌ ما استلمه</div>
+                    <div style="background:#fff1f2;border-radius:7px;padding:6px 8px;margin-bottom:4px">
+                      <div style="font-weight:700;color:#b91c1c;margin-bottom:3px">❌ ما استلمه</div>
                       ${ps.withdrawn > 0 ? row('مسحوبات رسمية', ps.withdrawn, '#b91c1c') : ''}
                       ${ps.collectedDirect > 0 ? row('تحصيلات مبيعات مباشرة', ps.collectedDirect, '#b91c1c') : ''}
                       ${got === 0 ? `<div style="color:#94a3b8;font-size:11px">لم يستلم شيئاً بعد</div>` : `${divider}${totalRow('الإجمالي', got, '#b91c1c')}`}
                     </div>
 
                     <!-- الرصيد النهائي -->
-                    <div style="background:${ps.netDue>=0?'#dbeafe':'#fef2f2'};border-radius:8px;padding:10px;display:flex;justify-content:space-between;align-items:center">
+                    <div style="background:${ps.netDue>=0?'#dbeafe':'#fef2f2'};border-radius:8px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center">
                       <div>
                         <div style="font-weight:700;font-size:12px;color:${ps.netDue>=0?'#1d4ed8':'#dc2626'}">${ps.netDue>=0?'🔵 الرصيد المستحق له':'🔴 الرصيد المدين عليه'}</div>
                         <div style="font-size:10px;color:#94a3b8;margin-top:2px">ما له ${fmt2(maleTotal)} ${ps.profit>=0?'+ ربح':'− خسارة'} ${fmt2(Math.abs(ps.profit))} − ما استلمه ${fmt2(got)}</div>
