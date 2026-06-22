@@ -1683,16 +1683,27 @@ async function approveItem(type, id) {
       if (item && item.inv_no && item.file_no) {
         // تجميع كل سيارات الفاتورة — الفاتورة قد تحتوي أكثر من سيارة
         try {
-          const allInvSales = await apiGetAll('sales', {
-            select:'sale_price,vin,sale_date,customer,file_no,inv_no',
-            system_type:`eq.${state.system}`,
-            file_no:`eq.${item.file_no}`,
-            inv_no:`eq.${item.inv_no}`,
+          // ✅ فحص تكرار: لو الفاتورة فيها سيارات متعددة كل واحدة draft منفصل،
+          // الموافقة على كل سيارة تستدعي هذه الدالة — نتحقق أن القيد لم يُنشأ مسبقاً
+          const existingJE = await apiGetAll('journal_entries', {
+            select:'entry_no,description', system_type:`eq.${state.system}`,
+            ref_table:'eq.sales', file_no:`eq.${item.file_no}`, post_status:'eq.posted',
           });
-          const totalInvAmount = (allInvSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
-          const totalCOGS = await calcCOGS(state.system, item.file_no, (allInvSales||[]).length, { soldVins:(allInvSales||[]).map(s=>s.vin) });
-          if (totalInvAmount > 0) {
-            await je_sale({ sys:state.system, date:item.sale_date||today(), amount:totalInvAmount, cost:totalCOGS, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'' });
+          const hasJE = (existingJE||[]).some(j => (j.description||'').includes(item.inv_no));
+          if (hasJE) {
+            console.info(`approveItem sale: قيد موجود مسبقاً لـ ${item.inv_no} — تم تخطي إنشاء قيد جديد`);
+          } else {
+            const allInvSales = await apiGetAll('sales', {
+              select:'sale_price,vin,sale_date,customer,file_no,inv_no',
+              system_type:`eq.${state.system}`,
+              file_no:`eq.${item.file_no}`,
+              inv_no:`eq.${item.inv_no}`,
+            });
+            const totalInvAmount = (allInvSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
+            const totalCOGS = await calcCOGS(state.system, item.file_no, (allInvSales||[]).length, { soldVins:(allInvSales||[]).map(s=>s.vin) });
+            if (totalInvAmount > 0) {
+              await je_sale({ sys:state.system, date:item.sale_date||today(), amount:totalInvAmount, cost:totalCOGS, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'' });
+            }
           }
         } catch(e) { await revertToDraft(); throw e; }
 
