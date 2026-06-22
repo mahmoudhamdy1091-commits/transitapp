@@ -352,16 +352,13 @@ function renderJournalEntries() {
   let html = '';
   Object.keys(groups).sort((a,b)=>b.localeCompare(a)).forEach(date => {
     const dayEntries = groups[date];
-    const dayIn  = dayEntries.filter(e=>e.sign>0).reduce((s,e)=>s+e.amount,0);
-    const dayOut = dayEntries.filter(e=>e.sign<0).reduce((s,e)=>s+e.amount,0);
-    const dayNet = dayIn - dayOut;
 
     html += `<div class="journal-day-group">
       <div class="journal-day-header">
         <span class="journal-day-label">${fmtDate(date)}</span>
         <div class="journal-day-line"></div>
-        <span class="journal-day-total" style="color:${dayNet>=0?'var(--green)':'var(--red)'}">
-          صافي: ${dayNet>=0?'+':''}${fmt(dayNet)}
+        <span class="journal-day-total">
+          ${dayEntries.length} عملية
         </span>
       </div>`;
 
@@ -470,8 +467,8 @@ function _renderGroupedSaleEntries(items, key, typeConfig) {
             <div class="j-entry-amount" style="color:${cfg.amountColor}">
               ${amountSign}${fmt(Math.abs(groupTotal))}
             </div>
-            <button class="btn-ctx-menu" onclick="event.stopPropagation();const w=document.getElementById('${gid}');const open=w.style.display!=='none';w.style.display=open?'none':'block';this.textContent=open?'👁 عرض التفاصيل':'🔼 إخفاء التفاصيل';"
-              style="background:var(--card2);border:1px solid var(--border);cursor:pointer;color:var(--text2);font-size:13px;padding:3px 10px;border-radius:6px;white-space:nowrap">👁 عرض التفاصيل</button>
+            <button onclick="event.stopPropagation();const w=document.getElementById('${gid}');const open=w.style.display!=='none';w.style.display=open?'none':'block';this.textContent=open?'👁 عرض التفاصيل':'🔼 إخفاء التفاصيل';"
+              style="width:auto;height:auto;background:var(--card2);border:1px solid var(--border);cursor:pointer;color:var(--text2);font-size:13px;padding:3px 10px;border-radius:6px;white-space:nowrap;flex-shrink:0">👁 عرض التفاصيل</button>
           </div>
         </div>
         <div id="${gid}" style="display:none;margin-right:16px;border-right:2px dashed var(--border);padding-right:8px">${detailsHtml}</div>`;

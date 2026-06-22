@@ -1303,10 +1303,6 @@ function showJournalReport() {
     groups[t].total += e.amount || 0;
   });
 
-  const totalIn  = entries.filter(e=>e.sign>0).reduce((s,e)=>s+e.amount,0);
-  const totalOut = entries.filter(e=>e.sign<0).reduce((s,e)=>s+e.amount,0);
-  const net      = totalIn - totalOut;
-
   const summaryRows = Object.entries(groups).map(([type,g]) =>
     `<tr><td>${typeLabels[type]||type}</td><td style="text-align:center">${g.count}</td>
      <td style="text-align:left">${g.total.toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`
@@ -1330,10 +1326,8 @@ function showJournalReport() {
     ${docHeader('التقرير اليومي','Daily Report','')}
     <div style="font-size:13px;color:#666;margin-bottom:16px">الفترة: ${from} — ${to}</div>
 
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
-      <div class="kpi-box"><div class="kpi-label">إجمالي الداخل</div><div class="kpi-val green">${fmt(totalIn)}</div></div>
-      <div class="kpi-box"><div class="kpi-label">إجمالي الخارج</div><div class="kpi-val red">${fmt(totalOut)}</div></div>
-      <div class="kpi-box"><div class="kpi-label">صافي الحركة</div><div class="kpi-val ${net>=0?'green':'red'}">${fmt(net)}</div></div>
+    <div style="margin-bottom:16px">
+      <div class="kpi-box" style="display:inline-block;min-width:160px"><div class="kpi-label">عدد العمليات</div><div class="kpi-val">${entries.length}</div></div>
     </div>
 
     <div class="section-title">ملخص بالنوع</div>
