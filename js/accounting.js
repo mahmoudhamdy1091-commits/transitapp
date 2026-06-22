@@ -1953,7 +1953,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
           <div style="margin-bottom:14px">
             <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">⚖️ تسوية شاملة بين الشركاء</div>
             <!-- بطاقة لكل شريك -->
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px">
+            <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px">
               ${(d.partnerSettlement||[]).map(ps => {
                 const isMe  = ps.name === partnerName;
                 const bdr   = isMe ? '2px solid #f59e0b' : '1px solid #e2e8f0';
@@ -1971,7 +1971,7 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
                     <span style="font-family:monospace;font-weight:800;color:${color}">${fmt2(val)}</span>
                   </div>`;
                 return `
-                <div style="border:${bdr};border-radius:10px;overflow:hidden;background:#fff">
+                <div style="border:${bdr};border-radius:10px;overflow:hidden;background:#fff;flex:1 1 220px;min-width:220px">
                   <!-- رأس البطاقة -->
                   <div style="background:${isMe?'#fef3c7':'#1e293b'};color:${isMe?'#92400e':'#fff'};padding:8px 14px;font-weight:700;font-size:13px;display:flex;justify-content:space-between;align-items:center">
                     <span>${ps.name}${isMe?' ★':''}</span>
@@ -2209,9 +2209,9 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
     const summaryBlock = dealDetails.length > 1 ? `
       <div style="background:#1a1a2e;color:#fff;border-radius:12px;padding:20px;margin-bottom:24px">
         <div style="font-size:13px;font-weight:700;margin-bottom:14px;opacity:.7;letter-spacing:.5px">الملخص الشامل — كل الصفقات</div>
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px">
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px">
           ${dealDetails.map(d=>`
-          <div style="background:#ffffff11;border-radius:8px;padding:10px;border-right:3px solid ${d.netDue>=0?'#4ade80':'#f87171'}">
+          <div style="background:#ffffff11;border-radius:8px;padding:10px;border-right:3px solid ${d.netDue>=0?'#4ade80':'#f87171'};flex:1 1 45%;min-width:200px">
             <div style="font-size:13px;opacity:.7;margin-bottom:4px">${d.fn} — ${d.supplier}</div>
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span style="font-size:13px;opacity:.6">حصة ${fmtP(d.share)}</span>
@@ -2219,20 +2219,20 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
             </div>
           </div>`).join('')}
         </div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;border-top:1px solid #ffffff22;padding-top:14px">
-          <div style="text-align:center">
+        <div style="display:flex;flex-wrap:wrap;gap:10px;border-top:1px solid #ffffff22;padding-top:14px">
+          <div style="text-align:center;flex:1 1 22%;min-width:140px">
             <div style="font-size:12px;opacity:.6;margin-bottom:4px">إجمالي رأس المال</div>
             <div style="font-family:monospace;font-size:16px;font-weight:700;color:#60a5fa">${fmt2(grandCapital)}</div>
           </div>
-          <div style="text-align:center">
+          <div style="text-align:center;flex:1 1 22%;min-width:140px">
             <div style="font-size:12px;opacity:.6;margin-bottom:4px">إجمالي الأرباح</div>
             <div style="font-family:monospace;font-size:16px;font-weight:700;color:${grandMyProfit>=0?'#4ade80':'#f87171'}">${fmt2(grandMyProfit)}</div>
           </div>
-          <div style="text-align:center">
+          <div style="text-align:center;flex:1 1 22%;min-width:140px">
             <div style="font-size:12px;opacity:.6;margin-bottom:4px">إجمالي المسحوبات</div>
             <div style="font-family:monospace;font-size:16px;font-weight:700;color:#fbbf24">${fmt2(grandWithdrawn)}</div>
           </div>
-          <div style="text-align:center;background:${grandNetDue>=0?'#16a34a33':'#dc262633'};border-radius:8px;padding:8px">
+          <div style="text-align:center;flex:1 1 22%;min-width:140px;background:${grandNetDue>=0?'#16a34a33':'#dc262633'};border-radius:8px;padding:8px">
             <div style="font-size:12px;opacity:.8;margin-bottom:4px">الرصيد الكلي المستحق</div>
             <div style="font-family:monospace;font-size:20px;font-weight:900;color:${grandNetDue>=0?'#4ade80':'#f87171'}">${grandNetDue>=0?'+':''}${fmt2(grandNetDue)}</div>
           </div>
