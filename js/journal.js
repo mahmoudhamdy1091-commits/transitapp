@@ -97,7 +97,7 @@ async function loadJournal() {
         grouped[no] = { no, date: r.entry_date, desc: r.description,
           file_no: r.file_no, ref_table: r.ref_table, ref_id: r.ref_id,
           type: cfg.type, sign: cfg.sign, icon: cfg.icon,
-          color: cfg.color, label: cfg.label,
+          color: cfg.color, label: cfg.label, postedAt: r.posted_at || r.created_at,
           lines: [], totalDr: 0, totalCr: 0 };
       }
       grouped[no].lines.push(r);
@@ -123,7 +123,7 @@ async function loadJournal() {
         if (netRev !== 0) displayAmount = netRev;
       }
       return {
-        type:    g.type, date: g.date,
+        type:    g.type, date: g.date, postedAt: g.postedAt,
         amount:  displayAmount, sign: g.sign,
         title:   g.desc || '—',
         entryNo: g.no,  fileNo: g.file_no, refId: g.ref_id,
@@ -423,6 +423,7 @@ function _renderSingleJournalEntry(e) {
             </div>
             <div class="j-entry-meta">
               <span style="background:var(--card2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">${cfg.label}</span>
+              ${e.postedAt ? `<span style="color:var(--text2)">🕐 ${fmtTime(e.postedAt)}</span>` : ''}
               ${metaFiltered}
             </div>
           </div>

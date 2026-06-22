@@ -1158,6 +1158,7 @@ function renderApprovalList() {
         </div>
         <div class="approval-row-meta">
           ${fmtDate(r._date)}
+          ${r.created_at ? `· <span style="color:var(--text2)">🕐 ${fmtTime(r.created_at)}</span>` : ''}
           ${r._file ? `· <span style="color:var(--accent);font-family:monospace">${r._file}</span>` : ''}
           · <span style="color:var(--text2)">${r.ref_no||r.pay_id||r.inv_no||r.file_no||'—'}</span>
           ${approvalState.auditUsers?.[String(r.id)] ? `· <span style="color:var(--blue);font-size:12px;font-weight:600">👤 ${approvalState.auditUsers[String(r.id)]}</span>` : ''}

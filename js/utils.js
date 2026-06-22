@@ -222,6 +222,14 @@ function fmtDate(d) {
   return date.toLocaleDateString('en-GB', { year:'numeric', month:'short', day:'numeric' });
 }
 
+// وقت فقط (ساعة:دقيقة) — يُستخدم بجانب fmtDate لإظهار وقت تسجيل العملية الفعلي
+function fmtTime(d) {
+  if (!d) return '';
+  const date = new Date(d);
+  if (isNaN(date)) return '';
+  return date.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+}
+
 function today() {
   return new Date().toISOString().split('T')[0];
 }
