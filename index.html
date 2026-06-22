@@ -1891,7 +1891,7 @@
       <button class="btn btn-danger btn-sm" id="nfDeleteBtn" style="display:none" onclick="confirmDeleteDealFromModal()">🗑 حذف الصفقة</button>
       <div style="flex:1"></div>
       <button class="btn btn-secondary" onclick="closeModal('newFileModal')">إلغاء</button>
-      <button class="btn btn-primary" id="nfSubmitBtn" onclick="submitNewFile()">💾 حفظ السند</button>
+      <button class="btn btn-primary" id="nfSubmitBtn" onclick="guardSubmit(this, submitNewFile)">💾 حفظ السند</button>
     </div>
   </div>
 </div>
@@ -1963,7 +1963,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('paymentModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitPayment()">💾 حفظ الدفعة</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitPayment)">💾 حفظ الدفعة</button>
     </div>
   </div>
 </div>
@@ -2031,7 +2031,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('expenseModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitExpense()">💾 حفظ الكل</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitExpense)">💾 حفظ الكل</button>
     </div>
   </div>
 </div>
@@ -2208,7 +2208,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('saleModal')">إلغاء</button>
-      <button class="btn btn-primary" id="saleSubmitBtn" onclick="submitSale()">💾 حفظ وعرض الفاتورة</button>
+      <button class="btn btn-primary" id="saleSubmitBtn" onclick="guardSubmit(this, submitSale)">💾 حفظ وعرض الفاتورة</button>
     </div>
   </div>
 </div>
@@ -2299,7 +2299,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('collectionModal')">إلغاء</button>
-      <button class="btn btn-primary" id="col-submit-btn" onclick="submitCollection()" style="display:none">💾 حفظ التحصيل</button>
+      <button class="btn btn-primary" id="col-submit-btn" onclick="guardSubmit(this, submitCollection)" style="display:none">💾 حفظ التحصيل</button>
     </div>
   </div>
 </div>
@@ -2398,7 +2398,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('payoutModal')">إلغاء</button>
-      <button class="btn btn-primary" id="poutSubmitBtn" onclick="submitPayout()">💾 حفظ</button>
+      <button class="btn btn-primary" id="poutSubmitBtn" onclick="guardSubmit(this, submitPayout)">💾 حفظ</button>
     </div>
   </div>
 </div>
@@ -2451,7 +2451,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('addVehicleModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitAddVehicle()">💾 حفظ</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitAddVehicle)">💾 حفظ</button>
     </div>
   </div>
 </div>
@@ -2508,7 +2508,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('quickSaleModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitQuickSale()">💾 حفظ</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitQuickSale)">💾 حفظ</button>
     </div>
   </div>
 </div>
@@ -2597,7 +2597,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('quickCollectionModal')">إلغاء</button>
-      <button class="btn btn-primary" id="qc-submit-btn" onclick="submitQuickCollection()" style="display:none">💾 حفظ التحصيل</button>
+      <button class="btn btn-primary" id="qc-submit-btn" onclick="guardSubmit(this, submitQuickCollection)" style="display:none">💾 حفظ التحصيل</button>
     </div>
   </div>
 </div>
@@ -2670,7 +2670,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('quickExpenseModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitQuickExpense()">💾 حفظ</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitQuickExpense)">💾 حفظ</button>
     </div>
   </div>
 </div>
@@ -2743,7 +2743,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('quickPaymentModal')">إلغاء</button>
-      <button class="btn btn-primary" id="qp-submit-btn" onclick="submitQuickPayment()" style="display:none">💾 حفظ الدفعة</button>
+      <button class="btn btn-primary" id="qp-submit-btn" onclick="guardSubmit(this, submitQuickPayment)" style="display:none">💾 حفظ الدفعة</button>
     </div>
   </div>
 </div>
@@ -2803,7 +2803,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('quickPayoutModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitQuickPayout()">💾 حفظ</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitQuickPayout)">💾 حفظ</button>
     </div>
   </div>
 </div>
@@ -2852,7 +2852,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('contactModal')">إلغاء</button>
-      <button class="btn btn-primary" id="cmSubmitBtn" onclick="submitContact()">💾 حفظ</button>
+      <button class="btn btn-primary" id="cmSubmitBtn" onclick="guardSubmit(this, submitContact)">💾 حفظ</button>
     </div>
   </div>
 </div>
@@ -2894,7 +2894,7 @@
       <button class="btn btn-danger btn-sm" onclick="confirmDeleteVehicle()">🗑 حذف السيارة</button>
       <div style="flex:1"></div>
       <button class="btn btn-secondary" onclick="closeModal('editVehicleModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitEditVehicle()">💾 حفظ</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitEditVehicle)">💾 حفظ</button>
     </div>
   </div>
 </div>
@@ -2987,7 +2987,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('opexModal')">إلغاء</button>
-      <button class="btn btn-primary" id="opexSubmitBtn" onclick="submitOpex()">💾 حفظ</button>
+      <button class="btn btn-primary" id="opexSubmitBtn" onclick="guardSubmit(this, submitOpex)">💾 حفظ</button>
     </div>
   </div>
 </div>
@@ -3081,7 +3081,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('generalWithdrawModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitGeneralWithdraw()">💾 حفظ السحب</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitGeneralWithdraw)">💾 حفظ السحب</button>
     </div>
   </div>
 </div>
@@ -3112,7 +3112,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('editPaymentModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitEditPayment()">💾 حفظ التعديل</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitEditPayment)">💾 حفظ التعديل</button>
     </div>
   </div>
 </div>
@@ -3169,7 +3169,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('editExpenseModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitEditExpense()">💾 حفظ التعديل</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitEditExpense)">💾 حفظ التعديل</button>
     </div>
   </div>
 </div>
@@ -3207,7 +3207,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('editCollectionModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitEditCollection()">💾 حفظ التعديل</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitEditCollection)">💾 حفظ التعديل</button>
     </div>
   </div>
 </div>
@@ -3307,7 +3307,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('accountModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitAccount()">💾 حفظ</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitAccount)">💾 حفظ</button>
     </div>
   </div>
 </div>
@@ -3368,7 +3368,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('stockTransferModal')">إلغاء</button>
-      <button class="btn btn-primary" onclick="submitStockTransfer()">🚛 تأكيد التحويل</button>
+      <button class="btn btn-primary" onclick="guardSubmit(this, submitStockTransfer)">🚛 تأكيد التحويل</button>
     </div>
   </div>
 </div>
@@ -3495,7 +3495,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('jeModal')">إلغاء</button>
-      <button class="btn btn-primary" id="je-submit-btn" onclick="submitJE()">💾 حفظ القيد</button>
+      <button class="btn btn-primary" id="je-submit-btn" onclick="guardSubmit(this, submitJE)">💾 حفظ القيد</button>
     </div>
   </div>
 </div>
@@ -3545,7 +3545,7 @@
     </div></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('dealNoteModal')">إلغاء</button>
-      <button class="btn btn-primary" id="dnSubmitBtn" onclick="submitDealNote()">💾 حفظ الملاحظة</button>
+      <button class="btn btn-primary" id="dnSubmitBtn" onclick="guardSubmit(this, submitDealNote)">💾 حفظ الملاحظة</button>
     </div>
   </div>
 </div>

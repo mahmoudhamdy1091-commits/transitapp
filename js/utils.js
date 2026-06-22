@@ -191,6 +191,21 @@ function closeModal(id) {
 function markSaving(id) { _modalSaving.add(id); }
 
 // ════════════════════════════════════════
+// SUBMIT GUARD — منع تنفيذ نفس الأمر مرتين عند ضغط الزر أكثر من مرة
+// ════════════════════════════════════════
+const _submitInFlight = new Set();
+function guardSubmit(btn, fn) {
+  const key = btn?.id || fn.name;
+  if (_submitInFlight.has(key)) return;
+  _submitInFlight.add(key);
+  if (btn) btn.disabled = true;
+  Promise.resolve(fn()).finally(() => {
+    _submitInFlight.delete(key);
+    if (btn) btn.disabled = false;
+  });
+}
+
+// ════════════════════════════════════════
 // CORE UTILS
 // ════════════════════════════════════════
 function el(id) { return document.getElementById(id); }
