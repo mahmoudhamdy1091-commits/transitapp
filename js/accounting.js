@@ -1285,9 +1285,32 @@ function showJournalReport() {
   // إذا تغيّر فلتر الفترة بعد التحميل أو قبل اكتماله
   const from = journalState.loadedFrom || today();
   const to   = journalState.loadedTo   || today();
-  const entries = journalState.entries || [];
+  const rawEntries = journalState.entries || [];
 
-  if (!entries.length) { toast('لا توجد بيانات للتقرير','err'); return; }
+  if (!rawEntries.length) { toast('لا توجد بيانات للتقرير','err'); return; }
+
+  // ✅ التقرير المطبوع يعرض "ما حصل فعليًا" فقط — قيود البيع المكررة لنفس الفاتورة
+  // (تكرار + عكسها) تُدمج في عملية واحدة بصافي قيمتها، لا تظهر كعمليات منفصلة.
+  // (نفس مفتاح التجميع المستخدم في journal.js لعرض اليومية على الشاشة)
+  const _invoiceGroups = {};
+  const _groupOrder = [];
+  rawEntries.forEach(e => {
+    let key = e.entryNo || `_solo_${_groupOrder.length}_${Math.random()}`;
+    if (e.type === 'sale') {
+      const token = _extractInvToken(e.title);
+      if (token) key = `${e.fileNo||''}::${token}`;
+    }
+    if (!_invoiceGroups[key]) { _invoiceGroups[key] = []; _groupOrder.push(key); }
+    _invoiceGroups[key].push(e);
+  });
+  const entries = _groupOrder.map(key => {
+    const items = _invoiceGroups[key];
+    if (items.length === 1) return items[0];
+    const amount = items.reduce((s,e)=>s+e.amount,0);
+    const title  = _extractInvToken(items[0].title) || items[0].title;
+    const date   = items.reduce((d,e)=> (e.date||'') > d ? e.date : d, items[0].date||'');
+    return { ...items[0], title, amount, date };
+  });
 
   const typeLabels = {
     sale:'مبيعات', collection:'تحصيلات', expense:'مصاريف',
