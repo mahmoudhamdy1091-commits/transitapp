@@ -603,8 +603,10 @@ function printPartnerStatement() {
   // ② تحويل ألوان الـ overlay الداكنة → ألوان قابلة للطباعة
   let html = (scrollDiv || content).innerHTML;
   html = html
-    .replace(/background:#1a1a2e/gi,              'background:#2c3e50')
-    .replace(/background:#1e293b/gi,              'background:#2c3e50')
+    .replace(/background:#1a1a2e/gi,              'background:#e2e8f0')
+    .replace(/background:#1e293b/gi,              'background:#e2e8f0')
+    .replace(/background:#2563eb/gi,              'background:#dbeafe')
+    .replace(/color:#2563eb/gi,                   'color:#1e40af')
     .replace(/color:#fff(?=[;"' ])/gi,            'color:#000')
     .replace(/color: #fff(?=[;"' ])/gi,           'color:#000')
     .replace(/opacity:\.(5|6|7|8)\b/g,             'opacity:1')
