@@ -2,6 +2,40 @@
 // ║  dashboard.js — Dashboard · KPIs · Charts · Drill-down  ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
+
+// ✅ المصدر الموحّد لكل تنبيهات/قوائم "تحصيلات مستحقة من العملاء" في الداشبورد.
+// فاتورة بيع بلا أي سطر تحصيل إطلاقاً (باج حقيقي مكتشف — مثال: INV-LOT 3 NEW-004)
+// كانت تختفي بالكامل من كل تتبّع لأن كل الحسابات بتعتمد على جدول collections فقط.
+// هنا تُضاف كـ"تحصيل افتراضي مستحق بالكامل" بنفس شكل سطر collections الحقيقي
+// (تاريخ الاستحقاق = تاريخ البيع) ليمر بسلامة عبر كل الفلاتر/العرض الموجودة.
+function buildCollectionsWithVirtualDue(allSales, allCollections) {
+  const postedCols = (allCollections||[]).filter(isPosted);
+  const colInvKeys = new Set(postedCols.map(c => c.inv_no || `col-${c.id}`));
+
+  const salesByInv = {};
+  (allSales||[]).filter(isPosted).forEach(s => {
+    const k = s.inv_no || `sale-${s.id}`;
+    if (!salesByInv[k]) salesByInv[k] = {
+      inv_no: s.inv_no||null, file_no: s.file_no, customer: s.customer,
+      due_date: s.sale_date||'', created_at: s.created_at, amount: 0,
+    };
+    salesByInv[k].amount += +s.sale_price||0;
+  });
+
+  const virtualDue = Object.keys(salesByInv)
+    .filter(k => !colInvKeys.has(k))
+    .map(k => {
+      const s = salesByInv[k];
+      return {
+        id: `virtual-${k}`, inv_no: s.inv_no, file_no: s.file_no, customer: s.customer,
+        amount: s.amount, due_date: s.due_date, paid_date: null,
+        created_at: s.created_at, post_status: 'posted', _virtual: true,
+      };
+    });
+
+  return [...(allCollections||[]), ...virtualDue];
+}
+
 async function loadDashboard() {
   setLoading('dealsTableBody');
   const sys  = state.system;
@@ -16,7 +50,7 @@ async function loadDashboard() {
     const vehicles    = state.allVehicles;
     const allSales    = state.allSales;
     const allExpenses = state.allExpenses;
-    const collections = state.allCollections;
+    const collections = buildCollectionsWithVirtualDue(allSales, state.allCollections);
     const drafts      = await apiGet('journal_entries', { select:'id', system_type:`eq.${sys}`, post_status:'eq.draft' });
 
     // ── فلتر بيانات الفترة (posted + null فقط = البيانات المرحَّلة والقديمة) ──
@@ -169,16 +203,10 @@ async function loadDashboard() {
       }
     } catch(e) { console.warn('supplier due list:', e.message); }
 
-    // ── تحصيلات متأخرة — فقط التي لم تُدفع بعد ──
-    const overdueItems = (collections||[]).filter(c =>
-      isPosted(c) && !c.paid_date && c.due_date && c.due_date <= todayStr
-    ).sort((a,b) => a.due_date > b.due_date ? 1 : -1);
-
-    // حساب المجموع الكلي للتحصيلات المستحقة (كل مبالغ غير محصّلة)
-    const allCollected = (collections||[]).filter(c => isPosted(c) && c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
-    const allDueTotal  = (collections||[]).filter(c => isPosted(c)).reduce((s,c)=>s+(+c.amount||0),0);
-    const overdueTotal = overdueItems.reduce((s,c) => s + (+c.amount||0), 0);
-    if (el('dash-overdue-amt')) el('dash-overdue-amt').textContent = fmt(overdueTotal);
+    // ── تحصيلات متأخرة — نفس overdueList المحسوبة فوق (تشمل الآن فواتير بلا
+    // أي سطر تحصيل إطلاقاً) — لا إعادة حساب، لتجنّب تكرار نفس الفلتر بنسختين ──
+    const overdueItems = [...overdueList].sort((a,b) => a.due_date > b.due_date ? 1 : -1);
+    if (el('dash-overdue-amt')) el('dash-overdue-amt').textContent = fmt(overdueAmt);
     if (el('dash-overdue-list')) {
       el('dash-overdue-list').innerHTML = overdueItems.length
         ? overdueItems.slice(0,3).map(c =>

@@ -699,7 +699,8 @@ function renderDrillDown(type) {
 
   }
   // ── تحصيلات مستحقة من العملاء (تفصيلي) ──
-  // ✅ المصدر الوحيد للحقيقة: جدول collections
+  // ✅ المصدر: d.allCollections — تُبنى في dashboard.js عبر buildCollectionsWithVirtualDue()
+  // وتشمل الآن أي فاتورة بيع بلا أي سطر تحصيل إطلاقاً (تُحسب مستحقة بالكامل)
   // الإجمالي = collections.amount (شامل extra charges)
   // المحصّل  = sum(amount) where paid_date IS NOT NULL
   // الباقي   = sum(amount) where paid_date IS NULL
