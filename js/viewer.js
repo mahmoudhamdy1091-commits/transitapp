@@ -323,6 +323,21 @@ async function submitQuickSale() {
         toast(`⚠️ تم حفظ البيع بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
       }
     }
+    // ✅ سطر تحصيل "مستحق" تلقائي (paid_date:null) لنفس قيمة الفاتورة — بدون هذا
+    // السطر الفاتورة تختفي من تتبّع "تحصيلات مستحقة" ويظهر الملف كمحصَّل بالكامل
+    // وهي مش (راجع: فاتورة ابو لزام INV-LOT 3 NEW-004)
+    try {
+      const colRefNo = (await genSeqRef('COL', state.system, fileNo, 'collections')) || `COL-${invNo||'QS'}-${Date.now()}`;
+      await apiPost('collections', {
+        system_type: state.system, file_no: fileNo, inv_no: invNo||null, customer,
+        vin, amount: price, pay_method: null, document: null,
+        due_date: date, paid_date: null, notes: null,
+        ref_no: colRefNo, pay_id: colRefNo, post_status: entryStatus(),
+      });
+    } catch(colErr) {
+      console.error('quick sale collection create error:', colErr.message);
+      toast(`⚠️ تم حفظ البيع لكن فشل إنشاء سطر التحصيل المستحق: ${colErr.message}`,'warn');
+    }
     markSaving('quickSaleModal'); closeModal('quickSaleModal');
     toast('✅ تم تسجيل البيع بنجاح','ok');
     invalidateCache();

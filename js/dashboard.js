@@ -675,15 +675,36 @@ async function loadSummaryTab(fn, sys) {
 
     const totalPaid      = postedPay.reduce((s,p)=>s+(+p.amount||0),0);
     const totalExp       = postedExp.reduce((s,e)=>s+(+e.amount||0),0);
-    // ✅ المصدر الوحيد للحقيقة: collections.amount يشمل الفاتورة كاملة (سيارات + extra charges)
-    // totalSales من جدول sales لا يشمل extra charges → نستخدمه للربحية فقط
-    const totalSalesRaw  = postedSal.reduce((s,s2)=>s+(+s2.sale_price||0),0);
-    const totalCollected = postedCol.filter(c => c.paid_date && c.post_status !== 'voided').reduce((s,c)=>s+(+c.amount||0),0);
-    const totalPending   = postedCol.filter(c => !c.paid_date && c.post_status !== 'voided').reduce((s,c)=>s+(+c.amount||0),0);
-    // إجمالي الفواتير الحقيقي = collections (شامل extra) — إذا لا يوجد collection نسقط على sales
-    const totalInvoiced  = postedCol.length > 0
-      ? postedCol.filter(c => c.post_status !== 'voided').reduce((s,c)=>s+(+c.amount||0),0)
-      : totalSalesRaw;
+    // ✅ لكل فاتورة على حدة: لو ليها سطر/سطور تحصيل استخدمها (تشمل extra charges
+    // وتميّز مدفوع/مستحق)، ولو مالهاش أي سطر تحصيل اعتبرها بالكامل "غير محصّلة" —
+    // قبل التعديل كان أي فاتورة بلا سطر تحصيل تُحذف بالكامل من "المبيعات" لو
+    // الملف فيه فواتير أخرى محصّلة (باج اكتُشف فعليًا — فاتورة ابو لزام -004)
+    const salesByInv = {};
+    postedSal.forEach(s => {
+      const k = s.inv_no || `__no_inv_${s.id}`;
+      salesByInv[k] = (salesByInv[k]||0) + (+s.sale_price||0);
+    });
+    const colByInv = {};
+    postedCol.forEach(c => {
+      if (c.post_status === 'voided') return;
+      const k = c.inv_no || `__no_inv_${c.id}`;
+      (colByInv[k] = colByInv[k]||[]).push(c);
+    });
+    let totalCollected = 0, totalPending = 0, totalInvoiced = 0;
+    new Set([...Object.keys(salesByInv), ...Object.keys(colByInv)]).forEach(k => {
+      const cols = colByInv[k];
+      if (cols && cols.length) {
+        cols.forEach(c => {
+          totalInvoiced += +c.amount||0;
+          if (c.paid_date) totalCollected += +c.amount||0;
+          else totalPending += +c.amount||0;
+        });
+      } else {
+        const amt = salesByInv[k]||0;
+        totalInvoiced += amt;
+        totalPending  += amt;
+      }
+    });
     const totalSales     = totalInvoiced; // للعرض والربحية
     const totalPayouts   = postedPout.reduce((s,p)=>s+(+p.amount||0),0);
     const fullCost       = totalPurchase + totalExp;

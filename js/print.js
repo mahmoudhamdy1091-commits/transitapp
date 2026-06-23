@@ -746,10 +746,34 @@ async function printDealSummary(fn) {
 
     const totalPaid      = postedPay.reduce((s,p)=>s+(+p.amount||0),0);
     const totalExp       = postedExp.reduce((s,e)=>s+(+e.amount||0),0);
-    const totalSalesRaw  = postedSal.reduce((s,s2)=>s+(+s2.sale_price||0),0);
-    const totalCollected = postedCol.filter(c=>c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
-    const totalPending   = postedCol.filter(c=>!c.paid_date).reduce((s,c)=>s+(+c.amount||0),0);
-    const totalSales     = postedCol.length > 0 ? postedCol.reduce((s,c)=>s+(+c.amount||0),0) : totalSalesRaw;
+    // ✅ لكل فاتورة على حدة: لو ليها سطر تحصيل استخدمه، ولو لأ تُحسب بالكامل
+    // "غير محصّلة" — نفس إصلاح loadSummaryTab في dashboard.js (باج فاتورة بلا
+    // تحصيل كانت تُحذف بالكامل من المبيعات لو الملف فيه فواتير أخرى محصّلة)
+    const salesByInv = {};
+    postedSal.forEach(s => {
+      const k = s.inv_no || `__no_inv_${s.id}`;
+      salesByInv[k] = (salesByInv[k]||0) + (+s.sale_price||0);
+    });
+    const colByInv = {};
+    postedCol.forEach(c => {
+      const k = c.inv_no || `__no_inv_${c.id}`;
+      (colByInv[k] = colByInv[k]||[]).push(c);
+    });
+    let totalCollected = 0, totalPending = 0, totalSales = 0;
+    new Set([...Object.keys(salesByInv), ...Object.keys(colByInv)]).forEach(k => {
+      const cols = colByInv[k];
+      if (cols && cols.length) {
+        cols.forEach(c => {
+          totalSales += +c.amount||0;
+          if (c.paid_date) totalCollected += +c.amount||0;
+          else totalPending += +c.amount||0;
+        });
+      } else {
+        const amt = salesByInv[k]||0;
+        totalSales   += amt;
+        totalPending += amt;
+      }
+    });
     const fullCost       = totalPurchase + totalExp;
     const profit         = totalSales - fullCost;
     const margin         = totalSales > 0 ? Math.round(profit/totalSales*100) : 0;
