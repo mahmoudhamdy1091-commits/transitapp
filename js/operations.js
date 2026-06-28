@@ -1857,7 +1857,10 @@ async function cancelApprovalRow(type, id) {
   const cfg = APPROVAL_CONFIG[type];
   if (!cfg) return;
   try {
+    const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
     await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'cancelled' });
+    // ✅ سجّل الإلغاء (كان غير مسجَّل — نفس فجوة كانت موجودة في rejectItem قبل إصلاحها)
+    await logAudit('REJECT', cfg.table, item?.file_no||null, item||null, null, `إلغاء سريع ${cfg.label} #${id}`);
     invalidateCache();
     toast('⊘ تم إلغاء العملية','ok');
     await loadApprovalQueue();
