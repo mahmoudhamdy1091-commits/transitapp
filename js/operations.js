@@ -959,6 +959,18 @@ const APPROVAL_CONFIG = {
   sale_edit:       { icon:'✏️', label:'تعديل فاتورة بيع',  color:'var(--green)',  table:'sales',              amountField:'sale_price', dateField:'sale_date', descFields:['inv_no','customer','file_no'] },
 };
 
+// ✅ خريطة طلبات التعديل (pending_edit) — على مستوى الموديول حتى تُستخدم من
+// approveItem (فردي) وapproveAll (جماعي) معاً بنفس التعريف
+const EDIT_TYPES = {
+  payment_edit:    { table:'payments',           label:'دفعة' },
+  expense_edit:    { table:'expenses',           label:'مصروف' },
+  collection_edit: { table:'collections',        label:'تحصيل' },
+  purchase_edit:   { table:'purchase_orders',    label:'سند شراء' },
+  payout_edit:     { table:'partner_payouts',    label:'صرف شريك' },
+  opex_edit:       { table:'operating_expenses', label:'مصروف تشغيلي' },
+  sale_edit:       { table:'sales',              label:'فاتورة بيع' },
+};
+
 async function showApprovalQueue() {
   if (!can('approve')) { toast('🔒 قائمة المراجعة للمدراء فقط','err'); return; }
   hideAllViews();
@@ -1529,15 +1541,6 @@ async function approveItem(type, id) {
     if (!cfg) { toast('نوع غير معروف','err'); return; }
 
     // ── معالجة طلبات التعديل (pending_edit) — القيد اتحدث مسبقاً، نكتفي بالموافقة ──
-    const EDIT_TYPES = {
-      payment_edit:    { table:'payments',           label:'دفعة' },
-      expense_edit:    { table:'expenses',           label:'مصروف' },
-      collection_edit: { table:'collections',        label:'تحصيل' },
-      purchase_edit:   { table:'purchase_orders',    label:'سند شراء' },
-      payout_edit:     { table:'partner_payouts',    label:'صرف شريك' },
-      opex_edit:       { table:'operating_expenses', label:'مصروف تشغيلي' },
-      sale_edit:       { table:'sales',              label:'فاتورة بيع' },
-    };
     if (EDIT_TYPES[type]) {
       const cfg  = EDIT_TYPES[type];
       const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
@@ -1547,96 +1550,12 @@ async function approveItem(type, id) {
       _optimisticRemove(type, id);
       toast(`✅ تمت الموافقة على تعديل ${cfg.label}`,'ok');
 
-      // ② اكمل DB في الخلفية
+      // ② اكمل DB في الخلفية — نفس النواة المشتركة مع approveAll
       (async () => {
-        try {
-          // ✅ لو السجل كان "مسودة" قبل التعديل (لم يُرحَّل/يُنشأ له قيد من قبل) —
-          // updateJEInPlace عند الحفظ لم يجد قيداً ليُحدّثه، فننشئ القيد الآن
-          // بالبيانات الحالية (بعد التعديل) — يضمن ظهور المبلغ على اسم المورد/العميل الجديد
-          const refTableMap = {
-            purchase_edit:'purchase_orders', payment_edit:'payments', expense_edit:'expenses',
-            collection_edit:'collections',   payout_edit:'partner_payouts',
-            opex_edit:'operating_expenses',  sale_edit:'sales',
-          };
-          const refTable = refTableMap[type];
-          if (refTable && (item.file_no || type === 'opex_edit')) {
-            // ✅ opex_edit: je_opex يخزن ref_id = ref_no (نص) وليس id الرقمي
-            // ✅ sale_edit: je_sale لا يخزن ref_id أصلاً — نطابق عبر file_no + وصف يحتوي رقم الفاتورة
-            let existingJE;
-            if (type === 'opex_edit') {
-              existingJE = await apiGet('journal_entries', {
-                select:'entry_no', system_type:`eq.${state.system}`,
-                ref_table:`eq.operating_expenses`, ref_id:`eq.${item.ref_no||item.id}`, limit:'1',
-              });
-            } else if (type === 'sale_edit') {
-              const rows = await apiGetAll('journal_entries', {
-                select:'entry_no,description', system_type:`eq.${state.system}`,
-                ref_table:`eq.sales`, file_no:`eq.${item.file_no}`, post_status:`eq.posted`,
-              });
-              existingJE = (rows||[]).filter(r => item.inv_no && (r.description||'').includes(item.inv_no));
-            } else {
-              existingJE = await apiGet('journal_entries', {
-                select:'entry_no', system_type:`eq.${state.system}`,
-                ref_table:`eq.${refTable}`, ref_id:`eq.${item.id}`, limit:'1',
-              });
-            }
-            if (!existingJE?.length) {
-              if (type === 'purchase_edit') {
-                await je_purchase({ sys:state.system, date:item.po_date||today(), amount:+item.total_purchase||0, fileNo:item.file_no, supplier:item.supplier||'' });
-              } else if (type === 'payment_edit') {
-                await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
-              } else if (type === 'expense_edit') {
-                await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'نقد' });
-              } else if (type === 'collection_edit' && item.paid_date) {
-                await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
-              } else if (type === 'payout_edit') {
-                await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, partner:item.partner||'', method:item.pay_method||'نقد' });
-              } else if (type === 'opex_edit') {
-                await je_opex({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, expType:item.exp_type||'أخرى', desc:item.description||'مصروف تشغيلي', method:item.pay_method||'نقد', refNo:item.ref_no||item.id });
-              } else if (type === 'sale_edit' && item.inv_no && item.file_no) {
-                const allInvSales = await apiGetAll('sales', { select:'sale_price,vin', system_type:`eq.${state.system}`, file_no:`eq.${item.file_no}`, inv_no:`eq.${item.inv_no}` });
-                const totalAmt = (allInvSales||[]).reduce((s,x)=>s+(+x.sale_price||0),0);
-                const cogs = await calcCOGS(state.system, item.file_no, (allInvSales||[]).length, { soldVins:(allInvSales||[]).map(s=>s.vin) });
-                if (totalAmt > 0) await je_sale({ sys:state.system, date:item.sale_date||today(), amount:totalAmt, cost:cogs, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'' });
-              }
-            }
-          }
-
-          // ✅ تعديل سند شراء قد يُنشئ دفعات شركاء جديدة بحالة pending_edit (بدون قيد بعد)
-          // — أنشئ قيودها الآن مع الموافقة على التعديل
-          if (type === 'purchase_edit' && item.file_no) {
-            const pendingPayments = await apiGetAll('payments', {
-              select:'*', system_type:`eq.${state.system}`,
-              file_no:`eq.${item.file_no}`, post_status:`eq.pending_edit`,
-            });
-            for (const pmt of (pendingPayments||[])) {
-              const hasJE = await apiGet('journal_entries', {
-                select:'entry_no', system_type:`eq.${state.system}`,
-                ref_table:`eq.payments`, ref_id:`eq.${pmt.id}`, limit:'1',
-              });
-              if (!hasJE?.length) {
-                await je_payment({ sys:state.system, date:pmt.pay_date||today(), amount:+pmt.amount||0, fileNo:pmt.file_no, refId:pmt.id||null, supplierName:item.supplier||'', payerName:pmt.payer||'', method:pmt.pay_method||'تحويل بنكي' });
-              }
-              await apiPatch('payments', { id:`eq.${pmt.id}` }, { post_status:'posted' });
-            }
-          }
-
-          // ✅ فحص idempotency: لو السجل اعتُمد فعلاً (لم يعد pending_edit) — توقف بدون تكرار
-          const cleanPatch = { post_status: 'posted' };
-          let cleanPatched;
-          if (type === 'sale_edit' && item.inv_no) {
-            cleanPatched = await apiPatch('sales',
-              { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, post_status:`eq.pending_edit` },
-              cleanPatch
-            );
-          } else {
-            cleanPatched = await apiPatch(cfg.table, { id:`eq.${id}`, post_status:`eq.pending_edit` }, cleanPatch);
-          }
-          if (!cleanPatched?.length) return;
-          await logAudit('EDIT_APPROVED', cfg.table, item.file_no, item, {}, `موافقة تعديل ${cfg.label} ${item.ref_no||item.file_no||item.inv_no||id}`);
-          invalidateCache();
-          loadApprovalQueue(); // refresh هادي في الخلفية
-        } catch(e) { toast('خطأ في حفظ الموافقة: '+e.message,'err'); }
+        const res = await _processEditApproval(type, id);
+        if (!res.ok) toast('خطأ في حفظ الموافقة: '+res.message,'err');
+        invalidateCache();
+        loadApprovalQueue(); // refresh هادي في الخلفية
       })();
       return;
     }
@@ -1650,13 +1569,12 @@ async function approveItem(type, id) {
       _optimisticRemove(type, id);
       toast('✅ تم تنفيذ الإلغاء بقيد عكسي','ok');
 
-      // ② اكمل في الخلفية
+      // ② اكمل في الخلفية — نفس النواة المشتركة مع approveAll
       (async () => {
-        try {
-          await voidTransaction(item._srcType, item, true);
-          invalidateCache();
-          loadApprovalQueue();
-        } catch(e) { toast('خطأ في تنفيذ الإلغاء: '+e.message,'err'); }
+        const res = await _processReversalApproval(id);
+        if (!res.ok) toast('خطأ في تنفيذ الإلغاء: '+res.message,'err');
+        invalidateCache();
+        loadApprovalQueue();
       })();
       return;
     }
@@ -1997,17 +1915,148 @@ async function _ensureApprovalJE(r, sys) {
   }
 }
 
+// ════════════════════════════════════════════════════════════
+// نواة معالجة "موافقة على طلب تعديل" — بلا أي تأثيرات على الواجهة
+// (toast/refresh)، فقط عمليات القاعدة + ترجع {ok, message}.
+// نفس المنطق المستخدم في approveItem تمامًا — يُستخدم من approveItem
+// (فردي) وapproveAll (جماعي) معًا حتى لا يتكرر المنطق ولا يتفرّق.
+// ════════════════════════════════════════════════════════════
+async function _processEditApproval(type, id) {
+  const cfg  = EDIT_TYPES[type];
+  if (!cfg) return { ok:false, message:'نوع تعديل غير معروف' };
+  const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+  if (!item) return { ok:false, message:'لم يُعثر على طلب التعديل' };
+
+  try {
+    // ✅ لو السجل كان "مسودة" قبل التعديل (لم يُرحَّل/يُنشأ له قيد من قبل) —
+    // updateJEInPlace عند الحفظ لم يجد قيداً ليُحدّثه، فننشئ القيد الآن
+    // بالبيانات الحالية (بعد التعديل) — يضمن ظهور المبلغ على اسم المورد/العميل الجديد
+    const refTableMap = {
+      purchase_edit:'purchase_orders', payment_edit:'payments', expense_edit:'expenses',
+      collection_edit:'collections',   payout_edit:'partner_payouts',
+      opex_edit:'operating_expenses',  sale_edit:'sales',
+    };
+    const refTable = refTableMap[type];
+    if (refTable && (item.file_no || type === 'opex_edit')) {
+      // ✅ opex_edit: je_opex يخزن ref_id = ref_no (نص) وليس id الرقمي
+      // ✅ sale_edit: je_sale لا يخزن ref_id أصلاً — نطابق عبر file_no + وصف يحتوي رقم الفاتورة
+      let existingJE;
+      if (type === 'opex_edit') {
+        existingJE = await apiGet('journal_entries', {
+          select:'entry_no', system_type:`eq.${state.system}`,
+          ref_table:`eq.operating_expenses`, ref_id:`eq.${item.ref_no||item.id}`, limit:'1',
+        });
+      } else if (type === 'sale_edit') {
+        const rows = await apiGetAll('journal_entries', {
+          select:'entry_no,description', system_type:`eq.${state.system}`,
+          ref_table:`eq.sales`, file_no:`eq.${item.file_no}`, post_status:`eq.posted`,
+        });
+        existingJE = (rows||[]).filter(r => item.inv_no && (r.description||'').includes(item.inv_no));
+      } else {
+        existingJE = await apiGet('journal_entries', {
+          select:'entry_no', system_type:`eq.${state.system}`,
+          ref_table:`eq.${refTable}`, ref_id:`eq.${item.id}`, limit:'1',
+        });
+      }
+      if (!existingJE?.length) {
+        if (type === 'purchase_edit') {
+          await je_purchase({ sys:state.system, date:item.po_date||today(), amount:+item.total_purchase||0, fileNo:item.file_no, supplier:item.supplier||'' });
+        } else if (type === 'payment_edit') {
+          await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
+        } else if (type === 'expense_edit') {
+          await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'نقد' });
+        } else if (type === 'collection_edit' && item.paid_date) {
+          await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
+        } else if (type === 'payout_edit') {
+          await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, partner:item.partner||'', method:item.pay_method||'نقد' });
+        } else if (type === 'opex_edit') {
+          await je_opex({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, expType:item.exp_type||'أخرى', desc:item.description||'مصروف تشغيلي', method:item.pay_method||'نقد', refNo:item.ref_no||item.id });
+        } else if (type === 'sale_edit' && item.inv_no && item.file_no) {
+          const allInvSales = await apiGetAll('sales', { select:'sale_price,vin', system_type:`eq.${state.system}`, file_no:`eq.${item.file_no}`, inv_no:`eq.${item.inv_no}` });
+          const totalAmt = (allInvSales||[]).reduce((s,x)=>s+(+x.sale_price||0),0);
+          const cogs = await calcCOGS(state.system, item.file_no, (allInvSales||[]).length, { soldVins:(allInvSales||[]).map(s=>s.vin) });
+          if (totalAmt > 0) await je_sale({ sys:state.system, date:item.sale_date||today(), amount:totalAmt, cost:cogs, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'' });
+        }
+      }
+    }
+
+    // ✅ تعديل سند شراء قد يُنشئ دفعات شركاء جديدة بحالة pending_edit (بدون قيد بعد)
+    // — أنشئ قيودها الآن مع الموافقة على التعديل
+    if (type === 'purchase_edit' && item.file_no) {
+      const pendingPayments = await apiGetAll('payments', {
+        select:'*', system_type:`eq.${state.system}`,
+        file_no:`eq.${item.file_no}`, post_status:`eq.pending_edit`,
+      });
+      for (const pmt of (pendingPayments||[])) {
+        const hasJE = await apiGet('journal_entries', {
+          select:'entry_no', system_type:`eq.${state.system}`,
+          ref_table:`eq.payments`, ref_id:`eq.${pmt.id}`, limit:'1',
+        });
+        if (!hasJE?.length) {
+          await je_payment({ sys:state.system, date:pmt.pay_date||today(), amount:+pmt.amount||0, fileNo:pmt.file_no, refId:pmt.id||null, supplierName:item.supplier||'', payerName:pmt.payer||'', method:pmt.pay_method||'تحويل بنكي' });
+        }
+        await apiPatch('payments', { id:`eq.${pmt.id}` }, { post_status:'posted' });
+      }
+    }
+
+    // ✅ فحص idempotency: لو السجل اعتُمد فعلاً (لم يعد pending_edit) — توقف بدون تكرار
+    let cleanPatched;
+    if (type === 'sale_edit' && item.inv_no) {
+      cleanPatched = await apiPatch('sales',
+        { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, post_status:`eq.pending_edit` },
+        { post_status: 'posted' }
+      );
+    } else {
+      cleanPatched = await apiPatch(cfg.table, { id:`eq.${id}`, post_status:`eq.pending_edit` }, { post_status: 'posted' });
+    }
+    if (!cleanPatched?.length) return { ok:true, message:`${cfg.label}: كانت معتمدة مسبقاً`, already:true };
+
+    await logAudit('EDIT_APPROVED', cfg.table, item.file_no, item, {}, `موافقة تعديل ${cfg.label} ${item.ref_no||item.file_no||item.inv_no||id}`);
+    return { ok:true, message:`تمت الموافقة على تعديل ${cfg.label}` };
+  } catch(e) {
+    return { ok:false, message: `${cfg.label}: ${e.message}` };
+  }
+}
+
+// نواة معالجة "موافقة على طلب إلغاء" — نفس منطق approveItem للـ reversal
+async function _processReversalApproval(id) {
+  const item = approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
+  if (!item) return { ok:false, message:'لم يُعثر على طلب الإلغاء' };
+  try {
+    await voidTransaction(item._srcType, item, true);
+    return { ok:true, message:'تم تنفيذ الإلغاء بقيد عكسي' };
+  } catch(e) {
+    return { ok:false, message: e.message };
+  }
+}
+
 async function approveAll() {
   const items = approvalState.filtered;
   if (!items.length) return;
   showConfirm(`موافقة على الكل`, `هل تريد الموافقة على ${items.length} عملية دفعة واحدة؟`, async () => {
     const sys = state.system;
     let okCount = 0, failCount = 0;
+    const resultLines = [];
     // ✅ ترتيب آمن ضد الانقطاع/السباق: لكل عملية → أنشئ القيد (لو غير موجود) → ثم رحّل السجل.
     //    السجل لا يصير "posted" قبل وجود قيده؛ فلو انقطعت العملية يبقى draft ويعود لقائمة الاعتمادات.
     for (const r of items) {
+      // ── طلبات التعديل: نفس نواة approveItem بالضبط، لا تجاهل صامت ──
+      if (EDIT_TYPES[r._type]) {
+        const res = await _processEditApproval(r._type, r.id);
+        if (res.ok) okCount++; else failCount++;
+        resultLines.push(`${res.ok ? '✅' : '❌'} ${_escHtml(res.message)}`);
+        continue;
+      }
+      // ── طلبات الإلغاء (reversal): نفس نواة approveItem بالضبط ──
+      if (r._type === 'reversal') {
+        const res = await _processReversalApproval(r.id);
+        if (res.ok) okCount++; else failCount++;
+        resultLines.push(`${res.ok ? '✅' : '❌'} إلغاء — ${_escHtml(r._desc||r.id)}${res.ok?'':': '+_escHtml(res.message)}`);
+        continue;
+      }
+      // ── الأنواع العادية (شراء/بيع/تحصيل/دفعة/صرف شريك) ──
       const cfg = APPROVAL_CONFIG[r._type];
-      if (!cfg) continue;
+      if (!cfg) { failCount++; resultLines.push(`❌ نوع غير معروف: ${_escHtml(r._type)}`); continue; }
       try {
         await _ensureApprovalJE(r, sys);
         const patched = await apiPatch(cfg.table, { id:`eq.${r.id}`, post_status:`eq.draft` }, { post_status:'posted' });
@@ -2015,15 +2064,27 @@ async function approveAll() {
           okCount++;
           // ✅ سجّل "من وافق" (موافقة جماعية)
           await logAudit('APPROVE', cfg.table, r.file_no||null, r, { approved_at: today(), bulk:true }, `موافقة جماعية ${cfg.label} ${r.ref_no||r.inv_no||r.id}`);
+          resultLines.push(`✅ ${_escHtml(cfg.label)} — ${_escHtml(r._desc||r.ref_no||r.inv_no||r.id)}`);
+        } else {
+          failCount++;
+          resultLines.push(`❌ ${_escHtml(cfg.label)} — ${_escHtml(r._desc||r.ref_no||r.id)}: كانت معتمدة مسبقاً أو تغيّرت حالتها`);
         }
       } catch(jeErr) {
         failCount++;
         console.warn(`approveAll failed ${r._type} ${r.id}:`, jeErr.message);
-        toast(`⚠️ فشلت الموافقة على ${cfg.label} (${r._desc||r.ref_no||r.id}) — تبقى في الانتظار: ${jeErr.message}`,'warn');
+        resultLines.push(`❌ ${_escHtml(cfg.label)} — ${_escHtml(r._desc||r.ref_no||r.id)}: ${_escHtml(jeErr.message)}`);
       }
     }
     invalidateCache();
-    toast(`✅ تمت الموافقة على ${okCount} عملية${failCount?` · ${failCount} فشلت وتبقى في الانتظار`:''}`, failCount?'warn':'ok');
+    toast(`✅ تمت الموافقة على ${okCount} عملية${failCount?` · ${failCount} لم تكتمل`:''}`, failCount?'warn':'ok');
+    // ✅ تفاصيل واضحة لكل عملية بدل التجاهل الصامت السابق
+    if (resultLines.length) {
+      showConfirmHtml(
+        failCount ? `⚠️ تفاصيل الموافقة الجماعية (${okCount} نجح · ${failCount} لم يكتمل)` : `✅ تفاصيل الموافقة الجماعية (${okCount} نجح)`,
+        `<div style="text-align:right;font-size:13px;line-height:1.8;max-height:50vh;overflow-y:auto">${resultLines.join('<br>')}</div>`,
+        async () => {}
+      );
+    }
     await loadApprovalQueue();
   });
 }
