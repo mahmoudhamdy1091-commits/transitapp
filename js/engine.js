@@ -269,6 +269,66 @@ async function voidTransaction(type, record, force=false) {
   invalidateCache();
 }
 
+// ════════════════════════════════════════════════════════════
+// VOID PURCHASE ORDER — إلغاء سند شراء مُرحَّل بقيد عكسي
+//   شرطان مانعان (يرميان Error برسالة واضحة، بلا أي تعديل):
+//     1. أي سيارة من الملف لها بيع فعّال (posted/pending_edit) — COGS
+//        المُسجَّل لها يعتمد على total_purchase هذا، فحذفه يُفسد حسابها.
+//     2. أي دفعة فعّالة للمورد على هذا الملف — عكس الشراء سيُنقص 2100
+//        بالكامل بينما جزء منه دُفع فعليًا، فيصبح الحساب سالباً.
+//   لا يُلغي المصاريف أو يعكس الدفعات تلقائياً — الملف "يُقفل جزئياً"؛
+//   إلغاء أي بند آخر قرار منفصل يقوم به المستخدم عبر voidTransaction.
+// ════════════════════════════════════════════════════════════
+async function voidPurchaseOrder(fileNo) {
+  const sys = state.system;
+
+  const poRows = await apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+  const po = poRows?.[0];
+  if (!po) throw new Error('لم يُعثر على سند الشراء لهذا الملف');
+  if (po.post_status === 'voided') throw new Error('سند الشراء مُلغى مسبقاً');
+
+  // ── الشرط المانع 1: سيارات مباعة ──
+  const salesRows = await apiGetAll('sales', { select:'vin,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+  const soldEffective = (salesRows||[]).filter(isEffective);
+  if (soldEffective.length) {
+    throw new Error(`لا يمكن إلغاء سند الشراء — يوجد ${soldEffective.length} سيارة مباعة في هذا الملف. اعكس فواتير البيع المرتبطة أولاً.`);
+  }
+
+  // ── الشرط المانع 2: دفعات للمورد ──
+  const paymentRows = await apiGetAll('payments', { select:'id,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+  const paysEffective = (paymentRows||[]).filter(isEffective);
+  if (paysEffective.length) {
+    throw new Error(`لا يمكن إلغاء سند الشراء — يوجد ${paysEffective.length} دفعة مسجّلة للمورد على هذا الملف. اعكسها أولاً.`);
+  }
+
+  // ── القيد العكسي: نفس قيمة total_purchase الحالية، عكس Dr1300/Cr2100 الأصلي ──
+  const amount = +po.total_purchase || 0;
+  const today_ = today();
+  if (amount > 0) {
+    await postDoubleEntry({
+      sys, date: today_, fileNo,
+      refTable: 'reversal', refId: po.id,
+      desc: `عكس شراء — ملف ${fileNo} — ${po.supplier||''}`,
+      lines: [
+        { acc:'2100', name:'ذمم الموردين',     dr:amount, cr:0,      contact:po.supplier||null },
+        { acc:'1300', name:'المخزون — سيارات', dr:0,      cr:amount, contact:null               },
+      ],
+    });
+  }
+
+  // ── تحديث حالة السند ──
+  await apiPatch('purchase_orders', { id:`eq.${po.id}` }, {
+    post_status: 'voided',
+    status: 'VOIDED',
+    notes: `${po.notes ? po.notes + ' | ' : ''}مُلغى بتاريخ ${today_}`,
+  });
+
+  // ── تسجيل في audit_log ──
+  await logAudit('VOID', 'purchase_orders', fileNo, po, null, `إلغاء سند شراء ملف ${fileNo} بقيد عكسي`);
+
+  invalidateCache();
+}
+
 async function _jeNo(sys) {
   // ✅ توليد ذرّي عبر RPC في Postgres (دالة + جدول عدّادات بقفل صفّي)
   // يمنع تضارب entry_no بين عمليات ترحيل متزامنة (انظر next_je_no في قاعدة البيانات)
