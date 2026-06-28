@@ -4141,6 +4141,19 @@ async function submitJE() {
   btn.disabled = true; btn.textContent = '⏳ جاري الحفظ...';
 
   try {
+    // ✅ لو تعديل: وثّق شكل القيد القديم فعلياً قبل حذفه (كان يُسجَّل old_value=null —
+    // فجوة تدقيق: الأسطر القديمة تُحذف نهائياً بدون أي أثر لشكلها قبل التعديل)
+    let oldLinesSnapshot = null;
+    if (entryNo) {
+      try {
+        const oldRows = await apiGetAll('journal_entries', {
+          select: 'account_code,account_name,dr_amount,cr_amount,entry_date,description',
+          system_type: `eq.${state.system}`, entry_no: `eq.${entryNo}`,
+        });
+        oldLinesSnapshot = { entry_no: entryNo, lines: oldRows || [] };
+      } catch(e) { console.warn('submitJE: فشل توثيق القيد القديم قبل التعديل:', e.message); }
+    }
+
     // لو تعديل: احذف القيود القديمة بنفس entry_no أولاً
     if (entryNo) {
       const delRes = await fetch(`${SB_URL}/rest/v1/journal_entries?entry_no=eq.${encodeURIComponent(entryNo)}&system_type=eq.${encodeURIComponent(state.system)}`, {
@@ -4175,7 +4188,7 @@ async function submitJE() {
       if (!r.ok) throw new Error(`فشل إدراج السطر: ${await r.text()}`);
     }
 
-    await logAudit(entryNo?'UPDATE':'INSERT','journal_entries', fileNo, null, { entry_no:no, desc, totalDr, totalCr });
+    await logAudit(entryNo?'UPDATE':'INSERT','journal_entries', fileNo, oldLinesSnapshot, { entry_no:no, desc, totalDr, totalCr });
     closeModal('jeModal');
     toast(`✅ تم ${entryNo?'تعديل':'حفظ'} القيد ${no}`, 'ok');
     await loadJEManager();
