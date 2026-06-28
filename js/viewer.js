@@ -133,10 +133,12 @@ async function openQuickModal(type) {
     el('qc-doc').value     = '';
     el('qc-notes').value   = '';
     el('qc-dueDate').value = '';
+    el('qc-receivedBy').innerHTML = `<option value="${TREASURY_PARTNER}">${TREASURY_PARTNER}</option>`;
     // لو في ملف مفتوح حالياً — حمّل فواتيره تلقائياً
     if (state.currentFileNo) {
       el('qc-fileNo').value = state.currentFileNo;
       await loadQuickInvoices(state.currentFileNo);
+      await loadQuickReceivedBy(state.currentFileNo);
     }
   }
 
@@ -294,6 +296,19 @@ async function loadQuickPartners(fileNo) {
   }, 500);
 }
 
+// من استلم التحصيل فعلياً (الصندوق افتراضياً، أو شريك احتفظ بالمبلغ) — يستخدم
+// في submitQuickCollection لتمرير receivedBy لـje_collection (نفس منطق الفورم الكامل)
+async function loadQuickReceivedBy(fileNo) {
+  if (!fileNo) return;
+  try {
+    const partners = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
+    const raw  = (partners||[]).map(p=>p.partner);
+    const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+    const rb = el('qc-receivedBy');
+    if (rb) { rb.innerHTML = list.map(p=>`<option value="${p}">${p}</option>`).join(''); rb.value = TREASURY_PARTNER; }
+  } catch(e) { console.warn('loadQuickReceivedBy:', e.message); }
+}
+
 // Submit quick sale
 async function submitQuickSale() {
   const fileNo   = el('qs-fileNo').value;
@@ -357,6 +372,7 @@ async function submitQuickCollection() {
   const due      = el('qc-dueDate').value;
   const paid     = el('qc-date').value;
   const notes    = el('qc-notes').value.trim();
+  const receivedBy = el('qc-receivedBy')?.value?.trim() || null;
 
   if (!fileNo || !invNo || !amount || !paid) {
     showFieldErr('qsColError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
@@ -381,14 +397,14 @@ async function submitQuickCollection() {
       vin: vin||null, amount, pay_method: method,
       document: doc||null, due_date: due||null,
       paid_date: isPostedNow ? paid : null,
-      notes: notes||null, ref_no: refNo
-    , post_status:entryStatus()};
+      notes: notes||null, ref_no: refNo, received_by: receivedBy,
+    post_status:entryStatus()};
     const qcIns = await apiPost('collections', data);
     await logAudit('INSERT','collections', fileNo, null, data);
     if (isPostedNow && customer) {
       const qcId = qcIns?.[0]?.id || null;
       try {
-        await je_collection({sys:state.system,date:paid||today(),amount,fileNo,refId:qcId,customer,invNo,method});
+        await je_collection({sys:state.system,date:paid||today(),amount,fileNo,refId:qcId,customer,invNo,method,receivedBy});
       } catch(jeErr) {
         if (qcId) await apiPatch('collections', { id:`eq.${qcId}` }, { post_status:'draft' });
         toast(`⚠️ تم حفظ التحصيل بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
@@ -546,6 +562,12 @@ async function submitQuickPayout() {
   if (!fileNo || !partner || !amount || !date) {
     showFieldErr('qsPoError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
+  // ✅ تفصيل رأس مال/أرباح/سلفة — نفس ما يحفظه فورم "صرف شريك" الكامل،
+  // يُستخدم في كشف حساب الشريك وجاري الشريك (راجع capital_amount في dashboard.js/print.js)
+  let capitalAmt = 0, profitAmt = 0, advanceAmt = 0;
+  if (type === 'استرداد') capitalAmt = amount;
+  else if (type === 'توزيع أرباح') profitAmt = amount;
+  else if (type === 'سلفة') advanceAmt = amount;
   try {
     // Generate pay_id
     let pay_id = `PAY-${fileNo}-001`;
@@ -556,7 +578,9 @@ async function submitQuickPayout() {
       pay_id = `PAY-${fileNo}-${String(nextNum).padStart(3,'0')}`;
     } catch(e) { console.warn('quickPayoutId generator:', e.message); }
     const data = { system_type:state.system, file_no:fileNo, partner,
-      pay_id, payout_type:type, amount, pay_method:method, document:doc||null,
+      pay_id, payout_type:type, amount,
+      capital_amount: capitalAmt, profit_amount: profitAmt, advance_amount: advanceAmt,
+      pay_method:method, document:doc||null,
       pay_date: date, notes:notes||null, post_status:entryStatus() };
     const qpoIns = await apiPost('partner_payouts', data);
     await logAudit('INSERT','partner_payouts',fileNo,null,data);

@@ -1506,6 +1506,22 @@ async function markCollectionPaid(collectionId, fileNo) {
     el('cpaid-doc').value     = '';
     el('cpaid-notes').value   = '';
     el('cpaidError').style.display = 'none';
+    // تعبئة "استلمه" بشركاء الملف — نفس منطق فورم التحصيل الكامل
+    const recByEl = el('cpaid-receivedBy');
+    if (recByEl) {
+      recByEl.innerHTML = `<option value="${TREASURY_PARTNER}">${TREASURY_PARTNER}</option>`;
+      if (c.file_no) {
+        try {
+          const partners = await apiGetAll('partners_master', {
+            select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${c.file_no}`
+          });
+          const raw  = (partners||[]).map(p => p.partner);
+          const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+          recByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
+        } catch(e) {}
+      }
+      recByEl.value = c.received_by?.trim() || TREASURY_PARTNER;
+    }
     openModal('markPaidModal');
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
@@ -1516,6 +1532,7 @@ async function submitMarkPaid() {
   const method = el('cpaid-method').value;
   const doc    = el('cpaid-doc').value.trim();
   const notes  = el('cpaid-notes').value.trim();
+  const receivedBy = el('cpaid-receivedBy')?.value?.trim() || null;
   if (!date) { showFieldErr('cpaidError','يرجى تحديد تاريخ الدفع'); return; }
   try {
     const data = await apiGetAll('collections', { select:'*', id:`eq.${id}` });
@@ -1533,6 +1550,7 @@ async function submitMarkPaid() {
       pay_method: method,
       document:   doc  || null,
       notes:      notes || c.notes || null,
+      received_by: receivedBy,
     });
 
     // ✅ سجّل تسجيل الدفع (كان غير مسجَّل — فجوة تتبّع)
@@ -1550,6 +1568,7 @@ async function submitMarkPaid() {
           customer: c.customer || '—',
           invNo:    c.inv_no   || '',
           method,
+          receivedBy,
         });
       } catch(jeErr) {
         await apiPatch('collections', { id:`eq.${c.id}` }, { post_status:'draft' });
