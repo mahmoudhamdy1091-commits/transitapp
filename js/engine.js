@@ -270,6 +270,50 @@ async function voidTransaction(type, record, force=false) {
 }
 
 // ════════════════════════════════════════════════════════════
+// REVERSE MANUAL JE — عكس قيد يدوي بقيد جديد منفصل
+//   لا تلمس القيد الأصلي إطلاقاً — فقط تُنشئ قيداً جديداً بنفس الأسطر
+//   مع Dr↔Cr معكوسة. مخصّصة فقط لقيود ref_table='manual' (القيد اليدوي
+//   لا جدول مصدر منفصل له، فلا معنى لتحديث "حالة مصدر" كما في voidTransaction).
+// ════════════════════════════════════════════════════════════
+async function reverseManualJE(entryNo) {
+  const sys = state.system;
+
+  const lines = await apiGetAll('journal_entries', {
+    select: '*', system_type: `eq.${sys}`, entry_no: `eq.${entryNo}`,
+  });
+  if (!lines?.length) throw new Error('لم يُعثر على القيد');
+  if (lines.some(l => l.ref_table !== 'manual')) {
+    throw new Error('هذه الدالة لعكس القيود اليدوية فقط — القيد المحدد ليس يدوياً');
+  }
+
+  const fileNo = lines[0].file_no || null;
+  const date_  = today();
+  const reversalLines = lines.map(l => ({
+    acc:     l.account_code,
+    name:    l.account_name,
+    dr:      +l.cr_amount || 0,
+    cr:      +l.dr_amount || 0,
+    contact: l.contact_name || null,
+  }));
+
+  await postDoubleEntry({
+    sys, date: date_, fileNo,
+    refTable: 'manual', refId: null,
+    desc: `عكس قيد ${entryNo}`,
+    lines: reversalLines,
+  });
+
+  await logAudit(
+    'REVERSE', 'journal_entries', fileNo,
+    { entry_no: entryNo, lines: lines.map(l => ({ account_code:l.account_code, account_name:l.account_name, dr_amount:l.dr_amount, cr_amount:l.cr_amount })) },
+    { reversed_entry_no: entryNo },
+    `عكس قيد يدوي ${entryNo} بقيد جديد — الأصلي بلا تغيير`
+  );
+
+  invalidateCache();
+}
+
+// ════════════════════════════════════════════════════════════
 // VOID PURCHASE ORDER — إلغاء سند شراء مُرحَّل بقيد عكسي
 //   شرطان مانعان (يرميان Error برسالة واضحة، بلا أي تعديل):
 //     1. أي سيارة من الملف لها بيع فعّال (posted/pending_edit) — COGS
