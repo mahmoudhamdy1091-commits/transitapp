@@ -215,11 +215,29 @@ function _ctxVehicle(btn) {
 }
 
 // الصفقات — جدول الصفقات الرئيسي (dashboard)
-function _ctxDeal(btn) {
+async function _ctxDeal(btn) {
   const fn = btn.dataset.fn, id = btn.dataset.id;
   const items = [];
   items.push({icon:'✏️', label:'تعديل بيانات الملف', action:()=>openNewFileModal(fn)});
   items.push({icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'purchase_orders', fileNo:fn, id:id||null, title:`صفقة ${fn}`})});
+  // ✅ إلغاء سند الشراء — يظهر فقط لو السند posted فعلياً (لا draft ولا voided مسبقاً)
+  try {
+    const po = await apiGetAll('purchase_orders', { select:'post_status', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
+    if ((po?.[0]?.post_status || 'posted') === 'posted') {
+      items.push({icon:'🔄', label:'إلغاء سند الشراء', danger:true, action:()=>confirmAction(
+        'إلغاء سند الشراء',
+        `سيتم عكس سند الشراء لملف ${fn} بقيد محاسبي عكسي — لن يُسمح بذلك لو فيه سيارات مباعة أو دفعات مسجّلة. هل أنت متأكد؟`,
+        async () => {
+          try {
+            await voidPurchaseOrder(fn);
+            toast('✅ تم إلغاء سند الشراء بقيد عكسي','ok');
+            invalidateCache();
+            await loadDashboard();
+          } catch(e) { toast('⚠️ '+e.message,'err'); }
+        }
+      )});
+    }
+  } catch(e) { console.warn('_ctxDeal post_status check:', e.message); }
   if (can('delete')) {
     items.push('divider');
     items.push({icon:'🗑', label:'حذف الصفقة', danger:true, action:()=>confirmAction('حذف الصفقة','هل أنت متأكد من حذف هذه الصفقة؟',()=>deleteOrphanDeal(id||fn))});
