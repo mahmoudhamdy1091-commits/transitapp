@@ -1288,11 +1288,14 @@ async function openEditSaleApproval(saleId, fileNo, invNo) {
   if (!fileNo || !invNo) { toast('بيانات الفاتورة ناقصة', 'err'); return; }
   try {
     // جيب كل سطور الفاتورة (ممكن أكثر من سيارة)
+    // ✅ استثناء cancelled/voided — وإلا تظهر سيارة محذوفة مسبقاً مُعلَّمة "checked" في قائمة
+    // التعديل، وأي حفظ بلا تعديلها يُعيد إدراجها كسيارة "جديدة" (تكرار/إحياء سيارة محذوفة)
     const allSaleItems = await apiGetAll('sales', {
       select: '*',
       system_type: `eq.${state.system}`,
       file_no: `eq.${fileNo}`,
-      inv_no: `eq.${invNo}`
+      inv_no: `eq.${invNo}`,
+      'post_status': 'not.in.(cancelled,voided)',
     });
     if (!allSaleItems?.length) { toast('لم يُعثر على بيانات الفاتورة', 'err'); return; }
     const firstItem = allSaleItems[0];
@@ -1407,9 +1410,11 @@ async function openEditSaleApproval(saleId, fileNo, invNo) {
       submitBtn.onclick = async () => {
         try {
           const sys = state.system;
-          // جيب السجلات القديمة
+          // جيب السجلات القديمة — استثناء cancelled/voided حتى لا تُحسَب ضمن الإجمالي القديم
+          // ولا تُعاد معالجتها كـ"مزالة" في كل حفظ (كانت تُكرّر ملاحظة الحذف على كل ضغطة)
           const oldSales = await apiGetAll('sales', {
-            select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}`
+            select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}`,
+            'post_status':'not.in.(cancelled,voided)',
           });
           const totalOld     = (oldSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
           const oldCustomer  = oldSales?.[0]?.customer || '';

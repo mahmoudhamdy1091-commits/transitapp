@@ -1089,7 +1089,8 @@ async function loadExpensesTab(fn, sys) {
 async function loadSalesTab(fn, sys) {
   try {
     const [data, charges] = await Promise.all([
-      apiGetAll('sales',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
+      // ✅ استثناء cancelled/voided — كانت تظهر فواتير مُلغاة بالكامل وسيارات محذوفة من فاتورة كجزء من إجمالي نشط
+      apiGetAll('sales',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, 'post_status':'not.in.(cancelled,voided)', order:'sale_date.desc' }),
       apiGetAll('sale_charges', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
     state.currentSales = data || [];
