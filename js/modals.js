@@ -528,7 +528,10 @@ async function _submitNewFileInner() {
       if (entryStatus()==='posted') {
         try {
           await je_purchase({sys:state.system,date:poDate||today(),amount:finalTotal,fileNo,supplier});
-        } catch(jeErr) { toast(`⚠️ تم حفظ الصفقة لكن فشل قيد الشراء: ${jeErr.message}`,'warn'); }
+        } catch(jeErr) {
+          await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` }, { post_status:'draft' });
+          toast(`⚠️ تم حفظ الصفقة بدون ترحيل قيد الشراء — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+        }
       }
     }
 
