@@ -1643,30 +1643,10 @@ async function approveItem(type, id) {
     if (type === 'sale') {
       const item = approvedItem;
       if (item && item.inv_no && item.file_no) {
-        // تجميع كل سيارات الفاتورة — الفاتورة قد تحتوي أكثر من سيارة
+        // ✅ قفل بـPromise مشترك لمنع تكرار القيد عند موافقات فردية متسارعة على
+        // سيارات متعددة من نفس الفاتورة (نفس النواة المستخدمة في _ensureApprovalJE)
         try {
-          // ✅ فحص تكرار: لو الفاتورة فيها سيارات متعددة كل واحدة draft منفصل،
-          // الموافقة على كل سيارة تستدعي هذه الدالة — نتحقق أن القيد لم يُنشأ مسبقاً
-          const existingJE = await apiGetAll('journal_entries', {
-            select:'entry_no,description', system_type:`eq.${state.system}`,
-            ref_table:'eq.sales', file_no:`eq.${item.file_no}`, post_status:'eq.posted',
-          });
-          const hasJE = (existingJE||[]).some(j => (j.description||'').includes(item.inv_no));
-          if (hasJE) {
-            console.info(`approveItem sale: قيد موجود مسبقاً لـ ${item.inv_no} — تم تخطي إنشاء قيد جديد`);
-          } else {
-            const allInvSales = await apiGetAll('sales', {
-              select:'sale_price,vin,sale_date,customer,file_no,inv_no',
-              system_type:`eq.${state.system}`,
-              file_no:`eq.${item.file_no}`,
-              inv_no:`eq.${item.inv_no}`,
-            });
-            const totalInvAmount = (allInvSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
-            const totalCOGS = await calcCOGS(state.system, item.file_no, (allInvSales||[]).length, { soldVins:(allInvSales||[]).map(s=>s.vin) });
-            if (totalInvAmount > 0) {
-              await je_sale({ sys:state.system, date:item.sale_date||today(), amount:totalInvAmount, cost:totalCOGS, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'' });
-            }
-          }
+          await _ensureSaleJE(state.system, item.file_no, item.inv_no, item.sale_date, item.customer);
         } catch(e) { await revertToDraft(); throw e; }
 
         // OPTION B: ابحث عن collections مرتبطة بهذه الفاتورة كانت draft + paid_date محفوظ
@@ -1903,6 +1883,40 @@ async function cancelApprovalRow(type, id) {
 }
 
 // ════════════════════════════════════════════════════════════
+// ✅ ضمان قيد بيع واحد فقط لكل فاتورة — يمنع التكرار عند الموافقة الفردية
+// المتسارعة على سيارات متعددة من نفس الفاتورة (كل نقرة تستدعي هذه الدالة
+// بنفس مفتاح الفاتورة؛ النقرات المتزامنة تنتظر نفس الـPromise بدل بدء
+// فحص-ثم-إنشاء منفصل، فلا تتسابق على "هل يوجد قيد؟"). يُستخدم من
+// approveItem و _ensureApprovalJE معاً حتى لا يتفرّق المنطق.
+// ════════════════════════════════════════════════════════════
+const _saleJEInFlight = new Map(); // key: `${sys}:${fileNo}:${invNo}` → Promise
+async function _ensureSaleJE(sys, fileNo, invNo, dateFallback, customerFallback) {
+  if (!fileNo || !invNo) return;
+  const key = `${sys}:${fileNo}:${invNo}`;
+  if (_saleJEInFlight.has(key)) return _saleJEInFlight.get(key);
+
+  const p = (async () => {
+    const existingJE = await apiGetAll('journal_entries', {
+      select:'entry_no,description', system_type:`eq.${sys}`,
+      ref_table:'eq.sales', file_no:`eq.${fileNo}`, post_status:'eq.posted',
+    });
+    if ((existingJE||[]).some(j => (j.description||'').includes(invNo))) return;
+    const allInvSales = await apiGetAll('sales', {
+      select:'sale_price,vin', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}`,
+    });
+    const totalAmt = (allInvSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
+    const cogs = await calcCOGS(sys, fileNo, (allInvSales||[]).length, { soldVins:(allInvSales||[]).map(s=>s.vin) });
+    if (totalAmt > 0) {
+      await je_sale({ sys, date:dateFallback||today(), amount:totalAmt, cost:cogs, fileNo, customer:customerFallback||'', invNo });
+    }
+  })();
+
+  _saleJEInFlight.set(key, p);
+  try { await p; } finally { _saleJEInFlight.delete(key); }
+  return p;
+}
+
+// ════════════════════════════════════════════════════════════
 // ✅ إنشاء قيد الموافقة بأمان (idempotent) — يُنشئ القيد فقط لو غير موجود.
 // يُستخدم في approveAll بترتيب آمن: (قيد ثم ترحيل) حتى لا يبقى سجل posted بلا قيد
 // لو انقطعت العملية. فحص-القيد-الموجود يمنع تكرار القيد عند إعادة المحاولة.
@@ -1932,14 +1946,9 @@ async function _ensureApprovalJE(r, sys) {
     const ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${sys}`, ref_table:'eq.purchase_orders', file_no:`eq.${r.file_no}`, post_status:'eq.posted', limit:1 });
     if (!ex?.length) await je_purchase({ sys, date:r.po_date||today(), amount:+r.total_purchase||0, fileNo:r.file_no, supplier:r.supplier||'' });
   } else if (t === 'sale' && r.inv_no && r.file_no) {
-    const rows = await apiGetAll('journal_entries', { select:'entry_no,description', system_type:`eq.${sys}`, ref_table:'eq.sales', file_no:`eq.${r.file_no}`, post_status:'eq.posted' });
-    const has = (rows||[]).some(j => (j.description||'').includes(r.inv_no));
-    if (!has) {
-      const allInvSales = await apiGetAll('sales', { select:'sale_price,vin', system_type:`eq.${sys}`, file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}` });
-      const totalAmt = (allInvSales||[]).reduce((s,x)=>s+(+x.sale_price||0),0);
-      const cogs = await calcCOGS(sys, r.file_no, (allInvSales||[]).length, { soldVins:(allInvSales||[]).map(s=>s.vin) });
-      if (totalAmt > 0) await je_sale({ sys, date:r.sale_date||today(), amount:totalAmt, cost:cogs, fileNo:r.file_no, customer:r.customer||'', invNo:r.inv_no||'' });
-    }
+    // ✅ نفس القفل المشترك المستخدم في approveItem — يمنع تكرار القيد لو نفس الفاتورة
+    // قيد المعالجة من approveAll ومن نقرة فردية متزامنة في نفس اللحظة
+    await _ensureSaleJE(sys, r.file_no, r.inv_no, r.sale_date, r.customer);
     // collections المدفوعة المرتبطة بالفاتورة — قيد (لو غير موجود) ثم ترحيل
     try {
       const linkedCols = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}`, post_status:'eq.draft' });
