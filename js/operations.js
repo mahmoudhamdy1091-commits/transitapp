@@ -1668,39 +1668,9 @@ async function approveItem(type, id) {
           await _ensureSaleJE(state.system, item.file_no, item.inv_no, item.sale_date, item.customer);
         } catch(e) { await revertToDraft(); throw e; }
 
-        // OPTION B: ابحث عن collections مرتبطة بهذه الفاتورة كانت draft + paid_date محفوظ
-        // وافق عليها تلقائياً وأنشئ قيودها — بدون أي تدخل من المستخدم
-        try {
-          const linkedCols = await apiGetAll('collections', {
-            select: '*',
-            system_type: `eq.${state.system}`,
-            file_no:     `eq.${item.file_no}`,
-            inv_no:      `eq.${item.inv_no}`,
-            post_status: `eq.draft`,
-          });
-          for (const col of (linkedCols||[])) {
-            if (!col.paid_date) continue; // مستحق فقط — لا قيد الآن
-            // رحّل التحصيل (مع فحص idempotency)
-            const colPatched = await apiPatch('collections', { id:`eq.${col.id}`, post_status:`eq.draft` }, { post_status:'posted' });
-            if (!colPatched?.length) continue;
-            // أنشئ قيد التحصيل
-            try {
-              await je_collection({
-                sys:      state.system,
-                date:     col.paid_date,
-                amount:   +col.amount,
-                fileNo:   col.file_no,
-                refId:    col.id || null,
-                customer: col.customer || item.customer || '',
-                invNo:    col.inv_no   || item.inv_no   || '',
-                method:   col.pay_method || 'تحويل بنكي',
-              });
-            } catch(jeErr) {
-              await apiPatch('collections', { id:`eq.${col.id}` }, { post_status:'draft' });
-              toast(`⚠️ فشل قيد تحصيل ${col.inv_no||col.file_no} — أُعيد لقائمة الاعتمادات: ${jeErr.message}`,'warn');
-            }
-          }
-        } catch(e) { console.warn('approveItem sale auto-approve collections:', e.message); }
+        // ✅ OPTION B: تحصيلات مرتبطة بهذه الفاتورة (مدفوعة فعلاً) — اعتماد تلقائي
+        // بدالة مشتركة مع _ensureApprovalJE (كانت نسختين منفصلتين تفرَّقتا)
+        await _approveLinkedPaidCollections(state.system, item.file_no, item.inv_no, item.customer);
       }
     }
     if (type === 'collection') {
@@ -1968,17 +1938,48 @@ async function _ensureApprovalJE(r, sys) {
     // ✅ نفس القفل المشترك المستخدم في approveItem — يمنع تكرار القيد لو نفس الفاتورة
     // قيد المعالجة من approveAll ومن نقرة فردية متزامنة في نفس اللحظة
     await _ensureSaleJE(sys, r.file_no, r.inv_no, r.sale_date, r.customer);
-    // collections المدفوعة المرتبطة بالفاتورة — قيد (لو غير موجود) ثم ترحيل
-    try {
-      const linkedCols = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}`, post_status:'eq.draft' });
-      for (const col of (linkedCols||[])) {
-        if (!col.paid_date) continue;
-        const exC = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${sys}`, ref_table:'eq.collections', ref_id:`eq.${col.id}`, post_status:'eq.posted', limit:1 });
-        if (!exC?.length) await je_collection({ sys, date:col.paid_date, amount:+col.amount, fileNo:col.file_no, refId:col.id||null, customer:col.customer||r.customer||'', invNo:col.inv_no||r.inv_no||'', method:col.pay_method||'تحويل بنكي' });
-        await apiPatch('collections', { id:`eq.${col.id}`, post_status:`eq.draft` }, { post_status:'posted' });
-      }
-    } catch(e) { console.warn('ensureApprovalJE linked cols:', e.message); }
+    // ✅ تحصيلات مرتبطة بالفاتورة (مدفوعة فعلاً) — اعتماد تلقائي بدالة مشتركة مع approveItem
+    await _approveLinkedPaidCollections(sys, r.file_no, r.inv_no, r.customer);
   }
+}
+
+// ════════════════════════════════════════════════════════════
+// ✅ موافقة تلقائية على تحصيلات مرتبطة بفاتورة بيع (مدفوعة فعلاً، لا تزال draft)
+// تُستخدم عند اعتماد الفاتورة نفسها — لا تحتاج تدخل المستخدم لاعتمادها لاحقاً.
+// دالة واحدة من approveItem (فردي) و_ensureApprovalJE (جماعي عبر approveAll) —
+// كانتا نسختين منفصلتين تفرَّقتا (واحدة بلا فحص ref_id، والأخرى بلا تسجيل تدقيق)
+// ════════════════════════════════════════════════════════════
+async function _approveLinkedPaidCollections(sys, fileNo, invNo, fallbackCustomer) {
+  if (!fileNo || !invNo) return;
+  try {
+    const linkedCols = await apiGetAll('collections', {
+      select: '*', system_type: `eq.${sys}`, file_no: `eq.${fileNo}`, inv_no: `eq.${invNo}`, post_status: `eq.draft`,
+    });
+    for (const col of (linkedCols||[])) {
+      if (!col.paid_date) continue; // مستحق فقط — لا قيد الآن
+      // ✅ قيد ثم ترحيل (لا العكس) — حتى لا يبقى سجل posted بلا قيد لو انقطعت العملية
+      const exC = await apiGet('journal_entries', {
+        select:'entry_no', system_type:`eq.${sys}`, ref_table:'eq.collections', ref_id:`eq.${col.id}`, post_status:'eq.posted', limit:1,
+      });
+      if (!exC?.length) {
+        try {
+          await je_collection({
+            sys, date: col.paid_date, amount: +col.amount, fileNo: col.file_no, refId: col.id || null,
+            customer: col.customer || fallbackCustomer || '', invNo: col.inv_no || invNo || '',
+            method: col.pay_method || 'تحويل بنكي',
+          });
+        } catch(jeErr) {
+          toast(`⚠️ فشل قيد تحصيل ${col.inv_no||col.file_no}: ${jeErr.message}`, 'warn');
+          continue; // لا تُرحِّل السجل بلا قيد
+        }
+      }
+      const colPatched = await apiPatch('collections', { id:`eq.${col.id}`, post_status:`eq.draft` }, { post_status:'posted' });
+      if (colPatched?.length) {
+        // ✅ تسجيل تدقيق — كان مفقوداً تماماً في كلا النسختين القديمتين
+        await logAudit('APPROVE', 'collections', col.file_no||fileNo, col, { approved_at: today(), auto: true, via: 'sale_approval' }, `موافقة تلقائية تحصيل مرتبط بفاتورة ${invNo}`);
+      }
+    }
+  } catch(e) { console.warn('_approveLinkedPaidCollections:', e.message); }
 }
 
 // ════════════════════════════════════════════════════════════
