@@ -303,7 +303,8 @@ async function showAccountLedger(accountCode, accountName, accountType) {
       desc:r.description||'—',ref:r.entry_no||'',debit:+r.dr_amount||0,
       credit:+r.cr_amount||0,file_no:r.file_no||'',contact:r.contact_name||'',status:r.post_status||'posted',
     }));
-    window._ledgerOpening=0;
+    // ✅ الرصيد الافتتاحي الحقيقي يُحسب داخل renderLedgerTable (يعتمد على from/postFilter الحاليين)
+    ledgerState._openingKey = null; // أجبر إعادة الحساب لأن الحساب تغيّر
     // فلتر الصفقات
     const fileNos=[...new Set((rows||[]).map(r=>r.file_no).filter(Boolean))].sort();
     const sel=el('ledger-file-filter');
@@ -436,12 +437,23 @@ function exportLedgerExcel() {
   }], `كشف-حساب-${contact||accCode}`);
 }
 
-function renderLedgerTable() {
+async function renderLedgerTable() {
   const fileFilter=el('ledger-file-filter')?.value||'';
   const postFilter=el('ledger-post-filter')?.value||'posted';
   const contactQ=(el('ledger-contact-filter')?.value||'').trim();
   const from=el('ldg-from')?.value||null;
   const to=el('ldg-to')?.value||null;
+  const accountCode=el('ledgerView')?.dataset.accountCode||null;
+
+  // ✅ رصيد افتتاحي حقيقي — يُعاد حسابه فقط عند تغيّر الحساب/تاريخ البداية/فلتر الترحيل
+  // (لا عند تغيير فلتر الصفقة أو العميل — تلك لا تؤثر على الافتتاحي)
+  const openingKey = `${accountCode}|${from}|${postFilter}`;
+  if (accountCode && ledgerState._openingKey !== openingKey) {
+    ledgerState._openingKey = openingKey;
+    const map = await _computeOpeningBalances(state.system, postFilter, from, accountCode);
+    window._ledgerOpening = map[accountCode] || 0;
+  }
+
   let list=window._ledgerAllEntries||[];
   const opening=window._ledgerOpening||0;
   if(fileFilter)  list=list.filter(e=>e.file_no===fileFilter);
