@@ -1180,9 +1180,13 @@ async function voidSaleInvoice(invNo, fileNo) {
       try {
         const sys = state.system;
         // جيب كل سطور الفاتورة
-        const saleItems = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
-        if (!saleItems?.length) { toast('لم يُعثر على بيانات الفاتورة', 'err'); return; }
-        if (saleItems.every(r => r.post_status === 'voided')) { toast('⚠️ هذه الفاتورة مُلغاة مسبقاً', 'warn'); return; }
+        const allItems = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
+        if (!allItems?.length) { toast('لم يُعثر على بيانات الفاتورة', 'err'); return; }
+        if (allItems.every(r => r.post_status === 'voided')) { toast('⚠️ هذه الفاتورة مُلغاة مسبقاً', 'warn'); return; }
+        // ✅ استثناء cancelled/voided من حساب مبلغ العكس — وإلا تُحسب سيارات
+        // أُزيلت من الفاتورة في تعديل سابق ضمن مبلغ الإلغاء فيُفرَط في عكس الإيراد/الذمم
+        const saleItems = allItems.filter(r => r.post_status !== 'cancelled' && r.post_status !== 'voided');
+        if (!saleItems.length) { toast('⚠️ لا توجد سيارات نشطة في هذه الفاتورة لعكسها', 'warn'); return; }
         const first = saleItems[0];
         const totalSale = saleItems.reduce((s,r)=>s+(+r.sale_price||0),0);
         // ✅ جلب قيد التكلفة (COGS) الأصلي المرتبط بهذه الفاتورة — لعكسه أيضاً
