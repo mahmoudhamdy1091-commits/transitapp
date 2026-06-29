@@ -135,7 +135,7 @@ async function loadTrialBalance() {
     const coaMap = {};
     (coaData||[]).forEach(a => { coaMap[a.account_code] = a; });
 
-    // تجميع القيود بالحساب
+    // تجميع القيود بالحساب (حركة الفترة المحددة فقط)
     const accMap = {};
     rows.forEach(r => {
       const code = r.account_code || 'XXX';
@@ -147,9 +147,62 @@ async function loadTrialBalance() {
       accMap[code].cr += (+r.cr_amount || 0);
     });
 
-    trialState.data = Object.values(accMap).filter(a => a.dr > 0 || a.cr > 0).sort((a,b) => (a.code||'').localeCompare(b.code||''));
+    // ✅ رصيد افتتاحي حقيقي — صافي كل القيود قبل بداية الفترة (لو حُدِّدت فترة)
+    const openingMap = await _computeOpeningBalances(sys, postF, from);
+
+    // ✅ عرض كل حسابات الشجرة (حتى بلا نشاط بالفترة) + أي كود ظهر بالقيود فقط وغير موجود بالشجرة
+    const allCodes = new Set([...Object.keys(coaMap), ...Object.keys(accMap), ...Object.keys(openingMap)]);
+    trialState.data = Array.from(allCodes).map(code => {
+      const coa = coaMap[code] || {};
+      const acc = accMap[code] || {};
+      return {
+        code,
+        name: coa.account_name || acc.name || code,
+        type: coa.account_type || acc.type || getAccountType(code),
+        dr: acc.dr || 0, cr: acc.cr || 0,
+        opening: openingMap[code] || 0,
+      };
+    }).sort((a,b) => (a.code||'').localeCompare(b.code||''));
     filterTrial(trialState.typeFilter || 'all');
   } catch(e) { el('trialTable').innerHTML = errHTML('خطأ: ' + e.message); console.error('loadTrialBalance:', e); }
+}
+
+// ════════════════════════════════════════════════════════════
+// ✅ صافي حركة كل حساب لكل القيود السابقة لتاريخ معيّن (رصيد افتتاحي حقيقي)
+// يُستخدم في ميزان المراجعة وفي دفتر الأستاذ (نفس منطق الحساب لكلاهما)
+// ════════════════════════════════════════════════════════════
+async function _computeOpeningBalances(sys, postF, beforeDate, accountCode = null) {
+  if (!beforeDate) return {};
+  const buildUrl = (sysParam) => {
+    let u = `${SB_URL}/rest/v1/journal_entries?${sysParam}`
+          + `&select=account_code,dr_amount,cr_amount&limit=49999`
+          + `&entry_date=lt.${encodeURIComponent(beforeDate)}`;
+    if (accountCode) u += `&account_code=eq.${encodeURIComponent(accountCode)}`;
+    if (postF === 'posted') u += `&post_status=eq.posted`;
+    if (postF === 'draft')  u += `&post_status=eq.draft`;
+    return u;
+  };
+  const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
+  try {
+    let res1 = await fetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: h });
+    if (res1.status === 401) {
+      const ok = await refreshAccessToken();
+      if (!ok) return {};
+      res1 = await fetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: h });
+    }
+    const rows1 = (res1.ok || res1.status === 206) ? await res1.json() : [];
+    let rows2 = [];
+    try {
+      const res2 = await fetch(buildUrl('system_type=is.null'), { headers: h });
+      if (res2.ok || res2.status === 206) rows2 = await res2.json();
+    } catch(_) {}
+    const map = {};
+    [...(rows1||[]), ...(rows2||[])].forEach(r => {
+      const code = r.account_code || 'XXX';
+      map[code] = (map[code]||0) + (+r.dr_amount||0) - (+r.cr_amount||0);
+    });
+    return map;
+  } catch(e) { console.warn('_computeOpeningBalances:', e.message); return {}; }
 }
 
 function filterTrial(type) {
@@ -163,6 +216,7 @@ function renderTrialBalance() {
   let list=trialState.data;
   if(trialState.typeFilter&&trialState.typeFilter!=='all') list=list.filter(c=>c.type===trialState.typeFilter);
   const sumDr=list.reduce((s,c)=>s+c.dr,0), sumCr=list.reduce((s,c)=>s+c.cr,0), diff=Math.abs(sumDr-sumCr);
+  const sumOpening=list.reduce((s,c)=>s+(c.opening||0),0);
   const TAL={asset:'أصول',liability:'التزامات',equity:'حقوق ملكية',revenue:'إيرادات',cogs:'تكلفة',expense:'مصروفات',other:'أخرى'};
   const TC={asset:'var(--blue)',liability:'var(--red)',equity:'var(--purple)',revenue:'var(--green)',cogs:'var(--accent)',expense:'var(--red)',other:'var(--text2)'};
   el('trialKpis').innerHTML=[
@@ -173,24 +227,28 @@ function renderTrialBalance() {
   ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c}">${v}</div></div>`).join('');
   if(!list.length){el('trialTable').innerHTML=emptyHTML('⚖️','لا توجد بيانات');return;}
   const rows=list.map(c=>{
-    const bal=c.dr-c.cr, bc=bal>0?'var(--green)':bal<0?'var(--red)':'var(--text2)';
+    const opening=c.opening||0, bal=opening+c.dr-c.cr, bc=bal>0?'var(--green)':bal<0?'var(--red)':'var(--text2)';
+    const oc=opening>0?'var(--green)':opening<0?'var(--red)':'var(--text2)';
     return `<tr style="cursor:pointer" onclick="showAccountLedger('${c.code}','${c.name.replace(/'/g,"\\'")}','${c.type}')"
       onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
       <td class="mono" style="color:var(--accent);font-weight:700">${c.code}</td>
       <td style="font-weight:600">${c.name}</td>
       <td><span style="font-size:13px;font-weight:700;padding:2px 8px;border-radius:10px;background:${TC[c.type]||'var(--card2)'}22;color:${TC[c.type]||'var(--text2)'}">${TAL[c.type]||c.type}</span></td>
+      <td class="mono" style="text-align:left;color:${oc}">${fmt(Math.abs(opening))}</td>
       <td class="mono text-green" style="text-align:left">${fmt(c.dr)}</td>
       <td class="mono text-red"   style="text-align:left">${fmt(c.cr)}</td>
       <td style="text-align:left"><span class="mono" style="font-weight:900;color:${bc}">${fmt(Math.abs(bal))}</span> <span style="font-size:12px;color:${bc}">${bal>0?'مدين':bal<0?'دائن':'صفر'}</span></td>
     </tr>`;
   }).join('');
-  el('trialTable').innerHTML=`<div style="font-size:13px;color:var(--text2);margin-bottom:6px">اضغط على أي حساب لعرض حركاته في دفتر الأستاذ</div>
+  el('trialTable').innerHTML=`<div style="font-size:13px;color:var(--text2);margin-bottom:6px">اضغط على أي حساب لعرض حركاته في دفتر الأستاذ${trialState.from?` · الافتتاحي = الصافي قبل ${trialState.from}`:''}</div>
     <table class="data-table">
     <thead><tr><th>الكود</th><th>اسم الحساب</th><th>النوع</th>
+    <th style="text-align:left">افتتاحي</th>
     <th style="color:var(--green);text-align:left">مدين</th><th style="color:var(--red);text-align:left">دائن</th><th style="text-align:left">الرصيد</th></tr></thead>
     <tbody>${rows}</tbody>
     <tfoot style="background:var(--card2)"><tr>
       <td colspan="3" style="padding:10px 16px;font-weight:700">الإجمالي (${list.length})</td>
+      <td class="mono" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(sumOpening)}</td>
       <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(sumDr)}</td>
       <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:left">${fmt(sumCr)}</td>
       <td style="padding:10px 16px;font-weight:900;color:${diff<0.01?'var(--green)':'var(--red)'};text-align:left">${diff<0.01?'✅ متوازن':fmt(diff)+' فرق'}</td>
