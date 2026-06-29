@@ -185,6 +185,21 @@ function _ctxOpex(btn) {
 function _ctxJE(btn) {
   const no = btn.dataset.no, isManual = btn.dataset.manual === '1';
   const items = [];
+  // ✅ عكس القيد اليدوي بقيد جديد منفصل — أول خيار، يظهر للقيود اليدوية فقط
+  // (reverseManualJE مبنية لتطابق ref_table='manual' فقط — راجع engine.js)
+  if (isManual) items.push({icon:'🔄', label:'عكس', action:()=>confirmAction(
+    'عكس قيد يدوي',
+    'سيتم إنشاء قيد جديد يعكس هذا القيد بالكامل — القيد الأصلي يبقى بلا تغيير. هل أنت متأكد؟',
+    async () => {
+      try {
+        await reverseManualJE(no);
+        toast('✅ تم عكس القيد بنجاح','ok');
+        invalidateCache();
+        if (typeof loadJEManager === 'function') await loadJEManager();
+      } catch(e) { toast('خطأ في عكس القيد: '+e.message,'err'); }
+    },
+    false
+  )});
   if (isManual) items.push({icon:'✏️', label:'تعديل', action:()=>openEditJEModal(no)});
   items.push('divider');
   items.push({icon:'🗑', label:'حذف القيد', danger:true, action:()=>confirmAction('حذف قيد محاسبي','⚠️ سيتم حذف هذا القيد نهائياً — هل أنت متأكد؟',()=>deleteJEEntry(no))});
