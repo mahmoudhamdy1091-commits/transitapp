@@ -710,6 +710,8 @@
               style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;min-width:180px">
               <option value="">كل العملاء / الموردين</option>
             </select>
+            <input type="text" id="ldg-filter-search" placeholder="🔍 بيان، رقم قيد، ملف..." oninput="renderLedgerTable()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:160px">
             <button class="btn btn-secondary btn-sm" onclick="exportLedgerExcel()" title="تصدير Excel">📊 Excel</button>
             <button class="btn btn-primary btn-sm" onclick="printAccountStatement()" title="كشف حساب PDF">🖨️ كشف حساب</button>
           </div>
@@ -757,6 +759,8 @@
               <button class="btn btn-sm journal-period-btn" id="ttype-revenue"   onclick="filterTrial('revenue')">إيرادات</button>
               <button class="btn btn-sm journal-period-btn" id="ttype-expense"   onclick="filterTrial('expense')">مصروفات</button>
             </div>
+            <input type="text" id="tb-filter-search" placeholder="🔍 كود، اسم حساب..." oninput="renderTrialBalance()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:160px">
           </div>
         </div>
         <div id="trialKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px"></div>

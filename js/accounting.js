@@ -215,6 +215,8 @@ function filterTrial(type) {
 function renderTrialBalance() {
   let list=trialState.data;
   if(trialState.typeFilter&&trialState.typeFilter!=='all') list=list.filter(c=>c.type===trialState.typeFilter);
+  const search=(el('tb-filter-search')?.value||'').trim().toLowerCase();
+  if(search) list=list.filter(c=>(c.code||'').toLowerCase().includes(search)||(c.name||'').toLowerCase().includes(search));
   const sumDr=list.reduce((s,c)=>s+c.dr,0), sumCr=list.reduce((s,c)=>s+c.cr,0), diff=Math.abs(sumDr-sumCr);
   const sumOpening=list.reduce((s,c)=>s+(c.opening||0),0);
   const TAL={asset:'أصول',liability:'التزامات',equity:'حقوق ملكية',revenue:'إيرادات',cogs:'تكلفة',expense:'مصروفات',other:'أخرى'};
@@ -462,6 +464,13 @@ async function renderLedgerTable() {
   if(from) list=list.filter(e=>e.date>=from);
   if(to)   list=list.filter(e=>e.date<=to);
   if(contactQ)    list=list.filter(e=>e.contact===contactQ);
+  const search=(el('ldg-filter-search')?.value||'').trim().toLowerCase();
+  if(search) list=list.filter(e=>
+    (e.desc||'').toLowerCase().includes(search) ||
+    (e.ref||'').toLowerCase().includes(search) ||
+    (e.file_no||'').toLowerCase().includes(search) ||
+    (e.contact||'').toLowerCase().includes(search)
+  );
   const totalDr=list.reduce((s,e)=>s+(+e.debit||0),0);
   const totalCr=list.reduce((s,e)=>s+(+e.credit||0),0);
   const finalBal=opening+totalDr-totalCr;
