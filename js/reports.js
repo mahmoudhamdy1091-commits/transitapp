@@ -761,7 +761,8 @@ async function confirmDeleteDealFromModal() {
         const tables = ['vehicles','payments','expenses','sales','collections','partner_payouts','partners_master','ledger_entries','journal_entries','opex_entries','account_ledger'];
         for (const t of tables) { try { await apiDelete(t, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) { console.warn(`deleteDeal table ${t}:`, e.message); } }
         await logAudit('DELETE','purchase_orders', fn, {file_no:fn}, null, 'حذف صفقة كاملة');
-        try { await apiDelete('audit_log', { file_no:`eq.${fn}` }); } catch(e) { console.warn('deleteDeal audit_log:', e.message); }
+        // ✅ لا تحذف audit_log أبداً — كان يمحو هنا أثر الحذف نفسه (وأي سجل تدقيق سابق
+        // لنفس الملف)، فلا يبقى أي دليل على من حذف الصفقة أو متى أو ماذا كانت تحتوي
         await apiDelete('purchase_orders', { system_type:`eq.${sys}`, file_no:`eq.${fn}` });
         closeModal('newFileModal');
         toast(`✅ تم حذف الصفقة ${fn}`,'ok');
