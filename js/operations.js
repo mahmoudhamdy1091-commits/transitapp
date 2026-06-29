@@ -1482,12 +1482,42 @@ async function openEditSaleApproval(saleId, fileNo, invNo) {
 
           // ── 3. تحديث القيد في مكانه ──
           // ✅ يشمل الآن تغيّر التاريخ فقط (قيد البيع بلا ref_id — يُطابَق بالمبلغ القديم)
+          // ✅ وأيضاً تغيّر تركيبة السيارات حتى لو الإجمالي المالي ثابت — لإعادة حساب COGS
           const oldDate = oldSales?.[0]?.sale_date || null;
           const dateChangedSale = !!newDate && newDate !== oldDate;
-          if (wasPosted && (Math.abs(totalOld - totalNew) > 0.001 || newCustomer !== oldCustomer || dateChangedSale)) {
+          const vinSetChanged   = removedSales.length > 0 || addedRows.length > 0;
+          if (wasPosted && (Math.abs(totalOld - totalNew) > 0.001 || newCustomer !== oldCustomer || dateChangedSale || vinSetChanged)) {
+            // ✅ تكلفة البضاعة القديمة الفعلية من القيد الحالي (نفس طريقة voidSaleInvoice)
+            let oldCost = 0;
+            try {
+              const cogsLines = await apiGetAll('journal_entries', {
+                select:'dr_amount,description', system_type:`eq.${sys}`,
+                ref_table:`eq.sales`, file_no:`eq.${fileNo}`, account_code:`eq.5100`, post_status:`eq.posted`,
+              });
+              oldCost = (cogsLines||[]).filter(r => (r.description||'').includes(invNo))
+                .reduce((s,r)=>s+(+r.dr_amount||0), 0);
+            } catch(e) { console.warn('openEditSaleApproval oldCost lookup:', e.message); }
+            // ✅ تكلفة البضاعة الجديدة محسوبة على السيارات النشطة الفعلية بعد التعديل —
+            // نستثني مساهمة هذه الفاتورة نفسها (قيدها القديم لا يزال posted حتى لحظة updateJEInPlace
+            // التالية) من "المُباع سابقاً" و"التكلفة المُستهلكة سابقاً"، حتى لا تُحسب مرتين
+            let newCost = 0;
+            try {
+              const _isPart = v => (v||'').startsWith('PART-');
+              const [otherSales, allCogsLines] = await Promise.all([
+                apiGetAll('sales', { select:'vin,inv_no', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
+                apiGetAll('journal_entries', { select:'dr_amount,description', system_type:`eq.${sys}`, ref_table:'eq.sales', file_no:`eq.${fileNo}`, account_code:'eq.5100', post_status:'eq.posted' }),
+              ]);
+              const otherAlreadySold = (otherSales||[]).filter(s => s.inv_no !== invNo && !_isPart(s.vin)).length;
+              const otherAlreadyCOGS = (allCogsLines||[]).filter(r => !(r.description||'').includes(invNo))
+                .reduce((s,r)=>s+(+r.dr_amount||0), 0);
+              newCost = await calcCOGS(sys, fileNo, checkedRows.length, {
+                soldVins: [...checkedVins], alreadySold: otherAlreadySold, alreadyCOGS: otherAlreadyCOGS,
+              });
+            } catch(e) { console.warn('openEditSaleApproval newCost calc:', e.message); }
             await updateJEInPlace({
               sys, fileNo, refTable:'sales', refId: oldSales?.[0]?.id||null,
               oldAmount: totalOld, newAmount: totalNew,
+              oldCost, newCost,
               contactPatch: newCustomer !== oldCustomer ? newCustomer : null,
               newDate: dateChangedSale ? newDate : null,   // ✅ مزامنة تاريخ قيد البيع
             });

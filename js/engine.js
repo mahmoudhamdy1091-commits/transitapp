@@ -73,12 +73,16 @@ function updateAdminPostToggleUI() {
 // IN-PLACE JE UPDATE HELPER
 // يُحدِّث أسطر القيد الأصلي مباشرة دون إنشاء قيد جديد
 // الاستخدام: updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch })
+// oldCost/newCost (اختياري): لقيود متعددة المبالغ (مثل البيع: إيراد + تكلفة) — يُحدَّث
+// كل زوج بمبلغه الخاص فقط (مطابقة بالقيمة الفعلية، لا "أي سطر موجب") حتى لا يُكتب
+// مبلغ الإيراد فوق سطر التكلفة بالخطأ
 // ════════════════════════════════════════════════════════════════
-async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null, newDate = null }) {
-  const amountChanged  = Math.abs((+oldAmount||0) - (+newAmount||0)) > 0.001;
+async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null, newDate = null, oldCost = null, newCost = null }) {
+  const amountChanged  = oldAmount != null && Math.abs((+oldAmount||0) - (+newAmount||0)) > 0.001;
+  const costChanged    = oldCost != null && newCost != null && Math.abs((+oldCost||0) - (+newCost||0)) > 0.001;
   const contactChanged = contactPatch != null;
   const dateChanged    = newDate != null && newDate !== '';   // ✅ مزامنة تاريخ القيد مع تاريخ العملية
-  if (!amountChanged && !contactChanged && !dateChanged) return;
+  if (!amountChanged && !costChanged && !contactChanged && !dateChanged) return;
 
   try {
     let entryNo = null;
@@ -95,7 +99,8 @@ async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmo
 
     // مسار احتياطي: بحث بالمبلغ ضمن آخر 40 قيد لهذا الملف — فقط لو ref_id غير موجود/غير مطابق
     // ✅ يعمل أيضاً عند تغيّر التاريخ فقط (قيود الشراء/البيع بلا ref_id) — يطابق بالمبلغ القديم
-    if (!entryNo && (amountChanged || dateChanged)) {
+    // ✅ وأيضاً عند تغيّر التكلفة فقط (سيارات استُبدلت بنفس الإجمالي المالي) — نطابق عبر oldAmount (الإيراد) دائماً
+    if (!entryNo && (amountChanged || dateChanged || costChanged)) {
       const filter = {
         select: 'entry_no,dr_amount,cr_amount',
         system_type: `eq.${sys}`,
@@ -124,9 +129,16 @@ async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmo
 
     for (const line of (allLines||[])) {
       const patch = {};
+      const dr = +line.dr_amount||0, cr = +line.cr_amount||0;
+      // ✅ مطابقة بالقيمة الفعلية لكل سطر — لا "أي سطر موجب" — حتى لا يُكتب مبلغ
+      // الإيراد فوق سطر التكلفة (أو العكس) في قيود متعددة المبالغ مثل البيع
       if (amountChanged) {
-        if ((+line.dr_amount||0) > 0) patch.dr_amount = +newAmount;
-        if ((+line.cr_amount||0) > 0) patch.cr_amount = +newAmount;
+        if (Math.abs(dr - (+oldAmount||0)) < 0.001 && dr > 0) patch.dr_amount = +newAmount;
+        if (Math.abs(cr - (+oldAmount||0)) < 0.001 && cr > 0) patch.cr_amount = +newAmount;
+      }
+      if (costChanged) {
+        if (Math.abs(dr - (+oldCost||0)) < 0.001 && dr > 0) patch.dr_amount = +newCost;
+        if (Math.abs(cr - (+oldCost||0)) < 0.001 && cr > 0) patch.cr_amount = +newCost;
       }
       if (contactChanged && contactPatch && (line.contact_name || (+line.cr_amount||0) > 0)) {
         patch.contact_name = contactPatch;
