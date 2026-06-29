@@ -1022,6 +1022,17 @@ async function loadApprovalQueue() {
     });
     const editSales = Object.values(editSalesMap);
 
+    // ✅ فواتير بيع جديدة (draft) — نجمّع بـ inv_no حتى تكون فاتورة واحدة = بطاقة اعتماد واحدة
+    // (كانت كل سيارة في الفاتورة تظهر كبطاقة مستقلة تتطلب ضغطة "موافقة" خاصة بها)
+    const salesMap = {};
+    (sales||[]).forEach(r => {
+      const k = r.inv_no || r.id;
+      if (!salesMap[k]) salesMap[k] = { ...r, _totalSale: 0, _carCount: 0 };
+      salesMap[k]._totalSale += +r.sale_price||0;
+      salesMap[k]._carCount += 1;
+    });
+    const groupedSales = Object.values(salesMap);
+
     // دمج كل البنود مع نوعها
     // جيب المستخدمين من audit_log
     const allIds = [...(purchases||[]),...(sales||[]),...(expenses||[]),...(collections||[]),...(payments||[]),...(payouts||[])].map(r=>r.id).filter(Boolean);
@@ -1071,7 +1082,7 @@ async function loadApprovalQueue() {
 
     approvalState.all = [
       ...(purchases||[]).map(r    => ({...r, _type:'purchase',   _amount:+r.total_purchase||0, _date:r.po_date,    _desc:`${r.file_no||'—'} · ${r.supplier||'—'} · ${r.vehicle_count||0} سيارة`, _file:r.file_no })),
-      ...(sales||[]).map(r        => ({...r, _type:'sale',       _amount:+r.sale_price||0,     _date:r.sale_date,  _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.vin||'—'}`,               _file:r.file_no })),
+      ...(groupedSales||[]).map(r => ({...r, _type:'sale',       _amount:r._totalSale||+r.sale_price||0, _date:r.sale_date, _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r._carCount||1} سيارة · ${fmt(r._totalSale||r.sale_price)}`, _file:r.file_no })),
       ...(expenses||[]).map(r     => ({...r, _type:'expense',    _amount:+r.amount||0,         _date:r.exp_date||r.expense_date, _desc:`${r.description||'—'} · ${r.exp_type||'—'} · ${r.file_no||'—'}`, _file:r.file_no })),
       ...(collections||[]).map(r  => ({...r, _type:'collection', _amount:+r.amount||0,         _date:r.paid_date||r.due_date,    _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.file_no||'—'}`,      _file:r.file_no })),
       ...(payments||[]).map(r     => ({...r, _type:'payment',    _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.payer||'—'} · ${r.file_no||'—'} · ${r.pay_method||'—'}`,          _file:r.file_no })),
@@ -1623,12 +1634,20 @@ async function approveItem(type, id) {
 
     // ② اكمل DB في الخلفية
     (async () => { try {
+    // ✅ فاتورة بيع = كل سيارات نفس inv_no دفعة واحدة، لا سطر واحد فقط — موافقة واحدة للفاتورة كاملة
+    const isSaleInvoice = type === 'sale' && approvedItem?.inv_no && approvedItem?.file_no;
+    const saleInvoiceFilter = isSaleInvoice
+      ? { system_type:`eq.${state.system}`, file_no:`eq.${approvedItem.file_no}`, inv_no:`eq.${approvedItem.inv_no}` }
+      : null;
     // ✅ فحص idempotency: لو السجل أُعتمد فعلاً (لم يعد draft) — توقف بدون تكرار القيود
-    const patched = await apiPatch(cfg.table, { id:`eq.${id}`, post_status:`eq.draft` }, { post_status:'posted' });
+    const patched = isSaleInvoice
+      ? await apiPatch(cfg.table, { ...saleInvoiceFilter, post_status:`eq.draft` }, { post_status:'posted' })
+      : await apiPatch(cfg.table, { id:`eq.${id}`, post_status:`eq.draft` }, { post_status:'posted' });
     if (!patched?.length) return;
-    // ✅ لو فشل إنشاء القيد بعد الموافقة — رجّع السجل لـ draft ليظهر في قائمة الاعتمادات من جديد
+    // ✅ لو فشل إنشاء القيد بعد الموافقة — رجّع السجل (أو الفاتورة كاملة) لـ draft ليظهر في قائمة الاعتمادات من جديد
     const revertToDraft = async () => {
-      await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'draft' });
+      if (isSaleInvoice) await apiPatch(cfg.table, saleInvoiceFilter, { post_status:'draft' });
+      else await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'draft' });
       toast(`⚠️ فشلت الموافقة على ${cfg.label} — أُعيد لقائمة الاعتمادات`,'warn');
     };
     // لو شراء — نولّد قيد محاسبي
@@ -2106,7 +2125,10 @@ async function approveAll() {
       if (!cfg) { failCount++; resultLines.push(`❌ نوع غير معروف: ${_escHtml(r._type)}`); continue; }
       try {
         await _ensureApprovalJE(r, sys);
-        const patched = await apiPatch(cfg.table, { id:`eq.${r.id}`, post_status:`eq.draft` }, { post_status:'posted' });
+        // ✅ فاتورة بيع = كل سيارات نفس inv_no دفعة واحدة، لا سطر واحد فقط
+        const patched = (r._type === 'sale' && r.inv_no && r.file_no)
+          ? await apiPatch(cfg.table, { system_type:`eq.${sys}`, file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}`, post_status:`eq.draft` }, { post_status:'posted' })
+          : await apiPatch(cfg.table, { id:`eq.${r.id}`, post_status:`eq.draft` }, { post_status:'posted' });
         if (patched?.length) {
           okCount++;
           // ✅ سجّل "من وافق" (موافقة جماعية)
