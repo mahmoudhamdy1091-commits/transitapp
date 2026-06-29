@@ -93,9 +93,12 @@ async function _doLoadCache() {
     if (!r.file_no) return;
     jeMap[r.file_no] = jeMap[r.file_no] || { sales:0, cogs:0, exp:0 };
     const acc = r.account_code || '';
-    if (acc.startsWith('4') && (+r.cr_amount||0) > 0) jeMap[r.file_no].sales += +r.cr_amount;
-    if (acc.startsWith('5') && (+r.dr_amount||0) > 0) jeMap[r.file_no].cogs  += +r.dr_amount;
-    if (acc.startsWith('6') && (+r.dr_amount||0) > 0) jeMap[r.file_no].exp   += +r.dr_amount;
+    const dr = +r.dr_amount||0, cr = +r.cr_amount||0;
+    // ✅ خصم الجانب العكسي بدل جمع جانب واحد فقط — وإلا يبقى قيد إلغاء/عكس
+    // (يدين 4xxx أو يُقيِّد 5xxx/6xxx) بلا أثر على هذا الإجمالي، فيظل المبلغ الأصلي محسوباً كاملاً
+    if (acc.startsWith('4')) jeMap[r.file_no].sales += (cr - dr);
+    if (acc.startsWith('5')) jeMap[r.file_no].cogs  += (dr - cr);
+    if (acc.startsWith('6')) jeMap[r.file_no].exp   += (dr - cr);
   });
 
   state.allDealsEnriched = state.allDeals.map(d => {
