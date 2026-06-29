@@ -1650,13 +1650,11 @@ async function approveItem(type, id) {
       else await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'draft' });
       toast(`⚠️ فشلت الموافقة على ${cfg.label} — أُعيد لقائمة الاعتمادات`,'warn');
     };
-    // لو شراء — نولّد قيد محاسبي
-    if (type === 'purchase') {
-      const item = approvedItem;
-      if (item && item.file_no) {
-        try {
-          await je_purchase({ sys:state.system, date:item.po_date||today(), amount:+item.total_purchase||0, fileNo:item.file_no, supplier:item.supplier||'' });
-        } catch(e) { await revertToDraft(); throw e; }
+    // ✅ شراء/دفعة/مصروف/صرف شريك — دالة مشتركة مع _ensureApprovalJE (كانت 5 نسخ منفصلة)
+    if (type === 'purchase' || type === 'payment' || type === 'expense' || type === 'payout') {
+      if (approvedItem) {
+        try { await _createApprovalJE(type, approvedItem, state.system); }
+        catch(e) { await revertToDraft(); throw e; }
       }
     }
     if (type === 'sale') {
@@ -1674,38 +1672,11 @@ async function approveItem(type, id) {
       }
     }
     if (type === 'collection') {
-      const item = approvedItem;
-      // القيد يُولَّد فقط إذا كان مدفوعاً فعلاً (paid_date موجود)
-      if (item && item.paid_date) {
-        try {
-          await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
-        } catch(e) { await revertToDraft(); throw e; }
-      }
-      // FIX: إذا لا يوجد paid_date → التحصيل معلق — يظهر في قائمة "مستحق" ليُسجَّل الدفع لاحقاً
-      // لا قيد يُنشأ الآن لأن المبلغ لم يُقبض بعد
-    }
-    if (type === 'payment') {
-      const item = approvedItem;
-      if (item) {
-        try {
-          await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
-        } catch(e) { await revertToDraft(); throw e; }
-      }
-    }
-    if (type === 'expense') {
-      const item = approvedItem;
-      if (item) {
-        try {
-          await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'تحويل بنكي' });
-        } catch(e) { await revertToDraft(); throw e; }
-      }
-    }
-    if (type === 'payout') {
-      const item = approvedItem;
-      if (item) {
-        try {
-          await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no,refId:item.id||null, partner:item.partner||'', method:item.pay_method||'تحويل بنكي' });
-        } catch(e) { await revertToDraft(); throw e; }
+      // ✅ القيد يُولَّد فقط إذا كان مدفوعاً فعلاً (paid_date موجود) — دالة مشتركة مع _ensureApprovalJE
+      // لو لا يوجد paid_date → التحصيل معلق، يظهر في قائمة "مستحق" ليُسجَّل الدفع لاحقاً، لا قيد الآن
+      if (approvedItem) {
+        try { await _createApprovalJE(type, approvedItem, state.system); }
+        catch(e) { await revertToDraft(); throw e; }
       }
     }
     // ✅ سجّل "من وافق" على المسودة (كان غير مسجَّل — فجوة تتبّع)
@@ -1906,34 +1877,48 @@ async function _ensureSaleJE(sys, fileNo, invNo, dateFallback, customerFallback)
 }
 
 // ════════════════════════════════════════════════════════════
+// ✅ إنشاء قيد الموافقة لسجل عادي (شراء/دفعة/مصروف/تحصيل/صرف شريك) — بأمان (idempotent)
+// دالة واحدة من approveItem (فردي) و_ensureApprovalJE (جماعي عبر approveAll) — كانتا
+// 5 نسخ منفصلة لكل نوع، تفرَّقت حتى في القيمة الافتراضية لطريقة الدفع (مصروف/صرف شريك
+// كانا 'نقد' في نسخة و'تحويل بنكي' في الأخرى). فحص ref_id قبل الإنشاء يمنع التكرار
+// حتى لو استُدعيت الدالة مرتين لنفس السجل.
+// ════════════════════════════════════════════════════════════
+async function _createApprovalJE(type, record, sys) {
+  const refMap = { collection:'collections', payment:'payments', expense:'expenses', payout:'partner_payouts' };
+
+  if (refMap[type] && record.id != null) {
+    const ex = await apiGet('journal_entries', {
+      select:'entry_no', system_type:`eq.${sys}`,
+      ref_table:`eq.${refMap[type]}`, ref_id:`eq.${record.id}`, post_status:'eq.posted', limit:1,
+    });
+    if (ex?.length) return; // القيد موجود بالفعل
+  }
+
+  if (type === 'purchase') {
+    if (!record.file_no) return;
+    const ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${sys}`, ref_table:'eq.purchase_orders', file_no:`eq.${record.file_no}`, post_status:'eq.posted', limit:1 });
+    if (!ex?.length) await je_purchase({ sys, date:record.po_date||today(), amount:+record.total_purchase||0, fileNo:record.file_no, supplier:record.supplier||'' });
+  } else if (type === 'payment') {
+    await je_payment({ sys, date:record.pay_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, supplierName:record.supplier||'', payerName:record.payer||'', method:record.pay_method||'تحويل بنكي' });
+  } else if (type === 'expense') {
+    await je_expense({ sys, date:record.exp_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, desc:record.description||'مصروف', expType:record.exp_type||'أخرى', method:record.pay_method||'تحويل بنكي' });
+  } else if (type === 'payout') {
+    await je_payout({ sys, date:record.pay_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, partner:record.partner||'', method:record.pay_method||'تحويل بنكي' });
+  } else if (type === 'collection') {
+    // القيد يُولَّد فقط إذا كان مدفوعاً فعلاً (paid_date موجود) — لو مستحق فقط، لا قيد الآن
+    if (record.paid_date) await je_collection({ sys, date:record.paid_date, amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, customer:record.customer||'', invNo:record.inv_no||'', method:record.pay_method||'تحويل بنكي' });
+  }
+}
+
+// ════════════════════════════════════════════════════════════
 // ✅ إنشاء قيد الموافقة بأمان (idempotent) — يُنشئ القيد فقط لو غير موجود.
 // يُستخدم في approveAll بترتيب آمن: (قيد ثم ترحيل) حتى لا يبقى سجل posted بلا قيد
 // لو انقطعت العملية. فحص-القيد-الموجود يمنع تكرار القيد عند إعادة المحاولة.
 // ════════════════════════════════════════════════════════════
 async function _ensureApprovalJE(r, sys) {
   const t = r._type;
-  const refMap = { collection:'collections', payment:'payments', expense:'expenses', payout:'partner_payouts' };
-
-  // الأنواع ذات ref_id: افحص وجود القيد بالـ ref_id لتفادي التكرار
-  if (refMap[t] && r.id != null) {
-    const ex = await apiGet('journal_entries', {
-      select:'entry_no', system_type:`eq.${sys}`,
-      ref_table:`eq.${refMap[t]}`, ref_id:`eq.${r.id}`, post_status:'eq.posted', limit:1,
-    });
-    if (ex?.length) return; // القيد موجود بالفعل
-  }
-
-  if (t === 'payment') {
-    await je_payment({ sys, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no, refId:r.id||null, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'تحويل بنكي' });
-  } else if (t === 'expense') {
-    await je_expense({ sys, date:r.exp_date||today(), amount:+r.amount||0, fileNo:r.file_no, refId:r.id||null, desc:r.description||'مصروف', expType:r.exp_type||'أخرى', method:r.pay_method||'نقد' });
-  } else if (t === 'payout') {
-    await je_payout({ sys, date:r.pay_date||today(), amount:+r.amount||0, fileNo:r.file_no, refId:r.id||null, partner:r.partner||'', method:r.pay_method||'نقد' });
-  } else if (t === 'collection') {
-    if (r.paid_date) await je_collection({ sys, date:r.paid_date, amount:+r.amount||0, fileNo:r.file_no, refId:r.id||null, customer:r.customer||'', invNo:r.inv_no||'', method:r.pay_method||'تحويل بنكي' });
-  } else if (t === 'purchase' && r.file_no) {
-    const ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${sys}`, ref_table:'eq.purchase_orders', file_no:`eq.${r.file_no}`, post_status:'eq.posted', limit:1 });
-    if (!ex?.length) await je_purchase({ sys, date:r.po_date||today(), amount:+r.total_purchase||0, fileNo:r.file_no, supplier:r.supplier||'' });
+  if (t === 'payment' || t === 'expense' || t === 'payout' || t === 'collection' || t === 'purchase') {
+    await _createApprovalJE(t, r, sys);
   } else if (t === 'sale' && r.inv_no && r.file_no) {
     // ✅ نفس القفل المشترك المستخدم في approveItem — يمنع تكرار القيد لو نفس الفاتورة
     // قيد المعالجة من approveAll ومن نقرة فردية متزامنة في نفس اللحظة
