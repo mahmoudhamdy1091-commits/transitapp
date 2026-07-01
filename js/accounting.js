@@ -2712,6 +2712,15 @@ async function loadNewLedger() {
     window._nlEntriesByAccount = entriesByAccount;
     window._nlOpeningMap       = openingMap;
 
+    // subtitle
+    const sub = el('nl-subtitle');
+    if (sub) {
+      const pLabel = { all:'كل الفترات', year:'هذا العام', month:'هذا الشهر', lastmonth:'الشهر الماضي', custom:'فترة مخصصة' };
+      const fLabel = { posted:'مرحّل فقط', all:'كل الحركات', draft:'مسودة فقط' };
+      const dateRange = (from || to) ? ` · ${from||''}${from&&to?' ← ':''} ${to||''}` : '';
+      sub.textContent = `نظام ${sys} · ${pLabel[nlState.period]||nlState.period}${dateRange} · ${fLabel[postF]||postF}`;
+    }
+
     renderNewLedger();
   } catch(e) {
     tree.innerHTML = errHTML('خطأ: ' + e.message);
@@ -2775,17 +2784,40 @@ function renderNewLedger() {
     const gBal = gOpening + gDr - gCr;
     const gBC  = gBal > 0 ? 'var(--green)' : gBal < 0 ? 'var(--red)' : 'var(--text2)';
 
+    // شارة نوع الحساب
+    const TYPE_BADGE = {
+      asset:     { label:'أصول',      color:'#2196F3' },
+      liability: { label:'التزامات',  color:'#FF5722' },
+      equity:    { label:'ملكية',     color:'#9C27B0' },
+      revenue:   { label:'إيرادات',   color:'#4CAF50' },
+      expense:   { label:'مصاريف',    color:'#FF9800' },
+    };
+    const tb = TYPE_BADGE[root.account_type] || { label: root.account_type||'', color:'var(--text2)' };
+    const badge = tb.label
+      ? `<span class="nl-type-badge" style="background:${tb.color}22;color:${tb.color}">${tb.label}</span>`
+      : '';
+
     html += `
     <div class="nl-group">
       <div class="nl-group-hdr" onclick="toggleLedgerGroup('${rCode}')">
         <span class="nl-arrow" id="nl-arrow-${rCode}">${isExpanded ? '▼' : '▶'}</span>
-        <span class="mono" style="color:var(--accent);font-weight:700">${rCode}</span>
-        <span style="flex:1">${root.account_name}</span>
-        <span class="mono" style="color:var(--green);font-size:12px">${fmt(gDr)}</span>
-        <span style="color:var(--text2);font-size:11px;margin:0 3px">/</span>
-        <span class="mono" style="color:var(--red);font-size:12px">${fmt(gCr)}</span>
-        <span style="color:var(--text2);font-size:11px;margin:0 6px">·</span>
-        <span class="mono" style="font-weight:900;color:${gBC};font-size:12px">${fmt(Math.abs(gBal))} ${gBal>0?'مدين':gBal<0?'دائن':''}</span>
+        <span class="mono" style="color:var(--accent);font-weight:700;font-size:13px;flex-shrink:0">${rCode}</span>
+        <span style="flex:1;font-size:14px;font-weight:800">${root.account_name}</span>
+        ${badge}
+        <div class="nl-nums">
+          <div class="nl-num-cell">
+            <span class="nl-num-label">مدين</span>
+            <span class="nl-num-val" style="color:var(--green)">${fmt(gDr)}</span>
+          </div>
+          <div class="nl-num-cell">
+            <span class="nl-num-label">دائن</span>
+            <span class="nl-num-val" style="color:var(--red)">${fmt(gCr)}</span>
+          </div>
+          <div class="nl-num-cell nl-num-cell-wide">
+            <span class="nl-num-label">الرصيد</span>
+            <span class="nl-num-val" style="color:${gBC}">${fmt(Math.abs(gBal))} <small style="font-size:10px;font-weight:400">${gBal>0?'مدين':gBal<0?'دائن':''}</small></span>
+          </div>
+        </div>
       </div>
       <div class="nl-group-body" id="nl-body-${rCode}" style="display:${isExpanded?'block':'none'}">
         ${leaves.map(lc => _renderNlLeaf(lc, coaMap, entriesByAccount, openingMap, search)).join('')}
@@ -2853,17 +2885,23 @@ function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search) {
   const leafHdr = `
   <div class="nl-leaf-hdr" onclick="toggleLedgerLeaf('${code}')">
     <span class="nl-arrow" id="nl-leaf-arrow-${code}">${isExp?'▼':'▶'}</span>
-    <span class="mono" style="color:var(--accent);font-weight:700;font-size:12px">${code}</span>
+    <span class="mono" style="color:var(--accent);font-weight:700;font-size:12px;flex-shrink:0">${code}</span>
     <span style="font-weight:700;flex:1;font-size:13px">${acc.account_name||code}</span>
-    <span style="font-size:11px;color:var(--text2)">مدين:</span>
-    <span class="mono" style="color:var(--green);font-size:12px;margin-left:2px">${fmt(totalDr)}</span>
-    <span style="color:var(--text2);font-size:11px;margin:0 4px">/</span>
-    <span style="font-size:11px;color:var(--text2)">دائن:</span>
-    <span class="mono" style="color:var(--red);font-size:12px;margin-left:2px">${fmt(totalCr)}</span>
-    <span style="color:var(--text2);font-size:11px;margin:0 6px">·</span>
-    <span style="font-size:11px;color:var(--text2)">رصيد:</span>
-    <span class="mono" style="font-weight:900;color:${balC};font-size:12px;margin-left:2px">${fmt(Math.abs(endBal))} ${endBal>0?'مدين':endBal<0?'دائن':''}</span>
-    <span style="font-size:11px;color:var(--text2);margin-right:8px">(${allEntries.length} حركة)</span>
+    <span style="font-size:11px;color:var(--text2);flex-shrink:0;margin-left:4px">(${allEntries.length} حركة)</span>
+    <div class="nl-nums">
+      <div class="nl-num-cell">
+        <span class="nl-num-label">مدين</span>
+        <span class="nl-num-val" style="color:var(--green)">${fmt(totalDr)}</span>
+      </div>
+      <div class="nl-num-cell">
+        <span class="nl-num-label">دائن</span>
+        <span class="nl-num-val" style="color:var(--red)">${fmt(totalCr)}</span>
+      </div>
+      <div class="nl-num-cell nl-num-cell-wide">
+        <span class="nl-num-label">الرصيد</span>
+        <span class="nl-num-val" style="color:${balC}">${fmt(Math.abs(endBal))} <small style="font-size:10px;font-weight:400">${endBal>0?'مدين':endBal<0?'دائن':''}</small></span>
+      </div>
+    </div>
   </div>`;
 
   let bodyHtml = '';
@@ -2902,12 +2940,21 @@ function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search) {
         <div class="nl-contact-hdr" onclick="toggleLedgerContact('${cKey}')">
           <span class="nl-arrow" id="nl-contact-arrow-${cKey}">${cExp?'▼':'▶'}</span>
           <span style="font-weight:700;flex:1;font-size:13px">👤 ${contact}</span>
-          <span class="mono" style="color:var(--green);font-size:12px">${fmt(cDr)}</span>
-          <span style="color:var(--text2);font-size:11px;margin:0 3px">/</span>
-          <span class="mono" style="color:var(--red);font-size:12px">${fmt(cCr)}</span>
-          <span style="color:var(--text2);font-size:11px;margin:0 6px">·</span>
-          <span class="mono" style="font-weight:900;color:${cBC};font-size:12px">${fmt(Math.abs(cBal))} ${cBal>0?'مدين':cBal<0?'دائن':''}</span>
-          <span style="font-size:11px;color:var(--text2);margin-right:8px">(${entries.length})</span>
+          <span style="font-size:11px;color:var(--text2);flex-shrink:0;margin-left:4px">(${entries.length} حركة)</span>
+          <div class="nl-nums">
+            <div class="nl-num-cell">
+              <span class="nl-num-label">مدين</span>
+              <span class="nl-num-val" style="color:var(--green)">${fmt(cDr)}</span>
+            </div>
+            <div class="nl-num-cell">
+              <span class="nl-num-label">دائن</span>
+              <span class="nl-num-val" style="color:var(--red)">${fmt(cCr)}</span>
+            </div>
+            <div class="nl-num-cell nl-num-cell-wide">
+              <span class="nl-num-label">الرصيد</span>
+              <span class="nl-num-val" style="color:${cBC}">${fmt(Math.abs(cBal))} <small style="font-size:10px;font-weight:400">${cBal>0?'مدين':cBal<0?'دائن':''}</small></span>
+            </div>
+          </div>
         </div>
         <div class="nl-contact-body" id="nl-contact-body-${cKey}" style="display:${cExp?'block':'none'}">
           <div class="data-table-wrap">

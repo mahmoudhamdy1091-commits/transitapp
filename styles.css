@@ -1449,76 +1449,99 @@ body.role-employee #approve-all-btn {
 /* ════════════════════════════════════════════
    دفتر الأستاذ الهرمي (New General Ledger)
    ════════════════════════════════════════════ */
-.nl-group { margin-bottom: 6px; }
+
+/* شريط الفلاتر */
+.nl-filter-bar {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 14px;
+}
+.nl-input {
+  background: var(--card2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 5px 9px;
+  color: var(--text); font-family: 'Cairo', sans-serif; font-size: 12px;
+}
+
+/* أعمدة الأرقام الثلاثة (مشتركة بين المستويات الثلاثة) */
+.nl-nums {
+  display: flex; flex-shrink: 0; gap: 0;
+  border-right: 1px solid var(--border); margin-right: 8px;
+}
+.nl-num-cell {
+  display: flex; flex-direction: column; align-items: flex-start;
+  width: 110px; padding: 2px 10px;
+  border-left: 1px solid var(--border);
+}
+.nl-num-label { font-size: 10px; color: var(--text2); font-weight: 400; line-height: 1.2; }
+.nl-num-val   { font-size: 12px; font-weight: 800; font-family: monospace; line-height: 1.4; }
+.nl-num-cell-wide { width: 140px; }
+
+/* ── المجموعة الجذرية (Level 1) ── */
+.nl-group { margin-bottom: 10px; border-radius: var(--radius-sm); overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
 
 .nl-group-hdr {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 700;
-  user-select: none;
-  transition: background 0.15s;
+  cursor: pointer; font-size: 14px; font-weight: 800;
+  user-select: none; transition: background 0.15s;
+  border-right: 4px solid var(--accent);
 }
-.nl-group-hdr:hover { background: var(--card2); }
+.nl-group-hdr:hover { background: color-mix(in srgb, var(--accent) 5%, var(--card)); }
 
 .nl-group-body {
-  margin-right: 20px;
-  margin-top: 4px;
-  border-right: 2px solid var(--border);
-  padding-right: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border); border-top: none;
+  padding: 8px 10px 10px 10px;
+  display: flex; flex-direction: column; gap: 4px;
 }
 
-.nl-leaf { margin-bottom: 4px; }
+/* ── الحساب الورقي (Level 2) ── */
+.nl-leaf { border-radius: var(--radius-sm); overflow: hidden; }
 
 .nl-leaf-hdr {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 14px;
   background: var(--card2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 13px;
-  user-select: none;
-  transition: background 0.15s;
+  cursor: pointer; font-size: 13px;
+  user-select: none; transition: background 0.15s;
+  border-right: 3px solid color-mix(in srgb, var(--accent) 60%, transparent);
 }
-.nl-leaf-hdr:hover { background: var(--accent-dim); }
+.nl-leaf-hdr:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card2)); }
 
 .nl-leaf-body {
-  margin-right: 16px;
-  margin-top: 2px;
-  border-right: 2px solid var(--accent);
-  padding-right: 8px;
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
   overflow-x: auto;
 }
 
-.nl-arrow {
-  font-size: 11px;
-  color: var(--text2);
-  min-width: 12px;
-  transition: transform 0.15s;
-}
-
-.nl-entry-row { cursor: default; }
-.nl-entry-row:hover td { background: var(--accent-dim) !important; }
-
-.nl-menu-btn { cursor: pointer; }
-.nl-menu-btn:hover { background: var(--card) !important; }
-
-/* ── مستوى الجهة (عميل / مورد / شريك) داخل دفتر الأستاذ ── */
+/* ── الجهة: عميل / مورد / شريك (Level 3) ── */
 .nl-contact { border-bottom: 1px solid var(--border); }
 .nl-contact:last-child { border-bottom: none; }
+
 .nl-contact-hdr {
   display: flex; align-items: center; gap: 8px;
-  padding: 8px 24px; cursor: pointer; user-select: none;
-  background: var(--card2); transition: background 0.15s;
+  padding: 8px 14px 8px 28px;
+  background: var(--bg);
+  cursor: pointer; user-select: none; transition: background 0.15s;
+  border-right: 3px solid var(--border);
 }
-.nl-contact-hdr:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card2)); }
-.nl-contact-body { border-top: 1px solid var(--border); }
+.nl-contact-hdr:hover { background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+.nl-contact-body { overflow-x: auto; }
+
+/* شارة نوع الحساب */
+.nl-type-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 7px;
+  border-radius: 10px; flex-shrink: 0; letter-spacing: 0.3px;
+}
+
+/* ── السهم ── */
+.nl-arrow { font-size: 10px; color: var(--text2); min-width: 14px; flex-shrink: 0; }
+
+/* ── صفوف القيود ── */
+.nl-entry-row { cursor: default; }
+.nl-entry-row:hover td { background: var(--accent-dim) !important; }
+.nl-menu-btn { cursor: pointer; }
+.nl-menu-btn:hover { background: var(--card) !important; }

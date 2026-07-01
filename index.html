@@ -722,35 +722,46 @@
 
       <!-- ════ NEW GENERAL LEDGER (شجرة هرمية) ════ -->
       <div id="newLedgerView" style="display:none">
-        <!-- شريط الفلاتر -->
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:10px">
-          <div style="display:flex;gap:3px;flex-wrap:wrap">
-            <button class="dash-period-btn" id="nl-period-all"       onclick="setNewLedgerPeriod('all')">الكل</button>
-            <button class="dash-period-btn" id="nl-period-month"     onclick="setNewLedgerPeriod('month')">هذا الشهر</button>
-            <button class="dash-period-btn" id="nl-period-lastmonth" onclick="setNewLedgerPeriod('lastmonth')">الماضي</button>
-            <button class="dash-period-btn active" id="nl-period-year" onclick="setNewLedgerPeriod('year')">هذا العام</button>
-            <button class="dash-period-btn" id="nl-period-custom"    onclick="setNewLedgerPeriod('custom')">مخصص</button>
+
+        <!-- ═══ رأس الصفحة ═══ -->
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <div>
+            <div style="font-size:17px;font-weight:900;letter-spacing:-0.3px">📖 دفتر الأستاذ العام</div>
+            <div id="nl-subtitle" style="font-size:12px;color:var(--text2);margin-top:3px">—</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-secondary btn-sm" onclick="loadNewLedger()">🔄 تحديث</button>
+          </div>
+        </div>
+
+        <!-- ═══ شريط الفلاتر ═══ -->
+        <div class="nl-filter-bar">
+          <div style="display:flex;gap:3px;flex-wrap:wrap;align-items:center">
+            <button class="dash-period-btn" id="nl-period-all"          onclick="setNewLedgerPeriod('all')">الكل</button>
+            <button class="dash-period-btn" id="nl-period-month"        onclick="setNewLedgerPeriod('month')">هذا الشهر</button>
+            <button class="dash-period-btn" id="nl-period-lastmonth"    onclick="setNewLedgerPeriod('lastmonth')">الشهر الماضي</button>
+            <button class="dash-period-btn active" id="nl-period-year"  onclick="setNewLedgerPeriod('year')">هذا العام</button>
+            <button class="dash-period-btn" id="nl-period-custom"       onclick="setNewLedgerPeriod('custom')">مخصص</button>
           </div>
           <div id="nl-custom-dates" style="display:none;align-items:center;gap:6px">
-            <input type="date" id="nl-from" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
-            <span>—</span>
-            <input type="date" id="nl-to"   style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <input type="date" id="nl-from" class="nl-input">
+            <span style="color:var(--text2)">—</span>
+            <input type="date" id="nl-to"   class="nl-input">
             <button class="btn btn-primary btn-sm" onclick="loadNewLedger()">🔍</button>
           </div>
-          <div style="display:flex;gap:4px;margin-right:auto;align-items:center">
-            <select id="nl-post-filter" onchange="loadNewLedger()"
-              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+          <div style="display:flex;gap:6px;margin-right:auto;align-items:center;flex-wrap:wrap">
+            <select id="nl-post-filter" onchange="loadNewLedger()" class="nl-input" style="min-width:120px">
               <option value="posted">مرحّل فقط</option>
               <option value="all">كل الحركات</option>
               <option value="draft">مسودة فقط</option>
             </select>
-            <input type="text" id="nl-search" placeholder="🔍 بحث بالحساب أو البيان..." oninput="renderNewLedger()"
-              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:200px">
-            <button class="btn btn-secondary btn-sm" onclick="loadNewLedger()" title="تحديث">🔄</button>
+            <input type="text" id="nl-search" placeholder="🔍 بحث..." oninput="renderNewLedger()" class="nl-input" style="width:180px">
           </div>
         </div>
-        <!-- شجرة الحسابات -->
+
+        <!-- ═══ شجرة الحسابات ═══ -->
         <div id="newLedgerTree"></div>
+
       </div><!-- /newLedgerView -->
 
       <!-- ════ TRIAL BALANCE ════ -->
