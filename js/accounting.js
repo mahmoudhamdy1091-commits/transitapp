@@ -2614,6 +2614,7 @@ const nlState = {
   from: null, to: null, period: 'year', postFilter: 'posted',
   expandedGroups:   new Set(),
   expandedAccounts: new Set(),
+  expandedContacts: new Set(),
 };
 
 function showNewLedger() {
@@ -2795,33 +2796,10 @@ function renderNewLedger() {
   tree.innerHTML = html || emptyHTML('📖', 'لا توجد حركات في هذه الفترة');
 }
 
-function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search) {
-  const acc     = coaMap[code] || {};
-  const entries = (entriesByAccount[code] || []).filter(e => {
-    if (!search) return true;
-    return (e.description||'').toLowerCase().includes(search) ||
-           (e.entry_no   ||'').toLowerCase().includes(search) ||
-           (code + (acc.account_name||'')).toLowerCase().includes(search);
-  });
-  const opening = openingMap[code] || 0;
-  const totalDr = entries.reduce((s,e) => s + (+e.dr_amount||0), 0);
-  const totalCr = entries.reduce((s,e) => s + (+e.cr_amount||0), 0);
-  const endBal  = opening + totalDr - totalCr;
-  const balC    = endBal > 0 ? 'var(--green)' : endBal < 0 ? 'var(--red)' : 'var(--text2)';
-  const isExp   = nlState.expandedAccounts.has(code);
-
+function _renderNlEntryRows(entries, startRunning) {
   const SL = SOURCE_LABELS, SC = SOURCE_COLORS;
-  let running = opening;
-  const openingRow = opening
-    ? `<tr style="background:var(--card2)">
-        <td colspan="4" style="padding:5px 10px;font-size:12px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
-        <td class="mono" style="padding:5px 10px;text-align:left;color:var(--green)">${opening>0?fmt(opening):'—'}</td>
-        <td class="mono" style="padding:5px 10px;text-align:left;color:var(--red)">${opening<0?fmt(Math.abs(opening)):'—'}</td>
-        <td class="mono" style="padding:5px 10px;text-align:left;font-weight:700">${fmt(Math.abs(opening))}</td>
-        <td></td></tr>`
-    : '';
-
-  const entryRows = entries.map(e => {
+  let running = startRunning;
+  return entries.map(e => {
     running += (+e.dr_amount||0) - (+e.cr_amount||0);
     const rc  = running >= 0 ? 'var(--green)' : 'var(--red)';
     const src = SL[e.ref_table] || e.ref_table || 'قيد';
@@ -2835,55 +2813,153 @@ function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search) {
       <td class="mono text-green" style="padding:5px 10px;text-align:left;font-weight:700">${+e.dr_amount>0?fmt(e.dr_amount):'—'}</td>
       <td class="mono text-red"   style="padding:5px 10px;text-align:left;font-weight:700">${+e.cr_amount>0?fmt(e.cr_amount):'—'}</td>
       <td class="mono" style="padding:5px 10px;text-align:left;font-weight:900;color:${rc}">${fmt(Math.abs(running))}</td>
-      <td style="padding:5px 10px;text-align:center;position:relative">
+      <td style="padding:5px 10px;text-align:center">
         <button class="nl-menu-btn btn btn-sm"
           onclick="event.stopPropagation();showLedgerEntryMenu('${ref}',this)"
           style="padding:1px 8px;font-size:14px;background:var(--card2);border:1px solid var(--border)">⋮</button>
       </td>
     </tr>`;
   }).join('');
+}
+
+const _nlTableHeader = `<thead><tr>
+  <th style="width:90px">التاريخ</th><th>البيان</th>
+  <th style="width:80px">المصدر</th><th style="width:100px">رقم القيد</th>
+  <th style="color:var(--green);text-align:left;width:100px">مدين</th>
+  <th style="color:var(--red);text-align:left;width:100px">دائن</th>
+  <th style="text-align:left;width:110px">الرصيد</th>
+  <th style="width:36px"></th>
+</tr></thead>`;
+
+function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search) {
+  const acc     = coaMap[code] || {};
+  const allEntries = (entriesByAccount[code] || []).filter(e => {
+    if (!search) return true;
+    return (e.description||'').toLowerCase().includes(search) ||
+           (e.entry_no   ||'').toLowerCase().includes(search) ||
+           (code + (acc.account_name||'')).toLowerCase().includes(search) ||
+           (e.contact_name||'').toLowerCase().includes(search);
+  });
+  const opening = openingMap[code] || 0;
+  const totalDr = allEntries.reduce((s,e) => s + (+e.dr_amount||0), 0);
+  const totalCr = allEntries.reduce((s,e) => s + (+e.cr_amount||0), 0);
+  const endBal  = opening + totalDr - totalCr;
+  const balC    = endBal > 0 ? 'var(--green)' : endBal < 0 ? 'var(--red)' : 'var(--text2)';
+  const isExp   = nlState.expandedAccounts.has(code);
+
+  // هل فيه قيود بأسماء جهات (عملاء/موردين/شركاء)؟
+  const hasContacts = allEntries.some(e => e.contact_name);
+
+  const leafHdr = `
+  <div class="nl-leaf-hdr" onclick="toggleLedgerLeaf('${code}')">
+    <span class="nl-arrow" id="nl-leaf-arrow-${code}">${isExp?'▼':'▶'}</span>
+    <span class="mono" style="color:var(--accent);font-weight:700;font-size:12px">${code}</span>
+    <span style="font-weight:700;flex:1;font-size:13px">${acc.account_name||code}</span>
+    <span style="font-size:11px;color:var(--text2)">مدين:</span>
+    <span class="mono" style="color:var(--green);font-size:12px;margin-left:2px">${fmt(totalDr)}</span>
+    <span style="color:var(--text2);font-size:11px;margin:0 4px">/</span>
+    <span style="font-size:11px;color:var(--text2)">دائن:</span>
+    <span class="mono" style="color:var(--red);font-size:12px;margin-left:2px">${fmt(totalCr)}</span>
+    <span style="color:var(--text2);font-size:11px;margin:0 6px">·</span>
+    <span style="font-size:11px;color:var(--text2)">رصيد:</span>
+    <span class="mono" style="font-weight:900;color:${balC};font-size:12px;margin-left:2px">${fmt(Math.abs(endBal))} ${endBal>0?'مدين':endBal<0?'دائن':''}</span>
+    <span style="font-size:11px;color:var(--text2);margin-right:8px">(${allEntries.length} حركة)</span>
+  </div>`;
+
+  let bodyHtml = '';
+
+  if (!allEntries.length && !opening) {
+    bodyHtml = `<div style="padding:10px 20px;color:var(--text2);font-size:12px">لا توجد حركات في هذه الفترة</div>`;
+
+  } else if (hasContacts) {
+    // ── وضع التجميع بالجهة (عملاء / موردين / شركاء) ──
+    const openingRow = opening
+      ? `<div style="padding:6px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)">
+           رصيد افتتاحي:
+           <span class="mono" style="font-weight:700;color:${opening>0?'var(--green)':'var(--red)'}">${fmt(Math.abs(opening))} ${opening>0?'مدين':'دائن'}</span>
+         </div>` : '';
+
+    // تجميع القيود بالاسم — القيود بلا اسم تحت "— أخرى —"
+    const groups = {};
+    allEntries.forEach(e => {
+      const key = e.contact_name || '— أخرى —';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(e);
+    });
+
+    const contactRows = Object.entries(groups).map(([contact, entries]) => {
+      const cDr  = entries.reduce((s,e) => s + (+e.dr_amount||0), 0);
+      const cCr  = entries.reduce((s,e) => s + (+e.cr_amount||0), 0);
+      const cBal = cDr - cCr;
+      const cBC  = cBal > 0 ? 'var(--green)' : cBal < 0 ? 'var(--red)' : 'var(--text2)';
+      const cKey = `${code}__${contact}`.replace(/[^a-zA-Z0-9_؀-ۿ]/g,'_');
+      const cExp = nlState.expandedContacts.has(cKey);
+      const safeContact = contact.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const entryRows = _renderNlEntryRows(entries, 0);
+
+      return `
+      <div class="nl-contact">
+        <div class="nl-contact-hdr" onclick="toggleLedgerContact('${cKey}')">
+          <span class="nl-arrow" id="nl-contact-arrow-${cKey}">${cExp?'▼':'▶'}</span>
+          <span style="font-weight:700;flex:1;font-size:13px">👤 ${contact}</span>
+          <span class="mono" style="color:var(--green);font-size:12px">${fmt(cDr)}</span>
+          <span style="color:var(--text2);font-size:11px;margin:0 3px">/</span>
+          <span class="mono" style="color:var(--red);font-size:12px">${fmt(cCr)}</span>
+          <span style="color:var(--text2);font-size:11px;margin:0 6px">·</span>
+          <span class="mono" style="font-weight:900;color:${cBC};font-size:12px">${fmt(Math.abs(cBal))} ${cBal>0?'مدين':cBal<0?'دائن':''}</span>
+          <span style="font-size:11px;color:var(--text2);margin-right:8px">(${entries.length})</span>
+        </div>
+        <div class="nl-contact-body" id="nl-contact-body-${cKey}" style="display:${cExp?'block':'none'}">
+          <div class="data-table-wrap">
+            <table class="data-table" style="font-size:12px;min-width:680px">
+              ${_nlTableHeader}
+              <tbody>${entryRows}</tbody>
+              <tfoot style="background:var(--card2)"><tr>
+                <td colspan="4" style="padding:5px 10px;font-weight:700">الإجمالي (${entries.length} حركة)</td>
+                <td class="mono text-green" style="text-align:left;font-weight:900;padding:5px 10px">${fmt(cDr)}</td>
+                <td class="mono text-red"   style="text-align:left;font-weight:900;padding:5px 10px">${fmt(cCr)}</td>
+                <td class="mono" style="text-align:left;font-weight:900;color:${cBC};padding:5px 10px">${fmt(Math.abs(cBal))}</td>
+                <td></td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    bodyHtml = openingRow + contactRows;
+
+  } else {
+    // ── وضع عرض القيود مباشرة (بلا جهات) ──
+    const openingRow = opening
+      ? `<tr style="background:var(--card2)">
+          <td colspan="4" style="padding:5px 10px;font-size:12px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
+          <td class="mono" style="padding:5px 10px;text-align:left;color:var(--green)">${opening>0?fmt(opening):'—'}</td>
+          <td class="mono" style="padding:5px 10px;text-align:left;color:var(--red)">${opening<0?fmt(Math.abs(opening)):'—'}</td>
+          <td class="mono" style="padding:5px 10px;text-align:left;font-weight:700">${fmt(Math.abs(opening))}</td>
+          <td></td></tr>`
+      : '';
+    const entryRows = _renderNlEntryRows(allEntries, opening);
+    bodyHtml = `<div class="data-table-wrap">
+      <table class="data-table" style="font-size:12px;min-width:680px">
+        ${_nlTableHeader}
+        <tbody>${openingRow}${entryRows}</tbody>
+        <tfoot style="background:var(--card2)"><tr>
+          <td colspan="4" style="padding:6px 10px;font-weight:700">الإجمالي (${allEntries.length} حركة)</td>
+          <td class="mono text-green" style="text-align:left;font-weight:900;padding:6px 10px">${fmt(totalDr)}</td>
+          <td class="mono text-red"   style="text-align:left;font-weight:900;padding:6px 10px">${fmt(totalCr)}</td>
+          <td class="mono" style="text-align:left;font-weight:900;color:${balC};padding:6px 10px">${fmt(Math.abs(endBal))}</td>
+          <td></td>
+        </tr></tfoot>
+      </table>
+    </div>`;
+  }
 
   return `
   <div class="nl-leaf">
-    <div class="nl-leaf-hdr" onclick="toggleLedgerLeaf('${code}')">
-      <span class="nl-arrow" id="nl-leaf-arrow-${code}">${isExp?'▼':'▶'}</span>
-      <span class="mono" style="color:var(--accent);font-weight:700;font-size:12px">${code}</span>
-      <span style="font-weight:700;flex:1;font-size:13px">${acc.account_name||code}</span>
-      <span style="font-size:11px;color:var(--text2)">مدين:</span>
-      <span class="mono" style="color:var(--green);font-size:12px;margin-left:2px">${fmt(totalDr)}</span>
-      <span style="color:var(--text2);font-size:11px;margin:0 4px">/</span>
-      <span style="font-size:11px;color:var(--text2)">دائن:</span>
-      <span class="mono" style="color:var(--red);font-size:12px;margin-left:2px">${fmt(totalCr)}</span>
-      <span style="color:var(--text2);font-size:11px;margin:0 6px">·</span>
-      <span style="font-size:11px;color:var(--text2)">رصيد:</span>
-      <span class="mono" style="font-weight:900;color:${balC};font-size:12px;margin-left:2px">${fmt(Math.abs(endBal))} ${endBal>0?'مدين':endBal<0?'دائن':''}</span>
-      <span style="font-size:11px;color:var(--text2);margin-right:8px">(${entries.length} حركة)</span>
-    </div>
+    ${leafHdr}
     <div class="nl-leaf-body" id="nl-leaf-body-${code}" style="display:${isExp?'block':'none'}">
-      ${(entries.length || opening) ? `
-      <div class="data-table-wrap">
-        <table class="data-table" style="font-size:12px;min-width:680px">
-          <thead><tr>
-            <th style="width:90px">التاريخ</th>
-            <th>البيان</th>
-            <th style="width:80px">المصدر</th>
-            <th style="width:100px">رقم القيد</th>
-            <th style="color:var(--green);text-align:left;width:100px">مدين</th>
-            <th style="color:var(--red);text-align:left;width:100px">دائن</th>
-            <th style="text-align:left;width:110px">الرصيد</th>
-            <th style="width:36px"></th>
-          </tr></thead>
-          <tbody>${openingRow}${entryRows}</tbody>
-          <tfoot style="background:var(--card2)"><tr>
-            <td colspan="4" style="padding:6px 10px;font-weight:700">الإجمالي (${entries.length} حركة)</td>
-            <td class="mono text-green" style="text-align:left;font-weight:900;padding:6px 10px">${fmt(totalDr)}</td>
-            <td class="mono text-red"   style="text-align:left;font-weight:900;padding:6px 10px">${fmt(totalCr)}</td>
-            <td class="mono" style="text-align:left;font-weight:900;color:${balC};padding:6px 10px">${fmt(Math.abs(endBal))}</td>
-            <td></td>
-          </tr></tfoot>
-        </table>
-      </div>`
-      : `<div style="padding:10px 20px;color:var(--text2);font-size:12px">لا توجد حركات في هذه الفترة</div>`}
+      ${bodyHtml}
     </div>
   </div>`;
 }
@@ -2904,6 +2980,15 @@ function toggleLedgerLeaf(code) {
   const arrow = el(`nl-leaf-arrow-${code}`);
   if (body)  body.style.display  = nlState.expandedAccounts.has(code) ? 'block' : 'none';
   if (arrow) arrow.textContent   = nlState.expandedAccounts.has(code) ? '▼' : '▶';
+}
+
+function toggleLedgerContact(key) {
+  if (nlState.expandedContacts.has(key)) nlState.expandedContacts.delete(key);
+  else nlState.expandedContacts.add(key);
+  const body  = el(`nl-contact-body-${key}`);
+  const arrow = el(`nl-contact-arrow-${key}`);
+  if (body)  body.style.display = nlState.expandedContacts.has(key) ? 'block' : 'none';
+  if (arrow) arrow.textContent  = nlState.expandedContacts.has(key) ? '▼' : '▶';
 }
 
 function showLedgerEntryMenu(entryNo, btn) {

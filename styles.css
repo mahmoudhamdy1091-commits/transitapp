@@ -1511,3 +1511,14 @@ body.role-employee #approve-all-btn {
 
 .nl-menu-btn { cursor: pointer; }
 .nl-menu-btn:hover { background: var(--card) !important; }
+
+/* ── مستوى الجهة (عميل / مورد / شريك) داخل دفتر الأستاذ ── */
+.nl-contact { border-bottom: 1px solid var(--border); }
+.nl-contact:last-child { border-bottom: none; }
+.nl-contact-hdr {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 24px; cursor: pointer; user-select: none;
+  background: var(--card2); transition: background 0.15s;
+}
+.nl-contact-hdr:hover { background: color-mix(in srgb, var(--accent) 8%, var(--card2)); }
+.nl-contact-body { border-top: 1px solid var(--border); }
