@@ -208,7 +208,7 @@
           <div class="nav-item" id="nav-coa" onclick="showChartOfAccounts()">
             <span class="ni-icon">🗂️</span><span>شجرة الحسابات</span>
           </div>
-          <div class="nav-item" id="nav-ledger" onclick="showTrialBalance()">
+          <div class="nav-item" id="nav-ledger" onclick="showNewLedger()">
             <span class="ni-icon">📖</span><span>دفتر الأستاذ</span>
           </div>
           <div class="nav-item" id="nav-je-manager" onclick="showJEManager()">
@@ -719,6 +719,39 @@
         <div id="ledgerKpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px"></div>
         <div class="data-table-wrap"><div id="ledgerTable"></div></div>
       </div><!-- /ledgerView -->
+
+      <!-- ════ NEW GENERAL LEDGER (شجرة هرمية) ════ -->
+      <div id="newLedgerView" style="display:none">
+        <!-- شريط الفلاتر -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:10px">
+          <div style="display:flex;gap:3px;flex-wrap:wrap">
+            <button class="dash-period-btn" id="nl-period-all"       onclick="setNewLedgerPeriod('all')">الكل</button>
+            <button class="dash-period-btn" id="nl-period-month"     onclick="setNewLedgerPeriod('month')">هذا الشهر</button>
+            <button class="dash-period-btn" id="nl-period-lastmonth" onclick="setNewLedgerPeriod('lastmonth')">الماضي</button>
+            <button class="dash-period-btn active" id="nl-period-year" onclick="setNewLedgerPeriod('year')">هذا العام</button>
+            <button class="dash-period-btn" id="nl-period-custom"    onclick="setNewLedgerPeriod('custom')">مخصص</button>
+          </div>
+          <div id="nl-custom-dates" style="display:none;align-items:center;gap:6px">
+            <input type="date" id="nl-from" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <span>—</span>
+            <input type="date" id="nl-to"   style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+            <button class="btn btn-primary btn-sm" onclick="loadNewLedger()">🔍</button>
+          </div>
+          <div style="display:flex;gap:4px;margin-right:auto;align-items:center">
+            <select id="nl-post-filter" onchange="loadNewLedger()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px">
+              <option value="posted">مرحّل فقط</option>
+              <option value="all">كل الحركات</option>
+              <option value="draft">مسودة فقط</option>
+            </select>
+            <input type="text" id="nl-search" placeholder="🔍 بحث بالحساب أو البيان..." oninput="renderNewLedger()"
+              style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:200px">
+            <button class="btn btn-secondary btn-sm" onclick="loadNewLedger()" title="تحديث">🔄</button>
+          </div>
+        </div>
+        <!-- شجرة الحسابات -->
+        <div id="newLedgerTree"></div>
+      </div><!-- /newLedgerView -->
 
       <!-- ════ TRIAL BALANCE ════ -->
       <div id="trialView" style="display:none">

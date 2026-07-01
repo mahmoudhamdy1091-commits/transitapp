@@ -116,6 +116,7 @@ function showView(viewId) {
 
 function hideAllViews() {
   ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView',
+   'newLedgerView',
    'allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView',
    'settingsView','opexView','approvalView','transactionsView','reviewView','jeManagerView',
    'warehousesView','contactStatementView','chartOfAccountsView','importWizardView']

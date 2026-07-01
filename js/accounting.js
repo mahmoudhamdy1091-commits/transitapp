@@ -2606,3 +2606,328 @@ function _reportDates() {
 function _noData(cols) {
   return `<tr><td colspan="${cols}" style="text-align:center;padding:32px;color:var(--text2)">لا توجد بيانات في هذه الفترة</td></tr>`;
 }
+
+// ══════════════════════════════════════════════════════════════
+// دفتر الأستاذ الهرمي — General Ledger (شجرة قابلة للتوسيع)
+// ══════════════════════════════════════════════════════════════
+const nlState = {
+  from: null, to: null, period: 'year', postFilter: 'posted',
+  expandedGroups:   new Set(),
+  expandedAccounts: new Set(),
+};
+
+function showNewLedger() {
+  hideAllViews();
+  el('newLedgerView').style.display = 'block';
+  el('topBarTitle').textContent = '📖 دفتر الأستاذ';
+  el('topBarSub').textContent   = `نظام ${state.system}`;
+  navActive('nav-ledger');
+  setNewLedgerPeriod(nlState.period || 'year');
+}
+
+function setNewLedgerPeriod(period) {
+  nlState.period = period;
+  _setPeriodBtns('nl', period);
+  if (period === 'custom') return;
+  const { from, to } = _getPeriodDates(period);
+  nlState.from = from; nlState.to = to;
+  if (el('nl-from')) el('nl-from').value = from || '';
+  if (el('nl-to'))   el('nl-to').value   = to   || '';
+  loadNewLedger();
+}
+
+async function loadNewLedger() {
+  const tree = el('newLedgerTree');
+  if (!tree) return;
+  tree.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل دفتر الأستاذ...</div>';
+
+  const sys    = state.system;
+  const from   = el('nl-from')?.value   || nlState.from   || null;
+  const to     = el('nl-to')?.value     || nlState.to     || null;
+  const postF  = el('nl-post-filter')?.value || 'posted';
+  nlState.from = from; nlState.to = to; nlState.postFilter = postF;
+
+  try {
+    // 1. شجرة الحسابات
+    const coaData = await apiGetAll('chart_of_accounts', {
+      select: 'account_code,account_name,account_type,parent_code',
+      system_type: `eq.${sys}`, is_active: 'eq.true', order: 'account_code.asc',
+    });
+
+    // 2. قيود الفترة
+    const buildUrl = (sysParam) => {
+      let u = `${SB_URL}/rest/v1/journal_entries?${sysParam}`
+            + `&select=id,account_code,dr_amount,cr_amount,entry_date,description,entry_no,ref_table,file_no,contact_name,post_status&limit=49999`
+            + `&order=entry_date.asc,id.asc`;
+      if (from)  u += `&entry_date=gte.${encodeURIComponent(from)}`;
+      if (to)    u += `&entry_date=lte.${encodeURIComponent(to + 'T23:59:59')}`;
+      if (postF === 'posted') u += `&post_status=eq.posted`;
+      if (postF === 'draft')  u += `&post_status=eq.draft`;
+      return u;
+    };
+    const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
+    let res1 = await fetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: h });
+    if (res1.status === 401) {
+      const ok = await refreshAccessToken();
+      if (!ok) { tree.innerHTML = errHTML('انتهت الجلسة'); return; }
+      res1 = await fetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: h });
+    }
+    const rows1 = (res1.ok || res1.status === 206) ? await res1.json() : [];
+    let rows2 = [];
+    try {
+      const res2 = await fetch(buildUrl('system_type=is.null'), { headers: h });
+      if (res2.ok || res2.status === 206) rows2 = await res2.json();
+    } catch(_) {}
+    const seen = new Set();
+    const allEntries = [];
+    [...(rows1||[]), ...(rows2||[])].forEach(r => {
+      const k = r.id ?? JSON.stringify(r);
+      if (!seen.has(k)) { seen.add(k); allEntries.push(r); }
+    });
+
+    // 3. أرصدة افتتاحية
+    const openingMap = await _computeOpeningBalances(sys, postF, from);
+
+    // 4. بناء هياكل البيانات
+    const coaMap   = {};
+    const byParent = {};
+    (coaData || []).forEach(a => {
+      coaMap[a.account_code] = a;
+      const p = a.parent_code || '__root__';
+      if (!byParent[p]) byParent[p] = [];
+      byParent[p].push(a);
+    });
+
+    const entriesByAccount = {};
+    allEntries.forEach(r => {
+      const code = r.account_code;
+      if (!code) return;
+      if (!entriesByAccount[code]) entriesByAccount[code] = [];
+      entriesByAccount[code].push(r);
+    });
+
+    window._nlCoaMap           = coaMap;
+    window._nlByParent         = byParent;
+    window._nlEntriesByAccount = entriesByAccount;
+    window._nlOpeningMap       = openingMap;
+
+    renderNewLedger();
+  } catch(e) {
+    tree.innerHTML = errHTML('خطأ: ' + e.message);
+    console.error('loadNewLedger:', e);
+  }
+}
+
+function renderNewLedger() {
+  const tree = el('newLedgerTree');
+  if (!tree) return;
+  const search = (el('nl-search')?.value || '').trim().toLowerCase();
+
+  const coaMap           = window._nlCoaMap           || {};
+  const byParent         = window._nlByParent         || {};
+  const entriesByAccount = window._nlEntriesByAccount || {};
+  const openingMap       = window._nlOpeningMap       || {};
+
+  const roots = byParent['__root__'] || [];
+  if (!roots.length) {
+    tree.innerHTML = emptyHTML('📖', 'لا توجد حسابات — قم بتهيئة شجرة الحسابات أولاً');
+    return;
+  }
+
+  // جمع كل الحسابات الورقية (leaf) تحت حساب معين
+  function getLeaves(code) {
+    const children = byParent[code] || [];
+    if (!children.length) {
+      return (entriesByAccount[code]?.length || openingMap[code]) ? [code] : [];
+    }
+    return children.flatMap(c => getLeaves(c.account_code));
+  }
+
+  let html = '';
+  roots.forEach(root => {
+    const rCode  = root.account_code;
+    const leaves = getLeaves(rCode);
+    if (!leaves.length) return;
+
+    // فلتر البحث على مستوى المجموعة
+    if (search) {
+      const matchRoot = (rCode + root.account_name).toLowerCase().includes(search);
+      const matchAny  = leaves.some(lc => {
+        const lName = (coaMap[lc]?.account_name || '').toLowerCase();
+        return (lc + lName).includes(search) ||
+          (entriesByAccount[lc] || []).some(e =>
+            (e.description || '').toLowerCase().includes(search) ||
+            (e.entry_no    || '').toLowerCase().includes(search)
+          );
+      });
+      if (!matchRoot && !matchAny) return;
+    }
+
+    const isExpanded = nlState.expandedGroups.has(rCode);
+
+    // إجمالي المجموعة
+    let gDr = 0, gCr = 0, gOpening = 0;
+    leaves.forEach(lc => {
+      gOpening += openingMap[lc] || 0;
+      (entriesByAccount[lc] || []).forEach(e => { gDr += +e.dr_amount || 0; gCr += +e.cr_amount || 0; });
+    });
+    const gBal = gOpening + gDr - gCr;
+    const gBC  = gBal > 0 ? 'var(--green)' : gBal < 0 ? 'var(--red)' : 'var(--text2)';
+
+    html += `
+    <div class="nl-group">
+      <div class="nl-group-hdr" onclick="toggleLedgerGroup('${rCode}')">
+        <span class="nl-arrow" id="nl-arrow-${rCode}">${isExpanded ? '▼' : '▶'}</span>
+        <span class="mono" style="color:var(--accent);font-weight:700">${rCode}</span>
+        <span style="flex:1">${root.account_name}</span>
+        <span class="mono" style="color:var(--green);font-size:12px">${fmt(gDr)}</span>
+        <span style="color:var(--text2);font-size:11px;margin:0 3px">/</span>
+        <span class="mono" style="color:var(--red);font-size:12px">${fmt(gCr)}</span>
+        <span style="color:var(--text2);font-size:11px;margin:0 6px">·</span>
+        <span class="mono" style="font-weight:900;color:${gBC};font-size:12px">${fmt(Math.abs(gBal))} ${gBal>0?'مدين':gBal<0?'دائن':''}</span>
+      </div>
+      <div class="nl-group-body" id="nl-body-${rCode}" style="display:${isExpanded?'block':'none'}">
+        ${leaves.map(lc => _renderNlLeaf(lc, coaMap, entriesByAccount, openingMap, search)).join('')}
+      </div>
+    </div>`;
+  });
+
+  tree.innerHTML = html || emptyHTML('📖', 'لا توجد حركات في هذه الفترة');
+}
+
+function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search) {
+  const acc     = coaMap[code] || {};
+  const entries = (entriesByAccount[code] || []).filter(e => {
+    if (!search) return true;
+    return (e.description||'').toLowerCase().includes(search) ||
+           (e.entry_no   ||'').toLowerCase().includes(search) ||
+           (code + (acc.account_name||'')).toLowerCase().includes(search);
+  });
+  const opening = openingMap[code] || 0;
+  const totalDr = entries.reduce((s,e) => s + (+e.dr_amount||0), 0);
+  const totalCr = entries.reduce((s,e) => s + (+e.cr_amount||0), 0);
+  const endBal  = opening + totalDr - totalCr;
+  const balC    = endBal > 0 ? 'var(--green)' : endBal < 0 ? 'var(--red)' : 'var(--text2)';
+  const isExp   = nlState.expandedAccounts.has(code);
+
+  const SL = SOURCE_LABELS, SC = SOURCE_COLORS;
+  let running = opening;
+  const openingRow = opening
+    ? `<tr style="background:var(--card2)">
+        <td colspan="4" style="padding:5px 10px;font-size:12px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
+        <td class="mono" style="padding:5px 10px;text-align:left;color:var(--green)">${opening>0?fmt(opening):'—'}</td>
+        <td class="mono" style="padding:5px 10px;text-align:left;color:var(--red)">${opening<0?fmt(Math.abs(opening)):'—'}</td>
+        <td class="mono" style="padding:5px 10px;text-align:left;font-weight:700">${fmt(Math.abs(opening))}</td>
+        <td></td></tr>`
+    : '';
+
+  const entryRows = entries.map(e => {
+    running += (+e.dr_amount||0) - (+e.cr_amount||0);
+    const rc  = running >= 0 ? 'var(--green)' : 'var(--red)';
+    const src = SL[e.ref_table] || e.ref_table || 'قيد';
+    const sc  = SC[e.ref_table] || 'var(--text2)';
+    const ref = (e.entry_no || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return `<tr class="nl-entry-row">
+      <td class="mono" style="padding:5px 10px;font-size:12px;color:var(--text2);white-space:nowrap">${(e.entry_date||'').split('T')[0]||'—'}</td>
+      <td style="padding:5px 10px;font-size:12px">${e.description||'—'}</td>
+      <td style="padding:5px 10px"><span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:8px;background:${sc}22;color:${sc}">${src}</span></td>
+      <td class="mono" style="padding:5px 10px;font-size:12px;color:var(--text2)">${e.entry_no||'—'}</td>
+      <td class="mono text-green" style="padding:5px 10px;text-align:left;font-weight:700">${+e.dr_amount>0?fmt(e.dr_amount):'—'}</td>
+      <td class="mono text-red"   style="padding:5px 10px;text-align:left;font-weight:700">${+e.cr_amount>0?fmt(e.cr_amount):'—'}</td>
+      <td class="mono" style="padding:5px 10px;text-align:left;font-weight:900;color:${rc}">${fmt(Math.abs(running))}</td>
+      <td style="padding:5px 10px;text-align:center;position:relative">
+        <button class="nl-menu-btn btn btn-sm"
+          onclick="event.stopPropagation();showLedgerEntryMenu('${ref}',this)"
+          style="padding:1px 8px;font-size:14px;background:var(--card2);border:1px solid var(--border)">⋮</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="nl-leaf">
+    <div class="nl-leaf-hdr" onclick="toggleLedgerLeaf('${code}')">
+      <span class="nl-arrow" id="nl-leaf-arrow-${code}">${isExp?'▼':'▶'}</span>
+      <span class="mono" style="color:var(--accent);font-weight:700;font-size:12px">${code}</span>
+      <span style="font-weight:700;flex:1;font-size:13px">${acc.account_name||code}</span>
+      <span style="font-size:11px;color:var(--text2)">مدين:</span>
+      <span class="mono" style="color:var(--green);font-size:12px;margin-left:2px">${fmt(totalDr)}</span>
+      <span style="color:var(--text2);font-size:11px;margin:0 4px">/</span>
+      <span style="font-size:11px;color:var(--text2)">دائن:</span>
+      <span class="mono" style="color:var(--red);font-size:12px;margin-left:2px">${fmt(totalCr)}</span>
+      <span style="color:var(--text2);font-size:11px;margin:0 6px">·</span>
+      <span style="font-size:11px;color:var(--text2)">رصيد:</span>
+      <span class="mono" style="font-weight:900;color:${balC};font-size:12px;margin-left:2px">${fmt(Math.abs(endBal))} ${endBal>0?'مدين':endBal<0?'دائن':''}</span>
+      <span style="font-size:11px;color:var(--text2);margin-right:8px">(${entries.length} حركة)</span>
+    </div>
+    <div class="nl-leaf-body" id="nl-leaf-body-${code}" style="display:${isExp?'block':'none'}">
+      ${(entries.length || opening) ? `
+      <div class="data-table-wrap">
+        <table class="data-table" style="font-size:12px;min-width:680px">
+          <thead><tr>
+            <th style="width:90px">التاريخ</th>
+            <th>البيان</th>
+            <th style="width:80px">المصدر</th>
+            <th style="width:100px">رقم القيد</th>
+            <th style="color:var(--green);text-align:left;width:100px">مدين</th>
+            <th style="color:var(--red);text-align:left;width:100px">دائن</th>
+            <th style="text-align:left;width:110px">الرصيد</th>
+            <th style="width:36px"></th>
+          </tr></thead>
+          <tbody>${openingRow}${entryRows}</tbody>
+          <tfoot style="background:var(--card2)"><tr>
+            <td colspan="4" style="padding:6px 10px;font-weight:700">الإجمالي (${entries.length} حركة)</td>
+            <td class="mono text-green" style="text-align:left;font-weight:900;padding:6px 10px">${fmt(totalDr)}</td>
+            <td class="mono text-red"   style="text-align:left;font-weight:900;padding:6px 10px">${fmt(totalCr)}</td>
+            <td class="mono" style="text-align:left;font-weight:900;color:${balC};padding:6px 10px">${fmt(Math.abs(endBal))}</td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div>`
+      : `<div style="padding:10px 20px;color:var(--text2);font-size:12px">لا توجد حركات في هذه الفترة</div>`}
+    </div>
+  </div>`;
+}
+
+function toggleLedgerGroup(code) {
+  if (nlState.expandedGroups.has(code)) nlState.expandedGroups.delete(code);
+  else nlState.expandedGroups.add(code);
+  const body  = el(`nl-body-${code}`);
+  const arrow = el(`nl-arrow-${code}`);
+  if (body)  body.style.display  = nlState.expandedGroups.has(code) ? 'block' : 'none';
+  if (arrow) arrow.textContent   = nlState.expandedGroups.has(code) ? '▼' : '▶';
+}
+
+function toggleLedgerLeaf(code) {
+  if (nlState.expandedAccounts.has(code)) nlState.expandedAccounts.delete(code);
+  else nlState.expandedAccounts.add(code);
+  const body  = el(`nl-leaf-body-${code}`);
+  const arrow = el(`nl-leaf-arrow-${code}`);
+  if (body)  body.style.display  = nlState.expandedAccounts.has(code) ? 'block' : 'none';
+  if (arrow) arrow.textContent   = nlState.expandedAccounts.has(code) ? '▼' : '▶';
+}
+
+function showLedgerEntryMenu(entryNo, btn) {
+  hideLedgerEntryMenu();
+  if (!entryNo) return;
+  const menu = document.createElement('div');
+  menu.id = 'nl-entry-menu';
+  menu.style.cssText = 'position:fixed;z-index:9999;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 4px 20px rgba(0,0,0,0.18);padding:4px 0;min-width:160px';
+  menu.innerHTML = `
+    <div onclick="hideLedgerEntryMenu();openJEDetail('${entryNo.replace(/'/g,"\\'")}')"
+      style="padding:10px 16px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px"
+      onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
+      🔍 عرض القيد
+    </div>`;
+  document.body.appendChild(menu);
+  const rect = btn.getBoundingClientRect();
+  const top  = (window.innerHeight - rect.bottom > 50) ? rect.bottom + 4 : rect.top - 54;
+  const left = Math.max(4, rect.left - 100);
+  menu.style.top  = top  + 'px';
+  menu.style.left = left + 'px';
+  setTimeout(() => document.addEventListener('click', hideLedgerEntryMenu, { once: true }), 0);
+}
+
+function hideLedgerEntryMenu() {
+  const m = document.getElementById('nl-entry-menu');
+  if (m) m.remove();
+}

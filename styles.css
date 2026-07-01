@@ -1445,3 +1445,69 @@ body.role-employee #approve-all-btn {
     max-height: calc(100dvh - 120px);
   }
 }
+
+/* ════════════════════════════════════════════
+   دفتر الأستاذ الهرمي (New General Ledger)
+   ════════════════════════════════════════════ */
+.nl-group { margin-bottom: 6px; }
+
+.nl-group-hdr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  user-select: none;
+  transition: background 0.15s;
+}
+.nl-group-hdr:hover { background: var(--card2); }
+
+.nl-group-body {
+  margin-right: 20px;
+  margin-top: 4px;
+  border-right: 2px solid var(--border);
+  padding-right: 10px;
+}
+
+.nl-leaf { margin-bottom: 4px; }
+
+.nl-leaf-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  user-select: none;
+  transition: background 0.15s;
+}
+.nl-leaf-hdr:hover { background: var(--accent-dim); }
+
+.nl-leaf-body {
+  margin-right: 16px;
+  margin-top: 2px;
+  border-right: 2px solid var(--accent);
+  padding-right: 8px;
+  overflow-x: auto;
+}
+
+.nl-arrow {
+  font-size: 11px;
+  color: var(--text2);
+  min-width: 12px;
+  transition: transform 0.15s;
+}
+
+.nl-entry-row { cursor: default; }
+.nl-entry-row:hover td { background: var(--accent-dim) !important; }
+
+.nl-menu-btn { cursor: pointer; }
+.nl-menu-btn:hover { background: var(--card) !important; }
