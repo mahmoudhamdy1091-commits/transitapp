@@ -1596,12 +1596,13 @@ async function approveItem(type, id) {
       _optimisticRemove(type, id);
       toast(`✅ تمت الموافقة على تعديل ${cfg.label}`,'ok');
 
-      // ② اكمل DB في الخلفية — نفس النواة المشتركة مع approveAll
+      // ② اكمل DB في الخلفية — نمرر item مباشرةً لأنه اتحذف من approvalState بخطوة _optimisticRemove
+      const _capturedItem = item;
       (async () => {
-        const res = await _processEditApproval(type, id);
+        const res = await _processEditApproval(type, id, _capturedItem);
         if (!res.ok) toast('خطأ في حفظ الموافقة: '+res.message,'err');
         invalidateCache();
-        loadApprovalQueue(); // refresh هادي في الخلفية
+        loadApprovalQueue();
       })();
       return;
     }
@@ -1973,10 +1974,10 @@ async function _approveLinkedPaidCollections(sys, fileNo, invNo, fallbackCustome
 // نفس المنطق المستخدم في approveItem تمامًا — يُستخدم من approveItem
 // (فردي) وapproveAll (جماعي) معًا حتى لا يتكرر المنطق ولا يتفرّق.
 // ════════════════════════════════════════════════════════════
-async function _processEditApproval(type, id) {
+async function _processEditApproval(type, id, preloadedItem = null) {
   const cfg  = EDIT_TYPES[type];
   if (!cfg) return { ok:false, message:'نوع تعديل غير معروف' };
-  const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
+  const item = preloadedItem || approvalState.all.find(r => r._type === type && String(r.id) === String(id));
   if (!item) return { ok:false, message:'لم يُعثر على طلب التعديل' };
 
   try {
