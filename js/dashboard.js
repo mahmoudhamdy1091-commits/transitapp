@@ -1235,26 +1235,60 @@ async function deleteSaleInvoice(invNo, fileNo) {
     `سيتم حذف الفاتورة وجميع التحصيلات المرتبطة بها نهائياً. لا يمكن التراجع.`,
     async () => {
       try {
-        await apiDelete('sales', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
-        try { await apiDelete('collections', { system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` }); } catch(e) { console.warn('deleteSale cleanup collections:', e.message); }
-        try { await apiDelete('sale_charges', { system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` }); } catch(e) { console.warn('deleteSale cleanup sale_charges:', e.message); }
-        // تحديث حالة الصفقة
+        const sys = state.system;
+        // 1. إذا كانت الفاتورة مرحّلة → يجب عكس قيدها قبل الحذف (وإلا تبقى قيود معلّقة في journal_entries)
+        const saleRows = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
+        const activeItems = (saleRows||[]).filter(r => r.post_status !== 'cancelled' && r.post_status !== 'voided');
+        if (activeItems.some(r => r.post_status === 'posted')) {
+          const totalSale = activeItems.reduce((s,r)=>s+(+r.sale_price||0),0);
+          const first = activeItems[0];
+          let totalCOGS = 0;
+          try {
+            const cogsLines = await apiGetAll('journal_entries', {
+              select:'dr_amount,description', system_type:`eq.${sys}`,
+              ref_table:`eq.sales`, file_no:`eq.${fileNo}`, account_code:`eq.5100`, post_status:`eq.posted`,
+            });
+            totalCOGS = (cogsLines||[]).filter(r=>(r.description||'').includes(invNo)).reduce((s,r)=>s+(+r.dr_amount||0),0);
+          } catch(e) { console.warn('deleteSale cogs lookup:', e.message); }
+          const lines = [];
+          if (totalSale > 0) {
+            lines.push({acc:'4100', name:'إيرادات المبيعات', dr:totalSale, cr:0, contact:null});
+            lines.push({acc:'1200', name:'ذمم العملاء', dr:0, cr:totalSale, contact:first.customer||null});
+          }
+          if (totalCOGS > 0) {
+            lines.push({acc:'1300', name:'المخزون — سيارات', dr:totalCOGS, cr:0, contact:null});
+            lines.push({acc:'5100', name:'تكلفة المخزون المباع', dr:0, cr:totalCOGS, contact:null});
+          }
+          if (lines.length) await postDoubleEntry({ sys, date:today(), fileNo, refTable:'reversal', desc:`عكس + حذف فاتورة ${invNo} — ${first.customer||''}`, lines });
+        }
+        // 2. عكس قيود التحصيلات المدفوعة المرتبطة قبل حذفها
+        const cols = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, inv_no:`eq.${invNo}` });
+        for (const c of (cols||[])) {
+          if (c.paid_date && c.post_status === 'posted') {
+            await voidTransaction('collection', c, true);
+          }
+        }
+        // 3. حذف السجلات
+        await apiDelete('sales', { system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
+        try { await apiDelete('collections', { system_type:`eq.${sys}`, inv_no:`eq.${invNo}` }); } catch(e) { console.warn('deleteSale cleanup collections:', e.message); }
+        try { await apiDelete('sale_charges', { system_type:`eq.${sys}`, inv_no:`eq.${invNo}` }); } catch(e) { console.warn('deleteSale cleanup sale_charges:', e.message); }
+        // 4. تحديث حالة الصفقة
         try {
-          const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
-          const allS = await apiGetAll('sales', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` });
+          const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+          const allS = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           const soldSet = new Set((allS||[]).map(s=>s.vin).filter(Boolean));
           const hasAnySales = (allS||[]).length > 0;
           const allSold = hasAnySales && (allV||[]).every(v=>soldSet.has(v.vin));
           await apiPatch('purchase_orders',
-            { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` },
+            { system_type:`eq.${sys}`, file_no:`eq.${fileNo}` },
             { status: !hasAnySales ? 'OPEN' : (allSold ? 'CLOSED' : 'IN PROGRESS') }
           );
         } catch(e) { console.warn('updateDealStatus after delete:', e.message); }
         invalidateCache();
         toast(`✅ تم حذف فاتورة ${invNo}`, 'ok');
-        await loadSalesTab(fileNo, state.system);
-        if (state.currentTab === 5) loadCollectionsTab(fileNo, state.system);
-        if (state.currentTab === 0) loadSummaryTab(fileNo, state.system);
+        await loadSalesTab(fileNo, sys);
+        if (state.currentTab === 5) loadCollectionsTab(fileNo, sys);
+        if (state.currentTab === 0) loadSummaryTab(fileNo, sys);
       } catch(e) { toast('خطأ: ' + e.message, 'err'); }
     }
   );
