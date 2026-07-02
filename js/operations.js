@@ -3564,12 +3564,7 @@ async function loadJEManager() {
     if (from) url += `&entry_date=gte.${encodeURIComponent(from)}`;
     if (to)   url += `&entry_date=lte.${encodeURIComponent(to+'T23:59:59')}`;
     url += `&limit=2000`;
-    let res  = await fetch(url, { headers: headers() });
-    if (res.status === 401) {
-      const ok = await refreshAccessToken();
-      if (!ok) { wrap.innerHTML = errHTML('انتهت الجلسة — يرجى تسجيل الدخول مجدداً'); return; }
-      res = await fetch(url, { headers: headers() });
-    }
+    const res = await apiFetch(url, {});
     if (!res.ok) throw new Error(await res.text());
     const rows = await res.json();
     jeMgrState.allEntries = rows || [];

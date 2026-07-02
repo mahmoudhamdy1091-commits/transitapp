@@ -235,20 +235,30 @@ function headers(extra = {}) {
   return h;
 }
 
+// ════════════════════════════════════════
+// API FETCH — نقطة مركزية واحدة لمعالجة 401 (انتهاء الجلسة)
+// كل طلب لـ Supabase REST يمر من هنا: لو 401 يعمل refresh ويعيد المحاولة
+// مرة واحدة بهيدرز محدَّثة (تُبنى من جديد داخلياً — لا تُمرَّر جاهزة من
+// الخارج — كي لا يُعاد إرسال التوكن القديم المنتهي في محاولة إعادة الإرسال).
+// ════════════════════════════════════════
+async function apiFetch(url, { headers: extraHeaders = {}, ...rest } = {}) {
+  let res = await fetch(url, { ...rest, headers: headers(extraHeaders) });
+  if (res.status === 401) {
+    const ok = await refreshAccessToken();
+    if (!ok) throw new Error('انتهت الجلسة، يرجى تسجيل الدخول مجدداً');
+    res = await fetch(url, { ...rest, headers: headers(extraHeaders) });
+  }
+  return res;
+}
+
 async function apiGet(table, params = {}) {
   const NO_ENCODE = new Set(['select','order','or','and','limit','offset']);
   const qs = Object.entries(params).map(([k,v]) => NO_ENCODE.has(k) ? `${k}=${v}` : `${k}=${encodeURIComponent(v)}`).join('&');
   const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
   // ✅ Audit fix: رُفع الحد من 9999 إلى 49999 لمنع قطع البيانات الصامت
-  const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
   // ✅ منع الكاش المتصفح/HTTP لطلبات GET — كان يسبب عرض بيانات قديمة
   // مباشرة بعد عمليات التعديل (مثال: طلب إلغاء يبقى ظاهراً في قائمة الانتظار رغم تنفيذه)
-  let res = await fetch(url, { headers: h, cache: 'no-store' });
-  if (res.status === 401) {
-    const ok = await refreshAccessToken();
-    if (!ok) throw new Error('انتهت الجلسة، يرجى تسجيل الدخول مجدداً');
-    res = await fetch(url, { headers: h, cache: 'no-store' });
-  }
+  const res = await apiFetch(url, { headers: { 'Range': '0-49999', 'Range-Unit': 'items' }, cache: 'no-store' });
   // ✅ Audit fix: HTTP 206 = Supabase أعاد بيانات جزئية فقط (تجاوز الحد)
   // نُسجّل تحذيراً في الـ console بدلاً من قبول النتيجة بصمت
   if (res.status === 206) {
@@ -313,13 +323,7 @@ async function fetchJEForPeriod(sys, from, to) {
     `&limit=49999`;
 
   const fetchOne = async (url) => {
-    const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
-    let res = await fetch(url, { headers: h });
-    if (res.status === 401) {
-      const ok = await refreshAccessToken();
-      if (!ok) throw new Error('انتهت الجلسة');
-      res = await fetch(url, { headers: headers({ 'Range': '0-49999', 'Range-Unit': 'items' }) });
-    }
+    const res = await apiFetch(url, { headers: { 'Range': '0-49999', 'Range-Unit': 'items' } });
     if (!res.ok && res.status !== 206) return [];
     return res.json();
   };
@@ -392,20 +396,11 @@ function computeFinancials(jeRows) {
 
 async function apiPost(table, data) {
   const body = JSON.stringify(data);
-  let res = await fetch(`${SB_URL}/rest/v1/${table}`, {
+  const res = await apiFetch(`${SB_URL}/rest/v1/${table}`, {
     method: 'POST',
-    headers: headers({'Prefer':'return=representation'}),
+    headers: {'Prefer':'return=representation'},
     body
   });
-  if (res.status === 401) {
-    const ok = await refreshAccessToken();
-    if (!ok) throw new Error('انتهت الجلسة، يرجى تسجيل الدخول مجدداً');
-    res = await fetch(`${SB_URL}/rest/v1/${table}`, {
-      method: 'POST',
-      headers: headers({'Prefer':'return=representation'}),
-      body
-    });
-  }
   const resBody = await res.json();
   if (!res.ok) {
     const msg = resBody.message || resBody.error || res.statusText || '';
@@ -421,20 +416,11 @@ async function apiPatch(table, matchParams, data) {
   let url = `${SB_URL}/rest/v1/${table}?`;
   for (const [k, v] of Object.entries(matchParams)) url += `${k}=${encodeURIComponent(v)}&`;
   const body = JSON.stringify(data);
-  let res = await fetch(url, {
+  const res = await apiFetch(url, {
     method: 'PATCH',
-    headers: headers({'Prefer':'return=representation'}),
+    headers: {'Prefer':'return=representation'},
     body
   });
-  if (res.status === 401) {
-    const ok = await refreshAccessToken();
-    if (!ok) throw new Error('انتهت الجلسة، يرجى تسجيل الدخول مجدداً');
-    res = await fetch(url, {
-      method: 'PATCH',
-      headers: headers({'Prefer':'return=representation'}),
-      body
-    });
-  }
   const resBody = await res.json();
   if (!res.ok) throw new Error(resBody.message || resBody.error || res.statusText);
   return resBody;
@@ -442,20 +428,11 @@ async function apiPatch(table, matchParams, data) {
 
 async function apiRpc(fn, args = {}) {
   const body = JSON.stringify(args);
-  let res = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+  const res = await apiFetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
     method: 'POST',
-    headers: headers({'Content-Type':'application/json'}),
+    headers: {'Content-Type':'application/json'},
     body
   });
-  if (res.status === 401) {
-    const ok = await refreshAccessToken();
-    if (!ok) throw new Error('انتهت الجلسة، يرجى تسجيل الدخول مجدداً');
-    res = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
-      method: 'POST',
-      headers: headers({'Content-Type':'application/json'}),
-      body
-    });
-  }
   if (!res.ok) {
     const e = await res.json().catch(()=>({}));
     throw new Error(e.message || res.statusText);

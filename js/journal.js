@@ -66,13 +66,7 @@ async function loadJournal() {
     // ── مصدر واحد: journal_entries فقط ──
     const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&order=entry_date.desc,entry_no.desc&select=*&limit=5000`;
 
-    let res = await fetch(url, { headers: headers() });
-    // إعادة المحاولة تلقائياً لو JWT انتهت
-    if (res.status === 401) {
-      const ok = await refreshAccessToken();
-      if (!ok) { el('journalTimeline').innerHTML = errHTML('انتهت الجلسة — يرجى تسجيل الدخول مجدداً'); return; }
-      res = await fetch(url, { headers: headers() });
-    }
+    const res = await apiFetch(url, {});
     if (!res.ok) throw new Error(await res.text());
     const jeRows = await res.json();
 

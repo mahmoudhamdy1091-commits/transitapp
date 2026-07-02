@@ -81,22 +81,17 @@ async function loadTrialBalance() {
       return u;
     };
 
-    const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
+    const rangeHeaders = { 'Range': '0-49999', 'Range-Unit': 'items' };
 
     // جلب بيانات النظام الحالي
-    let res1 = await fetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: h });
-    if (res1.status === 401) {
-      const ok = await refreshAccessToken();
-      if (!ok) { el('trialTable').innerHTML = errHTML('انتهت الجلسة'); return; }
-      res1 = await fetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: h });
-    }
+    const res1 = await apiFetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: rangeHeaders });
     if (!res1.ok && res1.status !== 206) throw new Error(await res1.text());
     const rows1 = await res1.json();
 
     // جلب البيانات ذات system_type=null (بيانات قديمة)
     let rows2 = [];
     try {
-      const res2 = await fetch(buildUrl('system_type=is.null'), { headers: h });
+      const res2 = await apiFetch(buildUrl('system_type=is.null'), { headers: rangeHeaders });
       if (res2.ok || res2.status === 206) rows2 = await res2.json();
     } catch(_) {}
 
@@ -182,18 +177,13 @@ async function _computeOpeningBalances(sys, postF, beforeDate, accountCode = nul
     if (postF === 'draft')  u += `&post_status=eq.draft`;
     return u;
   };
-  const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
+  const rangeHeaders = { 'Range': '0-49999', 'Range-Unit': 'items' };
   try {
-    let res1 = await fetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: h });
-    if (res1.status === 401) {
-      const ok = await refreshAccessToken();
-      if (!ok) return {};
-      res1 = await fetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: h });
-    }
+    const res1 = await apiFetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: rangeHeaders });
     const rows1 = (res1.ok || res1.status === 206) ? await res1.json() : [];
     let rows2 = [];
     try {
-      const res2 = await fetch(buildUrl('system_type=is.null'), { headers: h });
+      const res2 = await apiFetch(buildUrl('system_type=is.null'), { headers: rangeHeaders });
       if (res2.ok || res2.status === 206) rows2 = await res2.json();
     } catch(_) {}
     const map = {};
@@ -295,10 +285,8 @@ async function showAccountLedger(accountCode, accountName, accountType) {
 
   try {
     const sys=state.system;
-    const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
     const url=`${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&account_code=eq.${encodeURIComponent(accountCode)}&select=*&order=entry_date.asc,id.asc&limit=49999`;
-    let res=await fetch(url,{headers:h,cache:'no-store'});
-    if(res.status===401){const ok=await refreshAccessToken();if(!ok){el('ledgerTable').innerHTML=errHTML('انتهت الجلسة');return;}res=await fetch(url,{headers:h,cache:'no-store'});}
+    const res=await apiFetch(url,{headers:{ 'Range': '0-49999', 'Range-Unit': 'items' },cache:'no-store'});
     const rows=res.ok?await res.json():[];
     window._ledgerAllEntries=(rows||[]).map(r=>({
       id:r.id,date:(r.entry_date||'').split('T')[0],type:r.ref_table||'manual',
@@ -919,9 +907,7 @@ const apiDelete = async function(table, matchParams) {
 
   let url = `${SB_URL}/rest/v1/${table}?`;
   for (const [k,v] of Object.entries(matchParams)) url += `${k}=${encodeURIComponent(v)}&`;
-  let res = await fetch(url, { method:'DELETE', headers: headers({'Prefer':'return=representation'}) });
-  if (res.status === 401) { const ok = await refreshAccessToken(); if(!ok) throw new Error('انتهت الجلسة'); res = await fetch(url,{method:'DELETE',headers:headers()}); }
-  return res;
+  return apiFetch(url, { method:'DELETE', headers: {'Prefer':'return=representation'} });
 }
 
 // ════════════════════════════════════════
@@ -2540,9 +2526,10 @@ async function apiGetDateRange(table, dateCol, from, to, extra={}) {
     return `${SB_URL}/rest/v1/${table}?system_type=${sysParam}&${baseParams}${extraStr?'&'+extraStr:''}`;
   };
   try {
+    const rangeHeaders = { 'Range':'0-49999','Range-Unit':'items' };
     const [r1, r2] = await Promise.all([
-      fetch(makeUrl(`eq.${sys}`),  { headers: headers({'Range':'0-49999','Range-Unit':'items'}) }),
-      fetch(makeUrl('is.null'),    { headers: headers({'Range':'0-49999','Range-Unit':'items'}) }),
+      apiFetch(makeUrl(`eq.${sys}`),  { headers: rangeHeaders }),
+      apiFetch(makeUrl('is.null'),    { headers: rangeHeaders }),
     ]);
     const [d1, d2] = await Promise.all([r1.ok?r1.json():[], r2.ok?r2.json():[]]);
     const seen = new Set();
@@ -2666,17 +2653,12 @@ async function loadNewLedger() {
       if (postF === 'draft')  u += `&post_status=eq.draft`;
       return u;
     };
-    const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
-    let res1 = await fetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: h });
-    if (res1.status === 401) {
-      const ok = await refreshAccessToken();
-      if (!ok) { tree.innerHTML = errHTML('انتهت الجلسة'); return; }
-      res1 = await fetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: h });
-    }
+    const rangeHeaders = { 'Range': '0-49999', 'Range-Unit': 'items' };
+    const res1 = await apiFetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: rangeHeaders });
     const rows1 = (res1.ok || res1.status === 206) ? await res1.json() : [];
     let rows2 = [];
     try {
-      const res2 = await fetch(buildUrl('system_type=is.null'), { headers: h });
+      const res2 = await apiFetch(buildUrl('system_type=is.null'), { headers: rangeHeaders });
       if (res2.ok || res2.status === 206) rows2 = await res2.json();
     } catch(_) {}
     const seen = new Set();
