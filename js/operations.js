@@ -1124,7 +1124,6 @@ async function loadApprovalQueue() {
     wrap.innerHTML = `<div class="alert alert-err">خطأ: ${e.message}</div>`;
   }
 }
-engineHooks.onVoidComplete = loadApprovalQueue;
 
 // ── Optimistic UI: شيل العنصر فوراً من الشاشة قبل انتهاء DB ──
 function _optimisticRemove(type, id) {
@@ -5571,6 +5570,7 @@ async function runPostImportMigration() {
     if (el('mig-confirm-input')) el('mig-confirm-input').value = 'MIGRATE';
   }, 400);
 }
+let _pwaInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   _pwaInstallPrompt = e;

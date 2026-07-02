@@ -3,7 +3,7 @@
 // ║           Double Entry Posting Engine · PWA · Init      ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-const EXPENSE_ACCOUNT_MAP = {
+export const EXPENSE_ACCOUNT_MAP = {
   // ── تكلفة مباشرة (5xxx) ──
   'شحن بحري':       '5200',
   'شحن داخلي':      '5210',
@@ -31,7 +31,7 @@ const EXPENSE_ACCOUNT_MAP = {
 // ✅ مطابق لشجرة الحسابات الفعلية (chart_of_accounts):
 // 6100=إيجار، 6200=رواتب وأجور، 6300=نقل وشحن، 6400=تسويق وإعلان،
 // 6500=مصاريف عمومية وإدارية، 6600=جمارك وتأمين، 6700=صيانة ومتفرقات
-const OPEX_ACC_MAP = {
+export const OPEX_ACC_MAP = {
   'رواتب وأجور':          '6200',
   'إيجار مكتب / معرض':    '6100',
   'كهرباء وماء ومرافق':   '6500',
@@ -53,16 +53,16 @@ const OPEX_ACC_MAP = {
 // مكانها هنا لأن المحرك (voidTransaction) يستدعي entryStatus() —
 // كانت في accounting.js مما يسبب تبعية عكسية من المحرك لطبقة أعلى.
 // ════════════════════════════════════════════════════════════════
-function isAdminUser() { return _currentRole === 'admin'; }
-function adminPostsImmediately() { return localStorage.getItem('tm_admin_post') === 'posted'; }
-function entryStatus() { return (isAdminUser() && adminPostsImmediately()) ? 'posted' : 'draft'; }
-function toggleAdminPostSetting() {
+export function isAdminUser() { return _currentRole === 'admin'; }
+export function adminPostsImmediately() { return localStorage.getItem('tm_admin_post') === 'posted'; }
+export function entryStatus() { return (isAdminUser() && adminPostsImmediately()) ? 'posted' : 'draft'; }
+export function toggleAdminPostSetting() {
   const v = adminPostsImmediately() ? 'draft' : 'posted';
   localStorage.setItem('tm_admin_post', v);
   updateAdminPostToggleUI();
   toast(v==='draft'?'✅ إدخالات المدير ستحتاج موافقة':'✅ إدخالات المدير ستُرحَّل فوراً','ok');
 }
-function updateAdminPostToggleUI() {
+export function updateAdminPostToggleUI() {
   const im=adminPostsImmediately(),t=document.getElementById('adminPostToggle'),k=document.getElementById('adminPostKnob'),l=document.getElementById('adminPostLabel');
   if(!t)return; t.style.background=im?'var(--green)':'var(--border2)';
   if(k)k.style.transform=im?'translateX(0)':'translateX(-18px)';
@@ -77,7 +77,7 @@ function updateAdminPostToggleUI() {
 // كل زوج بمبلغه الخاص فقط (مطابقة بالقيمة الفعلية، لا "أي سطر موجب") حتى لا يُكتب
 // مبلغ الإيراد فوق سطر التكلفة بالخطأ
 // ════════════════════════════════════════════════════════════════
-async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null, newDate = null, oldCost = null, newCost = null }) {
+export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null, newDate = null, oldCost = null, newCost = null }) {
   const amountChanged  = oldAmount != null && Math.abs((+oldAmount||0) - (+newAmount||0)) > 0.001;
   const costChanged    = oldCost != null && newCost != null && Math.abs((+oldCost||0) - (+newCost||0)) > 0.001;
   const contactChanged = contactPatch != null;
@@ -174,7 +174,7 @@ const engineHooks = {
 //   3. لا يُحذف أي بيانات — كل شيء يبقى في التاريخ
 // ════════════════════════════════════════════════════════════════
 
-async function voidTransaction(type, record, force=false) {
+export async function voidTransaction(type, record, force=false) {
   const sys     = state.system;
   const today_  = today();
   const amount  = +record.amount || +record.sale_price || 0;
@@ -297,7 +297,7 @@ async function voidTransaction(type, record, force=false) {
 //   مع Dr↔Cr معكوسة. مخصّصة فقط لقيود ref_table='manual' (القيد اليدوي
 //   لا جدول مصدر منفصل له، فلا معنى لتحديث "حالة مصدر" كما في voidTransaction).
 // ════════════════════════════════════════════════════════════
-async function reverseManualJE(entryNo) {
+export async function reverseManualJE(entryNo) {
   const sys = state.system;
 
   const lines = await apiGetAll('journal_entries', {
@@ -345,7 +345,7 @@ async function reverseManualJE(entryNo) {
 //   لا يُلغي المصاريف أو يعكس الدفعات تلقائياً — الملف "يُقفل جزئياً"؛
 //   إلغاء أي بند آخر قرار منفصل يقوم به المستخدم عبر voidTransaction.
 // ════════════════════════════════════════════════════════════
-async function voidPurchaseOrder(fileNo) {
+export async function voidPurchaseOrder(fileNo) {
   const sys = state.system;
 
   const poRows = await apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
@@ -395,7 +395,7 @@ async function voidPurchaseOrder(fileNo) {
   invalidateCache();
 }
 
-async function _jeNo(sys) {
+export async function _jeNo(sys) {
   // ✅ توليد ذرّي عبر RPC في Postgres (دالة + جدول عدّادات بقفل صفّي)
   // يمنع تضارب entry_no بين عمليات ترحيل متزامنة (انظر next_je_no في قاعدة البيانات)
   try {
@@ -409,7 +409,7 @@ async function _jeNo(sys) {
   } catch(e) { return `JE-${Date.now()}`; }
 }
 
-async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}) {
+export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}) {
   if (!lines || !lines.length) { console.warn('postDoubleEntry: no lines'); return; }
   const dr = lines.reduce((s,l)=>s+(+l.dr||0),0);
   const cr = lines.reduce((s,l)=>s+(+l.cr||0),0);
@@ -473,7 +473,7 @@ async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}
 //   - القطعة COGS = سعر شرائها الفعلي (لا متوسط).
 //   - الشاحنات تأخذ المتوسط على تكلفتها وعددها فقط (بعد طرح القطع).
 //   - متوافق رجعياً: ملف بلا قطع PART- (وبدون soldVins) ⇒ نفس النتيجة القديمة حرفياً.
-async function calcCOGS(sys, fileNo, soldCount, { alreadySold = null, alreadyCOGS = null, soldVins = null } = {}) {
+export async function calcCOGS(sys, fileNo, soldCount, { alreadySold = null, alreadyCOGS = null, soldVins = null } = {}) {
   if (!soldCount || soldCount <= 0) return 0;
   try {
     // جلب بيانات الملف (vin + سعر الشراء لازمان لفصل القطع)
@@ -536,7 +536,7 @@ async function calcCOGS(sys, fileNo, soldCount, { alreadySold = null, alreadyCOG
 }
 
 // شراء: مخزون Dr / مورد Cr
-async function je_purchase({sys,date,amount,fileNo,supplier}) {
+export async function je_purchase({sys,date,amount,fileNo,supplier}) {
   if(!amount||amount<=0) return;
   await postDoubleEntry({sys,date,fileNo,refTable:'purchase_orders',desc:`شراء — ملف ${fileNo} — ${supplier}`,lines:[
     {acc:'1300', name:getAccountName('1300'),  dr:amount, cr:0,      contact:null     },
@@ -545,7 +545,7 @@ async function je_purchase({sys,date,amount,fileNo,supplier}) {
 }
 
 // بيع: عميل Dr / إيراد Cr
-async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
+export async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
   if(!amount||amount<=0) return;
   const lines = [
     {acc:'1200', name:`ذمم العملاء`,        dr:amount, cr:0,     contact:customer, desc:`فاتورة ${invNo}`},
@@ -563,19 +563,19 @@ async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
 // نموذج الشركاء: الصندوق = الخزينة (نقد 1110 + بنك 1120).
 // أي شريك آخر يدفع/يستلم من جيبه → القيد على حسابه 2400 بدل النقدية.
 // ════════════════════════════════════════
-const TREASURY_PARTNER = 'الصندوق';
-function _isPartnerPocket(name) { return !!(name && name.trim() && name.trim() !== TREASURY_PARTNER); }
+export const TREASURY_PARTNER = 'الصندوق';
+export function _isPartnerPocket(name) { return !!(name && name.trim() && name.trim() !== TREASURY_PARTNER); }
 
-const USER_DISPLAY_NAMES = {
+export const USER_DISPLAY_NAMES = {
   'mahmoud.hamdy1091@gmail.com': 'محمود حمدي',
   'transit.co.2002@gmail.com':   'ترانزيت ابو محمد',
 };
-function displayUser(email) {
+export function displayUser(email) {
   if (!email) return 'غير معروف';
   return USER_DISPLAY_NAMES[email] || email.split('@')[0];
 }
 
-async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method,receivedBy}) {
+export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method,receivedBy}) {
   if(!amount||amount<=0) return;
   // المدين: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو احتفظ بالمبلغ خارج الصندوق
   const debit = _isPartnerPocket(receivedBy)
@@ -591,7 +591,7 @@ async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method
 // دفعة مورد: مورد Dr / نقد Cr
 // لو الدافع (payer) شريك مختلف عن المورد → يُضاف سطر ثالث على حساب الشريك 2400
 // حتى يظهر ما دفعه الشريك في كشف حسابه
-async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,payer,payerName,method}) {
+export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,payer,payerName,method}) {
   if(!amount||amount<=0) return;
   let sup = supplier || supplierName || '';
   if (!sup && fileNo) {
@@ -629,7 +629,7 @@ async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,pa
 }
 
 // مصروف: مصروف Dr / نقد Cr
-async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy}) {
+export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy}) {
   if(!amount||amount<=0) return;
   const eAcc     = EXPENSE_ACCOUNT_MAP[expType]||'6500';
   // الدائن: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو دفعها من جيبه
@@ -644,7 +644,7 @@ async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paid
 }
 
 // صرف شريك: شريك Dr / نقد Cr
-async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
+export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
   if(!amount||amount<=0) return;
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
@@ -655,7 +655,7 @@ async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
 }
 
 // عهدة: صرف = عهدة Dr / نقد Cr — تسوية = نقد Dr / عهدة Cr
-async function je_custodian({sys, date, amount, custodian, desc, method, direction='issue', refId=null}) {
+export async function je_custodian({sys, date, amount, custodian, desc, method, direction='issue', refId=null}) {
   if (!amount || amount <= 0) return;
   const cashAcc = method === 'نقد' ? '1110' : '1120';
   const cashNm  = method === 'نقد' ? 'النقد' : 'البنك';
@@ -677,7 +677,7 @@ async function je_custodian({sys, date, amount, custodian, desc, method, directi
 }
 
 // مصروف تشغيلي: مصروف Dr / نقد Cr
-async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
+export async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
   if(!amount||amount<=0) return;
   const eAcc    = OPEX_ACC_MAP[expType] || '6700';
   const cashAcc = method==='نقد'?'1110':'1120';
@@ -700,7 +700,7 @@ async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
 //
 // نفس منطق je_purchase / je_payment / je_expense / je_payout / je_sale /
 // je_collection بالظبط — لكن بدون postDoubleEntry (بدون أي كتابة في DB).
-async function simulateDraftJE(sys, from, to) {
+export async function simulateDraftJE(sys, from, to) {
   const toEOD = to + 'T23:59:59';
   const inRange = d => !!d && d >= from && d <= toEOD;
   const out = [];
@@ -843,13 +843,31 @@ async function simulateDraftJE(sys, from, to) {
   return out;
 }
 
-let _pwaInstallPrompt = null;
-
-
+// ════════════════════════════════════════
+// WINDOW BRIDGE — تعريض رموز الموديول للسكريبتات الكلاسيكية
+// (مؤقت لحد ما باقي الملفات تتحول لـ ES Modules في Phase 2)
+// ════════════════════════════════════════
+Object.assign(window, {
+  EXPENSE_ACCOUNT_MAP, OPEX_ACC_MAP,
+  isAdminUser, adminPostsImmediately, entryStatus,
+  toggleAdminPostSetting, updateAdminPostToggleUI,
+  updateJEInPlace, voidTransaction, reverseManualJE, voidPurchaseOrder,
+  _jeNo, postDoubleEntry, calcCOGS,
+  je_purchase, je_sale, je_collection, je_payment, je_expense, je_payout,
+  je_custodian, je_opex, simulateDraftJE,
+  TREASURY_PARTNER, _isPartnerPocket, USER_DISPLAY_NAMES, displayUser,
+});
 
 // ════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════
+
+// ✅ ربط engineHooks بالدوال الفعلية بيحصل هنا (جوه engine.js) مش في
+// transactions.js/operations.js — تنفيذ الموديول مؤجَّل زي defer، فمضمون
+// إن window.initApp / window.loadApprovalQueue اتعرّفوا قبل السطرين دول.
+engineHooks.onAppReady     = window.initApp;
+engineHooks.onVoidComplete = window.loadApprovalQueue;
+
 (function init() {
   const savedToken   = localStorage.getItem('tm_token');
   const savedRefresh = localStorage.getItem('tm_refresh');
@@ -858,7 +876,8 @@ let _pwaInstallPrompt = null;
     state.token        = savedToken;
     state.refreshToken = savedRefresh || null;
     state.user         = savedUser ? JSON.parse(savedUser) : { email: 'user@tm.com' };
-    // ✅ انتظر اكتمال DOM + كل الملفات قبل initApp
+    // ✅ الموديول مؤجَّل بطبيعته، فـ readyState عملياً مش هيبقى 'loading'
+    // هنا أبداً — سايبين الفرع ده كطبقة أمان زيادة بس.
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
         if (engineHooks.onAppReady) engineHooks.onAppReady();
