@@ -104,7 +104,7 @@ async function _doLoadCache() {
   state.allDealsEnriched = state.allDeals.map(d => {
     const fn = d.file_no;
     const vList = vehicleMap[fn]||[], sList = salesMap[fn]||[], eList = expMap[fn]||[];
-    const postedSales = sList.filter(isPosted);
+    const postedSales = sList.filter(isActive);
     const postedExp   = eList.filter(isPosted);
     const soldCount   = postedSales.length;
     const totalCost   = +d.total_purchase || vList.reduce((s,v)=>s+(+v.purchase_price||0),0);
@@ -360,15 +360,15 @@ function computeFinancials(jeRows) {
     const ref = r.ref_table   || '';
     const fn  = r.file_no     || null;
 
-    // 4xxx دائن = إيراد مبيعات
-    if (acc.startsWith('4') && cr > 0) {
-      totSales += cr;
-      if (fn) { ensure(fn); byFile[fn].sales += cr; }
+    // 4xxx = إيراد مبيعات (cr - dr) لمعالجة قيود العكس بشكل صحيح
+    if (acc.startsWith('4')) {
+      totSales += (cr - dr);
+      if (fn) { ensure(fn); byFile[fn].sales += (cr - dr); }
     }
-    // 5xxx مدين (عدا التشغيلية) = تكلفة مخزون مباع + مصاريف شحن/نقل
-    if (acc.startsWith('5') && dr > 0 && ref !== 'operating_expenses') {
-      totCOGS += dr;
-      if (fn) { ensure(fn); byFile[fn].cogs += dr; }
+    // 5xxx (عدا التشغيلية) = تكلفة مخزون مباع — (dr - cr) لمعالجة قيود العكس
+    if (acc.startsWith('5') && ref !== 'operating_expenses') {
+      totCOGS += (dr - cr);
+      if (fn) { ensure(fn); byFile[fn].cogs += (dr - cr); }
     }
     // 1300 مدين = تكلفة شراء المخزون (للصفقة)
     if (acc === '1300' && dr > 0 && ref === 'purchase_orders') {

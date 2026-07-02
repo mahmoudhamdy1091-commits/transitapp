@@ -2000,11 +2000,11 @@ async function _processEditApproval(type, id, preloadedItem = null) {
           ref_table:`eq.operating_expenses`, ref_id:`eq.${item.ref_no||item.id}`, limit:'1',
         });
       } else if (type === 'sale_edit') {
-        const rows = await apiGetAll('journal_entries', {
-          select:'entry_no,description', system_type:`eq.${state.system}`,
-          ref_table:`eq.sales`, file_no:`eq.${item.file_no}`, post_status:`eq.posted`,
+        // وجود أي قيد لهذا الملف بـ ref_table=sales كافٍ لمنع إنشاء قيد مكرر
+        existingJE = await apiGet('journal_entries', {
+          select:'entry_no', system_type:`eq.${state.system}`,
+          ref_table:`eq.sales`, file_no:`eq.${item.file_no}`, post_status:`eq.posted`, limit:'1',
         });
-        existingJE = (rows||[]).filter(r => item.inv_no && (r.description||'').includes(item.inv_no));
       } else {
         existingJE = await apiGet('journal_entries', {
           select:'entry_no', system_type:`eq.${state.system}`,
