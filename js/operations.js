@@ -2000,11 +2000,17 @@ async function _processEditApproval(type, id, preloadedItem = null) {
           ref_table:`eq.operating_expenses`, ref_id:`eq.${item.ref_no||item.id}`, limit:'1',
         });
       } else if (type === 'sale_edit') {
-        // وجود أي قيد لهذا الملف بـ ref_table=sales كافٍ لمنع إنشاء قيد مكرر
-        existingJE = await apiGet('journal_entries', {
-          select:'entry_no', system_type:`eq.${state.system}`,
-          ref_table:`eq.sales`, file_no:`eq.${item.file_no}`, post_status:`eq.posted`, limit:'1',
-        });
+        // je_sale لا يخزن ref_id لكل فاتورة (فاتورة واحدة = عدة سطور sales) —
+        // نطابق عبر description (يحتوي "فاتورة {inv_no}" دايماً في القيود الحقيقية) +
+        // file_no، فلترة على السيرفر (ilike) بدل جلب كل قيود الملف وفلترتها يدوياً.
+        // ⚠️ مؤقت — هيتحسّن بمطابقة تامة عبر ref_id في مجهود منفصل بعد backfill.
+        existingJE = item.inv_no
+          ? await apiGet('journal_entries', {
+              select:'entry_no', system_type:`eq.${state.system}`,
+              ref_table:`eq.sales`, file_no:`eq.${item.file_no}`, post_status:`eq.posted`,
+              description:`ilike.*${item.inv_no}*`, limit:'1',
+            })
+          : [];
       } else {
         existingJE = await apiGet('journal_entries', {
           select:'entry_no', system_type:`eq.${state.system}`,
