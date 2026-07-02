@@ -4,7 +4,7 @@
 // ║  بحث شامل في: ملفات، سيارات، عملاء، موردين، فواتير، مصاريف ║
 // ╚══════════════════════════════════════════════════════════════╝
 
-const GS = {
+export const GS = {
   query:    '',
   timer:    null,
   active:   -1,    // index العنصر المحدد بالكيبورد
@@ -26,7 +26,7 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Events ────────────────────────────────────────────────────
-function gsOnInput(val) {
+export function gsOnInput(val) {
   GS.query = val.trim();
   clearTimeout(GS.timer);
   if (!GS.query) { gsRenderEmpty(); return; }
@@ -34,7 +34,7 @@ function gsOnInput(val) {
   GS.timer = setTimeout(() => gsSearch(GS.query), GS.DELAY);
 }
 
-function gsOnKey(e) {
+export function gsOnKey(e) {
   const dd = document.getElementById('gsDropdown');
   const items = dd?.querySelectorAll('.gs-item') || [];
   if (!items.length) return;
@@ -53,24 +53,24 @@ function gsOnKey(e) {
   }
 }
 
-function gsHighlight(items) {
+export function gsHighlight(items) {
   items.forEach((el, i) => el.classList.toggle('gs-active', i === GS.active));
   items[GS.active]?.scrollIntoView({ block: 'nearest' });
 }
 
-function gsShow() {
+export function gsShow() {
   if (GS.query) gsSearch(GS.query);
   document.getElementById('gsBackdrop').style.display = 'block';
 }
 
-function gsHide() {
+export function gsHide() {
   document.getElementById('gsDropdown')?.classList.remove('open');
   document.getElementById('gsBackdrop').style.display = 'none';
   GS.active = -1;
 }
 
 // ── Core Search ───────────────────────────────────────────────
-async function gsSearch(q) {
+export async function gsSearch(q) {
   if (!q || q.length < 2) { gsRenderEmpty(); return; }
   GS.loading = true;
   GS.active  = -1;
@@ -145,7 +145,7 @@ async function gsSearch(q) {
 }
 
 // ── Render ────────────────────────────────────────────────────
-function gsRender(q, r) {
+export function gsRender(q, r) {
   const dd = document.getElementById('gsDropdown');
   if (!dd) return;
 
@@ -263,7 +263,7 @@ function gsRender(q, r) {
   GS.active = -1;
 }
 
-function gsShowLoading() {
+export function gsShowLoading() {
   const dd = document.getElementById('gsDropdown');
   if (!dd) return;
   dd.innerHTML = `<div class="gs-loading"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div> جاري البحث...</div>`;
@@ -271,13 +271,13 @@ function gsShowLoading() {
   document.getElementById('gsBackdrop').style.display = 'block';
 }
 
-function gsRenderEmpty() {
+export function gsRenderEmpty() {
   const dd = document.getElementById('gsDropdown');
   if (dd) { dd.innerHTML = ''; dd.classList.remove('open'); }
   document.getElementById('gsBackdrop').style.display = 'none';
 }
 
-function gsRenderError() {
+export function gsRenderError() {
   const dd = document.getElementById('gsDropdown');
   if (dd) {
     dd.innerHTML = `<div class="gs-empty">⚠️ حدث خطأ في البحث</div>`;
@@ -286,7 +286,7 @@ function gsRenderError() {
 }
 
 // ── Navigation: الانتقال لنتيجة البحث ────────────────────────
-async function gsNavigate(type, fileNo, extra) {
+export async function gsNavigate(type, fileNo, extra) {
   gsHide();
   document.getElementById('gsInput').value = '';
   GS.query = '';
@@ -332,7 +332,7 @@ async function gsNavigate(type, fileNo, extra) {
 }
 
 // helper: فتح viewer لملف معين
-async function openViewerFile(fileNo) {
+export async function openViewerFile(fileNo) {
   if (!fileNo) return;
   if (typeof openViewer === 'function') {
     await openViewer(fileNo);
@@ -340,7 +340,7 @@ async function openViewerFile(fileNo) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────
-function _gsHighlight(text, query) {
+export function _gsHighlight(text, query) {
   if (!query || !text) return _escHtml(String(text));
   const escaped  = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex    = new RegExp(`(${escaped})`, 'gi');
@@ -350,11 +350,11 @@ function _gsHighlight(text, query) {
   );
 }
 
-function _escHtml(s) {
+export function _escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function _gsBadge(status) {
+export function _gsBadge(status) {
   const map = {
     'OPEN':        ['var(--blue-dim)',   'var(--blue)',   'مفتوحة'],
     'IN PROGRESS': ['var(--accent-dim)', 'var(--accent)', 'جارية'],
@@ -364,3 +364,13 @@ function _gsBadge(status) {
   if (!label) return '';
   return `<span class="gs-item-badge" style="background:${bg};color:${color}">${label}</span>`;
 }
+
+// ════════════════════════════════════════
+// WINDOW BRIDGE — تعريض رموز الموديول للسكريبتات الكلاسيكية
+// (مؤقت لحد ما باقي الملفات تتحول لـ ES Modules في Phase 2)
+// ════════════════════════════════════════
+Object.assign(window, {
+  GS, gsOnInput, gsOnKey, gsHighlight, gsShow, gsHide, gsSearch, gsRender,
+  gsShowLoading, gsRenderEmpty, gsRenderError, gsNavigate, openViewerFile,
+  _gsHighlight, _escHtml, _gsBadge,
+});
