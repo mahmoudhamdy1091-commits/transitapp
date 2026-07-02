@@ -6,13 +6,13 @@
 // ║          لا يوجد أي إجراء تلقائي بالجملة.               ║
 // ╚══════════════════════════════════════════════════════════╝
 
-const CLEANUP_TABLES = ['payments','expenses','collections','partner_payouts'];
+export const CLEANUP_TABLES = ['payments','expenses','collections','partner_payouts'];
 
 // ── فحص ملف معيّن: مصاريف draft متبقية من النظام القديم (ref_no ينتهي بـ -E) ──
 // تشغيل: inspectFileDraftLeftovers('BOX-126')
 // هذه السجلات draft (لم تُرحَّل، لا قيد محاسبي مرتبط بها) — الحذف الفعلي آمن هنا
 // لأنه لا يكسر أي ميزان محاسبي، على عكس حذف قيود posted.
-async function inspectFileDraftLeftovers(fileNo, opts={}) {
+export async function inspectFileDraftLeftovers(fileNo, opts={}) {
   const sys   = state.system;
   const table = opts.table || 'expenses';
   const suffix = opts.suffix || '-E';
@@ -73,7 +73,7 @@ async function inspectFileDraftLeftovers(fileNo, opts={}) {
 }
 
 // حذف فعلي — يُسمح به فقط لسجلات draft (غير مرحّلة، بلا قيد محاسبي)
-async function _cleanupDeleteDraft(tbl, id, btn) {
+export async function _cleanupDeleteDraft(tbl, id, btn) {
   try {
     const rows = await apiGetAll(tbl, { select:'*', id:`eq.${id}` });
     const record = rows?.[0];
@@ -103,7 +103,7 @@ async function _cleanupDeleteDraft(tbl, id, btn) {
 // هذه السجلات posted فعلياً (مرتبطة بقيود محاسبية) — لا يجوز حذفها، الحل الوحيد الآمن
 // هو عكسها بقيد عكسي عبر voidTransaction (يحافظ على توازن دفتر الأستاذ والتاريخ المحاسبي).
 // تشغيل: inspectFileExpenseDuplicates('BOX-126 - Lot 4  new')
-async function inspectFileExpenseDuplicates(fileNo) {
+export async function inspectFileExpenseDuplicates(fileNo) {
   const sys = state.system;
   toast(`🔍 جاري فحص المصاريف المشبوهة لملف ${fileNo}...`, 'ok');
   const data = await apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
@@ -156,7 +156,7 @@ async function inspectFileExpenseDuplicates(fileNo) {
   document.getElementById('cleanupToolBody').innerHTML = html;
 }
 
-async function _cleanupVoidExpense(id, btn) {
+export async function _cleanupVoidExpense(id, btn) {
   try {
     const rows = await apiGetAll('expenses', { select:'*', id:`eq.${id}` });
     const record = rows?.[0];
@@ -182,7 +182,7 @@ async function _cleanupVoidExpense(id, btn) {
 // ── 1. دفعات/تحصيلات/مصاريف مكررة (voided + draft لنفس العملية تقريباً) ──
 // معيار التكرار: نفس file_no + نفس amount (±0.01) + تاريخ إنشاء قريب (≤ 48 ساعة)
 // وأحد السجلين voided والآخر draft (أو كلاهما draft/voided لنفس القيمة)
-function findDuplicates(rows) {
+export function findDuplicates(rows) {
   const out = [];
   const sorted = [...rows].sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
   for (let i=0;i<sorted.length;i++){
@@ -202,21 +202,21 @@ function findDuplicates(rows) {
 }
 
 // ── 2. partner_payouts المُنشأة تلقائياً (علامة في notes) ──
-function findAutoPayouts(rows) {
+export function findAutoPayouts(rows) {
   return rows.filter(r => (r.notes||'').includes('مسجّلة تلقائياً من دفعات المورد'));
 }
 
 // ── 3. سجلات pending_void معلّقة لأكثر من N يوم بدون تنفيذ ──
-function findStalePendingVoid(rows, days=7) {
+export function findStalePendingVoid(rows, days=7) {
   const cutoff = Date.now() - days*24*3600*1000;
   return rows.filter(r => r.post_status === 'pending_void' && new Date(r.created_at).getTime() < cutoff);
 }
 
-function fmtRow(r) {
+export function fmtRow(r) {
   return `#${r.id} | ${r.file_no||'—'} | ${r.amount||r.sale_price||0} ج.م | ${r.post_status} | ${r.created_at} | ${r.notes||r.description||r.partner||r.payer||r.customer||''}`;
 }
 
-async function _loadAuditData(sys) {
+export async function _loadAuditData(sys) {
   const data = {};
   for (const tbl of CLEANUP_TABLES) {
     data[tbl] = await apiGetAll(tbl, { select:'*', system_type:`eq.${sys}` });
@@ -225,7 +225,7 @@ async function _loadAuditData(sys) {
 }
 
 // ── واجهة عرض التقرير + التصحيح اليدوي ──
-async function openDataCleanupTool() {
+export async function openDataCleanupTool() {
   const sys = state.system;
   toast('🔍 جاري فحص البيانات...', 'ok');
   const data = await _loadAuditData(sys);
@@ -316,7 +316,7 @@ async function openDataCleanupTool() {
 
 // ── إجراءات التصحيح — كل واحدة تطلب تأكيداً صريحاً وتسجل في audit_log ──
 
-async function _cleanupVoidRecord(tbl, id, btn) {
+export async function _cleanupVoidRecord(tbl, id, btn) {
   const typeMap = { payments:'payment', expenses:'expense', collections:'collection', partner_payouts:'payout' };
   const type = typeMap[tbl];
   if (!confirm(`⚠️ سيتم عكس السجل #${id} من ${tbl} بقيد محاسبي عكسي (لن يُحذف). متابعة؟`)) return;
@@ -335,7 +335,7 @@ async function _cleanupVoidRecord(tbl, id, btn) {
   }
 }
 
-async function _cleanupApproveVoid(tbl, id, btn) {
+export async function _cleanupApproveVoid(tbl, id, btn) {
   if (!confirm(`⚠️ سيتم تنفيذ طلب الإلغاء المعلّق للسجل #${id} في ${tbl} الآن (قيد عكسي + post_status=voided). متابعة؟`)) return;
   const typeMap = { payments:'payment', expenses:'expense', collections:'collection', partner_payouts:'payout' };
   try {
@@ -353,7 +353,7 @@ async function _cleanupApproveVoid(tbl, id, btn) {
   }
 }
 
-async function _cleanupRejectVoid(tbl, id, btn) {
+export async function _cleanupRejectVoid(tbl, id, btn) {
   if (!confirm(`سيتم رفض طلب الإلغاء وإعادة السجل #${id} إلى الحالة "posted" بدون أي قيد. متابعة؟`)) return;
   try {
     btn.disabled = true; btn.textContent = '...جارٍ التنفيذ';
@@ -368,3 +368,14 @@ async function _cleanupRejectVoid(tbl, id, btn) {
     btn.disabled = false; btn.textContent = 'إعادة المحاولة';
   }
 }
+
+// ════════════════════════════════════════
+// WINDOW BRIDGE — تعريض رموز الموديول للسكريبتات الكلاسيكية
+// (مؤقت لحد ما باقي الملفات تتحول لـ ES Modules في Phase 2)
+// ════════════════════════════════════════
+Object.assign(window, {
+  CLEANUP_TABLES, inspectFileDraftLeftovers, _cleanupDeleteDraft,
+  inspectFileExpenseDuplicates, _cleanupVoidExpense, findDuplicates,
+  findAutoPayouts, findStalePendingVoid, fmtRow, _loadAuditData,
+  openDataCleanupTool, _cleanupVoidRecord, _cleanupApproveVoid, _cleanupRejectVoid,
+});
