@@ -1124,6 +1124,7 @@ async function loadApprovalQueue() {
     wrap.innerHTML = `<div class="alert alert-err">خطأ: ${e.message}</div>`;
   }
 }
+engineHooks.onVoidComplete = loadApprovalQueue;
 
 // ── Optimistic UI: شيل العنصر فوراً من الشاشة قبل انتهاء DB ──
 function _optimisticRemove(type, id) {

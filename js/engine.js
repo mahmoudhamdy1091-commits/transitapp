@@ -157,6 +157,16 @@ async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmo
 }
 
 // ════════════════════════════════════════════════════════════════
+// ENGINE HOOKS — نقطة اتصال لملفات أعلى (operations.js, transactions.js)
+// المحرك لا يعرف أسماء دوال من ملفات أخرى مباشرة (اقتران عكسي) —
+// بدلاً من typeof fn === 'function'، الملف الأعلى يسجّل نفسه هنا.
+// ════════════════════════════════════════════════════════════════
+const engineHooks = {
+  onVoidComplete: null, // operations.js → loadApprovalQueue
+  onAppReady: null,     // transactions.js → initApp
+};
+
+// ════════════════════════════════════════════════════════════════
 // REVERSAL ENGINE — إلغاء العمليات بقيد عكسي
 // المبدأ:
 //   1. يُضيف قيد عكسي (Dr↔Cr معكوسة) بتاريخ اليوم
@@ -183,7 +193,7 @@ async function voidTransaction(type, record, force=false) {
         notes: `${record.notes||''} | طلب إلغاء بتاريخ ${today_}`.trim(),
       });
       await logAudit('VOID_REQUEST', tbl, record.file_no, record, null, `طلب إلغاء ${type} — ${record.ref_no||record.id}`);
-      if (typeof loadApprovalQueue === 'function') await loadApprovalQueue();
+      if (engineHooks.onVoidComplete) await engineHooks.onVoidComplete();
       toast('🔄 تم إرسال طلب الإلغاء للمراجعة', 'ok');
       return;
     }
@@ -851,10 +861,10 @@ let _pwaInstallPrompt = null;
     // ✅ انتظر اكتمال DOM + كل الملفات قبل initApp
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
-        if (typeof initApp === 'function') initApp();
+        if (engineHooks.onAppReady) engineHooks.onAppReady();
       });
     } else {
-      if (typeof initApp === 'function') initApp();
+      if (engineHooks.onAppReady) engineHooks.onAppReady();
     }
   }
 

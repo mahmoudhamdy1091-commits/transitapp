@@ -629,6 +629,7 @@ async function initApp() {
   await loadUserRoleFromDB();
   updateSystemUI();
 }
+engineHooks.onAppReady = initApp;
 
 // ════════════════════════════════════════
 // SYSTEM SWITCH
