@@ -115,20 +115,15 @@ function showView(viewId) {
 }
 
 function hideAllViews() {
-  ['dashboardView','viewerView','journalView','contactsView','ledgerView','trialView',
-   'newLedgerView',
-   'allSalesView','allCollectionsView','reportsView','vehiclesReportView','activityView',
-   'settingsView','opexView','approvalView','transactionsView','reviewView','jeManagerView',
-   'warehousesView','contactStatementView','chartOfAccountsView','importWizardView']
-    .forEach(id => {
-      const e = el(id);
-      if (e) {
-        e.style.display    = 'none';
-        e.style.opacity    = '';
-        e.style.transform  = '';
-        e.style.transition = '';
-      }
-    });
+  // ✅ استعلام ديناميكي بدل array يدوي — أي view جديد (div مباشر جوه
+  // .content-area باسم منتهٍ بـ "View") يتخفي تلقائياً، من غير تعديل هنا.
+  // [id$="View"] يستثني عناصر زي #approvalDetailModal (sibling مش view).
+  document.querySelectorAll('.content-area > div[id$="View"]').forEach(e => {
+    e.style.display    = 'none';
+    e.style.opacity    = '';
+    e.style.transform  = '';
+    e.style.transition = '';
+  });
   // تطبيق صلاحيات المستخدم عند كل تنقل
   if (typeof applyRoleRestrictions === 'function') applyRoleRestrictions();
 }
