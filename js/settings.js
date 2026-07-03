@@ -642,7 +642,7 @@ async function loadUserRoleFromDB() {
       }
     }
 
-    _pendingRole = _currentRole;
+    setPendingRole(_currentRole);
     localStorage.setItem('tm_role', _currentRole);
     applyRoleRestrictions();
     console.log(`[Auth] Role loaded: ${_currentRole} (${email})`);

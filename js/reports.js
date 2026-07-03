@@ -837,6 +837,8 @@ function openRolesModal() {
 }
 
 let _pendingRole = _currentRole;
+function getPendingRole() { return _pendingRole; }
+function setPendingRole(role) { _pendingRole = role; }
 function setRole(role) {
   _pendingRole = role;
   updateRoleUI(role);
