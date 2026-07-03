@@ -11,7 +11,7 @@
 //   ميزان المراجعة ودفتر الأستاذ يستخدمان 'sat' (سلوكهما الأصلي).
 // الصيغة محليّة بالظبط مثل الكود القديم لتفادي انزياح المنطقة الزمنية.
 
-function getPeriodDates(period, { weekStart = 'sun' } = {}) {
+export function getPeriodDates(period, { weekStart = 'sun' } = {}) {
   const pad    = n => String(n).padStart(2, '0');
   const toDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   const now    = new Date();
@@ -61,3 +61,9 @@ function getPeriodDates(period, { weekStart = 'sun' } = {}) {
 
   return { from: null, to: null };
 }
+
+// ════════════════════════════════════════
+// WINDOW BRIDGE — تعريض الرمز للسكريبتات الكلاسيكية
+// (مؤقت لحد ما باقي الملفات تتحول لـ ES Modules في Phase 2)
+// ════════════════════════════════════════
+window.getPeriodDates = getPeriodDates;
