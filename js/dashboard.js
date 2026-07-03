@@ -8,7 +8,7 @@
 // كانت تختفي بالكامل من كل تتبّع لأن كل الحسابات بتعتمد على جدول collections فقط.
 // هنا تُضاف كـ"تحصيل افتراضي مستحق بالكامل" بنفس شكل سطر collections الحقيقي
 // (تاريخ الاستحقاق = تاريخ البيع) ليمر بسلامة عبر كل الفلاتر/العرض الموجودة.
-function buildCollectionsWithVirtualDue(allSales, allCollections) {
+export function buildCollectionsWithVirtualDue(allSales, allCollections) {
   const postedCols = (allCollections||[]).filter(isPosted);
   const colInvKeys = new Set(postedCols.map(c => c.inv_no || `col-${c.id}`));
 
@@ -36,7 +36,7 @@ function buildCollectionsWithVirtualDue(allSales, allCollections) {
   return [...(allCollections||[]), ...virtualDue];
 }
 
-async function loadDashboard() {
+export async function loadDashboard() {
   setLoading('dealsTableBody');
   const sys  = state.system;
   const from = dashState.from || new Date(Date.now() - 30*864e5).toISOString().split('T')[0];
@@ -247,7 +247,7 @@ async function loadDashboard() {
 }
 
 // ── Performance Chart — Stacked Bar ──
-function renderDashPerfChart(sales, expenses, from, to, days, deals) {
+export function renderDashPerfChart(sales, expenses, from, to, days, deals) {
   const chartWrap  = el('dash-perf-chart');
   const labelsWrap = el('dash-perf-labels');
   if (!chartWrap) return;
@@ -340,13 +340,13 @@ function renderDashPerfChart(sales, expenses, from, to, days, deals) {
 // ── Period deals summary ──
 
 // ── Helper: days since date ──
-function daysSince(dateStr) {
+export function daysSince(dateStr) {
   if (!dateStr) return 0;
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 864e5);
 }
 
 // ── Alerts strip ──
-function renderDashAlerts(overdueList, upcomingList, stockVehicles, draftCount, deals) {
+export function renderDashAlerts(overdueList, upcomingList, stockVehicles, draftCount, deals) {
   const wrap   = el('dash-alerts-wrap');
   const alerts = el('dash-alerts');
   if (!wrap || !alerts) return;
@@ -372,7 +372,7 @@ function renderDashAlerts(overdueList, upcomingList, stockVehicles, draftCount, 
 }
 
 // ── Collections list ──
-function renderDashCollections(overdueList, upcomingList, today) {
+export function renderDashCollections(overdueList, upcomingList, today) {
   const wrap = el('dash-collections-list');
   if (!wrap) return;
   const all  = [
@@ -400,7 +400,7 @@ function renderDashCollections(overdueList, upcomingList, today) {
 }
 
 // ── Expenses breakdown ──
-function renderDashExpBreakdown(expenses) {
+export function renderDashExpBreakdown(expenses) {
   const wrap = el('dash-exp-breakdown');
   if (!wrap) return;
   const byType = {};
@@ -425,7 +425,7 @@ function renderDashExpBreakdown(expenses) {
 // targetId: العنصر اللي هيتكتب فيه
 // opts.showSales: يضيف عمود المبيعات (للتقارير)
 // opts.totalRow: يضيف صف الإجمالي
-function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
+export function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
   const target = el(targetId);
   if (!target) return;
 
@@ -542,7 +542,7 @@ function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) {
     </table>`;
 }
 
-function filterDeals(status) {
+export function filterDeals(status) {
   state.dealsFilter = status;
   const src = state.allDealsEnriched || state.allDeals || [];
   const deals = status === 'all' ? src : src.filter(d => d.status === status);
@@ -561,7 +561,7 @@ function filterDeals(status) {
 // VIEWER
 // ════════════════════════════════════════
 
-async function openViewer(fileNo) {
+export async function openViewer(fileNo) {
   state.currentFileNo = fileNo;
   state.currentTab = 0;
   sessionStorage.setItem('tm_last_view', 'viewer:'+fileNo);
@@ -630,7 +630,7 @@ async function openViewer(fileNo) {
   if (fab && can('transactions')) fab.style.display = 'flex';
 }
 
-function switchTab(idx) {
+export function switchTab(idx) {
   state.currentTab = idx;
   sessionStorage.setItem('tm_last_tab', String(idx));
   document.querySelectorAll('.tabs .tab').forEach((t,i) => t.classList.toggle('active', i === idx));
@@ -638,7 +638,7 @@ function switchTab(idx) {
   loadViewerTab(idx);
 }
 
-async function loadViewerTab(idx) {
+export async function loadViewerTab(idx) {
   const fn = state.currentFileNo;
   const sys = state.system;
   if (!fn) return;
@@ -655,7 +655,7 @@ async function loadViewerTab(idx) {
   if (idx === 8) await loadDealNotes();
 }
 
-async function loadSummaryTab(fn, sys) {
+export async function loadSummaryTab(fn, sys) {
   try {
     const [vehicles, payments, expenses, sales, collections, partners, payouts, poArr, jeAll] = await Promise.all([
       apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
@@ -941,7 +941,7 @@ async function loadSummaryTab(fn, sys) {
   } catch(e) { console.error('Summary error:', e); el('sum-financial').innerHTML = errHTML('خطأ في تحميل الملخص: ' + e.message); }
 }
 
-function summRow(label, cls, val, bold=false, color='') {
+export function summRow(label, cls, val, bold=false, color='') {
   return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px">
     <span style="color:var(--text2)">${label}</span>
     <span class="${cls}" style="${bold?'font-weight:700':''}${cls?'':';color:var(--text)'}${color?';color:'+color:''}">${val}</span>
@@ -952,7 +952,7 @@ function summRow(label, cls, val, bold=false, color='') {
 
 // ── نُقلت printPaymentVoucher / printExpenseVoucher إلى print.js (Phase 1) ──
 
-async function loadPaymentsTab(fn, sys) {
+export async function loadPaymentsTab(fn, sys) {
   try {
     const data = await apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc,id.asc' });
     if (!data?.length) { el('paymentsTable').innerHTML = emptyHTML('💳','لا توجد دفعات'); return; }
@@ -1028,7 +1028,7 @@ async function loadPaymentsTab(fn, sys) {
   } catch(e) { el('paymentsTable').innerHTML = errHTML(e.message); }
 }
 
-async function loadExpensesTab(fn, sys) {
+export async function loadExpensesTab(fn, sys) {
   try {
     const data = await apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'exp_date.asc,id.asc' });
     if (!data?.length) { el('expensesTable').innerHTML = emptyHTML('💸','لا توجد مصاريف'); return; }
@@ -1086,7 +1086,7 @@ async function loadExpensesTab(fn, sys) {
   } catch(e) { el('expensesTable').innerHTML = errHTML(e.message); }
 }
 
-async function loadSalesTab(fn, sys) {
+export async function loadSalesTab(fn, sys) {
   try {
     const [data, charges] = await Promise.all([
       // ✅ استثناء cancelled/voided — كانت تظهر فواتير مُلغاة بالكامل وسيارات محذوفة من فاتورة كجزء من إجمالي نشط
@@ -1172,7 +1172,7 @@ async function loadSalesTab(fn, sys) {
 // reprintInvoice → js/print.js
 
 // إلغاء فاتورة بيع بقيد عكسي
-async function voidSaleInvoice(invNo, fileNo) {
+export async function voidSaleInvoice(invNo, fileNo) {
   confirmAction(
     `إلغاء فاتورة ${invNo}`,
     `سيتم إلغاء الفاتورة بقيد عكسي محاسبي — هل أنت متأكد؟`,
@@ -1229,7 +1229,7 @@ async function voidSaleInvoice(invNo, fileNo) {
   );
 }
 
-async function deleteSaleInvoice(invNo, fileNo) {
+export async function deleteSaleInvoice(invNo, fileNo) {
   showConfirm(
     `حذف فاتورة ${invNo}`,
     `سيتم حذف الفاتورة وجميع التحصيلات المرتبطة بها نهائياً. لا يمكن التراجع.`,
@@ -1296,7 +1296,7 @@ async function deleteSaleInvoice(invNo, fileNo) {
 
 // printSaleInvoice → js/print.js
 
-async function loadCollectionsTab(fn, sys) {
+export async function loadCollectionsTab(fn, sys) {
   try {
     const data = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'due_date.desc' });
     if (!data?.length) { el('collectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
@@ -1367,7 +1367,7 @@ async function loadCollectionsTab(fn, sys) {
   } catch(e) { el('collectionsTable').innerHTML = errHTML(e.message); }
 }
 
-async function loadPayoutsTab(fn, sys) {
+export async function loadPayoutsTab(fn, sys) {
   try {
     const [data, poArr] = await Promise.all([
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc' }),
@@ -1440,7 +1440,7 @@ async function loadPayoutsTab(fn, sys) {
 
 // printPayoutVoucher → js/print.js
 
-async function openEditPayoutModal(payoutId) {
+export async function openEditPayoutModal(payoutId) {
   try {
     const data = await apiGetAll('partner_payouts', { select:'*', id:`eq.${payoutId}` });
     const p = data?.[0];
@@ -1522,7 +1522,7 @@ async function openEditPayoutModal(payoutId) {
 // ── حالة المودال (nfPriceMode + _nfEditMode وأصدقاؤه) نُقلت إلى modals.js (Phase 1) ──
 
 // Add vehicle row pre-filled with existing data
-function addVehicleRowWithData(v) {
+export function addVehicleRowWithData(v) {
   addVehicleRow();
   const rows = el('vehiclesContainer').querySelectorAll('tr.v-row');
   const row  = rows[rows.length - 1];
@@ -1543,7 +1543,7 @@ function addVehicleRowWithData(v) {
 }
 
 // Add partner row pre-filled with existing data
-async function addPartnerRowWithData(partner, payment) {
+export async function addPartnerRowWithData(partner, payment) {
   await addPartnerRow();
   const rows = el('partnersContainer').querySelectorAll('.p-row');
   const row  = rows[rows.length - 1];
@@ -1580,4 +1580,14 @@ async function addPartnerRowWithData(partner, payment) {
 
   updatePartnerSummary();
 }
+
+// ── window bridge: تعريض الدوال للاستخدام من classic scripts وسمات onclick ──
+Object.assign(window, {
+  buildCollectionsWithVirtualDue, loadDashboard, renderDashPerfChart, daysSince,
+  renderDashAlerts, renderDashCollections, renderDashExpBreakdown, renderDealsTable,
+  filterDeals, openViewer, switchTab, loadViewerTab, loadSummaryTab, summRow,
+  loadPaymentsTab, loadExpensesTab, loadSalesTab, voidSaleInvoice, deleteSaleInvoice,
+  loadCollectionsTab, loadPayoutsTab, openEditPayoutModal, addVehicleRowWithData,
+  addPartnerRowWithData,
+});
 
