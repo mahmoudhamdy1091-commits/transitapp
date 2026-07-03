@@ -16,6 +16,7 @@ let _originalPOPostStatus = null;
 let _originalVehicleIds = [];   // IDs of all vehicles loaded at edit open time
 let _originalPartners = [];     // partner+payment data loaded at edit open time
 let _nfSaving = false;          // guard against double-submit
+function getNfEditFileNo() { return _nfEditFileNo; }
 
 async function openNewFileModal(editFileNo = null) {
   // ── set mode FIRST ──

@@ -748,7 +748,7 @@ export function showConfirmHtml(title, htmlMsg, onConfirm) {
 
 // Override browser confirm() for delete operations
 export async function confirmDeleteDealFromModal() {
-  const fn = _nfEditFileNo;
+  const fn = getNfEditFileNo();
   if (!fn) return;
   showConfirm(
     `حذف الصفقة ${fn}`,
