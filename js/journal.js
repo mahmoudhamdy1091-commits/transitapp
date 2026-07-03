@@ -4,12 +4,12 @@
 // ╚══════════════════════════════════════════════════════════╝
 // JOURNAL (صفحة اليومية)
 // ════════════════════════════════════════
-const journalState = {
+export const journalState = {
   period: 'year',
   entries: [],
 };
 
-function showJournal() {
+export function showJournal() {
   sessionStorage.setItem('tm_last_view','journal');
   hideAllViews();
   el('journalView').style.display  = 'block';
@@ -23,7 +23,7 @@ function showJournal() {
   loadJournal();
 }
 
-function setJournalPeriod(period) {
+export function setJournalPeriod(period) {
   journalState.period = period;
   document.querySelectorAll('.journal-period-btn').forEach(b => b.classList.remove('active'));
   el('jperiod-' + period)?.classList.add('active');
@@ -36,7 +36,7 @@ function setJournalPeriod(period) {
   }
 }
 
-function getJournalDateRange() {
+export function getJournalDateRange() {
   if (journalState.period === 'custom') {
     return { from: el('jDateFrom').value, to: el('jDateTo').value };
   }
@@ -49,7 +49,7 @@ function getJournalDateRange() {
   return { from: td, to: td };
 }
 
-async function loadJournal() {
+export async function loadJournal() {
   el('journalTimeline').innerHTML = `<div class="loading"><div class="spinner"></div><br>جاري تحميل اليومية من القيود...</div>`;
   el('journalKpis').innerHTML = '';
 
@@ -139,7 +139,7 @@ async function loadJournal() {
   }
 }
 
-function renderJournalKpis(entries) {
+export function renderJournalKpis(entries) {
   const groups = {
     purchase:   entries.filter(e=>e.type==='purchase'),
     sale:       entries.filter(e=>e.type==='sale'),
@@ -188,7 +188,7 @@ function renderJournalKpis(entries) {
   }
 }
 
-function filterJournalByType(filterVal, key) {
+export function filterJournalByType(filterVal, key) {
   // Toggle — لو نفس البند اضغطت تاني يغلق
   const panel = el('jkpi-detail');
   const sel   = el('jTypeFilter');
@@ -310,7 +310,7 @@ function filterJournalByType(filterVal, key) {
     </div>` : `<div class="empty-state" style="padding:20px"><div class="e-icon">📭</div><p>لا توجد عمليات</p></div>`}`;
 }
 
-function renderJournalEntries() {
+export function renderJournalEntries() {
   const typeFilter = el('jTypeFilter')?.value || 'all';
   let entries = journalState.entries;
   if (typeFilter === 'expense') {
@@ -388,12 +388,12 @@ function renderJournalEntries() {
 
 // استخراج رقم الفاتورة من وصف القيد — يتوقف عند أول em-dash (" — ") أو نهاية النص
 // (يتطابق مع صيغة الوصف في je_sale: "فاتورة INV-..." أو "بيع فاتورة INV-... — العميل — ملف ...")
-function _extractInvToken(desc) {
+export function _extractInvToken(desc) {
   const m = (desc||'').match(/INV-[\s\S]*?(?=\s—|$)/);
   return m ? m[0].trim() : null;
 }
 
-function _renderSingleJournalEntry(e) {
+export function _renderSingleJournalEntry(e) {
   const typeConfig = {
     purchase:   { icon:'📋', bg:'var(--accent-dim)', label:'سند شراء', amountColor:'var(--accent)' },
     sale:       { icon:'🤝', bg:'var(--green-dim)',   label:'بيع',            amountColor:'var(--green)'  },
@@ -440,8 +440,8 @@ function _renderSingleJournalEntry(e) {
         </div>`;
 }
 
-let _jGroupSeq = 0;
-function _renderGroupedSaleEntries(items, key, typeConfig) {
+export let _jGroupSeq = 0;
+export function _renderGroupedSaleEntries(items, key, typeConfig) {
   const cfg = typeConfig['sale'];
   const groupTotal = items.reduce((s,e)=>s+e.amount,0);
   const amountSign = groupTotal < 0 ? '-' : '+';
@@ -473,7 +473,7 @@ function _renderGroupedSaleEntries(items, key, typeConfig) {
 // ════════════════════════════════════════
 // LEDGER ENGINE — auto-creates entries
 // ════════════════════════════════════════
-const typeLabels = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
+export const typeLabels = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
 
 // printJournalVoucher → js/print.js
 
@@ -483,7 +483,7 @@ const typeLabels = { customer:'عميل', supplier:'مورد', partner:'شريك
 // REFERENCE NUMBERS & EXPORT HELPERS
 // ════════════════════════════════════════
 
-async function genSeqRef(prefix, sys, fileNo, table) {
+export async function genSeqRef(prefix, sys, fileNo, table) {
   const safe = (fileNo || 'GEN').toString().replace(/[^A-Za-z0-9\-]/g,'');
   try {
     const rows = await apiGet(table, { select:'id', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, limit:1000 });
@@ -494,7 +494,7 @@ async function genSeqRef(prefix, sys, fileNo, table) {
   }
 }
 
-function exportCSV(headers, rows, filename) {
+export function exportCSV(headers, rows, filename) {
   const csv = [headers, ...rows]
     .map(r => r.map(v => `"${String(v==null?'':v).replace(/"/g,'""')}"`).join(','))
     .join('\n');
@@ -514,7 +514,7 @@ function exportCSV(headers, rows, filename) {
 // ── Journal entry action helpers (avoid quote-escaping issues in templates) ──
 // _jPrint → js/print.js
 
-function _jEdit(btn) {
+export function _jEdit(btn) {
   const p = btn.closest('.j-entry-actions') || btn.parentElement;
   editJournalEntry(p.dataset.etype || '', null, p.dataset.fno || '');
 }
@@ -522,7 +522,7 @@ function _jEdit(btn) {
 // ════════════════════════════════════════
 // JOURNAL SALES DETAIL — نفس شكل جدول المبيعات جوا الملف
 // ════════════════════════════════════════
-async function _loadJournalSalesDetail(entries) {
+export async function _loadJournalSalesDetail(entries) {
   const wrap = document.getElementById('jkpi-sale-detail-body');
   if (!wrap) return;
 
@@ -609,3 +609,16 @@ async function _loadJournalSalesDetail(entries) {
     if (wrap2) wrap2.innerHTML = errHTML('خطأ: ' + e.message);
   }
 }
+
+// ════════════════════════════════════════
+// WINDOW BRIDGE — تعريض رموز الموديول للسكريبتات الكلاسيكية
+// (مؤقت لحد ما باقي الملفات تتحول لـ ES Modules في Phase 2)
+// journalState وtypeLabels لازم يتبردجوا — contacts.js (موديول بالفعل)
+// بيقرا typeLabels كمرجع مباشر، وaccounting.js بيقرا journalState.
+// ════════════════════════════════════════
+Object.assign(window, {
+  journalState, typeLabels,
+  showJournal, setJournalPeriod, getJournalDateRange, loadJournal, renderJournalKpis,
+  filterJournalByType, renderJournalEntries, _extractInvToken, _renderSingleJournalEntry,
+  _renderGroupedSaleEntries, genSeqRef, exportCSV, _jEdit, _loadJournalSalesDetail,
+});
