@@ -5,9 +5,9 @@
 // ════════════════════════════════════════
 // CONTACTS VIEW
 // ════════════════════════════════════════
-const contactsState = { all: [], typeFilter: 'all' };
+export const contactsState = { all: [], typeFilter: 'all' };
 
-async function showContacts(type='all') {
+export async function showContacts(type='all') {
   sessionStorage.setItem('tm_last_view','contacts');
   hideAllViews();
   el('contactsView').style.display = 'block';
@@ -19,7 +19,7 @@ async function showContacts(type='all') {
   filterContacts(type);
 }
 
-async function loadContacts() {
+export async function loadContacts() {
   el('contactsGrid').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
     // جلب جهات الاتصال — نجلب الكل ونشمل البيانات القديمة التي ممكن تكون system_type=null أو مختلفة
@@ -61,14 +61,14 @@ async function loadContacts() {
   }
 }
 
-function filterContacts(type) {
+export function filterContacts(type) {
   contactsState.typeFilter = type;
   document.querySelectorAll('[id^="ctype-"]').forEach(b => b.classList.remove('active'));
   el('ctype-' + type)?.classList.add('active');
   renderContactsList();
 }
 
-function renderContactsList() {
+export function renderContactsList() {
   const search = (el('contactSearch')?.value || '').toLowerCase();
   let list = contactsState.all;
   if (contactsState.typeFilter !== 'all') list = list.filter(c => c.type === contactsState.typeFilter);
@@ -155,7 +155,7 @@ function renderContactsList() {
 // ════════════════════════════════════════
 // CONTACT LEDGER — يقرأ من journal_entries فقط (مصدر واحد)
 // ════════════════════════════════════════
-async function showLedger(contactId, contactName, contactType) {
+export async function showLedger(contactId, contactName, contactType) {
   hideAllViews();
   el('ledgerView').style.display = 'block';
   el('topBarTitle').textContent = 'دفتر الأستاذ';
@@ -256,10 +256,10 @@ async function showLedger(contactId, contactName, contactType) {
 // ════════════════════════════════════════
 // CONTACT AUTOCOMPLETE
 // ════════════════════════════════════════
-let _acTimer;
-const _acCache = {};
+export let _acTimer;
+export const _acCache = {};
 
-async function getContactsByType(type) {
+export async function getContactsByType(type) {
   const key = state.system + ':' + type;
   if (_acCache[key] && (Date.now() - _acCache[key].ts < 30000)) return _acCache[key].data;
   try {
@@ -283,7 +283,7 @@ async function getContactsByType(type) {
   } catch(e) { return []; }
 }
 
-function contactAutocomplete(input, type) {
+export function contactAutocomplete(input, type) {
   clearTimeout(_acTimer);
   const q = input.value.trim();
   removeAcList(input);
@@ -296,7 +296,7 @@ function contactAutocomplete(input, type) {
   }, 250);
 }
 
-function showAcList(input, items, type) {
+export function showAcList(input, items, type) {
   removeAcList(input);
   const typeColors = {
     asset:'var(--blue)', liability:'var(--red)', equity:'var(--purple)',
@@ -339,7 +339,17 @@ function showAcList(input, items, type) {
   wrap.appendChild(list);
 }
 
-function removeAcList(input) {
+export function removeAcList(input) {
   const existing = document.getElementById('ac-list-' + input.id);
   if (existing) existing.remove();
 }
+
+// ════════════════════════════════════════
+// WINDOW BRIDGE — تعريض رموز الموديول للسكريبتات الكلاسيكية
+// (مؤقت لحد ما باقي الملفات تتحول لـ ES Modules في Phase 2)
+// ════════════════════════════════════════
+Object.assign(window, {
+  _acCache,
+  showContacts, loadContacts, filterContacts, renderContactsList, showLedger,
+  getContactsByType, contactAutocomplete, showAcList, removeAcList,
+});
