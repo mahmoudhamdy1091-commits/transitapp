@@ -16,9 +16,9 @@ let _originalPOPostStatus = null;
 let _originalVehicleIds = [];   // IDs of all vehicles loaded at edit open time
 let _originalPartners = [];     // partner+payment data loaded at edit open time
 let _nfSaving = false;          // guard against double-submit
-function getNfEditFileNo() { return _nfEditFileNo; }
+export function getNfEditFileNo() { return _nfEditFileNo; }
 
-async function openNewFileModal(editFileNo = null) {
+export async function openNewFileModal(editFileNo = null) {
   // ── set mode FIRST ──
   _nfEditMode   = !!editFileNo;
   _nfEditFileNo = editFileNo || null;
@@ -163,12 +163,12 @@ async function openNewFileModal(editFileNo = null) {
   openModal('newFileModal');
 }
 
-async function populatePartnersSelect() {
+export async function populatePartnersSelect() {
   // Pre-cache partners for autocomplete in partner rows
   await getContactsByType('partner');
 }
 
-function onVehicleCountChange(val) {
+export function onVehicleCountChange(val) {
   const n = parseInt(val) || 0;
   if (n < 1 || n > 100) return;
   el('nf-vehicles-label').style.display = '';
@@ -177,13 +177,13 @@ function onVehicleCountChange(val) {
   updateEqualPriceInfo();
 }
 
-function onTotalAmountChange() {
+export function onTotalAmountChange() {
   updateEqualPriceInfo();
   if (nfPriceMode === 'equal') applyEqualPrices();
   checkPriceTotal();
 }
 
-function setPriceMode(mode) {
+export function setPriceMode(mode) {
   nfPriceMode = mode;
   document.querySelectorAll('[id^="pm-"]').forEach(b => b.classList.remove('active'));
   el('pm-' + mode)?.classList.add('active');
@@ -196,7 +196,7 @@ function setPriceMode(mode) {
   updateEqualPriceInfo();
 }
 
-function buildVehicleRows(n) {
+export function buildVehicleRows(n) {
   const container = el('vehiclesContainer');
   const existing = container.querySelectorAll('tr.v-row').length;
   for (let i = existing; i < n; i++) addVehicleRow();
@@ -206,7 +206,7 @@ function buildVehicleRows(n) {
   setPriceMode(nfPriceMode);
 }
 
-function applyEqualPrices() {
+export function applyEqualPrices() {
   const total = parseFloat(el('nf-totalAmount').value) || 0;
   const rows = el('vehiclesContainer').querySelectorAll('[name="v-price"]');
   if (!rows.length) return;
@@ -215,7 +215,7 @@ function applyEqualPrices() {
   checkPriceTotal();
 }
 
-function checkPriceTotal() {
+export function checkPriceTotal() {
   const total = parseFloat(el('nf-totalAmount').value) || 0;
   const chk = el('pm-total-check');
   if (!chk) return;
@@ -231,7 +231,7 @@ function checkPriceTotal() {
   }
 }
 
-function updateEqualPriceInfo() {
+export function updateEqualPriceInfo() {
   const total = parseFloat(el('nf-totalAmount').value) || 0;
   const n = el('vehiclesContainer').querySelectorAll('[name="v-price"]').length;
   const info = el('pm-equal-info');
@@ -240,7 +240,7 @@ function updateEqualPriceInfo() {
   info.innerHTML = `سعر كل سيارة = <strong style="color:var(--accent)">${fmt(total/n)}</strong>`;
 }
 
-function addVehicleRow() {
+export function addVehicleRow() {
   const container = el('vehiclesContainer');
   // Ensure table exists
   let tbody = container.querySelector('tbody');
@@ -302,7 +302,7 @@ function addVehicleRow() {
   tbody.appendChild(tr);
 }
 
-function copyVehicleRow(sourceTr) {
+export function copyVehicleRow(sourceTr) {
   const container = el('vehiclesContainer');
   const tbody = container.querySelector('tbody');
   const newTr = sourceTr.cloneNode(true);
@@ -322,7 +322,7 @@ function copyVehicleRow(sourceTr) {
   checkPriceTotal();
 }
 
-function renumberVehicles() {
+export function renumberVehicles() {
   const rows = el('vehiclesContainer').querySelectorAll('tr.v-row');
   rows.forEach((r, i) => {
     const numCell = r.querySelector('.vt-num');
@@ -332,7 +332,7 @@ function renumberVehicles() {
   if (nfPriceMode === 'equal') applyEqualPrices();
 }
 
-async function addPartnerRow() {
+export async function addPartnerRow() {
   const partners = await getContactsByType('partner');
   const inp = (placeholder, type='text', extra='') =>
     `<input type="${type}" placeholder="${placeholder}" ${extra}
@@ -374,7 +374,7 @@ async function addPartnerRow() {
   el('partnersContainer').appendChild(div);
 }
 
-function updatePartnerSummary() {
+export function updatePartnerSummary() {
   const total = parseFloat(el('nf-totalAmount').value) || 0;
   const rows  = el('partnersContainer').querySelectorAll('.p-row');
   let shareSum = 0, paidSum = 0, valid = true;
@@ -409,13 +409,13 @@ function updatePartnerSummary() {
   } else { summary.style.display = 'none'; }
 }
 
-function checkShareTotal() {
+export function checkShareTotal() {
   updatePartnerSummary();
 }
 
 // ✅ يفرض كوداً فريداً (PART-{ملف}-{رقم}) لأي قطعة/سيارة بلا VIN عند الإدخال
 // يمنع تصادم المفتاح (vin فاضي/مكرر) في فلاتر "مباع/متاح" بكل الشاشات.
-async function _assignPartVins(fileNo, vehiclesArr) {
+export async function _assignPartVins(fileNo, vehiclesArr) {
   if (!vehiclesArr?.some(v => !v.vin || !String(v.vin).trim())) return;
   let existing = [];
   try { existing = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` }); } catch(_) {}
@@ -429,7 +429,7 @@ async function _assignPartVins(fileNo, vehiclesArr) {
   });
 }
 
-async function submitNewFile() {
+export async function submitNewFile() {
   // ✅ منع التنفيذ المزدوج (مثلاً عند ضغط الحفظ مرتين أو ظهور الديالوج مرتين)
   if (_nfSaving) return;
   _nfSaving = true;
@@ -440,7 +440,7 @@ async function submitNewFile() {
   }
 }
 
-async function _submitNewFileInner() {
+export async function _submitNewFileInner() {
   // Route to edit if in edit mode
   if (_nfEditMode) { await submitEditFileFull(); return; }
 
@@ -617,7 +617,7 @@ async function _submitNewFileInner() {
 // ════════════════════════════════════════
 
 // إلغاء دفعة شريك أُزيلت/صُفِّرت أثناء التعديل: عكس قيدها لو كانت مُرحَّلة، أو حذفها مباشرة لو لم يُرحَّل لها قيد بعد
-async function voidOrDeleteOldPayment(op) {
+export async function voidOrDeleteOldPayment(op) {
   try {
     if (op.paymentPostStatus === 'posted') {
       const rows = await apiGet('payments', { select:'*', id:`eq.${op.paymentId}` });
@@ -629,7 +629,7 @@ async function voidOrDeleteOldPayment(op) {
   } catch(e) { console.warn('voidOrDeleteOldPayment:', e.message); }
 }
 
-async function submitEditFileFull() {
+export async function submitEditFileFull() {
   const oldFileNo   = _nfEditFileNo;
   const newFileNo   = el('nf-fileNo').value.trim();
   const supplier    = el('nf-supplier')?.value?.trim() || '';
@@ -880,7 +880,7 @@ async function submitEditFileFull() {
 // OPERATIONS
 // ════════════════════════════════════════
 
-async function openPaymentModal() {
+export async function openPaymentModal() {
   const fn  = state.currentFileNo;
   const sys = state.system;
 
@@ -922,12 +922,12 @@ async function openPaymentModal() {
   openModal('paymentModal');
 }
 
-async function onPayFileSelectorChange() {
+export async function onPayFileSelectorChange() {
   const fn = el('pay-file-selector')?.value;
   if (fn) await _loadPaymentModalData(fn, state.system);
 }
 
-async function _loadPaymentModalData(fn, sys) {
+export async function _loadPaymentModalData(fn, sys) {
   try {
     const [po, prevPayments, partners] = await Promise.all([
       apiGetAll('purchase_orders', { select:'file_no,supplier,total_purchase', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
@@ -969,7 +969,7 @@ async function _loadPaymentModalData(fn, sys) {
 // ════════════════════════════════════════
 // EXPENSE MODAL — multi-row
 // ════════════════════════════════════════
-async function openExpenseModal() {
+export async function openExpenseModal() {
   const fn = state.currentFileNo;
   el('exp-date').value   = today();
   el('exp-method').value = 'تحويل بنكي';
@@ -995,7 +995,7 @@ async function openExpenseModal() {
   }
 }
 
-function addExpenseRow(prefill={}) {
+export function addExpenseRow(prefill={}) {
   const tbody = el('expenseRowsContainer');
   if (!tbody) return;
   const fn = prefill.fileNo || state.currentFileNo || '';
@@ -1035,14 +1035,14 @@ function addExpenseRow(prefill={}) {
   updateExpenseTotal();
 }
 
-function updateExpenseTotal() {
+export function updateExpenseTotal() {
   const rows = el('expenseRowsContainer')?.querySelectorAll('tr') || [];
   let total = 0;
   rows.forEach(r => { total += parseFloat(r.querySelector('[name="er-amount"]')?.value)||0; });
   if (el('exp-total')) el('exp-total').textContent = fmt(total);
 }
 
-function toggleExpenseModalSize() {
+export function toggleExpenseModalSize() {
   const modal = el('expenseModalInner');
   if (!modal) return;
   if (modal.style.maxWidth === '98vw') {
@@ -1055,7 +1055,7 @@ function toggleExpenseModalSize() {
   }
 }
 
-async function submitExpense() {
+export async function submitExpense() {
   const dateEl   = document.getElementById('exp-date');
   const methodEl = document.getElementById('exp-method');
   const docEl    = document.getElementById('exp-doc');
@@ -1132,7 +1132,7 @@ async function submitExpense() {
 }
 
 // Payment
-async function submitPayment() {
+export async function submitPayment() {
   const fn     = state.currentFileNo || el('pay-file-selector')?.value || el('pay-payer')?.dataset?.fileNo || null;
   const payer  = (el('pay-payer').value || '').trim();
   const amount = parseFloat(el('pay-amount').value);
@@ -1166,7 +1166,7 @@ async function submitPayment() {
 }
 
 // Helper to avoid code duplication
-async function _proceedSubmitPayment() {
+export async function _proceedSubmitPayment() {
   const fn     = state.currentFileNo;
   const payer  = el('pay-payer')?.value?.trim()  || '';
   const amount = parseFloat(el('pay-amount').value);
@@ -1216,7 +1216,7 @@ async function _proceedSubmitPayment() {
 // submitExpense moved to EXPENSE MODAL section above
 
 // Sale - open modal, populate vehicles
-async function openSaleModal(fileNoOverride = null) {
+export async function openSaleModal(fileNoOverride = null) {
   const fn  = fileNoOverride || state.currentFileNo;
   const sys = state.system;
 
@@ -1264,7 +1264,7 @@ async function openSaleModal(fileNoOverride = null) {
   openModal('saleModal');
 }
 
-async function onSaleFileChange(fn) {
+export async function onSaleFileChange(fn) {
   try {
     if (fn) {
       const prev = await apiGetAll('sales', { select:'inv_no', system_type:`eq.${state.system}`, file_no:`eq.${fn}`, order:'created_at.desc', limit:100 });
@@ -1282,7 +1282,7 @@ async function onSaleFileChange(fn) {
   await renderSaleVehiclePicker(fn, state.system);
 }
 
-async function loadAvailableVehicles(fn, sys) {
+export async function loadAvailableVehicles(fn, sys) {
   const vehicles = await apiGetAll('vehicles', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
   const sales    = await apiGetAll('sales', { select:'vin', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
   const soldVins = new Set((sales||[]).map(s=>s.vin).filter(Boolean));
@@ -1293,7 +1293,7 @@ async function loadAvailableVehicles(fn, sys) {
 // ════════════════════════════════════════
 // SALE VEHICLE PICKER — checkboxes
 // ════════════════════════════════════════
-async function renderSaleVehiclePicker(fn, sys) {
+export async function renderSaleVehiclePicker(fn, sys) {
   const container = el('saleVehiclesContainer');
   if (!fn) {
     container.innerHTML = `<tr id="sale-no-file-msg"><td colspan="5" style="padding:20px;text-align:center;color:var(--text2);font-size:12px">اختر رقم الملف لعرض السيارات المتاحة</td></tr>`;
@@ -1350,7 +1350,7 @@ async function renderSaleVehiclePicker(fn, sys) {
   }
 }
 
-function filterSaleVehiclesByVin(query) {
+export function filterSaleVehiclesByVin(query) {
   const clearBtn  = el('sale-vin-search-clear');
   const countSpan = el('sale-vin-match-count');
   const rows      = document.querySelectorAll('#saleVehiclesContainer .sale-v-row');
@@ -1392,13 +1392,13 @@ function filterSaleVehiclesByVin(query) {
   }
 }
 
-function clearSaleVinSearch() {
+export function clearSaleVinSearch() {
   const inp = el('sale-vin-search');
   if (inp) { inp.value = ''; inp.focus(); }
   filterSaleVehiclesByVin('');
 }
 
-function onSaleVehicleCheck(checkbox) {
+export function onSaleVehicleCheck(checkbox) {
   const row      = checkbox.closest('tr');
   const priceInp = row.querySelector('[name="sv-price"]');
   const notesInp = row.querySelector('[name="sv-notes"]');
@@ -1418,7 +1418,7 @@ function onSaleVehicleCheck(checkbox) {
   updateSaleTotal();
 }
 
-function saleToggleAll(masterCheck) {
+export function saleToggleAll(masterCheck) {
   const rows = el('saleVehiclesContainer').querySelectorAll('tr.sale-v-row');
   rows.forEach(row => {
     const cb = row.querySelector('.sv-check');
@@ -1427,16 +1427,16 @@ function saleToggleAll(masterCheck) {
 }
 
 // kept for backward compat (openEditSaleApproval uses addSaleVehicleRow)
-function addSaleVehicleRow() {
+export function addSaleVehicleRow() {
   const container = el('saleVehiclesContainer');
   // In picker mode, this is no-op — rows are auto-generated
   // Only used when editing from approval queue via openEditSaleApproval
 }
 
-function onSaleRowVehicleChange(sel) {}
-function onSaleVehicleChange(sel)    {}
+export function onSaleRowVehicleChange(sel) {}
+export function onSaleVehicleChange(sel)    {}
 
-function updateSaleTotal() {
+export function updateSaleTotal() {
   const rows = el('saleVehiclesContainer')?.querySelectorAll('tr.sale-v-row') || [];
   let carsTotal = 0, checked = 0;
   rows.forEach(r => {
@@ -1469,7 +1469,7 @@ function updateSaleTotal() {
   if (el('saleGrandTotalDisplay')) el('saleGrandTotalDisplay').textContent = fmt(grandTotal);
 }
 
-function addExtraChargeRow(desc = '', amount = '') {
+export function addExtraChargeRow(desc = '', amount = '') {
   const container = el('extraChargesContainer');
   if (!container) return;
   const idx = Date.now();
@@ -1492,12 +1492,12 @@ function addExtraChargeRow(desc = '', amount = '') {
   row.querySelector('.ec-desc').focus();
 }
 
-function removeExtraChargeRow(btn) {
+export function removeExtraChargeRow(btn) {
   btn.closest('.extra-charge-row').remove();
   updateSaleTotal();
 }
 
-function toggleSalePayment(checked) {
+export function toggleSalePayment(checked) {
   const fields = el('sale-payment-fields');
   if (fields) fields.style.display = checked ? 'block' : 'none';
   if (checked) {
@@ -1513,7 +1513,7 @@ function toggleSalePayment(checked) {
 }
 
 let _saleSaving = false;
-async function submitSale() {
+export async function submitSale() {
   if (_saleSaving) { toast('⏳ جاري الحفظ، انتظر...', 'err'); return; }
 
   const fn       = el('sale-fileNo').value.trim();
@@ -1732,7 +1732,7 @@ async function submitSale() {
 // ════════════════════════════════════════
 
 // Collection - open modal
-async function openCollectionModal() {
+export async function openCollectionModal() {
   const fn  = state.currentFileNo;
   const sys = state.system;
 
@@ -1838,7 +1838,7 @@ async function openCollectionModal() {
   }
 }
 
-function onCollectionInvChange() {
+export function onCollectionInvChange() {
   const sel = el('col-invNo');
   const opt = sel.options[sel.selectedIndex];
   if (!opt || !opt.value) {
@@ -1891,7 +1891,7 @@ function onCollectionInvChange() {
   }
 }
 
-async function submitCollection() {
+export async function submitCollection() {
   const invNo  = el('col-invNo').value;
   const cust   = el('col-customer').value.trim();
   const vin    = el('col-vin').value.trim();
@@ -1952,7 +1952,7 @@ async function submitCollection() {
 }
 
 // Payout
-async function openPayoutModal() {
+export async function openPayoutModal() {
   const fn  = state.currentFileNo;
   const sys = state.system;
 
@@ -1999,7 +1999,7 @@ async function openPayoutModal() {
   openModal('payoutModal');
 }
 
-async function onPoutFileSelectorChange() {
+export async function onPoutFileSelectorChange() {
   const fn  = el('pout-file-selector')?.value;
   const sys = state.system;
   if (!fn) return;
@@ -2011,7 +2011,7 @@ async function onPoutFileSelectorChange() {
   }
 }
 
-async function onPayoutPartnerChange() {
+export async function onPayoutPartnerChange() {
   const partner = el('pout-partner').value;
   const fn      = state.currentFileNo;
   if (!partner || !fn) return;
@@ -2083,7 +2083,7 @@ async function onPayoutPartnerChange() {
   }
 }
 
-function onPayoutTypeChange() {
+export function onPayoutTypeChange() {
   const type = el('pout-type').value;
   const isSplit = type === 'رأس مال + أرباح';
   el('pout-split-wrap').style.display  = isSplit ? '' : 'none';
@@ -2092,9 +2092,9 @@ function onPayoutTypeChange() {
                                           type === 'سلفة' ? 'مبلغ السلفة *' : 'مبلغ رأس المال *';
 }
 
-function onPayoutAmountChange() { /* live validation if needed */ }
+export function onPayoutAmountChange() { /* live validation if needed */ }
 
-function calcPayoutTotal() {
+export function calcPayoutTotal() {
   const cap = parseFloat(el('pout-capital').value) || 0;
   const prf = parseFloat(el('pout-profit').value)  || 0;
   const tot = cap + prf;
@@ -2103,7 +2103,7 @@ function calcPayoutTotal() {
 }
 
 // Get partner balance for a deal
-async function getPartnerDealBalance(fileNo, partner, sys) {
+export async function getPartnerDealBalance(fileNo, partner, sys) {
   const [pmRow, payments, payouts, vehicles, sales, expenses, poRow] = await Promise.all([
     apiGetAll('partners_master', { select:'share_percent', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}` }),
     apiGetAll('payments',        { select:'amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, payer:`eq.${partner}` }),
@@ -2129,7 +2129,7 @@ async function getPartnerDealBalance(fileNo, partner, sys) {
            _totalCost: totalCost, _totalExp: totalExp, _totalSales: totalSales };
 }
 
-async function submitPayout() {
+export async function submitPayout() {
   const fn      = state.currentFileNo || el('pout-file-selector')?.value || null;
   const partner = el('pout-partner').value;
   const type    = el('pout-type').value;
@@ -2193,5 +2193,23 @@ async function submitPayout() {
     if (state.currentTab === 0) loadSummaryTab(fn, state.system);
   } catch(e) { showFieldErr('poutError','خطأ: '+e.message); }
 }
+
+// ── window bridge: تعريض الدوال للاستخدام من classic scripts وسمات onclick ──
+Object.assign(window, {
+  getNfEditFileNo, openNewFileModal, populatePartnersSelect, onVehicleCountChange,
+  onTotalAmountChange, setPriceMode, buildVehicleRows, applyEqualPrices, checkPriceTotal,
+  updateEqualPriceInfo, addVehicleRow, copyVehicleRow, renumberVehicles, addPartnerRow,
+  updatePartnerSummary, checkShareTotal, _assignPartVins, submitNewFile, _submitNewFileInner,
+  voidOrDeleteOldPayment, submitEditFileFull, openPaymentModal, onPayFileSelectorChange,
+  _loadPaymentModalData, openExpenseModal, addExpenseRow, updateExpenseTotal,
+  toggleExpenseModalSize, submitExpense, submitPayment, _proceedSubmitPayment, openSaleModal,
+  onSaleFileChange, loadAvailableVehicles, renderSaleVehiclePicker, filterSaleVehiclesByVin,
+  clearSaleVinSearch, onSaleVehicleCheck, saleToggleAll, addSaleVehicleRow,
+  onSaleRowVehicleChange, onSaleVehicleChange, updateSaleTotal, addExtraChargeRow,
+  removeExtraChargeRow, toggleSalePayment, submitSale, openCollectionModal,
+  onCollectionInvChange, submitCollection, openPayoutModal, onPoutFileSelectorChange,
+  onPayoutPartnerChange, onPayoutTypeChange, onPayoutAmountChange, calcPayoutTotal,
+  getPartnerDealBalance, submitPayout,
+});
 
 // Add vehicle to existing deal
