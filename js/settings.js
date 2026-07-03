@@ -6,7 +6,7 @@
 // ════════════════════════════════════════
 // سجل العملية (Audit Trail) لكل سجل — يُفتح من قائمة ⋮ (المرحلة ج)
 // ════════════════════════════════════════
-async function showRecordAudit({ table, fileNo, refNo, id, title } = {}) {
+export async function showRecordAudit({ table, fileNo, refNo, id, title } = {}) {
   if (!table) return;
   document.getElementById('_recAuditModal')?.remove();
   const overlay = document.createElement('div');
@@ -54,7 +54,7 @@ async function showRecordAudit({ table, fileNo, refNo, id, title } = {}) {
 // ════════════════════════════════════════
 let _activityData = [];
 
-async function showActivityLog() {
+export async function showActivityLog() {
   if (!can('settings')) { toast('🔒 هذه الصفحة للمدراء فقط', 'err'); return; }
   hideAllViews();
   el('activityView').style.display = 'block';
@@ -66,7 +66,7 @@ async function showActivityLog() {
 }
 
 // ── فلتر الفترة السريعة — نفس آلية setTxPeriod المستخدمة في كل شاشات النظام ──
-function setActivityPeriod(period) {
+export function setActivityPeriod(period) {
   document.querySelectorAll('[id^="actperiod-"]').forEach(b => b.classList.remove('active'));
   el('actperiod-' + period)?.classList.add('active');
   const customWrap = el('actCustomDateWrap');
@@ -81,7 +81,7 @@ function setActivityPeriod(period) {
   loadActivityLog();
 }
 
-async function loadActivityLog() {
+export async function loadActivityLog() {
   el('activityTableWrap').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
     const from = el('actFilter-from')?.value;
@@ -122,7 +122,7 @@ async function loadActivityLog() {
   } catch(e) { el('activityTableWrap').innerHTML = errHTML('خطأ: '+e.message); }
 }
 
-function clearActivityFilters() {
+export function clearActivityFilters() {
   ['actFilter-action','actFilter-user','actFilter-table']
     .forEach(id => { const e = el(id); if(e) e.value = ''; });
   setActivityPeriod('month');
@@ -170,7 +170,7 @@ const _FIELD_LABELS = {
   name:'الاسم', phone:'الهاتف', email:'الإيميل', type:'النوع',
 };
 
-function renderActivityLog() {
+export function renderActivityLog() {
   const filterUser   = el('actFilter-user')?.value   || '';
   const filterAction = el('actFilter-action')?.value || '';
   const filterTable  = el('actFilter-table')?.value  || '';
@@ -243,7 +243,7 @@ function renderActivityLog() {
     </div>`;
 }
 
-function showActivityDetail(id) {
+export function showActivityDetail(id) {
   const r = _activityData.find(x => String(x.id) === String(id));
   if (!r) return;
 
@@ -367,7 +367,7 @@ function showActivityDetail(id) {
 // ════════════════════════════════════════
 // SETTINGS
 // ════════════════════════════════════════
-function switchSettTab(name) {
+export function switchSettTab(name) {
   document.querySelectorAll('.sett-panel').forEach(p => p.style.display = 'none');
   document.querySelectorAll('.sett-tab').forEach(t => t.classList.remove('active'));
   const panel = el('sett-panel-' + name);
@@ -380,7 +380,7 @@ function switchSettTab(name) {
 // ════════════════════════════════════════
 // ANTHROPIC API KEY MANAGEMENT
 // ════════════════════════════════════════
-function saveApiKey() {
+export function saveApiKey() {
   const key = el('sett-api-key')?.value?.trim() || '';
   if (!key) { toast('يرجى إدخال المفتاح أولاً', 'err'); return; }
   if (!key.startsWith('sk-ant-')) { toast('⚠️ المفتاح يجب أن يبدأ بـ sk-ant-', 'err'); return; }
@@ -388,13 +388,13 @@ function saveApiKey() {
   updateApiKeyStatus();
   toast('✅ تم حفظ مفتاح API — ميزة قراءة الرخص مفعّلة 📷', 'ok');
 }
-function clearApiKey() {
+export function clearApiKey() {
   localStorage.removeItem('tm_anthropic_key');
   if (el('sett-api-key')) el('sett-api-key').value = '';
   updateApiKeyStatus();
   toast('تم مسح المفتاح', 'ok');
 }
-function updateApiKeyStatus() {
+export function updateApiKeyStatus() {
   const key    = localStorage.getItem('tm_anthropic_key') || '';
   const status = el('api-key-status');
   if (!status) return;
@@ -404,13 +404,13 @@ function updateApiKeyStatus() {
     status.innerHTML = `<span style="color:var(--text3)">⚪ غير مفعّل — ميزة قراءة الرخص معطّلة</span>`;
   }
 }
-function loadApiKeyInSettings() {
+export function loadApiKeyInSettings() {
   const key = localStorage.getItem('tm_anthropic_key') || '';
   if (el('sett-api-key') && key) el('sett-api-key').value = key;
   updateApiKeyStatus();
 }
 
-async function showSettings() {
+export async function showSettings() {
   if (!can('settings')) { toast('🔒 الإعدادات للمدراء فقط', 'err'); return; }
   hideAllViews();
   el('settingsView').style.display = 'block';
@@ -425,7 +425,7 @@ async function showSettings() {
   await loadUserRoles();
 }
 
-async function loadUserRoles() {
+export async function loadUserRoles() {
   const wrap = el('userRolesList');
   if (!wrap) return;
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
@@ -506,7 +506,7 @@ async function loadUserRoles() {
 }
 
 // دمج الصفوف المكررة لنفس الإيميل في صف واحد
-async function mergeUserRows(email) {
+export async function mergeUserRows(email) {
   try {
     const rows = await apiGet('user_roles', { select:'*', email:`eq.${email}` });
     if (!rows || rows.length <= 1) { toast('لا يوجد تكرار','ok'); return; }
@@ -532,7 +532,7 @@ async function mergeUserRows(email) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
-function openSettEditCard(id, email, role, systems) {
+export function openSettEditCard(id, email, role, systems) {
   el('sett-edit-id').value            = id;
   el('sett-edit-email-label').textContent = email;
   el('sett-edit-role').value          = role;
@@ -542,11 +542,11 @@ function openSettEditCard(id, email, role, systems) {
   el('sett-edit-card').scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
 
-function closeSettEditCard() {
+export function closeSettEditCard() {
   el('sett-edit-card').style.display = 'none';
 }
 
-async function saveUserRoleEdit() {
+export async function saveUserRoleEdit() {
   const id      = el('sett-edit-id').value;
   const role    = el('sett-edit-role').value;
   const sysBox  = el('sett-edit-sys-box').checked;
@@ -561,7 +561,7 @@ async function saveUserRoleEdit() {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
-async function addUserRole() {
+export async function addUserRole() {
   const email  = el('newUserEmail')?.value.trim();
   const role   = el('newUserRole')?.value;
   const sysBox = el('newUserSysBox')?.checked;
@@ -585,7 +585,7 @@ async function addUserRole() {
   }
 }
 
-async function updateUserRole(id, role) {
+export async function updateUserRole(id, role) {
   try {
     await apiPatch('user_roles', { id:`eq.${id}` }, { role });
     toast('✅ تم تحديث الصلاحية','ok');
@@ -593,7 +593,7 @@ async function updateUserRole(id, role) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
-async function deleteUserRole(id, email) {
+export async function deleteUserRole(id, email) {
   showConfirm(`إزالة ${email}`, 'سيتم إزالة صلاحيات هذا المستخدم من النظام.', async () => {
     try {
       await apiDelete('user_roles', { id:`eq.${id}` });
@@ -604,7 +604,7 @@ async function deleteUserRole(id, email) {
 }
 
 // Load role from Supabase on login
-async function loadUserRoleFromDB() {
+export async function loadUserRoleFromDB() {
   try {
     const email = state.user?.email;
     if (!email) return;
@@ -658,7 +658,7 @@ async function loadUserRoleFromDB() {
 // ════════════════════════════════════════
 // DEAL STATEMENT (TAB 7)
 // ════════════════════════════════════════
-async function loadDealStatement(fn, sys) {
+export async function loadDealStatement(fn, sys) {
   const wrap = el('dealStatementWrap');
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
@@ -827,7 +827,7 @@ async function loadDealStatement(fn, sys) {
 // printDealStatement → js/print.js
 
 
-function exportDealStatementExcel() {
+export function exportDealStatementExcel() {
   const d = window._dealStatementData;
   if (!d) { toast('افتح كشف الصفقة أولاً','err'); return; }
   const { fn, entries } = d;
@@ -853,7 +853,7 @@ function exportDealStatementExcel() {
 // ════════════════════════════════════════
 // ACTIVITY LOG
 // ════════════════════════════════════════
-async function acGetContacts(type) {
+export async function acGetContacts(type) {
   const key = state.system + ':' + type;
   if (_acCache[key] && (Date.now() - _acCache[key].ts < 60000)) return _acCache[key].data;
   try {
@@ -874,7 +874,7 @@ async function acGetContacts(type) {
   } catch(e) { return []; }
 }
 
-function acClearCache() { Object.keys(_acCache).forEach(k => delete _acCache[k]); }
+export function acClearCache() { Object.keys(_acCache).forEach(k => delete _acCache[k]); }
 
 const _acTypeLabels2 = { customer:'عميل', supplier:'مورد', partner:'شريك', custodian:'عهدة' };
 const _acTypeBadges  = { customer:'ac-badge-customer', supplier:'ac-badge-supplier', partner:'ac-badge-partner', custodian:'ac-badge-custodian' };
@@ -882,12 +882,12 @@ const _acTypeIcons   = { customer:'🤝', supplier:'🏭', partner:'👥', custo
 let _acActiveIndex = -1;
 
 // Pre-load contacts cache on focus (no display)
-function acPreload(type) {
+export function acPreload(type) {
   acGetContacts(type); // warm cache silently
 }
 
 // ── الدالة الرئيسية للبحث ──
-async function acSearch(type, inputId) {
+export async function acSearch(type, inputId) {
   const inp  = el(inputId);
   const drop = el('ac-' + inputId);
   if (!inp || !drop) return;
@@ -950,7 +950,7 @@ async function acSearch(type, inputId) {
 }
 
 // ── تحديد جهة اتصال ──
-function acSelect(inputId, name) {
+export function acSelect(inputId, name) {
   const inp  = el(inputId);
   const drop = el('ac-' + inputId);
   if (inp)  inp.value = name;
@@ -958,7 +958,7 @@ function acSelect(inputId, name) {
 }
 
 // ── إضافة جهة اتصال جديدة ──
-async function acSelectNew(inputId, type, name) {
+export async function acSelectNew(inputId, type, name) {
   if (!name) return;
   try {
     const [matchedSys, nullSys] = await Promise.all([
@@ -976,7 +976,7 @@ async function acSelectNew(inputId, type, name) {
 }
 
 // ── تعديل جهة اتصال من الـ dropdown ──
-async function acEditContact(contactId) {
+export async function acEditContact(contactId) {
   document.querySelectorAll('[id^="ac-"]').forEach(d => { d.style.display = 'none'; d.innerHTML = ''; });
   try {
     const data = await apiGet('contacts', { select:'*', id:`eq.${contactId}` });
@@ -987,7 +987,7 @@ async function acEditContact(contactId) {
 }
 
 // ── حذف جهة اتصال من الـ dropdown ──
-async function acDeleteContact(contactId, inputId) {
+export async function acDeleteContact(contactId, inputId) {
   document.querySelectorAll('[id^="ac-"]').forEach(d => { d.style.display = 'none'; d.innerHTML = ''; });
   showConfirm('حذف جهة الاتصال', 'هل تريد حذف هذه الجهة نهائياً؟ لا يمكن التراجع.', async () => {
     try {
@@ -1002,7 +1002,7 @@ async function acDeleteContact(contactId, inputId) {
 }
 
 // ── إغلاق عند الـ blur ──
-function acBlur(inputId) {
+export function acBlur(inputId) {
   setTimeout(() => {
     const d = el('ac-' + inputId);
     if (d) { d.style.display = 'none'; }
@@ -1010,7 +1010,7 @@ function acBlur(inputId) {
 }
 
 // ── التنقل بالكيبورد ──
-function acKey(e, inputId) {
+export function acKey(e, inputId) {
   const drop = el('ac-' + inputId);
   if (!drop || drop.style.display === 'none') return;
   const items = drop.querySelectorAll('.ac-item');
@@ -1032,7 +1032,7 @@ function acKey(e, inputId) {
 }
 
 // ── تسجيل جهة اتصال تلقائياً لو مش موجودة ──
-async function ensureContact(name, type) {
+export async function ensureContact(name, type) {
   if (!name || !name.trim()) return;
   try {
     // ابحث في المطابق للنظام + null (قديمة) عشان لا تكرر
@@ -1050,7 +1050,7 @@ async function ensureContact(name, type) {
 
 // Patch populateContactSelect — ac inputs just clear value & pre-cache
 const _origPopulateCS = populateContactSelect;
-async function populateContactSelect(selectId, type, allowEmpty=true) {
+export async function populateContactSelect(selectId, type, allowEmpty=true) {
   const e2 = document.getElementById(selectId);
   if (!e2 || e2.tagName !== 'SELECT') { if(e2) e2.value=''; acGetContacts(type); return; }
   return _origPopulateCS(selectId, type, allowEmpty);
@@ -1064,7 +1064,7 @@ async function populateContactSelect(selectId, type, allowEmpty=true) {
 // ════════════════════════════════════════
 // EDIT PAYMENT
 // ════════════════════════════════════════
-async function openEditPaymentModal(paymentId) {
+export async function openEditPaymentModal(paymentId) {
   try {
     const data = await apiGetAll('payments', { select:'*', id:`eq.${paymentId}` });
     const p = data?.[0];
@@ -1093,7 +1093,7 @@ async function openEditPaymentModal(paymentId) {
 
 // طلب تعديل لسجل مُرحَّل: يحفظ القيم الجديدة في حقول _edit_* ويضع السجل قيد المراجعة
 // بدل تعديله مباشرة — مشترك بين تعديل الدفعات والمصاريف (نفس النمط بالضبط).
-async function requestPostedEdit({ table, old, editFields, summary, auditLabel, modalId }) {
+export async function requestPostedEdit({ table, old, editFields, summary, auditLabel, modalId }) {
   await apiPatch(table, { id:`eq.${old.id}` }, {
     post_status: 'pending_edit',
     ...editFields,
@@ -1105,7 +1105,7 @@ async function requestPostedEdit({ table, old, editFields, summary, auditLabel, 
   toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
 }
 
-async function submitEditPayment() {
+export async function submitEditPayment() {
   const id     = el('ep-id').value;
   const payer  = el('ep-payer').value;
   const amount = parseFloat(el('ep-amount').value);
@@ -1160,7 +1160,7 @@ async function submitEditPayment() {
 // ════════════════════════════════════════
 // VOID TRANSACTION — إلغاء بقيد عكسي
 // ════════════════════════════════════════
-async function deletePaymentEntry(paymentId, fileNo) {
+export async function deletePaymentEntry(paymentId, fileNo) {
   try {
     const data = await apiGetAll('payments', { select:'*', id:`eq.${paymentId}` });
     const p = data?.[0];
@@ -1183,7 +1183,7 @@ async function deletePaymentEntry(paymentId, fileNo) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
-function deletePaymentFromModal() {
+export function deletePaymentFromModal() {
   const id     = el('ep-id').value;
   const fileNo = state.currentFileNo;
   if (!id) return;
@@ -1194,7 +1194,7 @@ function deletePaymentFromModal() {
 // ════════════════════════════════════════
 // DELETE EXPENSE ENTRY
 // ════════════════════════════════════════
-async function deleteExpenseEntry(expenseId, fileNo) {
+export async function deleteExpenseEntry(expenseId, fileNo) {
   try {
     const data = await apiGetAll('expenses', { select:'*', id:`eq.${expenseId}` });
     const e = data?.[0];
@@ -1220,7 +1220,7 @@ async function deleteExpenseEntry(expenseId, fileNo) {
 // ════════════════════════════════════════
 // DELETE COLLECTION ENTRY
 // ════════════════════════════════════════
-async function deleteCollectionEntry(collectionId, fileNo) {
+export async function deleteCollectionEntry(collectionId, fileNo) {
   try {
     const data = await apiGetAll('collections', { select:'*', id:`eq.${collectionId}` });
     const c = data?.[0];
@@ -1262,7 +1262,7 @@ async function deleteCollectionEntry(collectionId, fileNo) {
 }
 // EDIT EXPENSE
 // ════════════════════════════════════════
-async function openEditExpenseModal(expenseId) {
+export async function openEditExpenseModal(expenseId) {
   try {
     const data = await apiGetAll('expenses', { select:'*', id:`eq.${expenseId}` });
     const e = data?.[0];
@@ -1291,7 +1291,7 @@ async function openEditExpenseModal(expenseId) {
   } catch(err) { toast('خطأ: '+err.message,'err'); }
 }
 
-async function submitEditExpense() {
+export async function submitEditExpense() {
   const id     = el('ee-id').value;
   const desc   = el('ee-desc').value.trim();
   const type   = el('ee-type').value;
@@ -1359,7 +1359,7 @@ async function submitEditExpense() {
 // ════════════════════════════════════════
 // EDIT COLLECTION
 // ════════════════════════════════════════
-async function openEditCollectionModal(collectionId) {
+export async function openEditCollectionModal(collectionId) {
   try {
     const data = await apiGetAll('collections', { select:'*', id:`eq.${collectionId}` });
     const c = data?.[0];
@@ -1389,7 +1389,7 @@ async function openEditCollectionModal(collectionId) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
-async function submitEditCollection() {
+export async function submitEditCollection() {
   const id     = el('ec-id').value;
   const amount = parseFloat(el('ec-amount').value);
   const method = el('ec-method').value;
@@ -1489,7 +1489,7 @@ async function submitEditCollection() {
 // ════════════════════════════════════════
 // MARK COLLECTION AS PAID — تسجيل دفع سريع
 // ════════════════════════════════════════
-async function markCollectionPaid(collectionId, fileNo) {
+export async function markCollectionPaid(collectionId, fileNo) {
   try {
     const data = await apiGetAll('collections', { select:'*', id:`eq.${collectionId}` });
     const c = data?.[0];
@@ -1526,7 +1526,7 @@ async function markCollectionPaid(collectionId, fileNo) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
-async function submitMarkPaid() {
+export async function submitMarkPaid() {
   const id     = el('cpaid-id').value;
   const date   = el('cpaid-date').value;
   const method = el('cpaid-method').value;
@@ -1584,3 +1584,17 @@ async function submitMarkPaid() {
     if (state.currentTab === 0) loadSummaryTab(state.currentFileNo || c.file_no, state.system);
   } catch(e) { showFieldErr('cpaidError','خطأ: '+e.message); }
 }
+
+// ── window bridge: تعريض الدوال للاستخدام من classic scripts وسمات onclick ──
+Object.assign(window, {
+  showRecordAudit, showActivityLog, setActivityPeriod, loadActivityLog, clearActivityFilters,
+  renderActivityLog, showActivityDetail, switchSettTab, saveApiKey, clearApiKey,
+  updateApiKeyStatus, loadApiKeyInSettings, showSettings, loadUserRoles, mergeUserRows,
+  openSettEditCard, closeSettEditCard, saveUserRoleEdit, addUserRole, updateUserRole,
+  deleteUserRole, loadUserRoleFromDB, loadDealStatement, exportDealStatementExcel,
+  acGetContacts, acClearCache, acPreload, acSearch, acSelect, acSelectNew, acEditContact,
+  acDeleteContact, acBlur, acKey, ensureContact, populateContactSelect, openEditPaymentModal,
+  requestPostedEdit, submitEditPayment, deletePaymentEntry, deletePaymentFromModal,
+  deleteExpenseEntry, deleteCollectionEntry, openEditExpenseModal, submitEditExpense,
+  openEditCollectionModal, submitEditCollection, markCollectionPaid, submitMarkPaid,
+});
