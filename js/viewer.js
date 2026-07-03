@@ -3,7 +3,7 @@
 // ║           Payments · Expenses · Sales · Collections     ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-function openAddVehicleModal() {
+export function openAddVehicleModal() {
   el('av-vin').value=''; el('av-type').value=''; el('av-model').value='';
   el('av-plate').value=''; el('av-color').value=''; el('av-price').value='';
   el('av-date').value = today(); el('av-notes').value='';
@@ -11,7 +11,7 @@ function openAddVehicleModal() {
   openModal('addVehicleModal');
 }
 
-async function submitAddVehicle() {
+export async function submitAddVehicle() {
   const fn    = state.currentFileNo;
   const vin   = el('av-vin').value.trim();
   const type  = el('av-type').value.trim();
@@ -50,7 +50,7 @@ async function submitAddVehicle() {
 // FILE DROPDOWN HELPER
 // ════════════════════════════════════════
 
-async function populateFileDropdown(selectId) {
+export async function populateFileDropdown(selectId) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
   const currentVal = sel.value;
@@ -76,7 +76,7 @@ async function populateFileDropdown(selectId) {
 // ════════════════════════════════════════
 // MODAL EXPAND / COLLAPSE
 // ════════════════════════════════════════
-function toggleModalSize(modalId) {
+export function toggleModalSize(modalId) {
   const overlay = document.getElementById(modalId);
   if (!overlay) return;
   const modal = overlay.querySelector('.modal');
@@ -87,7 +87,7 @@ function toggleModalSize(modalId) {
 // ════════════════════════════════════════
 // QUICK ENTRY (from Journal)
 // ════════════════════════════════════════
-async function openQuickModal(type) {
+export async function openQuickModal(type) {
   const map = {
     sale:       'quickSaleModal',
     collection: 'quickCollectionModal',
@@ -146,8 +146,8 @@ async function openQuickModal(type) {
 }
 
 // Load unsold VINs for a file (used in quick sale)
-let _vinLoadTimer;
-async function loadQuickVins(fileNo) {
+export let _vinLoadTimer;
+export async function loadQuickVins(fileNo) {
   clearTimeout(_vinLoadTimer);
   if (!fileNo) return;
   _vinLoadTimer = setTimeout(async () => {
@@ -164,8 +164,8 @@ async function loadQuickVins(fileNo) {
 }
 
 // Load sales invoices for a file (used in quick collection)
-let _invLoadTimer;
-async function loadQuickInvoices(fileNo) {
+export let _invLoadTimer;
+export async function loadQuickInvoices(fileNo) {
   clearTimeout(_invLoadTimer);
   const invSel = el('qc-invNo');
   invSel.innerHTML = '<option value="">جاري التحميل...</option>';
@@ -250,7 +250,7 @@ async function loadQuickInvoices(fileNo) {
   }
 }
 
-function onQuickCollectionInvChange() {
+export function onQuickCollectionInvChange() {
   const sel = el('qc-invNo');
   const opt = sel.options[sel.selectedIndex];
   if (!opt || !opt.value) {
@@ -279,11 +279,11 @@ function onQuickCollectionInvChange() {
 }
 
 // Legacy — not used anymore
-function fillCollectionCustomer() {}
+export function fillCollectionCustomer() {}
 
 // Load partners for a file (used in quick payout)
-let _partnerLoadTimer;
-async function loadQuickPartners(fileNo) {
+export let _partnerLoadTimer;
+export async function loadQuickPartners(fileNo) {
   clearTimeout(_partnerLoadTimer);
   if (!fileNo) return;
   _partnerLoadTimer = setTimeout(async () => {
@@ -298,7 +298,7 @@ async function loadQuickPartners(fileNo) {
 
 // من استلم التحصيل فعلياً (الصندوق افتراضياً، أو شريك احتفظ بالمبلغ) — يستخدم
 // في submitQuickCollection لتمرير receivedBy لـje_collection (نفس منطق الفورم الكامل)
-async function loadQuickReceivedBy(fileNo) {
+export async function loadQuickReceivedBy(fileNo) {
   if (!fileNo) return;
   try {
     const partners = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
@@ -310,7 +310,7 @@ async function loadQuickReceivedBy(fileNo) {
 }
 
 // Submit quick sale
-async function submitQuickSale() {
+export async function submitQuickSale() {
   const fileNo   = el('qs-fileNo').value;
   const vin      = el('qs-vin').value.trim();
   const customer = el('qs-customer')?.value?.trim() || '';
@@ -361,7 +361,7 @@ async function submitQuickSale() {
 }
 
 // Submit quick collection
-async function submitQuickCollection() {
+export async function submitQuickCollection() {
   const fileNo   = el('qc-fileNo').value;
   const invNo    = el('qc-invNo').value;
   const customer = el('qc-customer').value.trim();
@@ -419,7 +419,7 @@ async function submitQuickCollection() {
 }
 
 // Submit quick expense
-async function submitQuickExpense() {
+export async function submitQuickExpense() {
   const fileNo = el('qe-fileNo').value;
   const desc   = el('qe-desc').value.trim();
   const type   = el('qe-type').value;
@@ -458,7 +458,7 @@ async function submitQuickExpense() {
 }
 
 // Submit quick payment (to supplier)
-async function loadPaymentPOCard(fileNo) {
+export async function loadPaymentPOCard(fileNo) {
   el('qp-po-card').style.display    = 'none';
   el('qp-form-fields').style.display = 'none';
   el('qp-submit-btn').style.display  = 'none';
@@ -502,7 +502,7 @@ async function loadPaymentPOCard(fileNo) {
   } catch(e) { console.error('loadPaymentPOCard:', e.message); toast('خطأ في تحميل بيانات الصفقة', 'err'); }
 }
 
-async function submitQuickPayment() {
+export async function submitQuickPayment() {
   const fileNo = el('qp-fileNo').value;
   const payer  = (el('qp-payer').value || '').trim();
   const amount = parseFloat(el('qp-amount').value);
@@ -549,7 +549,7 @@ async function submitQuickPayment() {
 }
 
 // Submit quick payout (to partner)
-async function submitQuickPayout() {
+export async function submitQuickPayout() {
   const fileNo  = el('qpo-fileNo').value;
   const partner = el('qpo-partner').value;
   const type    = el('qpo-type').value;
@@ -601,13 +601,13 @@ async function submitQuickPayout() {
 }
 
 // VIN Search
-function closeVinDropdown() {
+export function closeVinDropdown() {
   const dd = el('vinDropdown');
   if (dd) dd.style.display = 'none';
 }
 
-let _vinSearchTimer = null;
-async function searchVinDropdown(q) {
+export let _vinSearchTimer = null;
+export async function searchVinDropdown(q) {
   const dd = el('vinDropdown');
   if (!dd) return;
 
@@ -651,7 +651,7 @@ async function searchVinDropdown(q) {
   }, 300);
 }
 
-async function selectVinFromDropdown(vin) {
+export async function selectVinFromDropdown(vin) {
   closeVinDropdown();
   const inp = el('vinSearch');
   if (inp) inp.value = vin;
@@ -663,7 +663,7 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.sidebar-search')) closeVinDropdown();
 });
 
-async function searchVin(q) {
+export async function searchVin(q) {
   if (!q || q.length < 3) {
     el('vin-card-overlay')?.remove();
     return;
@@ -773,3 +773,15 @@ async function searchVin(q) {
     document.body.appendChild(card);
   } catch(e) { console.error('searchVin:', e); }
 }
+
+// ════════════════════════════════════════
+// WINDOW BRIDGE — تعريض رموز الموديول للسكريبتات الكلاسيكية
+// (مؤقت لحد ما باقي الملفات تتحول لـ ES Modules في Phase 2)
+// ════════════════════════════════════════
+Object.assign(window, {
+  openAddVehicleModal, submitAddVehicle, populateFileDropdown, toggleModalSize,
+  openQuickModal, loadQuickVins, loadQuickInvoices, onQuickCollectionInvChange,
+  fillCollectionCustomer, loadQuickPartners, loadQuickReceivedBy, submitQuickSale,
+  submitQuickCollection, submitQuickExpense, loadPaymentPOCard, submitQuickPayment,
+  submitQuickPayout, closeVinDropdown, searchVinDropdown, selectVinFromDropdown, searchVin,
+});
