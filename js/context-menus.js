@@ -9,9 +9,9 @@
 // ════════════════════════════════════════
 // ⋮ CONTEXT MENU — قائمة الإجراءات
 // ════════════════════════════════════════
-let _ctxMenuActive = null;
+export let _ctxMenuActive = null;
 
-function showCtxMenu(btnEl, items) {
+export function showCtxMenu(btnEl, items) {
   // أغلق أي قايمة مفتوحة
   closeCtxMenu();
 
@@ -67,7 +67,7 @@ function showCtxMenu(btnEl, items) {
   setTimeout(() => document.addEventListener('click', closeCtxMenu, { once: true }), 0);
 }
 
-function closeCtxMenu() {
+export function closeCtxMenu() {
   if (_ctxMenuActive) { _ctxMenuActive.remove(); _ctxMenuActive = null; }
 }
 
@@ -83,9 +83,9 @@ function closeCtxMenu() {
 // بدل arrow functions في HTML attributes — نخزن الـ actions هنا
 // ════════════════════════════════════════
 window._ctxReg = {};
-let _ctxRegCounter = 0;
+export let _ctxRegCounter = 0;
 
-function ctxReg(items) {
+export function ctxReg(items) {
   // كل item ممكن يكون string ('divider') أو object بـ action function
   // نحوّل كل action لـ string reference آمن
   const key = 'ctx_' + (++_ctxRegCounter);
@@ -93,7 +93,7 @@ function ctxReg(items) {
   return key;
 }
 
-function showCtxMenuById(btnEl, regKey) {
+export function showCtxMenuById(btnEl, regKey) {
   const items = window._ctxReg[regKey];
   if (!items) return;
   showCtxMenu(btnEl, items);
@@ -104,17 +104,17 @@ function showCtxMenuById(btnEl, regKey) {
 // بدل كتابة arrow functions في HTML، نخزّن الـ items هنا ونستدعيها بـ key
 // ════════════════════════════════════════
 window._ctxStore = {};
-let _ctxStoreIdx = 0;
+export let _ctxStoreIdx = 0;
 
 /** تسجيل items وإرجاع key فريد */
-function _regCtx(items) {
+export function _regCtx(items) {
   const key = 'c' + (++_ctxStoreIdx);
   window._ctxStore[key] = items;
   return key;
 }
 
 /** استدعاء من onclick="event.stopPropagation();_execCtx(this,'KEY')" */
-function _execCtx(btnEl, key) {
+export function _execCtx(btnEl, key) {
   const items = window._ctxStore[key];
   if (items) showCtxMenu(btnEl, items);
 }
@@ -125,7 +125,7 @@ function _execCtx(btnEl, key) {
 // ════════════════════════════════════════
 
 // دفعات المورد (dashboard)
-function _ctxPayment(btn) {
+export function _ctxPayment(btn) {
   const id = btn.dataset.id, fn = btn.dataset.fn;
   showCtxMenu(btn, [
     {icon:'🖨️', label:'طباعة سند الدفعة', action:()=>printPaymentVoucher(id, fn)},
@@ -137,7 +137,7 @@ function _ctxPayment(btn) {
 }
 
 // المصاريف (dashboard)
-function _ctxExpense(btn) {
+export function _ctxExpense(btn) {
   const id = btn.dataset.id, fn = btn.dataset.fn;
   showCtxMenu(btn, [
     {icon:'🖨️', label:'طباعة سند المصروف', action:()=>printExpenseVoucher(id, fn)},
@@ -149,7 +149,7 @@ function _ctxExpense(btn) {
 }
 
 // التحصيلات (dashboard)
-function _ctxCollection(btn) {
+export function _ctxCollection(btn) {
   const id = btn.dataset.id, fn = btn.dataset.fn, paid = btn.dataset.paid === '1';
   const items = [];
   if (!paid) items.push({icon:'✅', label:'تسجيل دفع', action:()=>markCollectionPaid(id,fn)});
@@ -161,7 +161,7 @@ function _ctxCollection(btn) {
 }
 
 // صرف الشركاء (dashboard)
-function _ctxPayout(btn) {
+export function _ctxPayout(btn) {
   const id = btn.dataset.id, fn = btn.dataset.fn;
   const items = [
     {icon:'🖨️', label:'طباعة سند', action:()=>printPayoutVoucher(id)},
@@ -174,7 +174,7 @@ function _ctxPayout(btn) {
 }
 
 // مصاريف تشغيلية (operations)
-function _ctxOpex(btn) {
+export function _ctxOpex(btn) {
   const id = btn.dataset.id;
   const items = [{icon:'✏️', label:'تعديل', action:()=>openEditOpexModal(id)}, {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'operating_expenses', id, title:'مصروف تشغيلي'})}, 'divider'];
   if (can('delete')) items.push({icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>deleteOpex(id)});
@@ -182,7 +182,7 @@ function _ctxOpex(btn) {
 }
 
 // قيد يومية (operations)
-function _ctxJE(btn) {
+export function _ctxJE(btn) {
   const no = btn.dataset.no, isManual = btn.dataset.manual === '1';
   const items = [];
   // ✅ عكس القيد اليدوي بقيد جديد منفصل — أول خيار، يظهر للقيود اليدوية فقط
@@ -207,7 +207,7 @@ function _ctxJE(btn) {
 }
 
 // اليومية — قائمة موحّدة لصف القيد (طباعة + تعديل + السجل)
-function _ctxJournal(btn) {
+export function _ctxJournal(btn) {
   const p = btn.closest('.j-entry-actions') || btn;
   const etype = p.dataset.etype || '', fno = p.dataset.fno || '';
   const tableMap = { purchase:'purchase_orders', sale:'sales', collection:'collections', payment:'payments', expense:'expenses', payout:'partner_payouts', opex:'operating_expenses' };
@@ -221,7 +221,7 @@ function _ctxJournal(btn) {
 }
 
 // سيارة (operations)
-function _ctxVehicle(btn) {
+export function _ctxVehicle(btn) {
   const id = +btn.dataset.id, fn = btn.dataset.fn;
   showCtxMenu(btn, [
     {icon:'✏️', label:'تعديل بيانات السيارة', action:()=>openEditVehicleModal(id)},
@@ -230,7 +230,7 @@ function _ctxVehicle(btn) {
 }
 
 // الصفقات — جدول الصفقات الرئيسي (dashboard)
-async function _ctxDeal(btn) {
+export async function _ctxDeal(btn) {
   const fn = btn.dataset.fn, id = btn.dataset.id;
   const items = [];
   items.push({icon:'✏️', label:'تعديل بيانات الملف', action:()=>openNewFileModal(fn)});
@@ -261,7 +261,7 @@ async function _ctxDeal(btn) {
 }
 
 // طلب موافقة (operations)
-function _ctxApproval(btn) {
+export function _ctxApproval(btn) {
   const type = btn.dataset.type, id = btn.dataset.id;
   showCtxMenu(btn, [
     {icon:'✏️', label:'تعديل', action:()=>editApprovalRow(type,id)},
@@ -272,7 +272,7 @@ function _ctxApproval(btn) {
 }
 
 // مسودة قيد (accounting)
-function _ctxDraft(btn) {
+export function _ctxDraft(btn) {
   const id = btn.dataset.id;
   showCtxMenu(btn, [
     {icon:'🗑', label:'حذف المسودة', danger:true, action:()=>confirmAction('حذف مسودة قيد','هل تريد حذف هذه المسودة نهائياً؟',()=>deleteDraftEntry(id))}
@@ -280,7 +280,7 @@ function _ctxDraft(btn) {
 }
 
 // المبيعات (dashboard)
-function _ctxSale(btn) {
+export function _ctxSale(btn) {
   const invNo = btn.dataset.inv, fn = btn.dataset.fn, saleId = btn.dataset.id;
   showCtxMenu(btn, [
     {icon:'✏️', label:'تعديل الفاتورة', action:()=>openEditSaleApproval(saleId, fn, invNo)},
@@ -292,7 +292,7 @@ function _ctxSale(btn) {
 }
 
 // المعاملات — handler موحّد لكل أنواع TX
-function _ctxTx(btn, type) {
+export function _ctxTx(btn, type) {
   const id = btn.dataset.id, fn = btn.dataset.fn, paid = btn.dataset.paid === '1';
   switch(type) {
     case 'payments':
@@ -331,3 +331,13 @@ function _ctxTx(btn, type) {
     }
   }
 }
+
+// ════════════════════════════════════════
+// WINDOW BRIDGE — تعريض رموز الموديول للسكريبتات الكلاسيكية
+// (مؤقت لحد ما باقي الملفات تتحول لـ ES Modules في Phase 2)
+// ════════════════════════════════════════
+Object.assign(window, {
+  showCtxMenu, closeCtxMenu, ctxReg, showCtxMenuById, _regCtx, _execCtx,
+  _ctxPayment, _ctxExpense, _ctxCollection, _ctxPayout, _ctxOpex, _ctxJE,
+  _ctxJournal, _ctxVehicle, _ctxDeal, _ctxApproval, _ctxDraft, _ctxSale, _ctxTx,
+});
