@@ -29,7 +29,7 @@
 'use strict';
 
 // ─── Keep reference to last print window for closePrintOverlay ────────
-let _printWin = null;
+export let _printWin = null;
 
 // ════════════════════════════════════════════════════════════
 // PRINT_CSS — Single scoped stylesheet for ALL documents
@@ -37,7 +37,7 @@ let _printWin = null;
 // Table-based layout only — no grid/flex in structural elements
 // @page defined ONCE at top level — not inside @media print
 // ════════════════════════════════════════════════════════════
-const PRINT_CSS = `
+export const PRINT_CSS = `
 /* ── @page — single global definition ──────────────────── */
 @page           { size: A4 portrait;  margin: 14mm 12mm; orphans: 3; widows: 3; }
 @page landscape { size: A4 landscape; margin: 12mm 10mm; }
@@ -192,7 +192,7 @@ const PRINT_CSS = `
 // CORE: renderPrint — SINGLE renderer for ALL documents
 // ════════════════════════════════════════════════════════════
 
-function renderPrint(fragment, title) {
+export function renderPrint(fragment, title) {
   const win = window.open('', '_blank', 'width=860,height=700,scrollbars=yes');
   if (!win) { _renderOverlay(fragment, title); return; }
   _printWin = win;
@@ -202,7 +202,7 @@ function renderPrint(fragment, title) {
   win.focus();
 }
 
-function _renderOverlay(fragment, title) {
+export function _renderOverlay(fragment, title) {
   const o = document.getElementById('printOverlay');
   const b = document.getElementById('printOverlayBody');
   const t = document.getElementById('printOverlayTitle');
@@ -222,7 +222,7 @@ function _renderOverlay(fragment, title) {
 }
 
 // \u2500\u2500 \u0645\u0634\u0627\u0631\u0643\u0629 \u0645\u062D\u062A\u0648\u0649 \u0627\u0644\u0637\u0628\u0627\u0639\u0629 \u0643\u0635\u0648\u0631\u0629/\u0646\u0635 \u2500\u2500
-async function _sharePrintContent() {
+export async function _sharePrintContent() {
   try {
     // \u0646\u062D\u0627\u0648\u0644 \u0645\u0634\u0627\u0631\u0643\u0629 \u0643\u0646\u0635 \u0628\u0633\u064A\u0637 (HTML\u2192text) \u0625\u0630\u0627 \u0644\u0645 \u064A\u062F\u0639\u0645 \u0627\u0644\u062C\u0647\u0627\u0632 \u0645\u0644\u0641\u0627\u062A
     const titleText = window._lastPrintTitle || 'Transit';
@@ -238,18 +238,18 @@ async function _sharePrintContent() {
 }
 
 // ── Compatibility aliases ─────────────────────────────────
-function openPrintOverlay(html, title)  { renderPrint(html, title); }
-function closePrintOverlay()            { if (_printWin) { try { _printWin.close(); } catch(e){} _printWin = null; } const o = document.getElementById('printOverlay'); if (o) o.style.display = 'none'; document.body.style.overflow = ''; }
-function printDocument(html, title)     { renderPrint(html, title); }
+export function openPrintOverlay(html, title)  { renderPrint(html, title); }
+export function closePrintOverlay()            { if (_printWin) { try { _printWin.close(); } catch(e){} _printWin = null; } const o = document.getElementById('printOverlay'); if (o) o.style.display = 'none'; document.body.style.overflow = ''; }
+export function printDocument(html, title)     { renderPrint(html, title); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePrintOverlay(); });
 
 // PRINT_STYLES alias for any legacy reference
-const PRINT_STYLES = PRINT_CSS;
+export const PRINT_STYLES = PRINT_CSS;
 
 // ════════════════════════════════════════════════════════════
 // SECTION 2 — Shared document header builder
 // ════════════════════════════════════════════════════════════
-function docHeader(title, subtitle, fileNo) {
+export function docHeader(title, subtitle, fileNo) {
   return `
   <div class="doc-header">
     <div class="doc-header-right">
@@ -268,7 +268,7 @@ function docHeader(title, subtitle, fileNo) {
 // ════════════════════════════════════════════════════════════
 // SECTION 3 — printInvoice (reads live DOM #invoice-print-area)
 // ════════════════════════════════════════════════════════════
-function printInvoice() {
+export function printInvoice() {
   const content = el('invoice-print-area')?.innerHTML;
   if (!content) return;
   renderPrint(content, 'فاتورة بيع');
@@ -277,7 +277,7 @@ function printInvoice() {
 // ════════════════════════════════════════════════════════════
 // SECTION 4 — Sale Invoice
 // ════════════════════════════════════════════════════════════
-async function reprintInvoice(invNo, fn) {
+export async function reprintInvoice(invNo, fn) {
   try {
     await ensureCache();
     let data = state.allSales.filter(s => s.file_no === fn && s.inv_no === invNo);
@@ -295,7 +295,7 @@ async function reprintInvoice(invNo, fn) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
-function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extraCharges = [], grandTotal = null }) {
+export function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extraCharges = [], grandTotal = null }) {
   const companyName    = 'Transit International Company';
   const companyNameAr  = 'ترانزيت إنترناشيونال';
   const companyAddress = 'Kuwait · الكويت';
@@ -392,7 +392,7 @@ function printSaleInvoice({ invNo, customer, date, fn, notes, items, total, extr
 // ════════════════════════════════════════════════════════════
 // SECTION 5 — Payout Voucher
 // ════════════════════════════════════════════════════════════
-async function printPayoutVoucher(payoutId) {
+export async function printPayoutVoucher(payoutId) {
   try {
     const pArr = await apiGetAll('partner_payouts', { select:'*', id:`eq.${payoutId}` });
     const p = pArr?.[0];
@@ -470,7 +470,7 @@ async function printPayoutVoucher(payoutId) {
 // ════════════════════════════════════════════════════════════
 // SECTION 6 — Purchase Order
 // ════════════════════════════════════════════════════════════
-async function printPurchaseOrder(fileNo) {
+export async function printPurchaseOrder(fileNo) {
   try {
     const sys = state.system;
     const [poArr, vehicles, partners, payments, expenses] = await Promise.all([
@@ -552,7 +552,7 @@ async function printPurchaseOrder(fileNo) {
 // ════════════════════════════════════════════════════════════
 // SECTION 7 — Reports
 // ════════════════════════════════════════════════════════════
-async function printCurrentReport() {
+export async function printCurrentReport() {
   const type = reportState.type;
   const from = el('r-from').value;
   const to   = el('r-to').value;
@@ -567,7 +567,7 @@ async function printCurrentReport() {
   renderPrint(`${docHeader(titles[type],`من ${from} إلى ${to}`,'')}${tableHtml}<div class="doc-footer">Transit International Company · ${titles[type]} · ${from} — ${to}</div>`, titles[type]);
 }
 
-function printTrialBalance() {
+export function printTrialBalance() {
   const data = trialState.data || [];
   if (!data.length) { toast('لا توجد بيانات','err'); return; }
   const lbl = { asset:'أصول',liability:'التزامات',equity:'حقوق ملكية',revenue:'إيرادات',cogs:'تكلفة',expense:'مصروفات',other:'أخرى',customer:'عميل',supplier:'مورد',partner:'شريك',custodian:'عهدة' };
@@ -576,7 +576,7 @@ function printTrialBalance() {
   renderPrint(`${docHeader('ميزان المراجعة','Trial Balance','')}<table><colgroup><col style="width:80px"><col><col style="width:80px"><col style="width:14%"><col style="width:14%"><col style="width:16%"></colgroup><thead><tr><th>الكود</th><th>اسم الحساب</th><th>النوع</th><th style="text-align:left">مدين</th><th style="text-align:left">دائن</th><th style="text-align:left">الرصيد</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="3"><strong>الإجمالي (${data.length} حساب)</strong></td><td class="num c-green"><strong>${fmt(sD)}</strong></td><td class="num c-red"><strong>${fmt(sC)}</strong></td><td class="num ${sB>=0?'c-green':'c-red'}"><strong>${fmt(Math.abs(sB))} ${sB>0?'مدين':sB<0?'دائن':'✓ متوازن'}</strong></td></tr></tfoot></table><div class="doc-footer">Transit International Company · ميزان المراجعة · ${new Date().toLocaleDateString('en-GB')}</div>`, 'ميزان المراجعة');
 }
 
-function printVehiclesReport() {
+export function printVehiclesReport() {
   const list = vrState.filtered || vrState.all;
   if (!list.length) { toast('لا توجد بيانات','err'); return; }
   const rows = list.map(v => `<tr><td>${v._code}</td><td>${v.file_no||'—'}</td><td>${v._supplier}</td><td>${v.vehicle_type||'—'}</td><td>${v.model||'—'}</td><td>${v.year||'—'}</td><td style="direction:ltr">${v.vin||'—'}</td><td style="direction:ltr">${v.plate||'—'}</td><td>${v.color||'—'}</td><td>${v.engine_size||'—'}</td><td class="num">${(+v.purchase_price||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td><td>${v.license_expiry||'—'}</td><td>${v._sold?'مباع':'في المخزن'}</td><td>${v._warehouse||'—'}</td><td>${v._saleInfo?.customer||'—'}</td></tr>`).join('');
@@ -586,7 +586,7 @@ function printVehiclesReport() {
 // ════════════════════════════════════════════════════════════
 // SECTION 8 — Partner Statement (reads live DOM)
 // ════════════════════════════════════════════════════════════
-function printPartnerStatement() {
+export function printPartnerStatement() {
   const content = document.getElementById('partnerStatementContent');
   if (!content) return;
 
@@ -633,7 +633,7 @@ function printPartnerStatement() {
 // ════════════════════════════════════════════════════════════
 // SECTION 9 — Journal Voucher
 // ════════════════════════════════════════════════════════════
-async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, title) {
+export async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, title) {
   try {
     const lines = entryNo ? await apiGet('journal_entries', { select:'account_code,account_name,dr_amount,cr_amount,description', system_type:`eq.${state.system}`, entry_no:`eq.${entryNo}`, order:'id.asc' }) : [];
     const lbl = { purchase:'سند شراء',sale:'سند بيع',collection:'سند تحصيل',expense:'سند مصروف',payment:'سند دفع',payout:'سند صرف شريك',journal:'قيد يومية' };
@@ -685,7 +685,7 @@ async function printJournalVoucher(entryNo, entryType, fileNo, amount, date, tit
 // SECTION 10b — buildPrintTable: بناء جدول طباعة نظيف
 // المدخلات: عنوان، ملف، أعمدة [{label, key, width, align, format}]، بيانات []
 // ════════════════════════════════════════════════════════════
-function buildPrintTable(title, fileNo, columns, rows, totalsRow = null) {
+export function buildPrintTable(title, fileNo, columns, rows, totalsRow = null) {
   const totalWidth = columns.reduce((s, c) => s + (c.w || 1), 0);
   const colgroup = columns.map(c =>
     `<col style="width:${((c.w||1)/totalWidth*100).toFixed(1)}%">`
@@ -727,7 +727,7 @@ function buildPrintTable(title, fileNo, columns, rows, totalsRow = null) {
 // ════════════════════════════════════════════════════════════
 // SECTION 14 — printDealSummary (ملخص الصفقة الكامل)
 // ════════════════════════════════════════════════════════════
-async function printDealSummary(fn) {
+export async function printDealSummary(fn) {
   try {
     // ✅ قراءة من المصدر الموحد — لا طلبات جديدة
     const d = state.currentDealData;
@@ -960,7 +960,7 @@ async function printDealSummary(fn) {
 // ════════════════════════════════════════════════════════════
 
 // ── السيارات ──
-function printVehiclesTab(data, fn) {
+export function printVehiclesTab(data, fn) {
   // soldVins من state.currentSales — نفس المصدر اللي بيستخدمه الجدول على الشاشة
   const soldVins = new Set((state.currentSales||[]).map(s=>s.vin).filter(Boolean));
   const cols = [
@@ -983,7 +983,7 @@ function printVehiclesTab(data, fn) {
 }
 
 // ── الدفعات ──
-function printPaymentsTab(data, fn) {
+export function printPaymentsTab(data, fn) {
   const active = (data||[]).filter(isEffective);
   const cols = [
     {label:'#',              w:0.4, align:'center', format:(_,i)=>i+1},
@@ -1003,7 +1003,7 @@ function printPaymentsTab(data, fn) {
 }
 
 // ── المصاريف ──
-function printExpensesTab(data, fn) {
+export function printExpensesTab(data, fn) {
   const active = (data||[]).filter(e=>e.post_status!=='voided');
   const cols = [
     {label:'#',            w:0.4, align:'center', format:(_,i)=>i+1},
@@ -1022,7 +1022,7 @@ function printExpensesTab(data, fn) {
 }
 
 // ── المبيعات ──
-function printSalesTab(invoices, total, fn) {
+export function printSalesTab(invoices, total, fn) {
   const invList = Object.values(invoices||{});
   const cols = [
     {label:'#',              w:0.4, align:'center', format:(_,i)=>i+1},
@@ -1039,7 +1039,7 @@ function printSalesTab(invoices, total, fn) {
 }
 
 // ── التحصيلات ──
-function printCollectionsTab(data, fn) {
+export function printCollectionsTab(data, fn) {
   const active = (data||[]).filter(c=>c.post_status!=='voided');
   const cols = [
     {label:'#',              w:0.4, align:'center', format:(_,i)=>i+1},
@@ -1060,7 +1060,7 @@ function printCollectionsTab(data, fn) {
 }
 
 // ── صرف الشركاء ──
-function printPayoutsTab(data, fn) {
+export function printPayoutsTab(data, fn) {
   const cols = [
     {label:'#',            w:0.4, align:'center', format:(_,i)=>i+1},
     {label:'رقم الصرف',   w:2.0, mono:true, format:p=>p.pay_id||'—'},
@@ -1081,7 +1081,7 @@ function printPayoutsTab(data, fn) {
 // ════════════════════════════════════════════════════════════
 // SECTION 10 — printSection (generic section printer)
 // ════════════════════════════════════════════════════════════
-function printSection(title, subtitle, tableHtml, summaryHtml='') {
+export function printSection(title, subtitle, tableHtml, summaryHtml='') {
   // ✅ حذف عناصر no-print (أزرار Excel/PDF وأزرار الـ ctx menu) من HTML قبل الطباعة
   const tmp = document.createElement('div');
   tmp.innerHTML = tableHtml;
@@ -1095,7 +1095,7 @@ function printSection(title, subtitle, tableHtml, summaryHtml='') {
 // ════════════════════════════════════════════════════════════
 // SECTION 11 — _jPrint helper (unchanged)
 // ════════════════════════════════════════════════════════════
-function _jPrint(btn) {
+export function _jPrint(btn) {
   const p = btn.closest('.j-entry-actions') || btn.parentElement;
   printJournalVoucher(p.dataset.eno||'', p.dataset.etype||'', p.dataset.fno||'', parseFloat(p.dataset.amt)||0, p.dataset.date||'', p.dataset.etitle||'');
 }
@@ -1103,7 +1103,7 @@ function _jPrint(btn) {
 // ════════════════════════════════════════════════════════════
 // SECTION 12 — Contact Ledger Statement
 // ════════════════════════════════════════════════════════════
-function printLedgerStatement() {
+export function printLedgerStatement() {
   const contactName = window._ledgerContactName || '—';
   const contactType = window._ledgerContactType || '';
   const allEntries  = window._ledgerAllEntries  || [];
@@ -1151,7 +1151,7 @@ function printLedgerStatement() {
 // ════════════════════════════════════════════════════════════
 // SECTION 13 — Deal Statement
 // ════════════════════════════════════════════════════════════
-async function printDealStatement(fileNo) {
+export async function printDealStatement(fileNo) {
   // ✅ دائماً نُعيد التحميل من الخادم لضمان أحدث البيانات (بعد الحذف/التعديل)
   const targetFile = fileNo || window._dealStatementData?.fn;
   if (!targetFile) { toast('افتح كشف الصفقة أولاً','err'); return; }
@@ -1187,7 +1187,7 @@ async function printDealStatement(fileNo) {
 // ════════════════════════════════════════════════════════════
 // SECTION 14 — Contact Statement (Operations)
 // ════════════════════════════════════════════════════════════
-function printContactStatement() {
+export function printContactStatement() {
   const name    = csState.contactName;
   const content = el('cs-table')?.innerHTML || '';
   const kpis    = el('cs-kpis')?.innerHTML  || '';
@@ -1198,7 +1198,7 @@ function printContactStatement() {
 // SECTION 15 — Single Voucher Print (نُقلت من dashboard.js — Phase 1)
 // ════════════════════════════════════════════════════════════
 // طباعة سند دفعة مورد منفردة
-async function printPaymentVoucher(paymentId, fn) {
+export async function printPaymentVoucher(paymentId, fn) {
   try {
     const rows = await apiGetAll('payments', { select:'*', id:`eq.${paymentId}` });
     const p = rows?.[0];
@@ -1219,7 +1219,7 @@ async function printPaymentVoucher(paymentId, fn) {
 }
 
 // طباعة سند مصروف منفرد
-async function printExpenseVoucher(expenseId, fn) {
+export async function printExpenseVoucher(expenseId, fn) {
   try {
     const rows = await apiGetAll('expenses', { select:'*', id:`eq.${expenseId}` });
     const e = rows?.[0];
@@ -1240,7 +1240,7 @@ async function printExpenseVoucher(expenseId, fn) {
 // ════════════════════════════════════════════════════════════
 // SECTION 10 — Partner Statement PDF Export
 // ════════════════════════════════════════════════════════════
-async function exportPartnerStatementPDF() {
+export async function exportPartnerStatementPDF() {
   const content = document.getElementById('partnerStatementContent');
   if (!content) return;
 
@@ -1381,3 +1381,18 @@ async function exportPartnerStatementPDF() {
     if (btn) { btn.textContent = '📥 تصدير PDF'; btn.disabled = false; }
   }
 }
+
+// ════════════════════════════════════════
+// WINDOW BRIDGE — تعريض رموز الموديول للسكريبتات الكلاسيكية
+// (مؤقت لحد ما باقي الملفات تتحول لـ ES Modules في Phase 2)
+// ════════════════════════════════════════
+Object.assign(window, {
+  renderPrint, _renderOverlay, _sharePrintContent, openPrintOverlay, closePrintOverlay,
+  printDocument, docHeader, printInvoice, reprintInvoice, printSaleInvoice,
+  printPayoutVoucher, printPurchaseOrder, printCurrentReport, printTrialBalance,
+  printVehiclesReport, printPartnerStatement, printJournalVoucher, buildPrintTable,
+  printDealSummary, printVehiclesTab, printPaymentsTab, printExpensesTab, printSalesTab,
+  printCollectionsTab, printPayoutsTab, printSection, _jPrint, printLedgerStatement,
+  printDealStatement, printContactStatement, printPaymentVoucher, printExpenseVoucher,
+  exportPartnerStatementPDF,
+});
