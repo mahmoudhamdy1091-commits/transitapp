@@ -2,7 +2,7 @@
 // ║  reports.js — Reports · Filters · Export                ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-function showReport(type) {
+export function showReport(type) {
   sessionStorage.setItem('tm_last_view','report:'+type);
   hideAllViews();
   el('reportsView').style.display = 'block';
@@ -15,7 +15,7 @@ function showReport(type) {
 
 const reportPeriodState = { period: 'year' };
 
-function setReportPeriod(period, autoRun = true) {
+export function setReportPeriod(period, autoRun = true) {
   reportPeriodState.period = period;
   document.querySelectorAll('[id^="rperiod-"]').forEach(b => b.classList.remove('active'));
   el('rperiod-' + period)?.classList.add('active');
@@ -32,7 +32,7 @@ function setReportPeriod(period, autoRun = true) {
   if (autoRun) runReport();
 }
 
-function setReportType(type) {
+export function setReportType(type) {
   reportState.type = type;
   document.querySelectorAll('[id^="rtype-"]').forEach(b => b.classList.remove('active'));
   el('rtype-' + type)?.classList.add('active');
@@ -49,7 +49,7 @@ function setReportType(type) {
   runReport();
 }
 
-async function runReport() {
+export async function runReport() {
   const from = el('r-from').value;
   const to   = el('r-to').value;
   if (!from || !to) return;
@@ -301,7 +301,7 @@ async function runReport() {
 // ════════════════════════════════════════
 // CASH FLOW REPORT — من القيود المحاسبية
 // ════════════════════════════════════════
-async function runCashFlowReport(from, to, sys, postFilter = 'posted') {
+export async function runCashFlowReport(from, to, sys, postFilter = 'posted') {
   el('reportKpis').innerHTML = '';
   el('reportTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري إعداد تقرير التدفقات من القيود...</div>';
   try {
@@ -452,7 +452,7 @@ async function runCashFlowReport(from, to, sys, postFilter = 'posted') {
 // ════════════════════════════════════════
 // INVENTORY REPORT — تقرير المخزون
 // ════════════════════════════════════════
-async function runInventoryReport(sys) {
+export async function runInventoryReport(sys) {
   el('reportKpis').innerHTML = '';
   el('reportTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل المخزون...</div>';
   try {
@@ -663,7 +663,7 @@ async function runInventoryReport(sys) {
 }
 
 // فلترة تقرير المخزون بالمخزن — يُستدعى من كروت المخازن
-function filterInventoryByWarehouse(whName) {
+export function filterInventoryByWarehouse(whName) {
   const sel = el('inv-warehouse-filter');
   if (sel) {
     sel.value = whName;
@@ -671,7 +671,7 @@ function filterInventoryByWarehouse(whName) {
   }
 }
 
-function exportReportCSV() {
+export function exportReportCSV() {
   if (!reportState.data?.length) { toast('لا توجد بيانات للتصدير','err'); return; }
   const rows = [Object.keys(reportState.data[0])];
   reportState.data.forEach(r => rows.push(Object.values(r)));
@@ -681,7 +681,7 @@ function exportReportCSV() {
 // ════════════════════════════════════════
 // LOGIN HELPERS
 // ════════════════════════════════════════
-function togglePassword() {
+export function togglePassword() {
   const inp = document.getElementById('loginPass');
   const btn = document.getElementById('togglePass');
   if (inp.type === 'password') {
@@ -693,7 +693,7 @@ function togglePassword() {
   }
 }
 
-function clearSavedLogin() {
+export function clearSavedLogin() {
   localStorage.removeItem('tm_saved_email');
   localStorage.removeItem('tm_saved_pass');
   localStorage.removeItem('tm_remember');
@@ -728,7 +728,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ════════════════════════════════════════
 // FEATURE 1 — CONFIRM DELETE MODAL
 // ════════════════════════════════════════
-function showConfirm(title, msg, onConfirm) {
+export function showConfirm(title, msg, onConfirm) {
   el('confirmDeleteTitle').textContent = title;
   el('confirmDeleteMsg').textContent = msg;
   const btn = el('confirmDeleteOkBtn');
@@ -738,7 +738,7 @@ function showConfirm(title, msg, onConfirm) {
 
 // ✅ Audit fix: نسخة منفصلة تستخدم innerHTML لعرض محتوى HTML (جداول/قوائم)
 // يجب أن يكون كل محتوى HTML الممرَّر مُعقَّماً مسبقاً بـ esc() قبل الاستدعاء
-function showConfirmHtml(title, htmlMsg, onConfirm) {
+export function showConfirmHtml(title, htmlMsg, onConfirm) {
   el('confirmDeleteTitle').textContent = title;   // العنوان دائماً textContent
   el('confirmDeleteMsg').innerHTML = htmlMsg;      // المحتوى HTML مُعقَّم مسبقاً من المُستدعي
   const btn = el('confirmDeleteOkBtn');
@@ -747,7 +747,7 @@ function showConfirmHtml(title, htmlMsg, onConfirm) {
 }
 
 // Override browser confirm() for delete operations
-async function confirmDeleteDealFromModal() {
+export async function confirmDeleteDealFromModal() {
   const fn = _nfEditFileNo;
   if (!fn) return;
   showConfirm(
@@ -773,7 +773,7 @@ async function confirmDeleteDealFromModal() {
   );
 }
 
-async function confirmDeleteVehicle() {
+export async function confirmDeleteVehicle() {
   if (!_editVehicleId) return;
   showConfirm('حذف السيارة', 'هل تريد حذف هذه السيارة نهائياً من الصفقة؟', async () => {
     try {
@@ -785,7 +785,7 @@ async function confirmDeleteVehicle() {
   });
 }
 
-async function deletePayoutEntry(payoutId, fileNo, silent=false) {
+export async function deletePayoutEntry(payoutId, fileNo, silent=false) {
   try {
     const data = await apiGetAll('partner_payouts', { select:'*', id:`eq.${payoutId}` });
     const p = data?.[0];
@@ -831,20 +831,20 @@ async function deletePayoutEntry(payoutId, fileNo, silent=false) {
 }
 
 
-function openRolesModal() {
+export function openRolesModal() {
   openModal('rolesModal');
   updateRoleUI(_currentRole);
 }
 
 let _pendingRole = _currentRole;
-function getPendingRole() { return _pendingRole; }
-function setPendingRole(role) { _pendingRole = role; }
-function setRole(role) {
+export function getPendingRole() { return _pendingRole; }
+export function setPendingRole(role) { _pendingRole = role; }
+export function setRole(role) {
   _pendingRole = role;
   updateRoleUI(role);
 }
 
-function updateRoleUI(role) {
+export function updateRoleUI(role) {
   document.querySelectorAll('.role-btn').forEach(b => b.classList.toggle('active', b.dataset.role === role));
   const r = ROLES[role];
   el('perm-edit').innerHTML        = r.edit         ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-no">❌ ممنوع</span>';
@@ -853,7 +853,7 @@ function updateRoleUI(role) {
   el('perm-roles').innerHTML       = r.roles         ? '<span class="perm-yes">✅ مسموح</span>' : '<span class="perm-limited">🔒 مدير فقط</span>';
 }
 
-function saveRole() {
+export function saveRole() {
   _currentRole = _pendingRole;
   localStorage.setItem('tm_role', _currentRole);
   applyRoleRestrictions();
@@ -861,7 +861,7 @@ function saveRole() {
   toast(`✅ تم الحفظ — الدور: ${ROLES[_currentRole].label}`,'ok');
 }
 
-function applyRoleRestrictions() {
+export function applyRoleRestrictions() {
   const canDel      = can('delete');
   const canTx       = can('transactions');
   const canApprove  = can('approve');
@@ -929,7 +929,7 @@ function applyRoleRestrictions() {
 // ════════════════════════════════════════
 // FEATURE 3 — VIN DUPLICATE CHECK
 // ════════════════════════════════════════
-async function checkVinDuplicate(vin, excludeFileNo='') {
+export async function checkVinDuplicate(vin, excludeFileNo='') {
   if (!vin || vin.length < 3) return null;
   try {
     const results = await apiGetAll('vehicles', { select:'file_no,model,vin', system_type:`eq.${state.system}`, vin:`eq.${vin}` });
@@ -945,7 +945,7 @@ async function checkVinDuplicate(vin, excludeFileNo='') {
   } catch(e) { return null; }
 }
 
-async function onVinBlur(input, excludeFileNo='') {
+export async function onVinBlur(input, excludeFileNo='') {
   const vin = input.value.trim().toUpperCase();
   if (!vin) return;
   input.value = vin;
@@ -972,7 +972,7 @@ async function onVinBlur(input, excludeFileNo='') {
 // ════════════════════════════════════════
 // FEATURE 4 — WHATSAPP INVOICE
 // ════════════════════════════════════════
-function sendWhatsappInvoice({ invNo, customer, date, items, total, phone='' }) {
+export function sendWhatsappInvoice({ invNo, customer, date, items, total, phone='' }) {
   const itemLines = items.map((it,i) => `${i+1}. ${it.model||'سيارة'} — ${it.price.toLocaleString('en-US',{minimumFractionDigits:2})} ج.م`).join('\n');
   const msg = `🚗 *ترانزيت — فاتورة مبيعات*\n\n` +
     `رقم الفاتورة: *${invNo}*\n` +
@@ -992,14 +992,14 @@ function sendWhatsappInvoice({ invNo, customer, date, items, total, phone='' }) 
 // ════════════════════════════════════════
 // FEATURE 5 — QUICK EXPENSE FAB
 // ════════════════════════════════════════
-function openQuickExpFab() {
+export function openQuickExpFab() {
   if (!state.currentFileNo) { toast('افتح صفقة أولاً','err'); return; }
   openQuickModal('expense');
 }
 
 // FAB shown in openViewer directly
 
-function showDashboard_withFab() {
+export function showDashboard_withFab() {
   showDashboard();
   const fab = el('quickExpFab');
   if (fab) fab.style.display = 'none';
@@ -1018,4 +1018,16 @@ document.addEventListener('DOMContentLoaded', () => {
       topBar.classList.toggle('scrolled', contentArea.scrollTop > 10);
     });
   }
+});
+
+// ── window bridge: تعريض الدوال للاستخدام من classic scripts وسمات onclick ──
+Object.assign(window, {
+  showReport, setReportPeriod, setReportType, runReport,
+  runCashFlowReport, runInventoryReport, filterInventoryByWarehouse, exportReportCSV,
+  togglePassword, clearSavedLogin,
+  showConfirm, showConfirmHtml, confirmDeleteDealFromModal, confirmDeleteVehicle, deletePayoutEntry,
+  openRolesModal, getPendingRole, setPendingRole, setRole, updateRoleUI, saveRole, applyRoleRestrictions,
+  checkVinDuplicate, onVinBlur,
+  sendWhatsappInvoice,
+  openQuickExpFab, showDashboard_withFab,
 });
