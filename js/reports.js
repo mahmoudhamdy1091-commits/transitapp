@@ -774,10 +774,10 @@ export async function confirmDeleteDealFromModal() {
 }
 
 export async function confirmDeleteVehicle() {
-  if (!_editVehicleId) return;
+  if (!getEditVehicleId()) return;
   showConfirm('حذف السيارة', 'هل تريد حذف هذه السيارة نهائياً من الصفقة؟', async () => {
     try {
-      await apiDelete('vehicles', { id:`eq.${_editVehicleId}` });
+      await apiDelete('vehicles', { id:`eq.${getEditVehicleId()}` });
       closeModal('editVehicleModal');
       toast('✅ تم حذف السيارة','ok');
       if (state.currentFileNo) await loadViewerTab(state.currentTab);

@@ -842,6 +842,7 @@ const _origSubmitContact = typeof submitContact !== 'undefined' ? submitContact 
 // EDIT VEHICLE
 // ════════════════════════════════════════
 let _editVehicleId = null;
+function getEditVehicleId() { return _editVehicleId; }
 
 async function openEditVehicleModal(vehicleId) {
   let v = state.currentVehicles?.find(v=>String(v.id)===String(vehicleId));
