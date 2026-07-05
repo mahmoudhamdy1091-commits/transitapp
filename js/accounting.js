@@ -11,7 +11,7 @@ const SOURCE_COLORS = {purchase_orders:'var(--accent)',sales:'var(--green)',coll
 const trialState  = { data:[], typeFilter:'all', from:null, to:null, period:'year' };
 const ledgerState = { accountCode:null, accountName:null, from:null, to:null, period:'year' };
 
-function _getPeriodDates(period) {
+export function _getPeriodDates(period) {
   const now = new Date();
   const yr  = now.getFullYear();
   const pad = n => String(n).padStart(2,'0');
@@ -33,7 +33,7 @@ function _getPeriodDates(period) {
   if (period==='lastyear') return {from:`${yr-1}-01-01`,to:`${yr-1}-12-31`};
   return {from:null,to:null};
 }
-function _setPeriodBtns(prefix,period) {
+export function _setPeriodBtns(prefix,period) {
   document.querySelectorAll(`[id^="${prefix}-period-"]`).forEach(b=>b.classList.remove('active'));
   el(`${prefix}-period-${period}`)?.classList.add('active');
   const cw=el(`${prefix}-custom-dates`);
@@ -41,7 +41,7 @@ function _setPeriodBtns(prefix,period) {
 }
 
 // ══ ميزان المراجعة ══
-function showTrialBalance() {
+export function showTrialBalance() {
   hideAllViews();
   el('trialView').style.display='block';
   el('topBarTitle').textContent='⚖️ ميزان المراجعة';
@@ -50,7 +50,7 @@ function showTrialBalance() {
   setTrialPeriod(trialState.period||'all');
 }
 
-function setTrialPeriod(period) {
+export function setTrialPeriod(period) {
   trialState.period=period;
   _setPeriodBtns('tb',period);
   if(period==='custom') return;
@@ -61,7 +61,7 @@ function setTrialPeriod(period) {
   loadTrialBalance();
 }
 
-async function loadTrialBalance() {
+export async function loadTrialBalance() {
   el('trialTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل ميزان المراجعة...</div>';
   const from  = el('tb-from')?.value || trialState.from || null;
   const to    = el('tb-to')?.value   || trialState.to   || null;
@@ -166,7 +166,7 @@ async function loadTrialBalance() {
 // ✅ صافي حركة كل حساب لكل القيود السابقة لتاريخ معيّن (رصيد افتتاحي حقيقي)
 // يُستخدم في ميزان المراجعة وفي دفتر الأستاذ (نفس منطق الحساب لكلاهما)
 // ════════════════════════════════════════════════════════════
-async function _computeOpeningBalances(sys, postF, beforeDate, accountCode = null) {
+export async function _computeOpeningBalances(sys, postF, beforeDate, accountCode = null) {
   if (!beforeDate) return {};
   const buildUrl = (sysParam) => {
     let u = `${SB_URL}/rest/v1/journal_entries?${sysParam}`
@@ -195,14 +195,14 @@ async function _computeOpeningBalances(sys, postF, beforeDate, accountCode = nul
   } catch(e) { console.warn('_computeOpeningBalances:', e.message); return {}; }
 }
 
-function filterTrial(type) {
+export function filterTrial(type) {
   trialState.typeFilter=type;
   document.querySelectorAll('[id^="ttype-"]').forEach(b=>b.classList.remove('active'));
   el('ttype-'+type)?.classList.add('active');
   renderTrialBalance();
 }
 
-function renderTrialBalance() {
+export function renderTrialBalance() {
   let list=trialState.data;
   if(trialState.typeFilter&&trialState.typeFilter!=='all') list=list.filter(c=>c.type===trialState.typeFilter);
   const search=(el('tb-filter-search')?.value||'').trim().toLowerCase();
@@ -248,7 +248,7 @@ function renderTrialBalance() {
 }
 
 // ══ دفتر الأستاذ (بالكود — من ميزان المراجعة) ══
-function setLedgerPeriod(period) {
+export function setLedgerPeriod(period) {
   ledgerState.period=period;
   _setPeriodBtns('ldg',period);
   if(period==='custom') return;
@@ -259,7 +259,7 @@ function setLedgerPeriod(period) {
   renderLedgerTable();
 }
 
-async function showAccountLedger(accountCode, accountName, accountType) {
+export async function showAccountLedger(accountCode, accountName, accountType) {
   hideAllViews();
   el('ledgerView').style.display='block';
   el('topBarTitle').textContent='📖 دفتر الأستاذ';
@@ -313,7 +313,7 @@ async function showAccountLedger(accountCode, accountName, accountType) {
 }
 
 // ضغط على اسم عميل/مورد في الجدول → اختياره في الـ dropdown
-function filterLedgerByContact(name) {
+export function filterLedgerByContact(name) {
   const sel = el('ledger-contact-filter');
   if (!sel) return;
   if (![...sel.options].some(o => o.value === name)) sel.add(new Option(name, name));
@@ -323,7 +323,7 @@ function filterLedgerByContact(name) {
 }
 
 // ── كشف حساب PDF (طباعة) ──
-function printAccountStatement() {
+export function printAccountStatement() {
   const list    = JSON.parse(el('ledgerView').dataset.entries || '[]');
   const accCode = el('ledgerView').dataset.accountCode || '';
   const contact = el('ledger-contact-filter')?.value || '';
@@ -406,7 +406,7 @@ function printAccountStatement() {
 }
 
 // ── تصدير Excel لدفتر الأستاذ / كشف الحساب ──
-function exportLedgerExcel() {
+export function exportLedgerExcel() {
   const list    = JSON.parse(el('ledgerView').dataset.entries || '[]');
   const accCode = el('ledgerView').dataset.accountCode || '';
   const contact = el('ledger-contact-filter')?.value || '';
@@ -427,7 +427,7 @@ function exportLedgerExcel() {
   }], `كشف-حساب-${contact||accCode}`);
 }
 
-async function renderLedgerTable() {
+export async function renderLedgerTable() {
   const fileFilter=el('ledger-file-filter')?.value||'';
   const postFilter=el('ledger-post-filter')?.value||'posted';
   const contactQ=(el('ledger-contact-filter')?.value||'').trim();
@@ -520,7 +520,7 @@ async function renderLedgerTable() {
 }
 
 // ══ تفاصيل القيد + المرفقات ══
-async function openJEDetail(entryNo) {
+export async function openJEDetail(entryNo) {
   if(!entryNo) return;
   el('je-detail-title').textContent=`قيد رقم: ${entryNo}`;
   el('je-detail-info').innerHTML='<div class="loading"><div class="spinner"></div></div>';
@@ -574,7 +574,7 @@ async function openJEDetail(entryNo) {
   } catch(e){el('je-detail-info').innerHTML=errHTML('خطأ: '+e.message);}
 }
 
-function renderJEAttachments(attachments,entryNo) {
+export function renderJEAttachments(attachments,entryNo) {
   const wrap=el('je-detail-attachments'); if(!wrap) return;
   const DI={invoice:'🧾',receipt:'🧾',payment:'💳',contract:'📄',other:'📎'};
   if(!attachments.length){wrap.innerHTML=`<div style="color:var(--text2);font-size:12px;padding:8px 0">لا توجد مرفقات بعد</div>`;return;}
@@ -591,7 +591,7 @@ function renderJEAttachments(attachments,entryNo) {
     </div>`).join('');
 }
 
-async function addJEAttachment() {
+export async function addJEAttachment() {
   const entryNo=window._currentJEEntryNo;
   const name=el('je-att-name')?.value?.trim();
   const url=el('je-att-url')?.value?.trim();
@@ -607,7 +607,7 @@ async function addJEAttachment() {
   } catch(e){toast('خطأ: '+e.message,'err');}
 }
 
-async function deleteJEAttachment(id,entryNo) {
+export async function deleteJEAttachment(id,entryNo) {
   try {
     await apiDelete('journal_attachments',{id:`eq.${id}`});
     const updated=await apiGetAll('journal_attachments',{select:'*',system_type:`eq.${state.system}`,entry_no:`eq.${entryNo}`});
@@ -648,7 +648,7 @@ const DEFAULT_ACCOUNTS=[
   {code:'6700',name:'مصروفات أخرى',type:'expense',parent:'6000'},
 ];
 
-function showChartOfAccounts() {
+export function showChartOfAccounts() {
   hideAllViews();
   el('chartOfAccountsView').style.display='block';
   el('topBarTitle').textContent='🗂️ شجرة الحسابات';
@@ -657,7 +657,7 @@ function showChartOfAccounts() {
   loadChartOfAccountsView();
 }
 
-async function loadChartOfAccountsView() {
+export async function loadChartOfAccountsView() {
   const wrap=el('coa-tree'); if(!wrap) return;
   wrap.innerHTML='<div class="loading"><div class="spinner"></div></div>';
   try {
@@ -699,7 +699,7 @@ async function loadChartOfAccountsView() {
   } catch(e){wrap.innerHTML=errHTML('خطأ: '+e.message);}
 }
 
-async function seedDefaultAccounts() {
+export async function seedDefaultAccounts() {
   const sys=state.system;
   toast('⏳ جاري تحميل الحسابات...','ok');
   try {
@@ -714,12 +714,12 @@ async function seedDefaultAccounts() {
   } catch(e){toast('خطأ: '+e.message,'err');}
 }
 
-function openNewAccountModal() {
+export function openNewAccountModal() {
   el('acc-id').value='';el('acc-code').value='';el('acc-name').value='';el('acc-parent').value='';
   el('acc-modal-title').textContent='حساب جديد';el('accError').style.display='none';
   openModal('accountModal');
 }
-async function openEditAccountModal(id) {
+export async function openEditAccountModal(id) {
   const data=await apiGetAll('chart_of_accounts',{select:'*',id:`eq.${id}`});
   const a=data?.[0];if(!a)return;
   el('acc-id').value=a.id;el('acc-code').value=a.account_code||'';el('acc-name').value=a.account_name||'';
@@ -727,7 +727,7 @@ async function openEditAccountModal(id) {
   el('acc-modal-title').textContent='تعديل حساب';el('accError').style.display='none';
   openModal('accountModal');
 }
-async function submitAccount() {
+export async function submitAccount() {
   const id=el('acc-id').value,code=el('acc-code').value.trim(),name=el('acc-name').value.trim();
   const type=el('acc-type').value,parent=el('acc-parent').value.trim();
   if(!code||!name){showFieldErr('accError','الكود والاسم مطلوبان');return;}
@@ -739,20 +739,20 @@ async function submitAccount() {
     loadChartOfAccountsView();
   } catch(e){showFieldErr('accError','خطأ: '+e.message);}
 }
-async function deleteAccount(id,code) {
+export async function deleteAccount(id,code) {
   showConfirm(`حذف حساب ${code}`,`هل تريد حذف الحساب ${code}؟ لن تُحذف القيود المرتبطة به.`,async()=>{
     try {await apiDelete('chart_of_accounts',{id:`eq.${id}`});toast(`✅ تم حذف ${code}`,'ok');loadChartOfAccountsView();}
     catch(e){toast('خطأ: '+e.message,'err');}
   });
 }
 
-function exportTrialCSV() {
+export function exportTrialCSV() {
   const rows=[['الكود','اسم الحساب','النوع','مدين','دائن','الرصيد']];
   trialState.data.forEach(c=>rows.push([c.code,c.name,c.type,c.dr,c.cr,c.dr-c.cr]));
   downloadCSV(rows,'ميزان_المراجعة.csv');
 }
 
-function exportLedgerCSV() {
+export function exportLedgerCSV() {
   const name=el('ledgerView').dataset.contactName||'ledger';
   const entries=JSON.parse(el('ledgerView').dataset.entries||'[]');
   const rows=[['التاريخ','النوع','البيان','المرجع','الملف','مدين','دائن']];
@@ -760,7 +760,7 @@ function exportLedgerCSV() {
   downloadCSV(rows,`دفتر_الأستاذ_${name}.csv`);
 }
 
-function getAccountType(code) {
+export function getAccountType(code) {
   if(!code) return 'other';
   const c=String(code);
   if(c.startsWith('1')) return 'asset';
@@ -771,7 +771,7 @@ function getAccountType(code) {
   if(c.startsWith('6')) return 'expense';
   return 'other';
 }
-function downloadCSV(rows, filename) {
+export function downloadCSV(rows, filename) {
   const bom = '\uFEFF';
   const csv = bom + rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a = document.createElement('a');
@@ -783,7 +783,7 @@ function downloadCSV(rows, filename) {
 // ════════════════════════════════════════
 // CONTACT MODAL (add/edit)
 // ════════════════════════════════════════
-function openContactModal(contact = null) {
+export function openContactModal(contact = null) {
   el('contactModalTitle').textContent = contact ? 'تعديل جهة الاتصال' : 'جهة اتصال جديدة';
   el('cm-name').value    = contact?.name    || '';
   el('cm-type').value    = contact?.type    || 'customer';
@@ -796,7 +796,7 @@ function openContactModal(contact = null) {
   openModal('contactModal');
 }
 
-async function submitContact() {
+export async function submitContact() {
   const name    = el('cm-name').value.trim();
   const type    = el('cm-type').value;
   const phone   = el('cm-phone').value.trim();
@@ -824,7 +824,7 @@ async function submitContact() {
   btn.disabled = false; btn.textContent = '💾 حفظ';
 }
 
-async function deleteContact(id, name) {
+export async function deleteContact(id, name) {
   showConfirm(`حذف ${name}`, 'سيتم حذف جهة الاتصال نهائياً. هذا الإجراء لا يمكن التراجع عنه.', async () => {
     try {
       await apiDelete('contacts', { id:`eq.${id}` });
@@ -842,9 +842,9 @@ const _origSubmitContact = typeof submitContact !== 'undefined' ? submitContact 
 // EDIT VEHICLE
 // ════════════════════════════════════════
 let _editVehicleId = null;
-function getEditVehicleId() { return _editVehicleId; }
+export function getEditVehicleId() { return _editVehicleId; }
 
-async function openEditVehicleModal(vehicleId) {
+export async function openEditVehicleModal(vehicleId) {
   let v = state.currentVehicles?.find(v=>String(v.id)===String(vehicleId));
   if (!v) {
     // fallback: جيب من Supabase مباشرة
@@ -870,7 +870,7 @@ async function openEditVehicleModal(vehicleId) {
   openModal('editVehicleModal');
 }
 
-async function submitEditVehicle() {
+export async function submitEditVehicle() {
   const data = {
     vehicle_type:    el('ev-type').value.trim()   || null,
     model:           el('ev-model').value.trim()  || null,
@@ -894,7 +894,7 @@ async function submitEditVehicle() {
 
 
 // apiDelete helper — includes permission guard + auto audit log
-const apiDelete = async function(table, matchParams) {
+export const apiDelete = async function(table, matchParams) {
   const protectedTables = ['purchase_orders','vehicles','sales','expenses','payments','collections','partner_payouts','contacts'];
   if (protectedTables.includes(table) && !can('delete')) {
     toast('🔒 ليس لديك صلاحية الحذف', 'err');
@@ -914,7 +914,7 @@ const apiDelete = async function(table, matchParams) {
 // ════════════════════════════════════════
 // DELETE ORPHAN DEAL (no file_no)
 // ════════════════════════════════════════
-async function deleteOrphanDeal(dealId) {
+export async function deleteOrphanDeal(dealId) {
   if (!confirm('هل تريد حذف هذا الملف نهائياً؟ لا يمكن التراجع.')) return;
   try {
     // Delete by id (works even with null file_no)
@@ -929,7 +929,7 @@ async function deleteOrphanDeal(dealId) {
 // ════════════════════════════════════════
 
 // ── EXCEL EXPORT ──
-function exportToExcel(sheets, filename) {
+export function exportToExcel(sheets, filename) {
   if (typeof XLSX === 'undefined') {
     toast('مكتبة Excel غير محملة — تحقق من الاتصال بالإنترنت', 'err');
     return;
@@ -960,7 +960,7 @@ function exportToExcel(sheets, filename) {
 // printPurchaseOrder → js/print.js
 
 
-async function exportPurchaseOrderExcel(fileNo) {
+export async function exportPurchaseOrderExcel(fileNo) {
   try {
     const sys = state.system;
     const [poArr, vehicles, payments] = await Promise.all([
@@ -997,7 +997,7 @@ async function exportPurchaseOrderExcel(fileNo) {
 // 2. DEAL STATEMENT PRINT / EXPORT
 // ════════════════════════════════════════
 
-async function exportDealExcel(fileNo) {
+export async function exportDealExcel(fileNo) {
   try {
     const sys = state.system;
     const [sales, expenses, payments, collections, payouts] = await Promise.all([
@@ -1028,7 +1028,7 @@ async function exportDealExcel(fileNo) {
 // printCurrentReport → js/print.js
 
 
-async function exportCurrentReportExcel() {
+export async function exportCurrentReportExcel() {
   const type = reportState.type;
   const data = reportState.data || [];
   if (!data.length) { toast('لا توجد بيانات للتصدير','err'); return; }
@@ -1054,7 +1054,7 @@ async function exportCurrentReportExcel() {
 // printTrialBalance → js/print.js
 
 
-function exportTrialBalanceExcel() {
+export function exportTrialBalanceExcel() {
   const data = trialState.data || [];
   if (!data.length) { toast('لا توجد بيانات','err'); return; }
   const typeLabelsAr = {
@@ -1074,7 +1074,7 @@ function exportTrialBalanceExcel() {
 // ════════════════════════════════════════
 // LICENSE OCR — Claude API
 // ════════════════════════════════════════
-function uploadLicenseForRow(row) {
+export function uploadLicenseForRow(row) {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
@@ -1091,7 +1091,7 @@ function uploadLicenseForRow(row) {
   input.click();
 }
 
-function uploadMultipleLicenses() {
+export function uploadMultipleLicenses() {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
@@ -1106,7 +1106,7 @@ function uploadMultipleLicenses() {
   input.click();
 }
 
-async function readLicenseIntoRow(file, row) {
+export async function readLicenseIntoRow(file, row) {
   const btn = row.querySelector('[title="رفع رخصة"]');
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   try {
@@ -1119,7 +1119,7 @@ async function readLicenseIntoRow(file, row) {
   if (btn) { btn.textContent = '📷'; btn.disabled = false; }
 }
 
-async function readMultipleLicenses(files, startRow) {
+export async function readMultipleLicenses(files, startRow) {
   toast(`⏳ جاري قراءة ${files.length} رخصة...`, 'ok');
   const container = el('vehiclesContainer');
 
@@ -1140,7 +1140,7 @@ async function readMultipleLicenses(files, startRow) {
   checkPriceTotal();
 }
 
-async function extractLicenseData(file) {
+export async function extractLicenseData(file) {
   // Get API key from settings
   const apiKey = localStorage.getItem('tm_anthropic_key') || '';
   if (!apiKey) {
@@ -1208,7 +1208,7 @@ async function extractLicenseData(file) {
   return JSON.parse(match[0]);
 }
 
-function fillRowFromLicense(row, data) {
+export function fillRowFromLicense(row, data) {
   if (!row || !data) return;
   const setVal = (name, val) => {
     const inp = row.querySelector(`[name="${name}"]`);
@@ -1237,7 +1237,7 @@ function fillRowFromLicense(row, data) {
 //    toggleAdminPostSetting/updateAdminPostToggleUI إلى engine.js (Phase 1)
 //    لكسر التبعية العكسية: engine.js كان يستدعي entryStatus() المعرّفة هنا ──
 
-async function saveDraft(entryType, fileNo, description, amount, refTable, refId) {
+export async function saveDraft(entryType, fileNo, description, amount, refTable, refId) {
   try {
     const entry = await apiPost('journal_entries', {
       system_type: state.system,
@@ -1254,7 +1254,7 @@ async function saveDraft(entryType, fileNo, description, amount, refTable, refId
   } catch(e) { console.warn('saveDraft error:', e.message); return null; }
 }
 
-async function postEntry(journalId) {
+export async function postEntry(journalId) {
   try {
     await apiPatch('journal_entries', { id:`eq.${journalId}` }, {
       post_status: 'posted',
@@ -1264,7 +1264,7 @@ async function postEntry(journalId) {
 }
 
 // Load drafts for journal
-async function loadJournalDrafts() {
+export async function loadJournalDrafts() {
   try {
     const drafts = await apiGet('journal_entries', {
       select: '*',
@@ -1313,13 +1313,13 @@ async function loadJournalDrafts() {
   } catch(e) { console.warn('loadJournalDrafts error:', e.message); }
 }
 
-async function postDraftEntry(id, type, fileNo) {
+export async function postDraftEntry(id, type, fileNo) {
   await postEntry(id);
   toast(`✅ تم ترحيل القيد`,'ok');
   loadJournal();
 }
 
-async function deleteDraftEntry(id) {
+export async function deleteDraftEntry(id) {
   if (!confirm('حذف المسودة؟')) return;
   await apiDelete('journal_entries', { id:`eq.${id}` });
   toast('تم الحذف','ok');
@@ -1329,7 +1329,7 @@ async function deleteDraftEntry(id) {
 // ════════════════════════════════════════
 // JOURNAL EDIT — edit any entry
 // ════════════════════════════════════════
-async function editJournalEntry(type, sourceId, fileNo) {
+export async function editJournalEntry(type, sourceId, fileNo) {
   // Open the appropriate modal in edit mode based on type
   state.currentFileNo = fileNo || state.currentFileNo;
   switch(type) {
@@ -1345,7 +1345,7 @@ async function editJournalEntry(type, sourceId, fileNo) {
 // ════════════════════════════════════════
 // JOURNAL REPORT
 // ════════════════════════════════════════
-function showJournalReport() {
+export function showJournalReport() {
   // ✅ استخدام نطاق التاريخ المحفوظ مع journalState.entries نفسها (وقت تحميلها)
   // وليس getJournalDateRange() الحالي — لتجنّب تعارض الفترة المعروضة مع البيانات
   // إذا تغيّر فلتر الفترة بعد التحميل أو قبل اكتماله
@@ -1443,7 +1443,7 @@ function showJournalReport() {
 // ════════════════════════════════════════
 const vrState = { all: [], filter: 'all' };
 
-async function showVehiclesReport() {
+export async function showVehiclesReport() {
   hideAllViews();
   el('vehiclesReportView').style.display = 'block';
   el('topBarTitle').textContent = 'تقرير السيارات';
@@ -1451,7 +1451,7 @@ async function showVehiclesReport() {
   await loadVehiclesReport();
 }
 
-async function loadVehiclesReport() {
+export async function loadVehiclesReport() {
   el('vr-table').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
     const sys = state.system;
@@ -1504,7 +1504,7 @@ async function loadVehiclesReport() {
   } catch(e) { el('vr-table').innerHTML = errHTML(e.message); }
 }
 
-function filterVehiclesReport(status) {
+export function filterVehiclesReport(status) {
   if (status) {
     vrState.filter = status;
     document.querySelectorAll('[id^="vr-"]').forEach(b => { if(b.tagName==='BUTTON') b.classList.remove('active'); });
@@ -1602,7 +1602,7 @@ function filterVehiclesReport(status) {
 // printVehiclesReport → js/print.js
 
 
-function exportVehiclesExcel() {
+export function exportVehiclesExcel() {
   const list = vrState.filtered || vrState.all;
   if (!list.length) { toast('لا توجد بيانات','err'); return; }
   exportToExcel([{
@@ -1615,7 +1615,7 @@ function exportVehiclesExcel() {
 // ════════════════════════════════════════
 // VIEWER KPI STRIP
 // ════════════════════════════════════════
-async function loadViewerKpis(fn, sys) {
+export async function loadViewerKpis(fn, sys) {
   try {
     const [po, vehicles, sales, expenses, collections, payments] = await Promise.all([
       apiGetAll('purchase_orders', { select:'total_purchase,status',      system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
@@ -1650,7 +1650,7 @@ async function loadViewerKpis(fn, sys) {
 // ════════════════════════════════════════
 // كشف حساب الشريك — شامل أو لصفقة محددة
 // ════════════════════════════════════════
-async function showPartnerStatement(partnerName, fileNoFilter = null) {
+export async function showPartnerStatement(partnerName, fileNoFilter = null) {
   // Show loading overlay first
   const overlay = document.createElement('div');
   overlay.id = 'partnerStatementOverlay';
@@ -2402,28 +2402,28 @@ async function showPartnerStatement(partnerName, fileNoFilter = null) {
 // printPartnerStatement → js/print.js
 
 
-function openPartnerStatementFromReport() {
+export function openPartnerStatementFromReport() {
   const partner = el('report-partner-select')?.value;
   if (!partner) { toast('اختر شريكاً أولاً','err'); return; }
   showPartnerStatement(partner);
 }
 
 // Backward compat
-async function showPartnerDealStatement(fileNo, partner, sys) {
+export async function showPartnerDealStatement(fileNo, partner, sys) {
   await showPartnerStatement(partner, fileNo);
 }
 
 // ════════════════════════════════════════
 // CONTACTS BY TYPE SHORTCUT
 // ════════════════════════════════════════
-function showContactsByType(type) {
+export function showContactsByType(type) {
   showContacts(type);
 }
 
 // ════════════════════════════════════════
 // ALL SALES VIEW
 // ════════════════════════════════════════
-async function showAllSales() {
+export async function showAllSales() {
   hideAllViews();
   el('allSalesView').style.display = 'block';
   el('topBarTitle').textContent = 'كل المبيعات';
@@ -2431,7 +2431,7 @@ async function showAllSales() {
   await loadAllSales();
 }
 
-async function loadAllSales() {
+export async function loadAllSales() {
   el('allSalesTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
     await ensureCache();
@@ -2459,7 +2459,7 @@ async function loadAllSales() {
 // ════════════════════════════════════════
 // ALL COLLECTIONS VIEW
 // ════════════════════════════════════════
-async function showAllCollections() {
+export async function showAllCollections() {
   hideAllViews();
   el('allCollectionsView').style.display = 'block';
   el('topBarTitle').textContent = 'كل التحصيلات';
@@ -2467,7 +2467,7 @@ async function showAllCollections() {
   await loadAllCollections();
 }
 
-async function loadAllCollections() {
+export async function loadAllCollections() {
   el('allCollectionsTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
     await ensureCache();
@@ -2519,7 +2519,7 @@ async function loadAllCollections() {
 // ════════════════════════════════════════
 const reportState = { type:'profit', data:[] };
 
-async function apiGetDateRange(table, dateCol, from, to, extra={}) {
+export async function apiGetDateRange(table, dateCol, from, to, extra={}) {
   const sys = state.system;
   const baseParams = `${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(to)}`;
   const extraStr = Object.entries(extra).map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join('&');
@@ -2547,7 +2547,7 @@ async function apiGetDateRange(table, dateCol, from, to, extra={}) {
 
 
 // ── Inventory table renderer ──────────────────────────────
-function _renderInventoryTable(list) {
+export function _renderInventoryTable(list) {
   const tableEl = el('reportTable');
   if (!tableEl) return;
   const rows = list.map(v=>`<tr>
@@ -2576,7 +2576,7 @@ function _renderInventoryTable(list) {
 
 
 // ── مساعد لجلب تواريخ التقرير الحالية ──────────────────
-function _reportDates() {
+export function _reportDates() {
   const from = el('r-from')?.value || '';
   const to   = el('r-to')?.value   || '';
   return { from, to };
@@ -2591,7 +2591,7 @@ function _reportDates() {
 // printCurrentReport already defined above — it reads reportState.data which is now populated ✅
 
 // ── Helper ────────────────────────────────────────────────
-function _noData(cols) {
+export function _noData(cols) {
   return `<tr><td colspan="${cols}" style="text-align:center;padding:32px;color:var(--text2)">لا توجد بيانات في هذه الفترة</td></tr>`;
 }
 
@@ -2605,7 +2605,7 @@ const nlState = {
   expandedContacts: new Set(),
 };
 
-function showNewLedger() {
+export function showNewLedger() {
   hideAllViews();
   el('newLedgerView').style.display = 'block';
   el('topBarTitle').textContent = '📖 دفتر الأستاذ';
@@ -2614,7 +2614,7 @@ function showNewLedger() {
   setNewLedgerPeriod(nlState.period || 'year');
 }
 
-function setNewLedgerPeriod(period) {
+export function setNewLedgerPeriod(period) {
   nlState.period = period;
   _setPeriodBtns('nl', period);
   if (period === 'custom') return;
@@ -2625,7 +2625,7 @@ function setNewLedgerPeriod(period) {
   loadNewLedger();
 }
 
-async function loadNewLedger() {
+export async function loadNewLedger() {
   const tree = el('newLedgerTree');
   if (!tree) return;
   tree.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل دفتر الأستاذ...</div>';
@@ -2711,7 +2711,7 @@ async function loadNewLedger() {
   }
 }
 
-function renderNewLedger() {
+export function renderNewLedger() {
   const tree = el('newLedgerTree');
   if (!tree) return;
   const search = (el('nl-search')?.value || '').trim().toLowerCase();
@@ -2811,7 +2811,7 @@ function renderNewLedger() {
   tree.innerHTML = html || emptyHTML('📖', 'لا توجد حركات في هذه الفترة');
 }
 
-function _renderNlEntryRows(entries, startRunning) {
+export function _renderNlEntryRows(entries, startRunning) {
   const SL = SOURCE_LABELS, SC = SOURCE_COLORS;
   let running = startRunning;
   return entries.map(e => {
@@ -2846,7 +2846,7 @@ const _nlTableHeader = `<thead><tr>
   <th style="width:36px"></th>
 </tr></thead>`;
 
-function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search) {
+export function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search) {
   const acc     = coaMap[code] || {};
   const allEntries = (entriesByAccount[code] || []).filter(e => {
     if (!search) return true;
@@ -2994,7 +2994,7 @@ function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search) {
   </div>`;
 }
 
-function toggleLedgerGroup(code) {
+export function toggleLedgerGroup(code) {
   if (nlState.expandedGroups.has(code)) nlState.expandedGroups.delete(code);
   else nlState.expandedGroups.add(code);
   const body  = el(`nl-body-${code}`);
@@ -3003,7 +3003,7 @@ function toggleLedgerGroup(code) {
   if (arrow) arrow.textContent   = nlState.expandedGroups.has(code) ? '▼' : '▶';
 }
 
-function toggleLedgerLeaf(code) {
+export function toggleLedgerLeaf(code) {
   if (nlState.expandedAccounts.has(code)) nlState.expandedAccounts.delete(code);
   else nlState.expandedAccounts.add(code);
   const body  = el(`nl-leaf-body-${code}`);
@@ -3012,7 +3012,7 @@ function toggleLedgerLeaf(code) {
   if (arrow) arrow.textContent   = nlState.expandedAccounts.has(code) ? '▼' : '▶';
 }
 
-function toggleLedgerContact(key) {
+export function toggleLedgerContact(key) {
   if (nlState.expandedContacts.has(key)) nlState.expandedContacts.delete(key);
   else nlState.expandedContacts.add(key);
   const body  = el(`nl-contact-body-${key}`);
@@ -3021,7 +3021,7 @@ function toggleLedgerContact(key) {
   if (arrow) arrow.textContent  = nlState.expandedContacts.has(key) ? '▼' : '▶';
 }
 
-function showLedgerEntryMenu(entryNo, btn) {
+export function showLedgerEntryMenu(entryNo, btn) {
   hideLedgerEntryMenu();
   if (!entryNo) return;
   const menu = document.createElement('div');
@@ -3042,7 +3042,29 @@ function showLedgerEntryMenu(entryNo, btn) {
   setTimeout(() => document.addEventListener('click', hideLedgerEntryMenu, { once: true }), 0);
 }
 
-function hideLedgerEntryMenu() {
+export function hideLedgerEntryMenu() {
   const m = document.getElementById('nl-entry-menu');
   if (m) m.remove();
 }
+
+// ── window bridge: تعريض الدوال للاستخدام من classic scripts وسمات onclick ──
+Object.assign(window, {
+  _getPeriodDates, _setPeriodBtns, showTrialBalance, setTrialPeriod, loadTrialBalance,
+  _computeOpeningBalances, filterTrial, renderTrialBalance, setLedgerPeriod, showAccountLedger,
+  filterLedgerByContact, printAccountStatement, exportLedgerExcel, renderLedgerTable,
+  openJEDetail, renderJEAttachments, addJEAttachment, deleteJEAttachment, showChartOfAccounts,
+  loadChartOfAccountsView, seedDefaultAccounts, openNewAccountModal, openEditAccountModal,
+  submitAccount, deleteAccount, exportTrialCSV, exportLedgerCSV, getAccountType, downloadCSV,
+  openContactModal, submitContact, deleteContact, getEditVehicleId, openEditVehicleModal,
+  submitEditVehicle, deleteOrphanDeal, exportToExcel, exportPurchaseOrderExcel, exportDealExcel,
+  exportCurrentReportExcel, exportTrialBalanceExcel, uploadLicenseForRow, uploadMultipleLicenses,
+  readLicenseIntoRow, readMultipleLicenses, extractLicenseData, fillRowFromLicense, saveDraft,
+  postEntry, loadJournalDrafts, postDraftEntry, deleteDraftEntry, editJournalEntry,
+  showJournalReport, showVehiclesReport, loadVehiclesReport, filterVehiclesReport,
+  exportVehiclesExcel, loadViewerKpis, showPartnerStatement, openPartnerStatementFromReport,
+  showPartnerDealStatement, showContactsByType, showAllSales, loadAllSales, showAllCollections,
+  loadAllCollections, apiGetDateRange, _renderInventoryTable, _reportDates, _noData,
+  showNewLedger, setNewLedgerPeriod, loadNewLedger, renderNewLedger, _renderNlEntryRows,
+  _renderNlLeaf, toggleLedgerGroup, toggleLedgerLeaf, toggleLedgerContact, showLedgerEntryMenu,
+  hideLedgerEntryMenu, apiDelete,
+});
