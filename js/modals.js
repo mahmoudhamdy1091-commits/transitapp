@@ -1903,6 +1903,13 @@ export async function submitCollection() {
   const notes      = el('col-notes').value.trim();
   const receivedBy = el('col-receivedBy')?.value?.trim() || null;
 
+  // ✅ لو المستلم شريك حقيقي (مش الصندوق) لازم تاريخ دفع — وإلا يتسجّل صف
+  // "مُستلم" بلا أثر محاسبي (JE) بصمت، بدل التوجيه الصح لحساب الشريك 2400
+  if (_isPartnerPocket(receivedBy) && !paid) {
+    showFieldErr('colError', '⚠️ يجب تحديد تاريخ الدفع عند اختيار شريك كمستلم للتحصيل');
+    return;
+  }
+
   // file_no: من الـ state لو داخل ملف، ولا من الـ option المختار
   const sel2   = el('col-invNo');
   const opt2   = sel2?.options[sel2?.selectedIndex];
