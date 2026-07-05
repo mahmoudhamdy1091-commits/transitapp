@@ -11,13 +11,13 @@
 // ════════════════════════════════════════
 // CONFIG
 // ════════════════════════════════════════
-const SB_URL  = 'https://tepaonhqszocyjsdcyoz.supabase.co';
-const SB_KEY  = 'sb_publishable_l24VhFauUbUD7GfAyEnyhQ_9F_PKHH3';
+export const SB_URL  = 'https://tepaonhqszocyjsdcyoz.supabase.co';
+export const SB_KEY  = 'sb_publishable_l24VhFauUbUD7GfAyEnyhQ_9F_PKHH3';
 
 // ════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════
-const state = {
+export const state = {
   token: null,
   refreshToken: null,
   user: null,
@@ -44,13 +44,13 @@ const state = {
 // ════════════════════════════════════════
 // CACHE
 // ════════════════════════════════════════
-function cacheStale() {
+export function cacheStale() {
   return state._cacheSystem !== state.system || (Date.now() - state._cacheTime) > 60000;
 }
 
 let _cacheLoadingPromise = null;
 
-async function ensureCache() {
+export async function ensureCache() {
   if (!cacheStale()) return;
   if (_cacheLoadingPromise) {
     await _cacheLoadingPromise;
@@ -64,7 +64,7 @@ async function ensureCache() {
   }
 }
 
-async function _doLoadCache() {
+export async function _doLoadCache() {
   const sys = state.system;
   const [deals, vehicles, sales, expenses, collections, payments, jes] = await Promise.all([
     apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, order:'created_at.desc' }),
@@ -126,7 +126,7 @@ async function _doLoadCache() {
   });
 }
 
-function invalidateCache() {
+export function invalidateCache() {
   state._cacheTime = 0;
   _cacheLoadingPromise = null;
 }
@@ -150,35 +150,35 @@ function invalidateCache() {
 // ════════════════════════════════════════════════════════════
 
 // isPosted: مرحّلة فعلاً (يشمل null للبيانات القديمة)
-function isPosted(row) {
+export function isPosted(row) {
   return !row.post_status || row.post_status === 'posted';
 }
 
 // isDraft: في انتظار الموافقة
-function isDraft(row) {
+export function isDraft(row) {
   return row.post_status === 'draft';
 }
 
 // isActive: تُحسب في الأرقام (posted + pending_edit)
 // pending_edit = عملية معتمدة قيمتها تحت المراجعة → تُحسب
-function isActive(row) {
+export function isActive(row) {
   return isPosted(row) || row.post_status === 'pending_edit';
 }
 
 // isEffective: تُحسب في الأرقام وليست ملغاة
 // الأكثر استخداماً في الإجماليات والتقارير
-function isEffective(row) {
+export function isEffective(row) {
   return isActive(row) && row.post_status !== 'voided';
 }
 
 // isVisible: تظهر في الجداول (كل شيء إلا voided)
 // للعرض فقط — لا للحساب
-function isVisible(row) {
+export function isVisible(row) {
   return row.post_status !== 'voided';
 }
 
 // isPending: طلب معلق (تعديل أو إلغاء)
-function isPending(row) {
+export function isPending(row) {
   return row.post_status === 'pending_edit' || row.post_status === 'pending_void';
 }
 
@@ -186,7 +186,7 @@ function isPending(row) {
 //   'posted' (افتراضي) → مرحّل فقط (isPosted)
 //   'draft'            → معلّق فقط (draft)
 //   غير ذلك ('all')    → الكل ما عدا المرفوض/الملغى (cancelled/voided)
-function passesPostFilter(row, filter) {
+export function passesPostFilter(row, filter) {
   if (filter === 'draft')  return isDraft(row);
   if (filter === 'posted' || !filter) return isPosted(row);
   return row.post_status !== 'cancelled' && row.post_status !== 'voided';
@@ -195,7 +195,7 @@ function passesPostFilter(row, filter) {
 // ════════════════════════════════════════
 // TOKEN REFRESH
 // ════════════════════════════════════════
-async function refreshAccessToken() {
+export async function refreshAccessToken() {
   const rt = state.refreshToken || localStorage.getItem('tm_refresh');
   if (!rt) { logout(); return false; }
   try {
@@ -220,7 +220,7 @@ async function refreshAccessToken() {
 // ════════════════════════════════════════
 // API HELPERS
 // ════════════════════════════════════════
-function headers(extra = {}) {
+export function headers(extra = {}) {
   const h = {
     'apikey': SB_KEY,
     'Content-Type': 'application/json',
@@ -241,7 +241,7 @@ function headers(extra = {}) {
 // مرة واحدة بهيدرز محدَّثة (تُبنى من جديد داخلياً — لا تُمرَّر جاهزة من
 // الخارج — كي لا يُعاد إرسال التوكن القديم المنتهي في محاولة إعادة الإرسال).
 // ════════════════════════════════════════
-async function apiFetch(url, { headers: extraHeaders = {}, ...rest } = {}) {
+export async function apiFetch(url, { headers: extraHeaders = {}, ...rest } = {}) {
   let res = await fetch(url, { ...rest, headers: headers(extraHeaders) });
   if (res.status === 401) {
     const ok = await refreshAccessToken();
@@ -251,7 +251,7 @@ async function apiFetch(url, { headers: extraHeaders = {}, ...rest } = {}) {
   return res;
 }
 
-async function apiGet(table, params = {}) {
+export async function apiGet(table, params = {}) {
   const NO_ENCODE = new Set(['select','order','or','and','limit','offset']);
   const qs = Object.entries(params).map(([k,v]) => NO_ENCODE.has(k) ? `${k}=${v}` : `${k}=${encodeURIComponent(v)}`).join('&');
   const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
@@ -277,7 +277,7 @@ async function apiGet(table, params = {}) {
   return res.json();
 }
 
-async function apiGetAll(table, params = {}) {
+export async function apiGetAll(table, params = {}) {
   const { system_type, ...rest } = params;
   if (!system_type || !system_type.startsWith('eq.')) {
     return apiGet(table, params);
@@ -312,7 +312,7 @@ async function apiGetAll(table, params = {}) {
 // ════════════════════════════════════════
 
 /** جلب قيود journal_entries المرحّلة لفترة معيّنة (النظام الحالي + system_type=null) مع إزالة التكرار */
-async function fetchJEForPeriod(sys, from, to) {
+export async function fetchJEForPeriod(sys, from, to) {
   const toEOD = to + 'T23:59:59';
   const buildUrl = (sysParam) =>
     `${SB_URL}/rest/v1/journal_entries?${sysParam}` +
@@ -346,7 +346,7 @@ async function fetchJEForPeriod(sys, from, to) {
  * حساب أرقام الربح/التكاليف من قيود journal_entries — معادلة موحّدة
  * تُستخدم في لوحة التحكم وتقرير الأرباح والخسائر لضمان تطابق الأرقام بينهما
  */
-function computeFinancials(jeRows) {
+export function computeFinancials(jeRows) {
   let totSales = 0, totCOGS = 0, totDealExp = 0, totOpex = 0, totPurchase = 0;
   const byFile = {};
   const ensure = fn => {
@@ -394,7 +394,7 @@ function computeFinancials(jeRows) {
   return { totSales, totCOGS, totDealExp, totOpex, totPurchase, grossProfit, netProfit, byFile };
 }
 
-async function apiPost(table, data) {
+export async function apiPost(table, data) {
   const body = JSON.stringify(data);
   const res = await apiFetch(`${SB_URL}/rest/v1/${table}`, {
     method: 'POST',
@@ -412,7 +412,7 @@ async function apiPost(table, data) {
   return resBody;
 }
 
-async function apiPatch(table, matchParams, data) {
+export async function apiPatch(table, matchParams, data) {
   let url = `${SB_URL}/rest/v1/${table}?`;
   for (const [k, v] of Object.entries(matchParams)) url += `${k}=${encodeURIComponent(v)}&`;
   const body = JSON.stringify(data);
@@ -426,7 +426,7 @@ async function apiPatch(table, matchParams, data) {
   return resBody;
 }
 
-async function apiRpc(fn, args = {}) {
+export async function apiRpc(fn, args = {}) {
   const body = JSON.stringify(args);
   const res = await apiFetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
     method: 'POST',
@@ -443,14 +443,14 @@ async function apiRpc(fn, args = {}) {
 // ✅ يحدّ من طول old_value/new_value — سجلات قديمة بها notes متراكمة من خلل سابق
 // كانت تُنتج JSON ضخماً يتجاوز حد عمود audit_log فيرفضه PostgREST بـ 400
 const AUDIT_VALUE_MAX = 8000;
-function _safeAuditJSON(val) {
+export function _safeAuditJSON(val) {
   if (!val) return null;
   let s;
   try { s = JSON.stringify(val); } catch(e) { return null; }
   return s.length > AUDIT_VALUE_MAX ? s.slice(0, AUDIT_VALUE_MAX) + '…[truncated]' : s;
 }
 
-async function logAudit(action, tableName, fileNo, oldVal, newVal, notes='') {
+export async function logAudit(action, tableName, fileNo, oldVal, newVal, notes='') {
   try {
     await apiPost('audit_log', {
       system_type: state.system,
@@ -487,7 +487,7 @@ const AUDIT_ACTION_ICONS = {
  * @param {object} opts { table, fileNo, refNo, id } — table إلزامي؛ refNo هو الأدق للربط.
  * @returns {Promise<Array<{action,label,icon,email,user,date,notes}>>}
  */
-async function getRecordAuditTrail({ table, fileNo, refNo, id } = {}) {
+export async function getRecordAuditTrail({ table, fileNo, refNo, id } = {}) {
   if (!table) return [];
   const sys = state.system;
   const params = {
@@ -526,7 +526,7 @@ async function getRecordAuditTrail({ table, fileNo, refNo, id } = {}) {
  * المفتاح = ref_no / pay_id / inv_no الموجود داخل new_value.
  * @returns {Promise<Object<string,string>>} { key: user_email }
  */
-async function getCreatorsMap(table, fileNo) {
+export async function getCreatorsMap(table, fileNo) {
   const map = {};
   if (!table) return map;
   try {
@@ -546,7 +546,7 @@ async function getCreatorsMap(table, fileNo) {
 // ════════════════════════════════════════
 // AUTH
 // ════════════════════════════════════════
-async function login() {
+export async function login() {
   const email    = document.getElementById('loginEmail').value.trim();
   const pass     = document.getElementById('loginPass').value;
   const btn      = document.getElementById('loginBtn');
@@ -604,7 +604,7 @@ async function login() {
   btn.textContent = 'دخول';
 }
 
-function logout() {
+export function logout() {
   localStorage.removeItem('tm_token');
   localStorage.removeItem('tm_refresh');
   localStorage.removeItem('tm_user');
@@ -615,3 +615,13 @@ function logout() {
   document.getElementById('appScreen').style.display   = 'none';
   if (!localStorage.getItem('tm_remember')) document.getElementById('loginPass').value = '';
 }
+
+// ── window bridge: تعريض الدوال والحالة للاستخدام من classic scripts وسمات onclick ──
+Object.assign(window, {
+  cacheStale, ensureCache, _doLoadCache, invalidateCache, isPosted,
+  isDraft, isActive, isEffective, isVisible, isPending,
+  passesPostFilter, refreshAccessToken, headers, apiFetch, apiGet,
+  apiGetAll, fetchJEForPeriod, computeFinancials, apiPost, apiPatch,
+  apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
+  login, logout, state, SB_URL, SB_KEY,
+});
