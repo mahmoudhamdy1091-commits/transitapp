@@ -12,7 +12,7 @@ const OPEX_COLORS = {
   'نظافة':'var(--cyan)', 'ضيافة':'var(--green)', 'مصروفات حكومية':'var(--red)', 'أخرى':'var(--text2)'
 };
 
-async function showOpex() {
+export async function showOpex() {
   hideAllViews();
   el('opexView').style.display = 'block';
   el('topBarTitle').textContent = 'مصروفات تشغيلية';
@@ -23,7 +23,7 @@ async function showOpex() {
   setOpexPeriod('year');
 }
 
-function setOpexPeriod(period) {
+export function setOpexPeriod(period) {
   document.querySelectorAll('[id^="opexperiod-"]').forEach(b => b.classList.remove('active'));
   el('opexperiod-' + period)?.classList.add('active');
   const customWrap = el('opexCustomDateWrap');
@@ -41,7 +41,7 @@ function setOpexPeriod(period) {
   loadOpex();
 }
 
-async function loadOpex() {
+export async function loadOpex() {
   const wrap = el('opexTableBody');
   if (!wrap) return;
   setLoading('opexTableBody');
@@ -110,7 +110,7 @@ async function loadOpex() {
   }
 }
 
-function renderOpexKpis(data) {
+export function renderOpexKpis(data) {
   const kpis = el('opexKpis');
   if (!kpis) return;
   const total = data.reduce((s,r) => s + (+r.amount||0), 0);
@@ -138,13 +138,13 @@ function renderOpexKpis(data) {
     </div>`).join('')}`;
 }
 
-function onOpexTypeChange() {
+export function onOpexTypeChange() {
   const type = el('opex-type').value;
   const wrap = el('opex-other-wrap');
   if (wrap) wrap.style.display = type === 'أخرى' ? 'block' : 'none';
 }
 
-function openOpexModal() {
+export function openOpexModal() {
   el('opex-id').value          = '';
   el('opexModalTitle').textContent = 'إضافة مصروف تشغيلي';
   el('opex-type').value        = '';
@@ -162,7 +162,7 @@ function openOpexModal() {
   openModal('opexModal');
 }
 
-async function openEditOpexModal(id) {
+export async function openEditOpexModal(id) {
   try {
     const data = await apiGet('operating_expenses', { select:'*', id:`eq.${id}` });
     const r = data?.[0];
@@ -190,7 +190,7 @@ async function openEditOpexModal(id) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
-async function submitOpex() {
+export async function submitOpex() {
   const type        = el('opex-type').value;
   const otherLabel  = el('opex-other-label')?.value?.trim() || '';
   const finalType   = type === 'أخرى' ? (otherLabel || 'أخرى') : type;
@@ -234,7 +234,7 @@ async function submitOpex() {
   } catch(e) { showFieldErr('opexError','خطأ: '+e.message); }
 }
 
-async function submitEditOpex() {
+export async function submitEditOpex() {
   const id          = el('opex-id').value;
   const type        = el('opex-type').value;
   const otherLabel  = el('opex-other-label')?.value?.trim() || '';
@@ -281,7 +281,7 @@ async function submitEditOpex() {
   } catch(e) { showFieldErr('opexError','خطأ: '+e.message); }
 }
 
-async function deleteOpex(id) {
+export async function deleteOpex(id) {
   showConfirm('حذف مصروف تشغيلي', 'سيتم حذف هذا المصروف وعكس قيده المحاسبي. لا يمكن التراجع.', async () => {
     try {
       const rows = await apiGetAll('operating_expenses', { select:'*', system_type:`eq.${state.system}`, id:`eq.${id}` });
@@ -316,7 +316,7 @@ async function deleteOpex(id) {
   });
 }
 
-function exportOpexExcel() {
+export function exportOpexExcel() {
   const rows = document.querySelectorAll('#opexTableBody table tbody tr');
   if (!rows.length) { toast('لا توجد بيانات للتصدير','err'); return; }
   const data = [['الرقم','النوع','الوصف','المستفيد','المبلغ','طريقة الدفع','المستند','التاريخ','ملاحظات']];
@@ -339,7 +339,7 @@ function exportOpexExcel() {
 
 // ── Inject opex into Journal ──
 // Called from loadJournal — adds operating_expenses to journal entries
-async function fetchOpexForJournal(from, to, sys) {
+export async function fetchOpexForJournal(from, to, sys) {
   try {
     const [r1, r2] = await Promise.all([
       fetch(`${SB_URL}/rest/v1/operating_expenses?system_type=eq.${encodeURIComponent(sys)}&exp_date=gte.${encodeURIComponent(from)}&exp_date=lte.${encodeURIComponent(to)}&order=exp_date.desc&select=*`, { headers: headers() }),
@@ -353,7 +353,7 @@ async function fetchOpexForJournal(from, to, sys) {
 }
 
 // ── Opex in Reports ──
-async function loadOpexReport(from, to) {
+export async function loadOpexReport(from, to) {
   const wrap = el('reportTable');
   const kpis = el('reportKpis');
   if (!wrap) return;
@@ -415,15 +415,15 @@ async function loadOpexReport(from, to) {
 // ════════════════════════════════════════
 // DRILL-DOWN — كل KPI بيفتح تفاصيله
 // ════════════════════════════════════════
-let _ddState = { type: null, data: {} };
+export let _ddState = { type: null, data: {} };
 
-function closeDrillDownMain() {
+export function closeDrillDownMain() {
   if(el('dash-details-area')) el('dash-details-area').style.display = 'none';
   _ddState.type = null;
   document.querySelectorAll('.kpi-card').forEach(c => c.classList.remove('kpi-active'));
 }
 
-function closeDrillDown() {
+export function closeDrillDown() {
   if(el('dash-drilldown')) el('dash-drilldown').style.display = 'none';
   if(el('dash-details-area')) el('dash-details-area').style.display = 'none';
   document.querySelectorAll('.kpi-clickable').forEach(c => c.classList.remove('dd-active'));
@@ -431,7 +431,7 @@ function closeDrillDown() {
 }
 
 
-function toggleDrillDown(type) {
+export function toggleDrillDown(type) {
   document.querySelectorAll('.kpi-card').forEach(c => c.classList.remove('kpi-active'));
   const activeCard = el('kpi-card-' + type);
   if(activeCard && _ddState.type !== type) activeCard.classList.add('kpi-active');
@@ -448,7 +448,7 @@ function toggleDrillDown(type) {
   if(el('dash-drilldown')) el('dash-drilldown').style.display = 'none';
 }
 
-function renderDrillDown(type) {
+export function renderDrillDown(type) {
   const d = _ddState.data;
   const panel = el('dash-details-area') || el('dash-drilldown');
   const ddKpis = el('dd-kpis-main')||el('dd-kpis');
@@ -886,7 +886,7 @@ function renderDrillDown(type) {
   }
 
 // ── DD mini chart ──
-function renderDDChart(entries, color) {
+export function renderDDChart(entries, color) {
   const chartWrap  = el('dd-chart-wrap-main')||el('dd-chart-wrap');
   const chart      = el('dd-chart-main')||el('dd-chart');
   const labelsWrap = el('dd-chart-labels-main')||el('dd-chart-labels');
@@ -909,7 +909,7 @@ function renderDDChart(entries, color) {
 }
 
 // ── Regenerate file number ──
-async function regenFileNo() {
+export async function regenFileNo() {
   try {
     const sys  = state.system;
     const all  = await apiGetAll('purchase_orders', { select:'file_no', system_type:`eq.${sys}`, order:'created_at.desc' });
@@ -922,7 +922,7 @@ async function regenFileNo() {
 }
 
 // ── Regenerate invoice number ──
-async function regenInvNo() {
+export async function regenInvNo() {
   try {
     const fn  = state.currentFileNo || el('nf-fileNo')?.value?.trim();
     const sys = state.system;
@@ -971,7 +971,7 @@ const EDIT_TYPES = {
   sale_edit:       { table:'sales',              label:'فاتورة بيع' },
 };
 
-async function showApprovalQueue() {
+export async function showApprovalQueue() {
   if (!can('approve')) { toast('🔒 قائمة المراجعة للمدراء فقط','err'); return; }
   hideAllViews();
   el('approvalView').style.display = 'block';
@@ -981,7 +981,7 @@ async function showApprovalQueue() {
   await loadApprovalQueue();
 }
 
-async function loadApprovalQueue() {
+export async function loadApprovalQueue() {
   const wrap = el('approval-list');
   setLoading('approval-list');
 
@@ -1126,7 +1126,7 @@ async function loadApprovalQueue() {
 }
 
 // ── Optimistic UI: شيل العنصر فوراً من الشاشة قبل انتهاء DB ──
-function _optimisticRemove(type, id) {
+export function _optimisticRemove(type, id) {
   approvalState.all      = approvalState.all.filter(r => !(r._type === type && String(r.id) === String(id)));
   approvalState.filtered = approvalState.filtered.filter(r => !(r._type === type && String(r.id) === String(id)));
   renderApprovalList();
@@ -1143,7 +1143,7 @@ function _optimisticRemove(type, id) {
   if (cntAll) cntAll.textContent = total || '';
 }
 
-function filterApproval(type) {
+export function filterApproval(type) {
   approvalState.currentType = type;
   document.querySelectorAll('.approval-filter-btn').forEach(b => b.classList.remove('active'));
   el('af-' + type)?.classList.add('active');
@@ -1155,7 +1155,7 @@ function filterApproval(type) {
   renderApprovalList();
 }
 
-function renderApprovalList() {
+export function renderApprovalList() {
   const wrap = el('approval-list');
   const items = approvalState.filtered;
 
@@ -1218,7 +1218,7 @@ const FIELD_LABELS = {
 const SKIP_FIELDS = new Set(['_type','_amount','_date','_desc','_file','post_status',
   'created_at','updated_at','id','system_type','ref_table','ref_id','status','po_no']);
 
-async function openApprovalDetail(type, id) {
+export async function openApprovalDetail(type, id) {
   const cfg  = APPROVAL_CONFIG[type];
   const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
   if (!item || !cfg) return;
@@ -1263,14 +1263,14 @@ async function openApprovalDetail(type, id) {
   openModal('approvalDetailModal');
 }
 
-async function approveFromDetail() {
+export async function approveFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id } = approvalState.currentItem;
   closeModal('approvalDetailModal');
   await approveItem(type, id);
 }
 
-async function cancelFromDetail() {
+export async function cancelFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id, item } = approvalState.currentItem;
   closeModal('approvalDetailModal');
@@ -1285,7 +1285,7 @@ async function cancelFromDetail() {
   });
 }
 
-async function rejectFromDetail() {
+export async function rejectFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id } = approvalState.currentItem;
   closeModal('approvalDetailModal');
@@ -1295,7 +1295,7 @@ async function rejectFromDetail() {
 // ════════════════════════════════════════
 // EDIT SALE FROM APPROVAL QUEUE
 // ════════════════════════════════════════
-async function openEditSaleApproval(saleId, fileNo, invNo) {
+export async function openEditSaleApproval(saleId, fileNo, invNo) {
   if (!fileNo || !invNo) { toast('بيانات الفاتورة ناقصة', 'err'); return; }
   try {
     // جيب كل سطور الفاتورة (ممكن أكثر من سيارة)
@@ -1556,7 +1556,7 @@ async function openEditSaleApproval(saleId, fileNo, invNo) {
   }
 }
 
-async function editFromDetail() {
+export async function editFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id, item } = approvalState.currentItem;
   closeModal('approvalDetailModal');
@@ -1581,7 +1581,7 @@ async function editFromDetail() {
 }
 
 
-async function approveItem(type, id) {
+export async function approveItem(type, id) {
   try {
     const cfg = APPROVAL_CONFIG[type];
     if (!cfg) { toast('نوع غير معروف','err'); return; }
@@ -1688,7 +1688,7 @@ async function approveItem(type, id) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
-async function rejectItem(type, id) {
+export async function rejectItem(type, id) {
   const cfg = APPROVAL_CONFIG[type];
   if (!cfg) return;
 
@@ -1820,7 +1820,7 @@ async function rejectItem(type, id) {
 
 
 // تعديل مباشر من صف القائمة
-async function editApprovalRow(type, id) {
+export async function editApprovalRow(type, id) {
   approvalState.currentItem = {
     type, id,
     item: approvalState.all.find(r => r._type === type && String(r.id) === String(id))
@@ -1829,7 +1829,7 @@ async function editApprovalRow(type, id) {
 }
 
 // إلغاء مباشر من صف القائمة
-async function cancelApprovalRow(type, id) {
+export async function cancelApprovalRow(type, id) {
   const cfg = APPROVAL_CONFIG[type];
   if (!cfg) return;
   try {
@@ -1851,7 +1851,7 @@ async function cancelApprovalRow(type, id) {
 // approveItem و _ensureApprovalJE معاً حتى لا يتفرّق المنطق.
 // ════════════════════════════════════════════════════════════
 const _saleJEInFlight = new Map(); // key: `${sys}:${fileNo}:${invNo}` → Promise
-async function _ensureSaleJE(sys, fileNo, invNo, dateFallback, customerFallback) {
+export async function _ensureSaleJE(sys, fileNo, invNo, dateFallback, customerFallback) {
   if (!fileNo || !invNo) return;
   const key = `${sys}:${fileNo}:${invNo}`;
   if (_saleJEInFlight.has(key)) return _saleJEInFlight.get(key);
@@ -1884,7 +1884,7 @@ async function _ensureSaleJE(sys, fileNo, invNo, dateFallback, customerFallback)
 // كانا 'نقد' في نسخة و'تحويل بنكي' في الأخرى). فحص ref_id قبل الإنشاء يمنع التكرار
 // حتى لو استُدعيت الدالة مرتين لنفس السجل.
 // ════════════════════════════════════════════════════════════
-async function _createApprovalJE(type, record, sys) {
+export async function _createApprovalJE(type, record, sys) {
   const refMap = { collection:'collections', payment:'payments', expense:'expenses', payout:'partner_payouts' };
 
   if (refMap[type] && record.id != null) {
@@ -1916,7 +1916,7 @@ async function _createApprovalJE(type, record, sys) {
 // يُستخدم في approveAll بترتيب آمن: (قيد ثم ترحيل) حتى لا يبقى سجل posted بلا قيد
 // لو انقطعت العملية. فحص-القيد-الموجود يمنع تكرار القيد عند إعادة المحاولة.
 // ════════════════════════════════════════════════════════════
-async function _ensureApprovalJE(r, sys) {
+export async function _ensureApprovalJE(r, sys) {
   const t = r._type;
   if (t === 'payment' || t === 'expense' || t === 'payout' || t === 'collection' || t === 'purchase') {
     await _createApprovalJE(t, r, sys);
@@ -1935,7 +1935,7 @@ async function _ensureApprovalJE(r, sys) {
 // دالة واحدة من approveItem (فردي) و_ensureApprovalJE (جماعي عبر approveAll) —
 // كانتا نسختين منفصلتين تفرَّقتا (واحدة بلا فحص ref_id، والأخرى بلا تسجيل تدقيق)
 // ════════════════════════════════════════════════════════════
-async function _approveLinkedPaidCollections(sys, fileNo, invNo, fallbackCustomer) {
+export async function _approveLinkedPaidCollections(sys, fileNo, invNo, fallbackCustomer) {
   if (!fileNo || !invNo) return;
   try {
     const linkedCols = await apiGetAll('collections', {
@@ -1974,7 +1974,7 @@ async function _approveLinkedPaidCollections(sys, fileNo, invNo, fallbackCustome
 // نفس المنطق المستخدم في approveItem تمامًا — يُستخدم من approveItem
 // (فردي) وapproveAll (جماعي) معًا حتى لا يتكرر المنطق ولا يتفرّق.
 // ════════════════════════════════════════════════════════════
-async function _processEditApproval(type, id, preloadedItem = null) {
+export async function _processEditApproval(type, id, preloadedItem = null) {
   const cfg  = EDIT_TYPES[type];
   if (!cfg) return { ok:false, message:'نوع تعديل غير معروف' };
   const item = preloadedItem || approvalState.all.find(r => r._type === type && String(r.id) === String(id));
@@ -2078,7 +2078,7 @@ async function _processEditApproval(type, id, preloadedItem = null) {
 }
 
 // نواة معالجة "موافقة على طلب إلغاء" — نفس منطق approveItem للـ reversal
-async function _processReversalApproval(id) {
+export async function _processReversalApproval(id) {
   const item = approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
   if (!item) return { ok:false, message:'لم يُعثر على طلب الإلغاء' };
   try {
@@ -2089,7 +2089,7 @@ async function _processReversalApproval(id) {
   }
 }
 
-async function approveAll() {
+export async function approveAll() {
   const items = approvalState.filtered;
   if (!items.length) return;
   showConfirm(`موافقة على الكل`, `هل تريد الموافقة على ${items.length} عملية دفعة واحدة؟`, async () => {
@@ -2152,7 +2152,7 @@ async function approveAll() {
 }
 
 // تحديث badge في الـ sidebar عند تحميل أي صفحة
-async function updateApprovalBadge() {
+export async function updateApprovalBadge() {
   try {
     const sys = state.system;
     const [s,e,c,p,po] = await Promise.all([
@@ -2173,7 +2173,7 @@ async function updateApprovalBadge() {
 // ════════════════════════════════════════
 const partnerAccountState = { partner: null, entries: [] };
 
-async function openPartnerAccountLedger(partnerName) {
+export async function openPartnerAccountLedger(partnerName) {
   partnerAccountState.partner = partnerName;
   el('pa-partner-name').textContent = partnerName;
   el('pa-ledger-table').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
@@ -2181,7 +2181,7 @@ async function openPartnerAccountLedger(partnerName) {
   await loadPartnerAccountLedger();
 }
 
-async function loadPartnerAccountLedger() {
+export async function loadPartnerAccountLedger() {
   const partner = partnerAccountState.partner;
   const sys     = state.system;
   if (!partner) return;
@@ -2368,7 +2368,7 @@ async function loadPartnerAccountLedger() {
   }
 }
 
-function renderPartnerAccountLedger() {
+export function renderPartnerAccountLedger() {
   const filterType = el('pa-filter-type')?.value || '';
   const filterFile = el('pa-filter-file')?.value || '';
   let entries = partnerAccountState.entries || [];
@@ -2490,7 +2490,7 @@ function renderPartnerAccountLedger() {
 }
 
 // ══ تصدير كشف الشريك PDF ══
-function exportPartnerAccountPDF() {
+export function exportPartnerAccountPDF() {
   const partnerName = el('pa-partner-name')?.textContent || '—';
   const kpisEl      = el('pa-summary-kpis');
   const tableEl     = el('pa-ledger-table');
@@ -2517,7 +2517,7 @@ function exportPartnerAccountPDF() {
   openPrintOverlay(html, `كشف حساب — ${partnerName}`);
 }
 
-function openGeneralWithdrawModal() {
+export function openGeneralWithdrawModal() {
   el('gw-amount').value  = '';
   el('gw-date').value    = today();
   el('gw-doc').value     = '';
@@ -2529,7 +2529,7 @@ function openGeneralWithdrawModal() {
   openModal('generalWithdrawModal');
 }
 
-async function submitGeneralWithdraw() {
+export async function submitGeneralWithdraw() {
   const partner = partnerAccountState.partner;
   const amount  = parseFloat(el('gw-amount').value);
   const date    = el('gw-date').value;
@@ -2566,7 +2566,7 @@ async function submitGeneralWithdraw() {
 // تُخزَّن في audit_log بـ action='DEAL_NOTE'
 // ════════════════════════════════════════════════════════
 
-function openDealNoteModal() {
+export function openDealNoteModal() {
   el('dn-text').value = '';
   el('dn-type').value = 'عام';
   el('dn-date').value = today();
@@ -2575,7 +2575,7 @@ function openDealNoteModal() {
   setTimeout(() => el('dn-text')?.focus(), 200);
 }
 
-async function submitDealNote() {
+export async function submitDealNote() {
   const text = el('dn-text').value.trim();
   const type = el('dn-type').value;
   const date = el('dn-date').value;
@@ -2607,7 +2607,7 @@ async function submitDealNote() {
   btn.disabled = false; btn.textContent = '💾 حفظ الملاحظة';
 }
 
-async function loadDealNotes() {
+export async function loadDealNotes() {
   const fn  = state.currentFileNo;
   const container = el('dealNotesContainer');
   if (!container || !fn) return;
@@ -2690,7 +2690,7 @@ async function loadDealNotes() {
   }
 }
 
-async function deleteDealNote(noteId) {
+export async function deleteDealNote(noteId) {
   showConfirm('حذف الملاحظة', 'هل تريد حذف هذه الملاحظة نهائياً؟', async () => {
     try {
       await apiDelete('audit_log', { id:`eq.${noteId}` });
@@ -2706,7 +2706,7 @@ async function deleteDealNote(noteId) {
 // DB STRUCTURE CHECK + MIGRATION TOOL
 // ════════════════════════════════════════════════════════
 
-async function checkDbStructure() {
+export async function checkDbStructure() {
   const out = el('dbCheckResult');
   if (!out) return;
   out.innerHTML = '<div style="color:var(--text2);font-size:12px">⏳ جاري الفحص...</div>';
@@ -2800,7 +2800,7 @@ const reviewState = {
   checkResults: [], activeTab: 0,
 };
 
-function showReview() {
+export function showReview() {
   hideAllViews();
   el('reviewView').style.display = 'block';
   el('topBarTitle').textContent  = '🔍 مراجعة الحسابات';
@@ -2811,7 +2811,7 @@ function showReview() {
   renderReviewChecklist();
 }
 
-function setReviewPeriod(period) {
+export function setReviewPeriod(period) {
   reviewState.period = period;
   document.querySelectorAll('[id^="rvperiod-"]').forEach(b => b.classList.remove('active'));
   el('rvperiod-'+period)?.classList.add('active');
@@ -2840,7 +2840,7 @@ function setReviewPeriod(period) {
   runAllReviewChecks();
 }
 
-function switchReviewTab(idx) {
+export function switchReviewTab(idx) {
   reviewState.activeTab = idx;
   document.querySelectorAll('.review-tab-content').forEach((c,i) => c.style.display=i===idx?'block':'none');
   document.querySelectorAll('.rv-tab-btn').forEach((t,i) => t.classList.toggle('active', i===idx));
@@ -2849,7 +2849,7 @@ function switchReviewTab(idx) {
 }
 
 // ════ الفحوصات التلقائية ════
-async function runAllReviewChecks() {
+export async function runAllReviewChecks() {
   const wrap = el('review-auto-checks');
   if (!wrap) return;
   wrap.innerHTML = `<div class="loading"><div class="spinner"></div><br>جاري الفحص الشامل لـ ${reviewState.from} — ${reviewState.to}...</div>`;
@@ -3125,7 +3125,7 @@ async function runAllReviewChecks() {
   }
 }
 
-function renderCheckItem(c) {
+export function renderCheckItem(c) {
   const ss = {
     pass:{ bg:'var(--green-dim)',  border:'var(--green)',  icon:'✅', lbl:'نجح' },
     warn:{ bg:'var(--accent-dim)', border:'var(--accent)', icon:'⚠️', lbl:'تحذير' },
@@ -3176,7 +3176,7 @@ const REVIEW_CHECKLIST = [
   { id:'CL10', cat:'الختام',    label:'الموافقة النهائية على إقفال الفترة — لا تعديل بعد ذلك', risk:'high' },
 ];
 
-function renderReviewChecklist() {
+export function renderReviewChecklist() {
   const wrap = el('review-checklist-wrap');
   if (!wrap) return;
   const riskColor = { high:'var(--red)', medium:'var(--accent)', low:'var(--text2)' };
@@ -3217,7 +3217,7 @@ function renderReviewChecklist() {
   updateChecklistProgress();
 }
 
-function updateChecklistProgress() {
+export function updateChecklistProgress() {
   const total   = REVIEW_CHECKLIST.length;
   const checked = REVIEW_CHECKLIST.filter(item => el('cl-'+item.id)?.checked).length;
   const pct     = Math.round((checked/total)*100);
@@ -3244,7 +3244,7 @@ function updateChecklistProgress() {
   }
 }
 
-function renderSignoff() {
+export function renderSignoff() {
   const wrap = el('review-signoff-wrap');
   if (!wrap) return;
   wrap.innerHTML = `
@@ -3265,7 +3265,7 @@ function renderSignoff() {
     </div>`;
 }
 
-async function saveReviewSignoff() {
+export async function saveReviewSignoff() {
   const from  = reviewState.from;
   const to    = reviewState.to;
   const notes = el('review-notes')?.value?.trim() || '';
@@ -3305,7 +3305,7 @@ async function saveReviewSignoff() {
 }
 
 // ════ التسويات ════
-async function loadReconciliations() {
+export async function loadReconciliations() {
   const wrap = el('review-reconciliation-wrap');
   if (!wrap) return;
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل التسويات...</div>';
@@ -3431,7 +3431,7 @@ async function loadReconciliations() {
 }
 
 // ════ سجل المراجعات ════
-async function loadReviewHistory() {
+export async function loadReviewHistory() {
   const wrap = el('review-history-wrap');
   if (!wrap) return;
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
@@ -3511,7 +3511,7 @@ const JE_ACCOUNT_SUGGESTIONS = [
   { code:'6700', name:'مصروفات أخرى',          type:'مصروفات'     },
 ];
 
-function showJEManager() {
+export function showJEManager() {
   hideAllViews();
   el('jeManagerView').style.display = 'block';
   el('topBarTitle').textContent  = '📝 دفتر القيود';
@@ -3521,7 +3521,7 @@ function showJEManager() {
   setJEMgrPeriod('month');
 }
 
-function setJEMgrPeriod(period) {
+export function setJEMgrPeriod(period) {
   jeMgrState.period = period;
   document.querySelectorAll('[id^="je-period-"]').forEach(b => b.classList.remove('active'));
   el('je-period-'+period)?.classList.add('active');
@@ -3547,7 +3547,7 @@ function setJEMgrPeriod(period) {
   loadJEManager();
 }
 
-async function loadJEManager() {
+export async function loadJEManager() {
   const wrap = el('je-mgr-table');
   if (!wrap) return;
   const from = el('je-from')?.value || jeMgrState.from;
@@ -3629,7 +3629,7 @@ async function loadJEManager() {
   }
 }
 
-function renderJEManagerTable() {
+export function renderJEManagerTable() {
   const wrap     = el('je-mgr-table');
   if (!wrap) return;
   const srcFilter = el('je-filter-source')?.value || '';
@@ -3746,7 +3746,7 @@ function renderJEManagerTable() {
     </div>`;
 }
 
-function showUnbalancedDetail() {
+export function showUnbalancedDetail() {
   const unbalanced = Object.values(jeMgrState.grouped).filter(g => Math.abs(g.totalDr-g.totalCr)>0.01);
   if (!unbalanced.length) { toast('✅ لا توجد قيود غير متوازنة','ok'); return; }
 
@@ -3787,7 +3787,7 @@ function showUnbalancedDetail() {
     () => fixUnbalancedEntries()
   );
 }
-async function fixUnbalancedEntries() {
+export async function fixUnbalancedEntries() {
   const unbalanced = Object.values(jeMgrState.grouped).filter(g => Math.abs(g.totalDr-g.totalCr)>0.01);
   if (!unbalanced.length) { toast('✅ لا توجد قيود غير متوازنة','ok'); return; }
 
@@ -3896,7 +3896,7 @@ const MISSING_JE_TABLES = [
   { table:'partner_payouts', label:'صرف شريك',     refLabel:'PAY' },
 ];
 
-async function checkMissingEntries() {
+export async function checkMissingEntries() {
   const sys = state.system;
   toast('⏳ جاري فحص القيود المفقودة...','ok');
   try {
@@ -3954,7 +3954,7 @@ async function checkMissingEntries() {
 
 let _missingJEList = [];
 
-async function createMissingJE(idx) {
+export async function createMissingJE(idx) {
   const m = _missingJEList[idx];
   if (!m) return;
   const r = m.row;
@@ -3982,7 +3982,7 @@ async function createMissingJE(idx) {
 }
 
 // ✅ إنشاء كل القيود الناقصة دفعة واحدة (شبكة أمان لإصلاح اليتامى من سباق الموافقات)
-async function createAllMissingJE() {
+export async function createAllMissingJE() {
   const list = _missingJEList || [];
   if (!list.length) { toast('لا يوجد ما يُصلَح','ok'); return; }
   const sys = state.system;
@@ -4012,7 +4012,7 @@ async function createAllMissingJE() {
   await checkMissingEntries(); // إعادة فحص لتأكيد عدم بقاء يتامى
 }
 
-function toggleJELines(row) {
+export function toggleJELines(row) {
   const next = row.nextElementSibling;
   if (!next || !next.classList.contains('je-lines-row')) return;
   const isHidden = next.style.display === 'none' || !next.style.display;
@@ -4024,7 +4024,7 @@ function toggleJELines(row) {
 
 let _jeLines = []; // أسطر القيد الحالية في الموديل
 
-function openNewJEModal() {
+export function openNewJEModal() {
   jeMgrState.editEntryNo = null;
   _jeLines = [
     { acc:'', name:'', dr:0, cr:0 },
@@ -4041,7 +4041,7 @@ function openNewJEModal() {
   openModal('jeModal');
 }
 
-function openEditJEModal(entryNo) {
+export function openEditJEModal(entryNo) {
   const group = jeMgrState.grouped[entryNo];
   if (!group) { toast('القيد غير موجود','err'); return; }
   if (!group.isManual) { toast('⚠️ لا يمكن تعديل القيود التلقائية — راجع العملية الأصلية','warn'); return; }
@@ -4058,7 +4058,7 @@ function openEditJEModal(entryNo) {
   openModal('jeModal');
 }
 
-function renderJELines() {
+export function renderJELines() {
   const tbody = el('je-lines-body');
   if (!tbody) return;
   tbody.innerHTML = _jeLines.map((line, i) => {
@@ -4097,18 +4097,18 @@ function renderJELines() {
   updateJETotals();
 }
 
-function addJELine() {
+export function addJELine() {
   _jeLines.push({ acc:'', name:'', dr:0, cr:0 });
   renderJELines();
 }
 
-function removeJELine(i) {
+export function removeJELine(i) {
   if (_jeLines.length <= 2) return;
   _jeLines.splice(i, 1);
   renderJELines();
 }
 
-function onJEAccInput(i, val) {
+export function onJEAccInput(i, val) {
   _jeLines[i].acc = val;
   // auto-fill name from suggestions
   const match = JE_ACCOUNT_SUGGESTIONS.find(s => s.code === val.trim());
@@ -4121,7 +4121,7 @@ function onJEAccInput(i, val) {
   }
 }
 
-function onJEAccChange(i, val) {
+export function onJEAccChange(i, val) {
   _jeLines[i].acc = val.trim();
   const match = JE_ACCOUNT_SUGGESTIONS.find(s => s.code === val.trim());
   if (match && !_jeLines[i].name) {
@@ -4132,7 +4132,7 @@ function onJEAccChange(i, val) {
   }
 }
 
-function updateJETotals() {
+export function updateJETotals() {
   const totalDr = _jeLines.reduce((s,l)=>s+(+l.dr||0),0);
   const totalCr = _jeLines.reduce((s,l)=>s+(+l.cr||0),0);
   const diff    = Math.abs(totalDr-totalCr);
@@ -4156,7 +4156,7 @@ function updateJETotals() {
   }
 }
 
-async function submitJE() {
+export async function submitJE() {
   const date    = el('je-date').value;
   const desc    = el('je-desc').value.trim();
   const fileNo  = el('je-file-no').value.trim() || null;
@@ -4255,7 +4255,7 @@ async function submitJE() {
   }
 }
 
-async function deleteJEEntry(entryNo) {
+export async function deleteJEEntry(entryNo) {
   const group = jeMgrState.grouped[entryNo];
   if (!group) return;
   const isManual = group.isManual;
@@ -4291,7 +4291,7 @@ async function deleteJEEntry(entryNo) {
 // HISTORICAL DATA MIGRATION — ترحيل البيانات التاريخية
 // ════════════════════════════════════════════════════════
 
-function openMigrationModal() {
+export function openMigrationModal() {
   const inp = el('mig-confirm-input');
   if (inp) inp.value = '';
   if (el('mig-pre-run'))  el('mig-pre-run').style.display  = 'block';
@@ -4303,7 +4303,7 @@ function openMigrationModal() {
   openModal('migrationModal');
 }
 
-function _migLog(msg, type='info') {
+export function _migLog(msg, type='info') {
   const log = el('mig-log');
   if (!log) return;
   const color = type==='ok'?'var(--green)':type==='err'?'var(--red)':type==='warn'?'var(--accent)':'var(--text2)';
@@ -4311,12 +4311,12 @@ function _migLog(msg, type='info') {
   log.scrollTop = log.scrollHeight;
 }
 
-function _migProgress(pct, label) {
+export function _migProgress(pct, label) {
   if (el('mig-progress-bar'))  el('mig-progress-bar').style.width = pct + '%';
   if (el('mig-step-label'))    el('mig-step-label').textContent   = label;
 }
 
-async function runMigration() {
+export async function runMigration() {
   const confirm = el('mig-confirm-input')?.value?.trim();
   if (confirm !== 'MIGRATE') {
     if (el('mig-pre-error')) { el('mig-pre-error').style.display='block'; el('mig-pre-error').textContent='اكتب MIGRATE بالأحرف الكبيرة للتأكيد'; }
@@ -4572,7 +4572,7 @@ const whState = {
 };
 
 // ── العرض الرئيسي ──
-function showWarehouses() {
+export function showWarehouses() {
   hideAllViews();
   el('warehousesView').style.display = 'block';
   el('topBarTitle').textContent      = '🏪 المخازن';
@@ -4584,7 +4584,7 @@ function showWarehouses() {
 
 
 // فلتر المخزن — ديناميكي بالاسم الحقيقي
-function filterWhByLocation(loc) {
+export function filterWhByLocation(loc) {
   document.querySelectorAll('[id^="whf-"]').forEach(b => b.classList.remove('active'));
   el('whf-' + loc)?.classList.add('active');
   whState.locationFilter = loc === 'all' ? '' : loc;
@@ -4600,7 +4600,7 @@ function filterWhByLocation(loc) {
 }
 
 // فلتر الحالة (الكل / في المخزن / مباع) — يعمل فوق فلتر المخزن والبحث
-function filterWhByStatus(status) {
+export function filterWhByStatus(status) {
   whState.statusFilter = status;
   ['all','stock','sold'].forEach(s => {
     el('whfs-'+s)?.classList.toggle('active', s === status);
@@ -4609,15 +4609,15 @@ function filterWhByStatus(status) {
 }
 
 // بحث داخل قائمة السيارات — يعمل فوق فلتر المخزن والحالة
-function filterWhSearch() {
+export function filterWhSearch() {
   whState.searchQuery = el('wh-search')?.value || '';
   renderWhAll();
 }
 // اسم قديم محتفَظ به للتوافق
-function filterWhTransfers() { filterWhSearch(); }
+export function filterWhTransfers() { filterWhSearch(); }
 
 // يطبّق كل الفلاتر (المخزن + الحالة + البحث) ويُعيد رسم جدول السيارات
-function renderWhAll() {
+export function renderWhAll() {
   const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
   let list = whState.locationFilter
     ? (whState.allTransfers||[]).filter(t => t.location_name === whState.locationFilter)
@@ -4634,7 +4634,7 @@ function renderWhAll() {
   renderWhTable(list, soldVins);
 }
 
-async function loadWarehouses() {
+export async function loadWarehouses() {
   const sys = state.system;
   try {
     // جلب كل التحويلات
@@ -4663,7 +4663,7 @@ async function loadWarehouses() {
   }
 }
 
-function renderWhKpis(transfers, soldVins) {
+export function renderWhKpis(transfers, soldVins) {
   const total    = transfers.length;
   const sold     = transfers.filter(t => soldVins.has(t.vin)).length;
   const inStock  = total - sold;
@@ -4676,7 +4676,7 @@ function renderWhKpis(transfers, soldVins) {
   ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c};font-size:20px;font-weight:900">${v}</div></div>`).join('');
 }
 
-function renderWhCards(transfers, soldVins) {
+export function renderWhCards(transfers, soldVins) {
   // بناء أزرار الفلتر ديناميكياً من المخازن الموجودة
   const filterBar = el('wh-filter-bar');
   if (filterBar) {
@@ -4697,7 +4697,7 @@ function renderWhCards(transfers, soldVins) {
   renderWhTable(transfers, soldVins);
 }
 
-function renderWhTable(transfers, soldVins) {
+export function renderWhTable(transfers, soldVins) {
   const wrap = el('wh-cards');
   if (!wrap) return;
   if (!transfers.length) {
@@ -4733,12 +4733,12 @@ function renderWhTable(transfers, soldVins) {
 }
 
 // ── إدارة المخازن ──
-async function openManageWarehousesModal() {
+export async function openManageWarehousesModal() {
   await refreshWhList();
   openModal('manageWarehousesModal');
 }
 
-async function refreshWhList() {
+export async function refreshWhList() {
   const sys    = state.system;
   const data   = await apiGetAll('stock_locations', { select:'location_name', system_type:`eq.${sys}` });
   const names  = [...new Set((data||[]).map(t=>t.location_name).filter(Boolean))];
@@ -4755,14 +4755,14 @@ async function refreshWhList() {
   refreshWhSelect();
 }
 
-function refreshWhSelect() {
+export function refreshWhSelect() {
   const sel = el('st-location');
   if (!sel) return;
   sel.innerHTML = `<option value="">اختر المخزن...</option>` +
     whState.warehouses.map(n=>`<option value="${n}">${n}</option>`).join('');
 }
 
-async function addWarehouse() {
+export async function addWarehouse() {
   const name = el('new-wh-name')?.value?.trim();
   if (!name) { if(el('whManageError')){el('whManageError').style.display='block';el('whManageError').textContent='أدخل اسم المخزن';} return; }
   if (whState.warehouses.includes(name)) { if(el('whManageError')){el('whManageError').style.display='block';el('whManageError').textContent='المخزن موجود بالفعل';} return; }
@@ -4777,7 +4777,7 @@ async function addWarehouse() {
   toast(`✅ تم إضافة مخزن "${name}"`,'ok');
 }
 
-async function deleteWarehouse(name) {
+export async function deleteWarehouse(name) {
   // تحقق إن مفيش سيارات في المخزن
   const inWh = whState.allTransfers.filter(t=>t.location_name===name);
   if (inWh.length>0) { toast(`⚠️ المخزن فيه ${inWh.length} سيارة — احذفها أولاً`,'warn'); return; }
@@ -4792,7 +4792,7 @@ async function deleteWarehouse(name) {
 // ── تحويل مخزني جديد ──
 let _stSelectedVins = new Set();
 
-async function openNewTransferModal(prefillWh='') {
+export async function openNewTransferModal(prefillWh='') {
   // تحديث قائمة المخازن — دمج DB + localStorage
   const sys  = state.system;
   const key  = `wh_names_${state.system}`;
@@ -4813,7 +4813,7 @@ async function openNewTransferModal(prefillWh='') {
   openModal('stockTransferModal');
 }
 
-async function loadVehiclesForTransfer(fileNo) {
+export async function loadVehiclesForTransfer(fileNo) {
   const fn = fileNo.trim().toUpperCase();
   if (fn.length < 3) return;
   const wrap = el('st-vehicles-list');
@@ -4854,13 +4854,13 @@ async function loadVehiclesForTransfer(fileNo) {
   }
 }
 
-function toggleVinSelect(chk) {
+export function toggleVinSelect(chk) {
   if (chk.checked) _stSelectedVins.add(chk.value);
   else             _stSelectedVins.delete(chk.value);
   updateSelectedCount();
 }
 
-function selectAllVehicles(select) {
+export function selectAllVehicles(select) {
   el('st-vehicles-list')?.querySelectorAll('input[type="checkbox"]:not([disabled])').forEach(c => {
     c.checked = select;
     if (select) _stSelectedVins.add(c.value);
@@ -4869,11 +4869,11 @@ function selectAllVehicles(select) {
   updateSelectedCount();
 }
 
-function updateSelectedCount() {
+export function updateSelectedCount() {
   if (el('st-selected-count')) el('st-selected-count').textContent = `${_stSelectedVins.size} سيارة محددة`;
 }
 
-async function submitStockTransfer() {
+export async function submitStockTransfer() {
   const location = el('st-location')?.value?.trim();
   const date     = el('st-date')?.value;
   const fileNo   = el('st-file-no')?.value?.trim().toUpperCase();
@@ -4925,7 +4925,7 @@ async function submitStockTransfer() {
   }
 }
 
-async function deleteTransfer(id, vin) {
+export async function deleteTransfer(id, vin) {
   showConfirm(`حذف تحويل`, `هل تريد حذف تحويل السيارة ${vin}؟\nسيُعاد احتسابها في المخزن الرئيسي.`, async () => {
     try {
       await apiDelete('stock_locations', { id:`eq.${id}` });
@@ -4935,7 +4935,7 @@ async function deleteTransfer(id, vin) {
   });
 }
 
-async function exportWhCard(whName) {
+export async function exportWhCard(whName) {
   const rows = whState.allTransfers.filter(t=>t.location_name===whName);
   const soldVins = new Set((state.allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
   const csvRows = rows.map(t=>[t.vin||'—',t.model||'—',t.file_no||'—',t.transfer_date||'—',t.transfer_ref||'—',soldVins.has(t.vin)?'مباع':'في المخزن',t.notes||'']);
@@ -4944,7 +4944,7 @@ async function exportWhCard(whName) {
 
 // ── إضافة عمود المخزن في تبويب السيارات ──
 const _origLoadVehiclesTab = loadVehiclesTab;
-async function loadVehiclesTab(fn, sys) {
+export async function loadVehiclesTab(fn, sys) {
   try {
     const [data, locations] = await Promise.all([
       apiGetAll('vehicles',       { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
@@ -5027,10 +5027,10 @@ async function loadVehiclesTab(fn, sys) {
 // CONTACT STATEMENT — كشف حساب من القيود المحاسبية
 // ════════════════════════════════════════════════════════
 
-const csState = { contactName:'', contactType:'', entries:[] };
+export const csState = { contactName:'', contactType:'', entries:[] };
 
 // تُستدعى من قائمة جهات الاتصال أو أي مكان آخر
-async function showContactStatement(contactName, contactType) {
+export async function showContactStatement(contactName, contactType) {
   // الشريك له كشف متخصص — نحوّله تلقائياً
   if (contactType === 'partner') {
     openPartnerAccountLedger(contactName);
@@ -5052,7 +5052,7 @@ async function showContactStatement(contactName, contactType) {
   await loadContactStatement();
 }
 
-async function loadContactStatement() {
+export async function loadContactStatement() {
   const wrap = el('cs-table');
   if (!wrap) return;
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل كشف الحساب...</div>';
@@ -5182,7 +5182,7 @@ async function loadContactStatement() {
 // printContactStatement → js/print.js
 
 
-function exportContactStatementCSV() {
+export function exportContactStatementCSV() {
   const rows = csState.entries.map(r => [
     (r.entry_date||'').split('T')[0], r.entry_no||'—',
     r.ref_table||'—', r.description||'—', r.file_no||'—',
@@ -5284,7 +5284,7 @@ const IMPORT_SCHEMAS = {
 
 const importState = { type: null, step: 1, parsedRows: [], file: null };
 
-function showImportWizard() {
+export function showImportWizard() {
   hideAllViews();
   el('importWizardView').style.display = 'block';
   el('topBarTitle').textContent = '📥 استيراد بيانات';
@@ -5293,7 +5293,7 @@ function showImportWizard() {
   setImportStep(1);
 }
 
-function setImportStep(n) {
+export function setImportStep(n) {
   importState.step = n;
   for (let i=1; i<=4; i++) {
     const panel = el(`imp-panel-${i}`);
@@ -5307,7 +5307,7 @@ function setImportStep(n) {
   }
 }
 
-function selectImportType(type) {
+export function selectImportType(type) {
   importState.type = type;
   const schema = IMPORT_SCHEMAS[type];
   document.querySelectorAll('.imp-type-card').forEach(c => c.classList.remove('active'));
@@ -5328,7 +5328,7 @@ function selectImportType(type) {
   }
 }
 
-function downloadImportTemplate() {
+export function downloadImportTemplate() {
   const type = importState.type;
   if (!type) return;
   const schema = IMPORT_SCHEMAS[type];
@@ -5345,19 +5345,19 @@ function downloadImportTemplate() {
   toast(`✅ تم تنزيل template_${type}.csv`,'ok');
 }
 
-function handleImportDrop(event) {
+export function handleImportDrop(event) {
   event.preventDefault();
   el('imp-drop-zone').style.borderColor = 'var(--border)';
   const file = event.dataTransfer.files[0];
   if (file) processImportFile(file);
 }
 
-function handleImportFile(input) {
+export function handleImportFile(input) {
   const file = input.files[0];
   if (file) processImportFile(file);
 }
 
-function processImportFile(file) {
+export function processImportFile(file) {
   importState.file = file;
   const ext = file.name.split('.').pop().toLowerCase();
   if (!['xlsx','xls','csv'].includes(ext)) {
@@ -5369,7 +5369,7 @@ function processImportFile(file) {
   if (btn) btn.disabled = false;
 }
 
-async function parseImportFile() {
+export async function parseImportFile() {
   const file = importState.file;
   const type = importState.type;
   if (!file || !type) return;
@@ -5422,7 +5422,7 @@ async function parseImportFile() {
   }
 }
 
-async function readFileAsRows(file) {
+export async function readFileAsRows(file) {
   return new Promise((resolve, reject) => {
     const ext = file.name.split('.').pop().toLowerCase();
     const reader = new FileReader();
@@ -5457,7 +5457,7 @@ async function readFileAsRows(file) {
   });
 }
 
-function renderImportPreview(parsed, errors, schema) {
+export function renderImportPreview(parsed, errors, schema) {
   const wrap = el('imp-preview-wrap');
   if (!wrap) return;
 
@@ -5505,7 +5505,7 @@ function renderImportPreview(parsed, errors, schema) {
     <div id="imp-run-progress" style="margin-top:12px"></div>`;
 }
 
-async function runImport() {
+export async function runImport() {
   const type   = importState.type;
   const schema = IMPORT_SCHEMAS[type];
   const rows   = importState.parsedRows;
@@ -5569,7 +5569,7 @@ async function runImport() {
   await logAudit('IMPORT', schema.table, null, null, { type, inserted, failed, system:sys });
 }
 
-async function runPostImportMigration() {
+export async function runPostImportMigration() {
   toast('⏳ جاري توليد القيود للبيانات المستوردة...','ok');
   openMigrationModal();
   setTimeout(() => {
@@ -5584,7 +5584,7 @@ window.addEventListener('beforeinstallprompt', e => {
   document.querySelectorAll('.pwa-install-btn').forEach(b => b.style.display = 'flex');
 });
 
-function installPWA() {
+export function installPWA() {
   if (_pwaInstallPrompt) {
     _pwaInstallPrompt.prompt();
     _pwaInstallPrompt.userChoice.then(() => {
@@ -5599,3 +5599,33 @@ function installPWA() {
 // كل العمليات بتسجل قيودًا مزدوجة Dr/Cr في journal_entries
 // ════════════════════════════════════════════════════════
 
+// ── window bridge: تعريض الدوال للاستخدام من classic scripts وسمات onclick ──
+Object.assign(window, {
+  showOpex, setOpexPeriod, loadOpex, renderOpexKpis, onOpexTypeChange,
+  openOpexModal, openEditOpexModal, submitOpex, submitEditOpex, deleteOpex,
+  exportOpexExcel, fetchOpexForJournal, loadOpexReport, closeDrillDownMain, closeDrillDown,
+  toggleDrillDown, renderDrillDown, renderDDChart, regenFileNo, regenInvNo,
+  showApprovalQueue, loadApprovalQueue, _optimisticRemove, filterApproval, renderApprovalList,
+  openApprovalDetail, approveFromDetail, cancelFromDetail, rejectFromDetail, openEditSaleApproval,
+  editFromDetail, approveItem, rejectItem, editApprovalRow, cancelApprovalRow,
+  _ensureSaleJE, _createApprovalJE, _ensureApprovalJE, _approveLinkedPaidCollections, _processEditApproval,
+  _processReversalApproval, approveAll, updateApprovalBadge, openPartnerAccountLedger, loadPartnerAccountLedger,
+  renderPartnerAccountLedger, exportPartnerAccountPDF, openGeneralWithdrawModal, submitGeneralWithdraw, openDealNoteModal,
+  submitDealNote, loadDealNotes, deleteDealNote, checkDbStructure, showReview,
+  setReviewPeriod, switchReviewTab, runAllReviewChecks, renderCheckItem, renderReviewChecklist,
+  updateChecklistProgress, renderSignoff, saveReviewSignoff, loadReconciliations, loadReviewHistory,
+  showJEManager, setJEMgrPeriod, loadJEManager, renderJEManagerTable, showUnbalancedDetail,
+  fixUnbalancedEntries, checkMissingEntries, createMissingJE, createAllMissingJE, toggleJELines,
+  openNewJEModal, openEditJEModal, renderJELines, addJELine, removeJELine,
+  onJEAccInput, onJEAccChange, updateJETotals, submitJE, deleteJEEntry,
+  openMigrationModal, _migLog, _migProgress, runMigration, showWarehouses,
+  filterWhByLocation, filterWhByStatus, filterWhSearch, filterWhTransfers, renderWhAll,
+  loadWarehouses, renderWhKpis, renderWhCards, renderWhTable, openManageWarehousesModal,
+  refreshWhList, refreshWhSelect, addWarehouse, deleteWarehouse, openNewTransferModal,
+  loadVehiclesForTransfer, toggleVinSelect, selectAllVehicles, updateSelectedCount, submitStockTransfer,
+  deleteTransfer, exportWhCard, loadVehiclesTab, showContactStatement, loadContactStatement,
+  exportContactStatementCSV, showImportWizard, setImportStep, selectImportType, downloadImportTemplate,
+  handleImportDrop, handleImportFile, processImportFile, parseImportFile, readFileAsRows,
+  renderImportPreview, runImport, runPostImportMigration, installPWA,
+  _ddState, csState,
+});
