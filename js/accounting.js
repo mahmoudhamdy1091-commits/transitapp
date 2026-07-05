@@ -8,7 +8,7 @@ const SOURCE_LABELS = {purchase_orders:'شراء',sales:'بيع',collections:'ت
 const SOURCE_COLORS = {purchase_orders:'var(--accent)',sales:'var(--green)',collections:'var(--blue)',payments:'var(--cyan)',expenses:'var(--red)',partner_payouts:'var(--purple)',operating_expenses:'var(--purple)',manual:'var(--text)',reversal:'var(--text2)'};
 
 // ── State objects ──
-const trialState  = { data:[], typeFilter:'all', from:null, to:null, period:'year' };
+export const trialState  = { data:[], typeFilter:'all', from:null, to:null, period:'year' };
 const ledgerState = { accountCode:null, accountName:null, from:null, to:null, period:'year' };
 
 export function _getPeriodDates(period) {
@@ -1441,7 +1441,7 @@ export function showJournalReport() {
 // ════════════════════════════════════════
 // VEHICLES REPORT
 // ════════════════════════════════════════
-const vrState = { all: [], filter: 'all' };
+export const vrState = { all: [], filter: 'all' };
 
 export async function showVehiclesReport() {
   hideAllViews();
@@ -2517,7 +2517,7 @@ export async function loadAllCollections() {
 // ════════════════════════════════════════
 // REPORTS
 // ════════════════════════════════════════
-const reportState = { type:'profit', data:[] };
+export const reportState = { type:'profit', data:[] };
 
 export async function apiGetDateRange(table, dateCol, from, to, extra={}) {
   const sys = state.system;
@@ -3067,4 +3067,5 @@ Object.assign(window, {
   showNewLedger, setNewLedgerPeriod, loadNewLedger, renderNewLedger, _renderNlEntryRows,
   _renderNlLeaf, toggleLedgerGroup, toggleLedgerLeaf, toggleLedgerContact, showLedgerEntryMenu,
   hideLedgerEntryMenu, apiDelete,
+  reportState, trialState, vrState,
 });
