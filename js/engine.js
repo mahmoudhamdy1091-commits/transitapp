@@ -180,6 +180,9 @@ export async function voidTransaction(type, record, force=false) {
   const amount  = +record.amount || +record.sale_price || 0;
 
   if (!amount || amount <= 0) throw new Error('المبلغ صفر — لا يوجد قيد لعكسه');
+  // ✅ حارس دفاعي: يمنع إلغاء سجل مُلغى بالفعل (قيد عكسي مزدوج) — لا يمنع pending_void
+  // (مطلوب لموافقة قائمة المراجعة عبر force=true) ولا أي حالة أخرى
+  if (record.post_status === 'voided') throw new Error('هذا السجل ملغى بالفعل — لا يمكن إلغاؤه مرة أخرى');
 
   // ── إذا كان النظام على draft mode → أرسل للمراجعة بدل تنفيذ فوري ──
   // ✅ استثناء: عند التنفيذ من قائمة المراجعة (force=true) — السجل أصلاً pending_void
@@ -307,6 +310,15 @@ export async function reverseManualJE(entryNo) {
   if (lines.some(l => l.ref_table !== 'manual')) {
     throw new Error('هذه الدالة لعكس القيود اليدوية فقط — القيد المحدد ليس يدوياً');
   }
+
+  // ✅ حارس دفاعي (أفضل مجهود، مطابقة نصية — لا يوجد ref_id حقيقي يربط
+  // القيد بعكسه هنا، انظر project_dual_je_audit Case 1): يمنع عكس نفس
+  // القيد مرتين لو القيد العكسي السابق لسه موجود بنفس وصف "عكس قيد {entryNo}"
+  const already = await apiGetAll('journal_entries', {
+    select: 'id', system_type: `eq.${sys}`, ref_table: 'eq.manual',
+    description: `ilike.*عكس قيد ${entryNo}*`, limit: 1,
+  });
+  if (already?.length) throw new Error('هذا القيد تم عكسه بالفعل');
 
   const fileNo = lines[0].file_no || null;
   const date_  = today();

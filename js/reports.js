@@ -795,9 +795,12 @@ export async function deletePayoutEntry(payoutId, fileNo, silent=false) {
       // تعديل من modal — Void القديم بدل Hard Delete
       if (p.post_status === 'posted') {
         await voidTransaction('payout', p);
-      } else {
+      } else if (p.post_status === 'draft') {
         // draft فقط: مسح مباشر مقبول
         await apiDelete('partner_payouts', { id:`eq.${payoutId}` });
+      } else {
+        toast(`⚠️ لا يمكن حذف سجل بحالة "${p.post_status}"`, 'err');
+        return;
       }
       await loadPayoutsTab(fileNo, state.system);
       return;
@@ -816,7 +819,7 @@ export async function deletePayoutEntry(payoutId, fileNo, silent=false) {
           } catch(e) { toast('خطأ: '+e.message,'err'); }
         }
       );
-    } else {
+    } else if (p.post_status === 'draft') {
       // draft: مسح نهائي مقبول (لم يُرحَّل بعد)
       showConfirm('مسح صرف شريك', 'هل تريد مسح هذا الصرف؟ (لم يُرحَّل — لا يوجد قيد)', async () => {
         try {
@@ -826,6 +829,8 @@ export async function deletePayoutEntry(payoutId, fileNo, silent=false) {
           toast('✅ تم المسح','ok');
         } catch(e) { toast('خطأ: '+e.message,'err'); }
       });
+    } else {
+      toast(`⚠️ لا يمكن حذف سجل بحالة "${p.post_status}"`, 'err');
     }
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
