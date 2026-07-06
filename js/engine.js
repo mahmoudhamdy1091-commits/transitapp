@@ -92,7 +92,7 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
       const byRef = await apiGetAll('journal_entries', {
         select: 'entry_no', system_type: `eq.${sys}`,
         ref_table: `eq.${refTable}`, ref_id: `eq.${refId}`,
-        post_status: 'eq.posted', limit: 1,
+        post_status: 'eq.posted', limit: 1, order: 'id.desc',
       });
       if (byRef?.length) entryNo = byRef[0].entry_no;
     }
