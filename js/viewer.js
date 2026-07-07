@@ -486,14 +486,10 @@ export async function loadPaymentPOCard(fileNo) {
     el('qp-amount').value = remaining > 0 ? remaining.toFixed(3) : '';
 
     // الدافع
-    let payerOptions = '';
-    if (partners?.length) {
-      payerOptions = partners.map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('');
-    }
-    if (poData.supplier) {
-      payerOptions = `<option value="${poData.supplier}">${poData.supplier} (المورد)</option>` + payerOptions;
-    }
-    el('qp-payer').innerHTML = '<option value="">— اختر الدافع —</option>' + payerOptions;
+    const rawPartners = (partners||[]).map(p=>p.partner);
+    const payerList = rawPartners.includes(TREASURY_PARTNER) ? rawPartners : [TREASURY_PARTNER, ...rawPartners];
+    el('qp-payer').innerHTML = payerList.map(p=>`<option value="${p}">${p}</option>`).join('');
+    el('qp-payer').value = TREASURY_PARTNER;
 
     el('qp-po-card').style.display    = 'block';
     el('qp-form-fields').style.display = 'block';

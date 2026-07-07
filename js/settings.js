@@ -1076,11 +1076,11 @@ export async function openEditPaymentModal(paymentId) {
       const all = await getContactsByType('partner');
       partners = (all||[]).map(x=>({partner:x.name}));
     }
+    const rawPartners = (partners||[]).map(pm=>pm.partner);
+    const payerList = rawPartners.includes(TREASURY_PARTNER) ? rawPartners : [TREASURY_PARTNER, ...rawPartners];
     el('ep-id').value     = p.id;
-    el('ep-payer').innerHTML = (partners||[]).map(pm =>
-      `<option value="${pm.partner}" ${pm.partner===p.payer?'selected':''}>${pm.partner}</option>`
-    ).join('');
-    el('ep-payer').value  = p.payer    || '';
+    el('ep-payer').innerHTML = payerList.map(pm => `<option value="${pm}">${pm}</option>`).join('');
+    el('ep-payer').value  = p.payer    || TREASURY_PARTNER;
     el('ep-amount').value = p.amount   || '';
     el('ep-method').value = p.pay_method || 'تحويل بنكي';
     el('ep-date').value   = p.pay_date  || '';
@@ -1124,6 +1124,7 @@ export async function submitEditPayment() {
       // ── السجل مرحّل: تعديل مباشر في السجل + القيد الأصلي + إرسال للموافقة ──
       const oldAmount = +old.amount;
       const oldPayer  = old.payer;
+      const routingChanged = _isPartnerPocket(oldPayer?.trim() || TREASURY_PARTNER) !== _isPartnerPocket(payer?.trim() || TREASURY_PARTNER);
 
       // 1. تحديث السجل مباشرة
       await apiPatch('payments', { id:`eq.${id}` }, {
@@ -1133,13 +1134,23 @@ export async function submitEditPayment() {
       });
 
       // 2. تحديث القيد المحاسبي في مكانه
-      await updateJEInPlace({
-        sys: state.system, fileNo: old.file_no,
-        refTable: 'payments', refId: id,
-        oldAmount, newAmount: amount,
-        contactPatch: payer !== oldPayer ? payer : null,
-        newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ الدفعة الجديد
-      });
+      if (routingChanged) {
+        // 2a. عكس القيد القديم بناءً على بيانات السجل القديم (قبل التعديل)
+        await voidTransaction('payment', old, true);
+        // 2b. إنشاء قيد جديد بالتوجيه الجديد
+        await je_payment({ sys:state.system, date, amount, fileNo:old.file_no, refId:id,
+          supplierName: old.supplier||'', payerName: payer, method });
+        // 2c. إعادة status إلى pending_edit (voidTransaction يضع 'voided' على السجل لكننا نريد void للقيود فقط)
+        await apiPatch('payments', { id:`eq.${id}` }, { post_status: 'pending_edit' });
+      } else {
+        await updateJEInPlace({
+          sys: state.system, fileNo: old.file_no,
+          refTable: 'payments', refId: id,
+          oldAmount, newAmount: amount,
+          contactPatch: payer !== oldPayer ? payer : null,
+          newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ الدفعة الجديد
+        });
+      }
 
       await logAudit('EDIT', 'payments', old.file_no, old, {payer,amount,method,date,doc}, `تعديل دفعة ${old.ref_no||id}`);
       await updateApprovalBadge();

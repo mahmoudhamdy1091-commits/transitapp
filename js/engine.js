@@ -208,14 +208,16 @@ export async function voidTransaction(type, record, force=false) {
   let refTable      = 'reversal';
 
   if (type === 'payment') {
-    // القيد الأصلي: Dr 2100 ذمم موردين / Cr 1110|1120 نقد|بنك
-    // العكس:        Dr 1110|1120 / Cr 2100
     const cashAcc = (record.pay_method||'') === 'نقد' ? '1110' : '1120';
     const cashNm  = (record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك';
-    const sup     = record.supplier || record.payer || 'مورد';
+    const sup     = record.supplier || 'مورد';
     reversalDesc  = `عكس دفعة ${record.ref_no||record.pay_id||''} — ${sup} — ملف ${record.file_no}`;
+    // الأصلي: Dr 2100 ذمم موردين / Cr (نقد/بنك أو 2400 لو دفعها شريك) — العكس بالمقابل تماماً
+    const cr = _isPartnerPocket(record.payer)
+      ? { acc:'2400', name:'حسابات الشركاء', dr:amount, cr:0, contact:record.payer.trim() }
+      : { acc:cashAcc, name:cashNm, dr:amount, cr:0, contact:null };
     reversalLines = [
-      { acc: cashAcc, name: cashNm,           dr: amount, cr: 0,      contact: null },
+      cr,
       { acc: '2100',  name: 'ذمم الموردين',   dr: 0,      cr: amount, contact: sup  },
     ];
 
@@ -618,8 +620,9 @@ export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplier
   const payerStr = payer || payerName || sup;
   const cashAcc  = method==='نقد'?'1110':'1120';
   const cashNm   = method==='نقد'?'النقد':'البنك';
-
-  const payerIsPartner = payerStr && payerStr !== sup;
+  // ✅ موحّد مع je_expense/je_collection: التوجيه بـ_isPartnerPocket لا بمقارنة اسم المورد
+  // (fallback لـ TREASURY_PARTNER لا sup هنا تحديدًا — لمنع معاملة اسم المورد نفسه كـ"شريك" في حالة payer/payerName فاضيين)
+  const payerIsPartner = _isPartnerPocket(payer || payerName || TREASURY_PARTNER);
 
   if (payerIsPartner) {
     // الشريك يدفع للمورد نيابةً عن الصفقة:

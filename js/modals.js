@@ -950,17 +950,14 @@ export async function _loadPaymentModalData(fn, sys) {
     }
     el('pay-amount').value = remaining > 0 ? remaining.toFixed(3) : '';
 
-    let payerOptions = '';
-    if (partners?.length) {
-      payerOptions = partners.map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('');
-    } else {
+    let rawPartners = (partners||[]).map(p=>p.partner);
+    if (!rawPartners.length) {
       const allPartners = await getContactsByType('partner');
-      payerOptions = (allPartners||[]).map(p=>`<option value="${p.name}">${p.name}</option>`).join('');
+      rawPartners = (allPartners||[]).map(p=>p.name);
     }
-    if (poData.supplier) {
-      payerOptions = `<option value="${poData.supplier}">${poData.supplier} (المورد)</option>` + payerOptions;
-    }
-    el('pay-payer').innerHTML = '<option value="">— اختر الدافع —</option>' + payerOptions;
+    const payerList = rawPartners.includes(TREASURY_PARTNER) ? rawPartners : [TREASURY_PARTNER, ...rawPartners];
+    el('pay-payer').innerHTML = payerList.map(p=>`<option value="${p}">${p}</option>`).join('');
+    el('pay-payer').value = TREASURY_PARTNER;
     // حفظ fn في الـ modal
     el('pay-payer').dataset.fileNo = fn;
   } catch(e) { console.error('_loadPaymentModalData:', e.message); toast('خطأ في تحميل بيانات الدفعة: ' + e.message, 'err'); }
