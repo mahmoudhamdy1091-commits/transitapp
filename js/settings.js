@@ -419,7 +419,7 @@ export async function showSettings() {
   sessionStorage.setItem('tm_last_view','settings');
   switchSettTab('users');
   if(el('sett-email'))  el('sett-email').textContent  = state.user?.email || '—';
-  if(el('sett-role'))   el('sett-role').textContent   = ROLES[_currentRole]?.label || _currentRole;
+  if(el('sett-role'))   el('sett-role').textContent   = ROLES[getCurrentRole()]?.label || getCurrentRole();
   if(el('sett-system')) el('sett-system').textContent = state.system;
   loadApiKeyInSettings();
   await loadUserRoles();
@@ -620,13 +620,13 @@ export async function loadUserRoleFromDB() {
     }
 
     if (data && data[0]) {
-      _currentRole = data[0].role || 'readonly';
+      setCurrentRole(data[0].role || 'readonly');
     } else {
       // إذا لم يُعثر على سجل للمستخدم — تحقق هل هو أول مستخدم في النظام
       const allUsers = await apiGet('user_roles', { select:'id', limit:1 });
       if (!allUsers || !allUsers.length) {
         // أول مستخدم يدخل → مدير تلقائياً + إضافة سجله
-        _currentRole = 'admin';
+        setCurrentRole('admin');
         try {
           await apiPost('user_roles', {
             email, role:'admin',
@@ -637,19 +637,19 @@ export async function loadUserRoleFromDB() {
         } catch(e2) { console.warn('autoAdmin insert:', e2.message); }
       } else {
         // مستخدم غير مسجل في النظام → readonly
-        _currentRole = 'readonly';
+        setCurrentRole('readonly');
         toast('⚠️ حسابك غير مُضاف في النظام — صلاحية مشاهدة فقط', 'warn');
       }
     }
 
-    setPendingRole(_currentRole);
-    localStorage.setItem('tm_role', _currentRole);
+    setPendingRole(getCurrentRole());
+    localStorage.setItem('tm_role', getCurrentRole());
     applyRoleRestrictions();
-    console.log(`[Auth] Role loaded: ${_currentRole} (${email})`);
+    console.log(`[Auth] Role loaded: ${getCurrentRole()} (${email})`);
   } catch(e) {
     console.warn('loadUserRole:', e.message);
     // في حالة خطأ الشبكة — استخدم آخر role محفوظ أو readonly
-    _currentRole = localStorage.getItem('tm_role') || 'readonly';
+    setCurrentRole(localStorage.getItem('tm_role') || 'readonly');
     applyRoleRestrictions();
   }
 }

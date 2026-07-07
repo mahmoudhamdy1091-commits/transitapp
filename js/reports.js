@@ -838,10 +838,10 @@ export async function deletePayoutEntry(payoutId, fileNo, silent=false) {
 
 export function openRolesModal() {
   openModal('rolesModal');
-  updateRoleUI(_currentRole);
+  updateRoleUI(getCurrentRole());
 }
 
-let _pendingRole = _currentRole;
+let _pendingRole = getCurrentRole();
 export function getPendingRole() { return _pendingRole; }
 export function setPendingRole(role) { _pendingRole = role; }
 export function setRole(role) {
@@ -859,11 +859,11 @@ export function updateRoleUI(role) {
 }
 
 export function saveRole() {
-  _currentRole = _pendingRole;
-  localStorage.setItem('tm_role', _currentRole);
+  setCurrentRole(_pendingRole);
+  localStorage.setItem('tm_role', getCurrentRole());
   applyRoleRestrictions();
   closeModal('rolesModal');
-  toast(`✅ تم الحفظ — الدور: ${ROLES[_currentRole].label}`,'ok');
+  toast(`✅ تم الحفظ — الدور: ${ROLES[getCurrentRole()].label}`,'ok');
 }
 
 export function applyRoleRestrictions() {
@@ -872,7 +872,7 @@ export function applyRoleRestrictions() {
   const canApprove  = can('approve');
   const canSettings = can('settings');
   const isAdmin     = can('settings');
-  const role        = ROLES[_currentRole] || ROLES.readonly;
+  const role        = ROLES[getCurrentRole()] || ROLES.readonly;
 
   // ── ١. Role badge في sidebar ──
   const badge = el('userRoleBadge');
@@ -926,9 +926,9 @@ export function applyRoleRestrictions() {
   });
 
   // ── ١١. CSS class على body للتحكم بالـ context menus ──
-  document.body.classList.toggle('role-readonly',  _currentRole === 'readonly');
-  document.body.classList.toggle('role-employee',  _currentRole === 'employee');
-  document.body.classList.toggle('role-admin',     _currentRole === 'admin');
+  document.body.classList.toggle('role-readonly',  getCurrentRole() === 'readonly');
+  document.body.classList.toggle('role-employee',  getCurrentRole() === 'employee');
+  document.body.classList.toggle('role-admin',     getCurrentRole() === 'admin');
 }
 
 // ════════════════════════════════════════
@@ -1012,8 +1012,8 @@ export function showDashboard_withFab() {
 
 // Init roles on load
 document.addEventListener('DOMContentLoaded', () => {
-  _currentRole = localStorage.getItem('tm_role') || 'admin';
-  _pendingRole = _currentRole;
+  setCurrentRole(localStorage.getItem('tm_role') || 'admin');
+  _pendingRole = getCurrentRole();
 
   // Top bar shadow on scroll
   const contentArea = document.querySelector('.content-area');

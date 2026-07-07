@@ -53,7 +53,7 @@ export const OPEX_ACC_MAP = {
 // مكانها هنا لأن المحرك (voidTransaction) يستدعي entryStatus() —
 // كانت في accounting.js مما يسبب تبعية عكسية من المحرك لطبقة أعلى.
 // ════════════════════════════════════════════════════════════════
-export function isAdminUser() { return _currentRole === 'admin'; }
+export function isAdminUser() { return getCurrentRole() === 'admin'; }
 export function adminPostsImmediately() { return localStorage.getItem('tm_admin_post') === 'posted'; }
 export function entryStatus() { return (isAdminUser() && adminPostsImmediately()) ? 'posted' : 'draft'; }
 export function toggleAdminPostSetting() {
