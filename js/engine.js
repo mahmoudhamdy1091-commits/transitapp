@@ -878,10 +878,15 @@ Object.assign(window, {
 // ════════════════════════════════════════
 
 // ✅ ربط engineHooks بالدوال الفعلية بيحصل هنا (جوه engine.js) مش في
-// transactions.js/operations.js — تنفيذ الموديول مؤجَّل زي defer، فمضمون
-// إن window.initApp / window.loadApprovalQueue اتعرّفوا قبل السطرين دول.
-engineHooks.onAppReady     = window.initApp;
-engineHooks.onVoidComplete = window.loadApprovalQueue;
+// transactions.js/operations.js. lazy lookup مقصود، مش eager capture:
+// operations.js (موديول) بييجي بعد engine.js في ترتيب الملفات بـ index.html،
+// فـ window.loadApprovalQueue لسه مش معرّفة وقت تنفيذ هذا السطر لو كانت
+// eager — ده سبب انكسار onVoidComplete بصمت بعد تحويل operations.js لموديول.
+// transactions.js (لسه classic) بتتنفذ قبل أي موديول فعليًا، فـ onAppReady
+// كانت شغّالة بالصدفة — lazy lookup موحّد وأأمن للاتنين، ومش هيتكسر لو
+// transactions.js اتحوّلت لموديول لاحقًا.
+engineHooks.onAppReady     = () => window.initApp?.();
+engineHooks.onVoidComplete = () => window.loadApprovalQueue?.();
 
 (function init() {
   const savedToken   = localStorage.getItem('tm_token');
