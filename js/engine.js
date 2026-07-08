@@ -550,9 +550,9 @@ export async function calcCOGS(sys, fileNo, soldCount, { alreadySold = null, alr
 }
 
 // شراء: مخزون Dr / مورد Cr
-export async function je_purchase({sys,date,amount,fileNo,supplier}) {
+export async function je_purchase({sys,date,amount,fileNo,supplier,refId}) {
   if(!amount||amount<=0) return;
-  await postDoubleEntry({sys,date,fileNo,refTable:'purchase_orders',desc:`شراء — ملف ${fileNo} — ${supplier}`,lines:[
+  await postDoubleEntry({sys,date,fileNo,refTable:'purchase_orders',refId,desc:`شراء — ملف ${fileNo} — ${supplier}`,lines:[
     {acc:'1300', name:getAccountName('1300'),  dr:amount, cr:0,      contact:null     },
     {acc:'2100', name:`ذمم الموردين`,           dr:0,      cr:amount, contact:supplier },
   ]});

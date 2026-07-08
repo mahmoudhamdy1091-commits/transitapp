@@ -521,14 +521,15 @@ export async function _submitNewFileInner() {
       post_status:    entryStatus(),
       notes:          notes || null
     };
-    await apiPost('purchase_orders', poData);
+    const poIns   = await apiPost('purchase_orders', poData);
+    const newPoId = poIns?.[0]?.id || null;
 
     // 2. Ledger entry for supplier — امسح القديم وأضف جديد
     if (finalTotal > 0) {
       const vinList = vehicles.filter(v=>v.vin).map(v=>v.vin).join(' / ');
       if (entryStatus()==='posted') {
         try {
-          await je_purchase({sys:state.system,date:poDate||today(),amount:finalTotal,fileNo,supplier});
+          await je_purchase({sys:state.system,date:poDate||today(),amount:finalTotal,fileNo,supplier,refId:newPoId});
         } catch(jeErr) {
           await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` }, { post_status:'draft' });
           toast(`⚠️ تم حفظ الصفقة بدون ترحيل قيد الشراء — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');

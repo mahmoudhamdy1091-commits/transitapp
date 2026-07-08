@@ -1898,7 +1898,7 @@ export async function _createApprovalJE(type, record, sys) {
   if (type === 'purchase') {
     if (!record.file_no) return;
     const ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${sys}`, ref_table:'eq.purchase_orders', file_no:`eq.${record.file_no}`, post_status:'eq.posted', limit:1 });
-    if (!ex?.length) await je_purchase({ sys, date:record.po_date||today(), amount:+record.total_purchase||0, fileNo:record.file_no, supplier:record.supplier||'' });
+    if (!ex?.length) await je_purchase({ sys, date:record.po_date||today(), amount:+record.total_purchase||0, fileNo:record.file_no, supplier:record.supplier||'', refId:record.id||null });
   } else if (type === 'payment') {
     await je_payment({ sys, date:record.pay_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, supplierName:record.supplier||'', payerName:record.payer||'', method:record.pay_method||'تحويل بنكي' });
   } else if (type === 'expense') {
@@ -2016,10 +2016,18 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
           select:'entry_no', system_type:`eq.${state.system}`,
           ref_table:`eq.${refTable}`, ref_id:`eq.${item.id}`, limit:'1',
         });
+        // ✅ سند الشراء: je_purchase تاريخيًا ما كانتش بتكتب ref_id (تصحيح مستقبلي فقط) —
+        // fallback بمطابقة file_no، نفس حارس _createApprovalJE (أسفل)
+        if (!existingJE?.length && type === 'purchase_edit' && item.file_no) {
+          existingJE = await apiGet('journal_entries', {
+            select:'entry_no', system_type:`eq.${state.system}`,
+            ref_table:'eq.purchase_orders', file_no:`eq.${item.file_no}`, post_status:'eq.posted', limit:'1',
+          });
+        }
       }
       if (!existingJE?.length) {
         if (type === 'purchase_edit') {
-          await je_purchase({ sys:state.system, date:item.po_date||today(), amount:+item.total_purchase||0, fileNo:item.file_no, supplier:item.supplier||'' });
+          await je_purchase({ sys:state.system, date:item.po_date||today(), amount:+item.total_purchase||0, fileNo:item.file_no, supplier:item.supplier||'', refId:item.id||null });
         } else if (type === 'payment_edit') {
           await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
         } else if (type === 'expense_edit') {
@@ -3815,7 +3823,7 @@ export async function fixUnbalancedEntries() {
           const data = await apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           const d = data?.[0];
           if (d && +d.total_purchase > 0)
-            await je_purchase({ sys, date:d.po_date||today(), amount:+d.total_purchase, fileNo:d.file_no, supplier:d.supplier||'' });
+            await je_purchase({ sys, date:d.po_date||today(), amount:+d.total_purchase, fileNo:d.file_no, supplier:d.supplier||'', refId:d.id||null });
 
         } else if (refTable === 'payments' && fileNo) {
           // جلب كل الدفعات لهذا الملف وإعادة قيدها
@@ -4423,7 +4431,7 @@ export async function runMigration() {
     _migLog(`📋 ${(deals||[]).filter(isPosted).length} صفقة شراء...`);
     for (const d of (deals||[]).filter(isPosted)) {
       if (!d.total_purchase||!+d.total_purchase) { skipped++; tick(); continue; }
-      await safe(`شراء ${d.file_no}`, () => je_purchase({ sys, date:d.po_date||today(), amount:+d.total_purchase, fileNo:d.file_no, supplier:d.supplier||'' }));
+      await safe(`شراء ${d.file_no}`, () => je_purchase({ sys, date:d.po_date||today(), amount:+d.total_purchase, fileNo:d.file_no, supplier:d.supplier||'', refId:d.id||null }));
     }
 
     // ── الخطوة 4: الدفعات ──
