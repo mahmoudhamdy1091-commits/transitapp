@@ -2,7 +2,7 @@
 // ║  transactions.js — TX View · Invoice Modal · Export     ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
-const TX_CONFIG = {
+export const TX_CONFIG = {
   sales:       { title:'المبيعات',         icon:'🧾', color:'var(--green)',  table:'sales',           amountField:'sale_price',     dateField:'sale_date', labelField:'customer' },
   expenses:    { title:'المصاريف',         icon:'💸', color:'var(--red)',    table:'expenses',        amountField:'amount',         dateField:'exp_date',  labelField:'description' },
   collections: { title:'التحصيلات',        icon:'💰', color:'var(--blue)',   table:'collections',     amountField:'amount',         dateField:'due_date',  labelField:'customer' },
@@ -13,7 +13,7 @@ const TX_CONFIG = {
 
 let _txType = 'deals';
 
-function showTransactions(type) {
+export function showTransactions(type) {
   // الصفقات موجودة في الداشبورد — لا نكررها
   if (!type || type === 'deals') {
     showDashboard();
@@ -49,7 +49,7 @@ function showTransactions(type) {
 // ════════════════════════════════════════
 // TRANSACTIONS DATE FILTER
 // ════════════════════════════════════════
-function setTxPeriod(period) {
+export function setTxPeriod(period) {
   document.querySelectorAll('[id^="txperiod-"]').forEach(b => b.classList.remove('active'));
   el('txperiod-' + period)?.classList.add('active');
   const customWrap = el('txCustomDateWrap');
@@ -67,7 +67,7 @@ function setTxPeriod(period) {
   loadTransactions();
 }
 
-async function loadTransactions() {
+export async function loadTransactions() {
   const type = _txType;
   const cfg  = TX_CONFIG[type];
   if (!cfg) return; // لا توجد شاشة معاملات نشطة (مثلاً 'deals') — تجاهل
@@ -213,7 +213,7 @@ async function loadTransactions() {
   }
 }
 
-function renderTxTable(rows, cfg, auditMap, type) {
+export function renderTxTable(rows, cfg, auditMap, type) {
   if (!rows.length) {
     el('tx-table').innerHTML = emptyHTML(cfg.icon, 'لا توجد سجلات في هذه الفترة');
     return;
@@ -304,7 +304,7 @@ function renderTxTable(rows, cfg, auditMap, type) {
 }
 
 // ══ عرض الفواتير مجمّعة بـ inv_no ══
-function renderSalesInvoices(rows, cfg, auditMap) {
+export function renderSalesInvoices(rows, cfg, auditMap) {
   // تجميع بالفاتورة
   const invMap = {};
   rows.forEach(r => {
@@ -385,7 +385,7 @@ function renderSalesInvoices(rows, cfg, auditMap) {
 }
 
 // ══ موديل الفاتورة الكاملة ══
-async function openInvoiceModal(invNo) {
+export async function openInvoiceModal(invNo) {
   // جلب كل سطور الفاتورة
   const allRows = window._txRawRows || [];
   let vehicles  = allRows.filter(r => r.inv_no === invNo);
@@ -519,12 +519,12 @@ async function openInvoiceModal(invNo) {
 // printInvoice → js/print.js
 
 
-async function downloadInvoicePDF() {
+export async function downloadInvoicePDF() {
   printInvoice();
   toast('💡 اضغط "طباعة" ثم اختر "حفظ كـ PDF"','ok');
 }
 
-function filterTxTable() {
+export function filterTxTable() {
   const q = el('tx-search')?.value?.toLowerCase() || '';
   const rows = document.querySelectorAll('#tx-tbody tr');
   rows.forEach(r => {
@@ -532,7 +532,7 @@ function filterTxTable() {
   });
 }
 
-async function exportTxPDF() {
+export async function exportTxPDF() {
   const table = el('tx-data-table');
   if (!table) { toast('لا توجد بيانات','err'); return; }
   const cfg  = TX_CONFIG[_txType];
@@ -561,7 +561,7 @@ async function exportTxPDF() {
   printDocument(header + clone.outerHTML, cfg.title);
 }
 
-async function exportTxExcel() {
+export async function exportTxExcel() {
   if (!window._txRows?.length) { toast('لا توجد بيانات','err'); return; }
   const cfg = window._txCfg;
   const rows = window._txRows;
@@ -579,7 +579,7 @@ async function exportTxExcel() {
 }
 
 
-async function initApp() {
+export async function initApp() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appScreen').style.display = 'block';
 
@@ -634,10 +634,10 @@ async function initApp() {
 // SYSTEM SWITCH
 // ════════════════════════════════════════
 // Approval state
-const approvalState = { all: [], filtered: [], currentType: 'all', currentItem: null, auditUsers: {} };
+export const approvalState = { all: [], filtered: [], currentType: 'all', currentItem: null, auditUsers: {} };
 
 // تحميل شجرة الحسابات وتخزينها في cache
-async function loadChartOfAccounts() {
+export async function loadChartOfAccounts() {
   try {
     const rows = await apiGet('chart_of_accounts', {
       select: 'account_code,account_name,account_type,parent_code',
@@ -656,15 +656,15 @@ async function loadChartOfAccounts() {
 }
 
 // جيب اسم الحساب من الـ cache
-function getAccountName(code) {
+export function getAccountName(code) {
   return state.chartOfAccounts[code]?.name || code;
 }
 
-function getAccountTypeCOA(code) {
+export function getAccountTypeCOA(code) {
   return state.chartOfAccounts[code]?.type || getAccountType(code);
 }
 
-function switchSystem(sys) {
+export function switchSystem(sys) {
   state.system = sys;
   state.currentFileNo = null;
   invalidateCache(); // إجبار إعادة تحميل بيانات النظام الجديد
@@ -675,7 +675,7 @@ function switchSystem(sys) {
   showDashboard(); // showDashboard تستدعي loadDashboard داخلياً
 }
 
-function updateSystemUI() {
+export function updateSystemUI() {
   const sys = state.system;
   document.getElementById('topBarSub').textContent = `نظام ${sys}`;
   document.getElementById('nfSystemLabel').textContent = sys;
@@ -687,9 +687,9 @@ function updateSystemUI() {
 // ════════════════════════════════════════
 // DASHBOARD — period-based
 // ════════════════════════════════════════
-const dashState = { days: 'year', from: null, to: null };
+export const dashState = { days: 'year', from: null, to: null };
 
-function setDashPeriod(days) {
+export function setDashPeriod(days) {
   // Update active button
   document.querySelectorAll('.dash-period-btn').forEach(b => b.classList.remove('active'));
   const btn = el('period-btn-' + days);
@@ -735,4 +735,12 @@ function setDashPeriod(days) {
 
   loadDashboard();
 }
+
+Object.assign(window, {
+  TX_CONFIG, showTransactions, setTxPeriod, loadTransactions,
+  renderTxTable, renderSalesInvoices, openInvoiceModal, downloadInvoicePDF,
+  filterTxTable, exportTxPDF, exportTxExcel, initApp, approvalState,
+  loadChartOfAccounts, getAccountName, getAccountTypeCOA, switchSystem,
+  updateSystemUI, dashState, setDashPeriod,
+});
 
