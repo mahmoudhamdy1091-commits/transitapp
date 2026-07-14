@@ -222,15 +222,28 @@ export async function voidTransaction(type, record, force=false) {
     ];
 
   } else if (type === 'expense') {
-    // الأصلي: Dr 6xxx / Cr (نقد/بنك أو 2400 لو دفعها شريك) — العكس بالمقابل تماماً
-    const eAcc    = EXPENSE_ACCOUNT_MAP[record.exp_type||record.category] || '6500';
+    // الأصلي: Dr 1300|5100 (سياسة الترسملة) أو 6xxx/52xx (قيود قديمة) / Cr (نقد/بنك أو 2400)
+    // نعكس الحساب المدين الفعلي من القيد الأصلي (بحث بـ ref_id) — يدعم القديم والجديد معاً
+    let eAcc = null, eName = null;
+    try {
+      const orig = await apiGetAll('journal_entries', {
+        select:'account_code,account_name,dr_amount',
+        system_type:`eq.${sys}`, ref_table:'eq.expenses', ref_id:`eq.${record.id}`, post_status:'eq.posted',
+      });
+      const drLine = (orig||[]).find(l => (+l.dr_amount||0) > 0);
+      if (drLine) { eAcc = drLine.account_code; eName = drLine.account_name || record.exp_type || 'مصروف'; }
+    } catch(e) { console.warn('void expense: فشل جلب القيد الأصلي:', e.message); }
+    if (!eAcc) {
+      const t = await fileExpenseTarget(sys, record.file_no, record.exp_type||record.category);
+      eAcc = t.acc; eName = t.name;
+    }
     const dr = _isPartnerPocket(record.paid_by)
       ? { acc:'2400', name:'حسابات الشركاء', dr:amount, cr:0, contact:record.paid_by.trim() }
       : { acc:((record.pay_method||'')==='نقد'?'1110':'1120'), name:((record.pay_method||'')==='نقد'?'النقد':'البنك'), dr:amount, cr:0, contact:null };
     reversalDesc  = `عكس مصروف ${record.ref_no||''} — ${record.description||''} — ملف ${record.file_no}`;
     reversalLines = [
       dr,
-      { acc: eAcc, name: record.exp_type || 'مصروف', dr: 0, cr: amount, contact: null },
+      { acc: eAcc, name: eName, dr: 0, cr: amount, contact: null },
     ];
 
   } else if (type === 'collection') {
@@ -643,17 +656,47 @@ export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplier
   }
 }
 
-// مصروف: مصروف Dr / نقد Cr
+// ════════════════════════════════════════════════════════════
+// سياسة الترسملة (قرار 2026-07-14): مصاريف الملفات تُرسمل في المخزون
+// 1300 وتخرج لتكلفة البيع 5100 وقت البيع — calcCOGS يشملها أصلاً في
+// التكلفة الكاملة، والتسجيل القديم على 52xx/6xxx كان يخصم المصروف
+// مرتين من الربح (مرة كمصروف مباشر ومرة داخل COGS).
+// - ملف مُباع بالكامل (لا شاحنات متبقية) → المصروف مباشرة لـ5100
+//   (لا مخزون متبقٍ يحمله؛ ولو أُضيفت سيارات لاحقاً calcCOGS يخصمه
+//   تلقائياً ضمن alreadyCOGS فلا ازدواج).
+// - مصروف بلا ملف → حسابات المصاريف كالسابق (لا يدخل COGS أصلاً).
+// ════════════════════════════════════════════════════════════
+export async function fileExpenseTarget(sys, fileNo, expType) {
+  if (!fileNo) return { acc: EXPENSE_ACCOUNT_MAP[expType] || '6500', name: expType || 'مصروف' };
+  try {
+    const [vehRows, soldRows] = await Promise.all([
+      apiGetAll('vehicles', { select:'vin', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+      apiGetAll('sales',    { select:'vin', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
+    ]);
+    const _isPart    = vin => (vin||'').startsWith('PART-');
+    const trucks     = (vehRows||[]).filter(v => !_isPart(v.vin)).length;
+    const soldTrucks = (soldRows||[]).filter(s => !_isPart(s.vin)).length;
+    const fullySold  = (vehRows||[]).length > 0 && soldTrucks >= trucks;
+    return fullySold
+      ? { acc:'5100', name:'تكلفة المخزون المباع' }
+      : { acc:'1300', name:'المخزون — سيارات' };
+  } catch(e) {
+    console.warn('fileExpenseTarget:', e.message);
+    return { acc:'1300', name:'المخزون — سيارات' };
+  }
+}
+
+// مصروف ملف: مخزون 1300 (أو 5100 لو الملف مُباع) Dr / نقد Cr — مصروف عام: حساب مصروف Dr / نقد Cr
 export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy}) {
   if(!amount||amount<=0) return;
-  const eAcc     = EXPENSE_ACCOUNT_MAP[expType]||'6500';
+  const target = await fileExpenseTarget(sys, fileNo, expType);
   // الدائن: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو دفعها من جيبه
   const credit = _isPartnerPocket(paidBy)
     ? {acc:'2400', name:'حسابات الشركاء', dr:0, cr:amount, contact:paidBy.trim()}
     : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null};
   const tail = _isPartnerPocket(paidBy) ? ` — دفعها ${paidBy.trim()}` : '';
   await postDoubleEntry({sys,date,fileNo,refTable:'expenses',refId,desc:`${desc} — ملف ${fileNo||'عام'}${tail}`,lines:[
-    {acc:eAcc,    name:expType||'مصروف', dr:amount, cr:0,     contact:null},
+    {acc:target.acc, name:target.name, dr:amount, cr:0, contact:null},
     credit,
   ]});
 }
@@ -789,12 +832,15 @@ export async function simulateDraftJE(sys, from, to) {
     });
     (EXPs||[]).forEach(e => {
       if (!inRange(e.exp_date) || !(+e.amount>0)) return;
-      const eAcc    = EXPENSE_ACCOUNT_MAP[e.exp_type] || '6500';
+      // سياسة الترسملة: مصروف ملف → مخزون 1300 (المعاينة تتجاهل حالة "الملف
+      // المُباع بالكامل → 5100" تبسيطاً — الترحيل الفعلي عبر je_expense يفرّق)
+      const eAcc    = e.file_no ? '1300' : (EXPENSE_ACCOUNT_MAP[e.exp_type] || '6500');
+      const eNm     = e.file_no ? 'المخزون — سيارات' : (e.exp_type||'مصروف');
       const cashAcc = e.pay_method==='نقد'?'1110':'1120';
       const cashNm  = e.pay_method==='نقد'?'النقد':'البنك';
       push([
-        {acc:eAcc,    name:e.exp_type||'مصروف', dr:+e.amount, cr:0, contact:null},
-        {acc:cashAcc, name:cashNm,               dr:0, cr:+e.amount, contact:null},
+        {acc:eAcc,    name:eNm,    dr:+e.amount, cr:0, contact:null},
+        {acc:cashAcc, name:cashNm, dr:0, cr:+e.amount, contact:null},
       ], e.file_no, 'expenses', `${e.description||'مصروف'} — ملف ${e.file_no||'عام'} (معاينة)`, e.exp_date);
     });
 
