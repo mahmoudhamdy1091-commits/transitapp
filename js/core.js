@@ -420,6 +420,85 @@ export function computeFinancials(jeRows) {
   return { totSales, totCOGS, totDealExp, totOpex, totPurchase, grossProfit, netProfit, byFile };
 }
 
+/**
+ * تسوية الشركاء الموحّدة لملف واحد — مصدر واحد يحل محل 6 معادلات "مستحق"
+ * كانت متفرقة ومتناقضة في dashboard.js/modals.js/accounting.js/print.js/operations.js.
+ *
+ * كل حركة نقدية لشريك (دفع للمورد، دفع مصروف من جيبه، إمساك تحصيل، استلام
+ * صرف) تُقيَّد أصلاً على حساب 2400 بـ contact_name=اسم الشريك (je_payment/
+ * je_expense/je_collection/je_payout في engine.js، عبر _isPartnerPocket).
+ * فاستعلام واحد على قيود الملف، مُجمَّع حسب contact_name، يعطي كل حركة
+ * الشريك بإشارة صحيحة — دون إعادة بناء كل بند من الجداول المصدرية.
+ *
+ * "الصندوق" (TREASURY_PARTNER) لا يُقيَّد على 2400 بتصميم النظام (مصاريفه
+ * تذهب للنقدية مباشرة، فهو الخزينة نفسها لا شريك خارجي) — فمساهمته الفعلية
+ * تُحسب بالمتبقي (fullCost − مجموع مساهمات باقي الشركاء)، ما يضمن أن مجموع
+ * فروق "العدالة" (fairShareDiff) عبر كل الشركاء = صفر دائمًا (تحقق ذاتي).
+ */
+export async function computePartnerSettlement(fileNo, sys) {
+  const [partnersRaw, jeAll] = await Promise.all([
+    apiGetAll('partners_master', { select:'partner,share_percent', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+    apiGetAll('journal_entries', {
+      select:'account_code,contact_name,dr_amount,cr_amount,ref_table,entry_date,description,entry_no,file_no',
+      system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:`eq.posted`,
+      order:'entry_date.asc,id.asc',
+    }),
+  ]);
+
+  const fin = computeFinancials(jeAll).byFile[fileNo] || { sales:0, cogs:0, dealExp:0, purchase:0 };
+  // مجموع الطرف الدائن لأي سطر مصروف — ثابت بغض النظر عن حساب الترسملة
+  // (1300/5100/6xxx حسب سياسة الترسملة)، لأنه دائمًا الطرف المقابل للنقدية/2400
+  const totalExpenseAmount = (jeAll||[])
+    .filter(r => r.ref_table === 'expenses')
+    .reduce((s,r) => s + (+r.cr_amount||0), 0);
+  const totalPurchase = fin.purchase;
+  const fullCost = totalPurchase + totalExpenseAmount;
+  const profit   = fin.sales - fin.cogs - fin.dealExp;
+  const hasJEData = (jeAll||[]).length > 0;
+
+  const je2400 = (jeAll||[]).filter(r => r.account_code === '2400');
+  const byContact = {};
+  je2400.forEach(r => {
+    const name = (r.contact_name||'').trim();
+    if (!name) return;
+    if (!byContact[name]) byContact[name] = { cr:0, dr:0, crByRef:{payments:0,expenses:0,collections:0}, movements:[] };
+    const cr = +r.cr_amount||0, dr = +r.dr_amount||0;
+    byContact[name].cr += cr;
+    byContact[name].dr += dr;
+    if (byContact[name].crByRef[r.ref_table] !== undefined) byContact[name].crByRef[r.ref_table] += cr;
+    byContact[name].movements.push({ date:r.entry_date, desc:r.description, ref:r.entry_no, dr, cr, refTable:r.ref_table });
+  });
+
+  const nonTreasurySum = Object.values(byContact).reduce((s,c) => s + c.crByRef.payments + c.crByRef.expenses, 0);
+  const treasuryActual = Math.max(0, fullCost - nonTreasurySum);
+
+  const partners = (partnersRaw||[]).map(p => {
+    const name  = (p.partner||'').trim();
+    const share = (+p.share_percent||0) / 100;
+    const isTreasury = name === TREASURY_PARTNER;
+    const c = byContact[name] || { cr:0, dr:0, crByRef:{payments:0,expenses:0,collections:0}, movements:[] };
+
+    const capitalPaid       = c.crByRef.payments;
+    const expPaid           = c.crByRef.expenses;
+    const collectionsHeld   = c.crByRef.collections;
+    const netJE2400         = c.cr - c.dr;
+    const actualContribution = isTreasury ? treasuryActual : (capitalPaid + expPaid);
+    const fairShare      = fullCost * share;
+    const fairShareDiff  = actualContribution - fairShare;
+    const profitShare    = profit * share;
+    const netDue          = isTreasury ? profitShare : (netJE2400 + profitShare);
+
+    return {
+      name, share, sharePercent: +p.share_percent, isTreasury,
+      capitalPaid, expPaid, collectionsHeld, netJE2400,
+      actualContribution, fairShare, fairShareDiff,
+      profitShare, netDue, movements: c.movements,
+    };
+  });
+
+  return { fullCost, totalPurchase, totalExpenseAmount, totalSales: fin.sales, profit, hasJEData, partners };
+}
+
 export async function apiPost(table, data) {
   const body = JSON.stringify(data);
   const res = await apiFetch(`${SB_URL}/rest/v1/${table}`, {
@@ -648,7 +727,7 @@ Object.assign(window, {
   cacheStale, ensureCache, _doLoadCache, invalidateCache, isPosted,
   isDraft, isActive, isEffective, isVisible, isPending,
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
-  apiGetAll, fetchJEForPeriod, computeFinancials, apiPost, apiPatch,
+  apiGetAll, fetchJEForPeriod, computeFinancials, computePartnerSettlement, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
   login, logout, state, SB_URL, SB_KEY,
 });
