@@ -456,16 +456,25 @@ export async function computePartnerSettlement(fileNo, sys) {
   const profit   = fin.sales - fin.cogs - fin.dealExp;
   const hasJEData = (jeAll||[]).length > 0;
 
+  // ✅ اتجاه القيد يختلف حسب نوعه: je_payment/je_expense (الشريك بيساهم) يدائنون
+  // 2400، وje_collection/je_payout (الشريك بياخد/يمسك فلوس) يدينون 2400 —
+  // فلازم نتابع الطرفين حسب ref_table لا الدائن بس، وإلا التحصيلات الممسوكة
+  // (دائمًا مدين) تفضل صفر وهميًا رغم وجودها فعليًا في القيود
   const je2400 = (jeAll||[]).filter(r => r.account_code === '2400');
   const byContact = {};
   je2400.forEach(r => {
     const name = (r.contact_name||'').trim();
     if (!name) return;
-    if (!byContact[name]) byContact[name] = { cr:0, dr:0, crByRef:{payments:0,expenses:0,collections:0}, movements:[] };
+    if (!byContact[name]) byContact[name] = {
+      cr:0, dr:0,
+      crByRef:{payments:0,expenses:0}, drByRef:{collections:0,partner_payouts:0},
+      movements:[],
+    };
     const cr = +r.cr_amount||0, dr = +r.dr_amount||0;
     byContact[name].cr += cr;
     byContact[name].dr += dr;
     if (byContact[name].crByRef[r.ref_table] !== undefined) byContact[name].crByRef[r.ref_table] += cr;
+    if (byContact[name].drByRef[r.ref_table] !== undefined) byContact[name].drByRef[r.ref_table] += dr;
     byContact[name].movements.push({ date:r.entry_date, desc:r.description, ref:r.entry_no, dr, cr, refTable:r.ref_table });
   });
 
@@ -476,12 +485,13 @@ export async function computePartnerSettlement(fileNo, sys) {
     const name  = (p.partner||'').trim();
     const share = (+p.share_percent||0) / 100;
     const isTreasury = name === TREASURY_PARTNER;
-    const c = byContact[name] || { cr:0, dr:0, crByRef:{payments:0,expenses:0,collections:0}, movements:[] };
+    const c = byContact[name] || { cr:0, dr:0, crByRef:{payments:0,expenses:0}, drByRef:{collections:0,partner_payouts:0}, movements:[] };
 
-    const capitalPaid       = c.crByRef.payments;
-    const expPaid           = c.crByRef.expenses;
-    const collectionsHeld   = c.crByRef.collections;
-    const netJE2400         = c.cr - c.dr;
+    const capitalPaid        = c.crByRef.payments;
+    const expPaid            = c.crByRef.expenses;
+    const collectionsHeld    = c.drByRef.collections;
+    const withdrawnViaPayout = c.drByRef.partner_payouts;
+    const netJE2400          = c.cr - c.dr;
     const actualContribution = isTreasury ? treasuryActual : (capitalPaid + expPaid);
     const fairShare      = fullCost * share;
     const fairShareDiff  = actualContribution - fairShare;
@@ -490,7 +500,7 @@ export async function computePartnerSettlement(fileNo, sys) {
 
     return {
       name, share, sharePercent: +p.share_percent, isTreasury,
-      capitalPaid, expPaid, collectionsHeld, netJE2400,
+      capitalPaid, expPaid, collectionsHeld, withdrawnViaPayout, netJE2400,
       actualContribution, fairShare, fairShareDiff,
       profitShare, netDue, movements: c.movements,
     };
