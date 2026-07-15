@@ -1702,22 +1702,17 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
         order: 'entry_date.asc,id.asc',
       });
 
-      // ── ج. أرقام الربح من القيود (P&L من journal_entries) ──
+      // ── ج. أرقام الربح من القيود — عبر computeFinancials الموحّدة (core.js)
+      // نفس مصدر لوحة التحكم وتقرير الأرباح والخسائر بالضبط: صافي بعد قيود
+      // العكس (dr-cr) بدل تجاهلها، وبلا ازدواج مصاريف الصفقات داخل COGS ──
       const jeAll = await apiGetAll('journal_entries', {
-        select: 'account_code,dr_amount,cr_amount',
+        select: 'account_code,dr_amount,cr_amount,ref_table,file_no',
         system_type: `eq.${sys}`,
         file_no:     `eq.${fn}`,
         post_status: `eq.posted`,
       });
-
-      // إيراد (4xxx دائن) — تكلفة (5xxx مدين) — مصاريف صفقة (6xxx مدين)
-      let jeSales=0, jeCOGS=0, jeDealExp=0;
-      (jeAll||[]).forEach(r => {
-        const acc=r.account_code||'';
-        if (acc.startsWith('4') && (+r.cr_amount||0)>0) jeSales   += +r.cr_amount;
-        if (acc.startsWith('5') && (+r.dr_amount||0)>0) jeCOGS    += +r.dr_amount;
-        if (acc.startsWith('6') && (+r.dr_amount||0)>0) jeDealExp += +r.dr_amount;
-      });
+      const finFile = computeFinancials(jeAll).byFile[fn] || { sales:0, cogs:0, dealExp:0, purchase:0 };
+      const jeSales = finFile.sales, jeCOGS = finFile.cogs, jeDealExp = finFile.dealExp;
       const jeDealProfit = jeSales - jeCOGS - jeDealExp;
 
       // ── د. حساب الأرقام المالية — من القيود أولاً، fallback للجداول ──
