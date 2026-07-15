@@ -953,20 +953,18 @@ engineHooks.onVoidComplete = () => window.loadApprovalQueue?.();
     }
   }
 
-  // Prefill saved credentials
+  // ✅ تنظيف أمني: أي كلمة مرور محفوظة من نسخة سابقة (كانت تُخزَّن بـ base64
+  // القابل للفك فورًا) — تُمسح فورًا حتى لو المستخدم لم يفتح شاشة اللوجين
+  if (localStorage.getItem('tm_saved_pass')) localStorage.removeItem('tm_saved_pass');
+
+  // Prefill saved credentials — الإيميل فقط، لا كلمة مرور تُحفَظ أو تُملأ تلقائياً
   const remember    = localStorage.getItem('tm_remember');
   const savedEmail  = localStorage.getItem('tm_saved_email');
-  const savedPass   = localStorage.getItem('tm_saved_pass');
   if (remember && savedEmail) {
     document.getElementById('loginEmail').value   = savedEmail;
     document.getElementById('rememberMe').checked = true;
     document.getElementById('savedBadge').style.display    = 'inline-block';
     document.getElementById('clearSavedBtn').style.display = 'block';
-    if (savedPass) {
-      try {
-        document.getElementById('loginPass').value = decodeURIComponent(escape(atob(savedPass)));
-      } catch(e) {}
-    }
   }
 
   // Set today as default dates

@@ -195,26 +195,52 @@ export function passesPostFilter(row, filter) {
 // ════════════════════════════════════════
 // TOKEN REFRESH
 // ════════════════════════════════════════
+// ✅ قفل تزامن (mutex): Supabase الـrefresh token دوّار — استخدامه مرتين
+// بالتوازي (401 من apiFetch + استدعاء initApp في نفس اللحظة مثلاً) يخلي
+// أول طلب ينجح ويستهلك التوكن، والتاني يوصل ومعاه توكن اتلغى بالفعل
+// فيفشل ويسجّل خروج — رغم إن الجلسة فعلياً كانت سليمة. الحل: أي استدعاء
+// وهو طلب شغّال بالفعل ينتظر نفس النتيجة بدل ما يبعت طلب تجديد تاني.
+let _refreshInFlight = null;
 export async function refreshAccessToken() {
-  const rt = state.refreshToken || localStorage.getItem('tm_refresh');
-  if (!rt) { logout(); return false; }
+  if (_refreshInFlight) return _refreshInFlight;
+  _refreshInFlight = (async () => {
+    const rt = state.refreshToken || localStorage.getItem('tm_refresh');
+    if (!rt) { logout(); return false; }
+    try {
+      const res = await fetch(`${SB_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: rt })
+      });
+      const data = await res.json();
+      if (data.access_token) {
+        state.token        = data.access_token;
+        state.refreshToken = data.refresh_token || rt;
+        localStorage.setItem('tm_token',   data.access_token);
+        localStorage.setItem('tm_refresh', data.refresh_token || rt);
+        return true;
+      }
+    } catch(e) { console.error('refreshAccessToken:', e); }
+    logout();
+    return false;
+  })();
   try {
-    const res = await fetch(`${SB_URL}/auth/v1/token?grant_type=refresh_token`, {
-      method: 'POST',
-      headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: rt })
-    });
-    const data = await res.json();
-    if (data.access_token) {
-      state.token        = data.access_token;
-      state.refreshToken = data.refresh_token || rt;
-      localStorage.setItem('tm_token',   data.access_token);
-      localStorage.setItem('tm_refresh', data.refresh_token || rt);
-      return true;
-    }
-  } catch(e) { console.error('refreshAccessToken:', e); }
-  logout();
-  return false;
+    return await _refreshInFlight;
+  } finally {
+    _refreshInFlight = null;
+  }
+}
+
+// ✅ فحص صلاحية access token (JWT) محليًا بدون طلب شبكة — يقرأ claim الـexp.
+// يُستخدم لتجنّب تجديد التوكن كل مرة يُفتح فيها التطبيق (كان بيستهلك
+// refresh token دوّار من غير داعي ويكبّر فرصة تعارض التزامن أعلاه).
+export function isTokenValid(token, bufferMs = 5 * 60 * 1000) {
+  if (!token) return false;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    if (!payload.exp) return false;
+    return Date.now() < (payload.exp * 1000 - bufferMs);
+  } catch(e) { return false; }
 }
 
 // ════════════════════════════════════════
@@ -580,13 +606,14 @@ export async function login() {
       localStorage.setItem('tm_refresh', data.refresh_token || '');
       localStorage.setItem('tm_user',    JSON.stringify(data.user));
 
+      // ✅ "تذكرني" تحفظ الإيميل فقط لتعبئة الفورم — لا كلمة المرور إطلاقاً
+      // (كانت مخزَّنة بـ base64 وهو ترميز وليس تشفيرًا، أي قابل للفك فورًا)
+      localStorage.removeItem('tm_saved_pass'); // تنظيف أي كلمة مرور محفوظة من نسخة سابقة
       if (remember) {
         localStorage.setItem('tm_saved_email', email);
-        localStorage.setItem('tm_saved_pass',  btoa(unescape(encodeURIComponent(pass))));
         localStorage.setItem('tm_remember', '1');
       } else {
         localStorage.removeItem('tm_saved_email');
-        localStorage.removeItem('tm_saved_pass');
         localStorage.removeItem('tm_remember');
       }
 
@@ -620,7 +647,7 @@ export function logout() {
 Object.assign(window, {
   cacheStale, ensureCache, _doLoadCache, invalidateCache, isPosted,
   isDraft, isActive, isEffective, isVisible, isPending,
-  passesPostFilter, refreshAccessToken, headers, apiFetch, apiGet,
+  passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, computeFinancials, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
   login, logout, state, SB_URL, SB_KEY,

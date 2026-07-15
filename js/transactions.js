@@ -590,8 +590,13 @@ export async function initApp() {
   document.getElementById('userName').textContent = name;
   document.getElementById('userEmailDisplay').textContent = email;
 
-  // ── تجديد الـ token فور بدء التطبيق لحل مشكلة الـ 401 عند أول load ──
-  await refreshAccessToken().catch(() => console.warn('initApp: token refresh failed'));
+  // ── تجديد الـ token فقط لو قارب ينتهي (مش في كل مرة يُفتح فيها التطبيق) ──
+  // ✅ كان التجديد إجباريًا هنا في كل refresh — بيستهلك refresh token دوّار
+  // من غير داعي ويكبّر فرصة تعارض تزامن مع تجديد آخر شغّال (401 من apiFetch
+  // مثلاً) يخلي المستخدم يتقفل بره بالغلط رغم إن جلسته سليمة
+  if (!isTokenValid(state.token)) {
+    await refreshAccessToken().catch(() => console.warn('initApp: token refresh failed'));
+  }
 
   // تجديد الـ token تلقائياً كل 50 دقيقة
   if (window._tokenRefreshTimer) clearInterval(window._tokenRefreshTimer);
