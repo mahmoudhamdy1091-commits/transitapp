@@ -2108,29 +2108,26 @@ export function calcPayoutTotal() {
 }
 
 // Get partner balance for a deal
-// ✅ موحّد مع computeFinancials (core.js) — نفس مصدر لوحة التحكم وتقرير
-// الأرباح وكشف حساب الشريك (showPartnerStatement) بالضبط: صافي بعد قيود
-// العكس، وبلا ازدواج مصاريف الصفقات داخل COGS (كانت تُحسب من الجداول
-// المصدرية مباشرة قبل توحيد المصدر — رقم مختلف عن كشف الحساب لنفس الصفقة)
+// ✅ wrapper رفيع فوق computePartnerSettlement (core.js) — المصدر الموحّد
+// نفسه المستخدم في تبويب الملخص وكشف حساب الشريك، فيضمن نفس رقم "المستحق"
+// في كل شاشة (كان محسوبًا هنا بمعادلة منفصلة ناقصة مصاريف الجيب والتحصيلات).
+// شكل الإرجاع مطابق للقديم حتى لا يحتاج المستدعي (onPayoutPartnerChange) أي تعديل.
 export async function getPartnerDealBalance(fileNo, partner, sys) {
-  const [pmRow, payments, payouts, jeAll] = await Promise.all([
-    apiGetAll('partners_master', { select:'share_percent', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}` }),
-    apiGetAll('payments',        { select:'amount,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, payer:`eq.${partner}` }),
+  const [settlement, payouts] = await Promise.all([
+    computePartnerSettlement(fileNo, sys),
     apiGetAll('partner_payouts', { select:'amount,payout_type,capital_amount,profit_amount,advance_amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}` }),
-    apiGetAll('journal_entries', { select:'account_code,dr_amount,cr_amount,ref_table,file_no', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
   ]);
-  const share       = (pmRow?.[0]?.share_percent || 0) / 100;
-  const capitalPaid = (payments||[]).filter(isPosted).reduce((s,p)=>s+(+p.amount||0),0);
-  const finFile     = computeFinancials(jeAll).byFile[fileNo] || { sales:0, cogs:0, dealExp:0, purchase:0 };
-  const dealProfit  = finFile.sales - finFile.cogs - finFile.dealExp;
-  const profit      = dealProfit * share;
+  const x = (settlement.partners||[]).find(p => p.name === (partner||'').trim())
+    || { share:0, capitalPaid:0, expPaid:0, netJE2400:0, profitShare:0, netDue:0 };
   const capitalRet  = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
   const profitTaken = (payouts||[]).reduce((s,p)=>s+(+p.profit_amount||0),0);
   const advances    = (payouts||[]).reduce((s,p)=>s+(+p.advance_amount||0),0);
   const totalWithdrawn = capitalRet + profitTaken + advances;
-  const netDue = capitalPaid + profit - totalWithdrawn;
-  return { share, capitalPaid, profit, capitalRet, profitTaken, advances, totalWithdrawn, netDue, dealProfit,
-           _totalCost: finFile.purchase, _totalExp: finFile.dealExp, _totalSales: finFile.sales };
+  return {
+    share: x.share, capitalPaid: x.capitalPaid, profit: x.profitShare,
+    capitalRet, profitTaken, advances, totalWithdrawn, netDue: x.netDue, dealProfit: settlement.profit,
+    _totalCost: settlement.totalPurchase, _totalExp: settlement.totalExpenseAmount, _totalSales: settlement.totalSales,
+  };
 }
 
 export async function submitPayout() {
