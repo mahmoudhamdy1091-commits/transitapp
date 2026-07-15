@@ -1690,21 +1690,11 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
         apiGetAll('sale_charges',     { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       ]);
 
-      // ── ب. القيود المحاسبية من journal_entries — المصدر الموثوق ──
-      // حساب 2400 (حسابات الشركاء) مع contact_name = الشريك في هذا الملف
-      const jePartner = await apiGetAll('journal_entries', {
-        select: 'entry_date,account_code,dr_amount,cr_amount,description,entry_no,post_status',
-        system_type:  `eq.${sys}`,
-        file_no:      `eq.${fn}`,
-        account_code: `eq.2400`,
-        contact_name: `eq.${partnerName}`,
-        post_status:  `eq.posted`,
-        order: 'entry_date.asc,id.asc',
-      });
-
-      // ── ج. أرقام الربح من القيود — عبر computeFinancials الموحّدة (core.js)
-      // نفس مصدر لوحة التحكم وتقرير الأرباح والخسائر بالضبط: صافي بعد قيود
-      // العكس (dr-cr) بدل تجاهلها، وبلا ازدواج مصاريف الصفقات داخل COGS ──
+      // ── ب+ج+هـ. القيود المحاسبية — عبر computePartnerSettlement الموحّدة (core.js)
+      // نفس مصدر تبويب الملخص ومودال صرف الشريك بالضبط. يقفل تناقضًا كان
+      // موجودًا هنا فعليًا: الحساب العلوي لهذا الشريك (من جePartner/حساب 2400)
+      // كان أحيانًا يختلف عن رقمه في partnerSettlement بالأسفل (كان يُبنى من
+      // الجداول المصدرية بمعادلة منفصلة) — دلوقتي مصدر واحد للاثنين ──
       const jeAll = await apiGetAll('journal_entries', {
         select: 'account_code,dr_amount,cr_amount,ref_table,file_no',
         system_type: `eq.${sys}`,
@@ -1715,6 +1705,9 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
       const jeSales = finFile.sales, jeCOGS = finFile.cogs, jeDealExp = finFile.dealExp;
       const jeDealProfit = jeSales - jeCOGS - jeDealExp;
 
+      const settlement = await computePartnerSettlement(fn, sys);
+      const hasJEData  = settlement.hasJEData;
+
       // ── د. حساب الأرقام المالية — من القيود أولاً، fallback للجداول ──
       const poData       = po?.[0] || {};
       const totalPurchase= +poData.total_purchase || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
@@ -1722,113 +1715,50 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
       const totalSales   = (sales||[]).filter(isPosted).reduce((s,s2)=>s+(+s2.sale_price||0),0)
         + (saleCharges||[]).reduce((s,c)=>s+(+c.amount||0),0);
 
-      // الربح: من القيود لو موجودة، وإلا من الجداول
-      const hasJEData    = (jeAll||[]).length > 0;
       const dealProfit   = hasJEData ? jeDealProfit : (totalSales - totalPurchase - totalExp);
-      const myProfit     = dealProfit * share;
       const myPurchase   = totalPurchase * share;
       const myExpenses   = totalExp * share;
       const myFullCost   = (totalPurchase + totalExp) * share;
       const mySales      = totalSales * share;
 
-      // ما دفعه / استرده الشريك — من القيود (2400) أولاً
-      const hasJEPartner = (jePartner||[]).length > 0;
+      // ── الشريك المعروض — من settlement مباشرة (نفس رقم في كل الشاشات) ──
+      const meX = settlement.partners.find(p => p.name === partnerName.trim())
+        || { share, isTreasury:false, capitalPaid:0, expPaid:0, actualContribution:0, collectionsHeld:0, withdrawnViaPayout:0, netJE2400:0, profitShare:dealProfit*share, netDue:0, movements:[] };
+      const myProfit       = meX.profitShare;
+      // "ما دفعه" الإجمالي (للملخصات) — الصندوق: مساهمته الفعلية بالمتبقي لأنه
+      // لا يُقيَّد على 2400؛ جدول حركات القيود تحته يستخدم jeCapitalPaid الخام
+      // (يفضل صفر للصندوق ويطابق الجدول الفعلي الفارغ بدل ما يناقضه)
+      const jeCapitalPaid  = meX.capitalPaid + meX.expPaid;
+      const jeWithdrawn    = meX.withdrawnViaPayout + meX.collectionsHeld;
+      const capitalPaid    = meX.isTreasury ? meX.actualContribution : jeCapitalPaid;
+      const totalWithdrawn = jeWithdrawn;
+      const netDue          = meX.netDue;
+      const hasJEPartner    = meX.movements.length > 0;
+      const jeMovements      = meX.movements.map(m => ({
+        date: (m.date||'').split('T')[0], desc: m.desc||'—', ref: m.ref||'',
+        debit: m.dr, credit: m.cr,
+      })).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
 
-      // مصروفات دفعها هذا الشريك من جيبه (الصندوق: paid_by=null؛ غيره: paid_by=اسمه)
-      const expPaidByHere = (expenses||[]).filter(isPosted).filter(e =>
-        partnerName === TREASURY_PARTNER
-          ? (!e.paid_by || e.paid_by.trim() === TREASURY_PARTNER)
-          : (e.paid_by && e.paid_by.trim() === partnerName)
-      );
-      const expCapital = expPaidByHere.reduce((s,e) => s + (+e.amount||0), 0);
-      const expMovements = expPaidByHere.map(e => ({
-        date:   (e.exp_date||e.expense_date||'').split('T')[0] || '—',
-        desc:   `مصروف — ${e.description||e.exp_type||'—'}`,
-        ref:    e.ref_no||'',
-        debit:  0,
-        credit: +e.amount||0,
-        isExp:  true,
-      }));
+      // مسحوبات الشريك المعروض (تفصيل رأس مال/ربح/سلفة لملء نموذج الصرف) — من partner_payouts مباشرة
+      const myPayouts   = (payouts||[]).filter(py => py.partner === partnerName);
+      const capitalRet  = myPayouts.reduce((s,p)=>s+(+p.capital_amount||0),0);
+      const profitTaken = myPayouts.reduce((s,p)=>s+(+p.profit_amount||0),0);
+      const advances    = myPayouts.reduce((s,p)=>s+(+p.advance_amount||0),0);
 
-      let capitalPaid, totalWithdrawn, capitalRet=0, profitTaken=0, advances=0;
-      let jeMovements = []; // للعرض في جدول الحركات
-
-      if (hasJEPartner) {
-        // ✅ مصدر موثوق: من journal_entries حساب 2400
-        capitalPaid    = (jePartner||[]).reduce((s,r)=>s+(+r.cr_amount||0),0); // CR = الشريك دفع
-        capitalPaid   += expCapital; // مصروفات دفعها من جيبه (لا تمرّ بحساب 2400)
-        totalWithdrawn = (jePartner||[]).reduce((s,r)=>s+(+r.dr_amount||0),0); // DR = الشريك استرد
-        jeMovements    = [...(jePartner||[]).map(r=>({
-          date:   (r.entry_date||'').split('T')[0],
-          desc:   r.description||'—',
-          ref:    r.entry_no||'',
-          debit:  +r.dr_amount||0,
-          credit: +r.cr_amount||0,
-        })), ...expMovements].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-        // توزيع المسحوبات من payouts للعرض فقط (مفلتر للشريك الحالي)
-        const myPayouts = (payouts||[]).filter(py => py.partner === partnerName);
-        capitalRet  = myPayouts.reduce((s,p)=>s+(+p.capital_amount||0),0);
-        profitTaken = myPayouts.reduce((s,p)=>s+(+p.profit_amount||0),0);
-        advances    = myPayouts.reduce((s,p)=>s+(+p.advance_amount||0),0);
-      } else {
-        // ⚠️ Fallback: بيانات قديمة — من الجداول المصدرية
-        const allPartnersCount = (allPartners||[]).length;
-        const partnerPayments  = await apiGetAll('payments', {
-          select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, payer:`eq.${partnerName}`
-        });
-        capitalPaid    = (partnerPayments||[]).filter(isEffective)
-          .filter(p => allPartnersCount <= 1 || p.payer === partnerName)
-          .reduce((s,p)=>s+(+p.amount||0), 0);
-        capitalPaid   += expCapital; // مصروفات دفعها من جيبه
-        const myPayoutsFb = (payouts||[]).filter(py => py.partner === partnerName);
-        capitalRet     = myPayoutsFb.reduce((s,p)=>s+(+p.capital_amount||0),0);
-        profitTaken    = myPayoutsFb.reduce((s,p)=>s+(+p.profit_amount||0),0);
-        advances       = myPayoutsFb.reduce((s,p)=>s+(+p.advance_amount||0),0);
-        totalWithdrawn = capitalRet + profitTaken + advances;
-        jeMovements    = [...(partnerPayments||[]).filter(isEffective).map(p=>({
-          date:   (p.pay_date||'').split('T')[0],
-          desc:   'دفع رأس مال (بيانات قديمة)',
-          ref:    p.ref_no||'',
-          debit:  0,
-          credit: +p.amount||0,
-        })), ...expMovements].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-      }
-
-      const netDue = capitalPaid + myProfit - totalWithdrawn;
-
-      // ── هـ. تسوية شاملة لكل الشركاء ──
-      const postedExpAll = (expenses||[]).filter(isPosted);
-      const partnerSettlement = (allPartners||[]).map(p => {
-        const pName  = p.partner;
-        const pShare = (+p.share_percent||0) / 100;
-        const pCapitalPaid = (allPartnersPayments||[]).filter(isEffective)
-          .filter(py => py.payer === pName)
-          .reduce((s,py) => s + (+py.amount||0), 0);
-        const pExpPaid = postedExpAll
-          .filter(e => pName === TREASURY_PARTNER
-            ? (!e.paid_by || e.paid_by.trim() === TREASURY_PARTNER)
-            : (e.paid_by && e.paid_by.trim() === pName))
-          .reduce((s,e) => s + (+e.amount||0), 0);
-        const pExpShould = totalExp * pShare;
-        const pExpDiff   = pExpPaid - pExpShould; // موجب=دفع زيادة، سالب=عليه دين
-        const pWithdrawn = (payouts||[])
-          .filter(py => py.partner === pName && isActive(py))
-          .reduce((s,py) => s + (+py.amount||0), 0);
-        const pCollectedDirect = pName === TREASURY_PARTNER ? 0 :
-          (collections||[]).filter(isPosted)
-            .filter(c => c.received_by && c.received_by.trim() === pName)
-            .reduce((s,c) => s + (+c.amount||0), 0);
-        const pProfit     = dealProfit * pShare;
-        const pNetDue     = pCapitalPaid + pExpPaid + pProfit - pWithdrawn - pCollectedDirect;
-        const pSalesShare = jeSales    * pShare;
-        const pCOGSShare  = jeCOGS     * pShare;
-        const pExpShare   = jeDealExp  * pShare;
+      // ── تسوية شاملة لكل الشركاء — من settlement.partners مباشرة (نفس المصدر) ──
+      // ✅ "الصندوق" لا يُقيَّد على 2400 (مصاريفه تُدفع نقدًا مباشرة)، فـcapitalPaid/
+      // expPaid عبر JE يفضلوا صفر رغم مساهمته الفعلية — نعرض actualContribution
+      // (المحسوبة بالمتبقي في core.js) تحت بند المصروفات بدل ما تختفي من الكرت
+      const partnerSettlement = settlement.partners.map(x => {
+        const capitalPaid = x.isTreasury ? 0 : x.capitalPaid;
+        const expPaid     = x.isTreasury ? x.actualContribution : x.expPaid;
         return {
-          name: pName, share: pShare, sharePercent: +p.share_percent,
-          capitalPaid: pCapitalPaid, capitalShould: totalPurchase * pShare,
-          expPaid: pExpPaid, expShould: pExpShould, expDiff: pExpDiff,
-          profit: pProfit, withdrawn: pWithdrawn, collectedDirect: pCollectedDirect, netDue: pNetDue,
-          pSalesShare, pCOGSShare, pExpShare,
+          name: x.name, share: x.share, sharePercent: x.sharePercent,
+          capitalPaid, capitalShould: settlement.totalPurchase * x.share,
+          expPaid, expShould: settlement.totalExpenseAmount * x.share,
+          expDiff: expPaid - (settlement.totalExpenseAmount * x.share),
+          profit: x.profitShare, withdrawn: x.withdrawnViaPayout, collectedDirect: x.collectionsHeld, netDue: x.netDue,
+          pSalesShare: jeSales * x.share, pCOGSShare: jeCOGS * x.share, pExpShare: jeDealExp * x.share,
         };
       });
 
@@ -1863,7 +1793,7 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
         totalPurchase, totalExp, totalSales,
         fullCost: totalPurchase+totalExp, dealProfit,
         myPurchase, myExpenses, myFullCost, mySales, myProfit,
-        capitalPaid, expCapital, capitalRet, profitTaken, advances, totalWithdrawn, netDue,
+        capitalPaid, capitalRet, profitTaken, advances, totalWithdrawn, netDue, jeCapitalPaid, jeWithdrawn,
         status: poData.status || '—', supplier: poData.supplier || '—',
         poDate: poData.po_date || poData.created_at || '',
         partnerDebts, paidByPartner, shouldPayMap, partnerSettlement,
@@ -2268,8 +2198,8 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
               <tfoot>
                 <tr style="background:#1e293b;color:#fff;font-weight:700">
                   <td colspan="3" style="padding:8px 10px">الإجمالي</td>
-                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#fbbf24">${fmt2(d.totalWithdrawn)}</td>
-                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#60a5fa">${fmt2(d.capitalPaid)}</td>
+                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#fbbf24">${fmt2(d.jeWithdrawn)}</td>
+                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#60a5fa">${fmt2(d.jeCapitalPaid)}</td>
                 </tr>
               </tfoot>
             </table>
