@@ -3,10 +3,9 @@
 // ║  Transit Management System                               ║
 // ╚══════════════════════════════════════════════════════════╝
 //
-// ⚠️  تعديلات الأمان المُطبّقة في هذا الملف:
-//   1. حُذف btoa(pass) / atob(savedPass) — كانت خطراً أمنياً
-//   2. ميزة "تذكرني" تحفظ الـ email فقط (لا كلمة المرور)
-//   3. باقي المنطق لم يتغير — نفس السلوك تماماً
+// ⚠️  ميزة "تذكرني": تحفظ الإيميل وكلمة المرور (مرمّزة base64 — ليست
+//     تشفيرًا) بناءً على طلب صريح من المستخدم بعد التحذير من المخاطرة
+//     الأمنية (2026-07-15) — راجع login() أدناه.
 
 // ════════════════════════════════════════
 // CONFIG
@@ -206,22 +205,42 @@ export async function refreshAccessToken() {
   _refreshInFlight = (async () => {
     const rt = state.refreshToken || localStorage.getItem('tm_refresh');
     if (!rt) { logout(); return false; }
+
+    // ✅ فشل شبكة عابر (نت بطيء/منقطع لحظة تحميل الصفحة) لازم يُعامَل مختلف
+    // عن رفض صريح من Supabase — كان أي استثناء هنا (حتى لو مجرد فشل fetch
+    // مؤقت) يسجّل خروج فوري ويمسح الجلسة، رغم إنها سليمة وكانت هتنجح لو
+    // تكرر المحاولة لاحقاً. دلوقتي: نفشل بصمت ونسيب الجلسة زي ما هي لحد ما
+    // يوصل رد فعلي من السيرفر يرفض التوكن صراحة.
+    let res;
     try {
-      const res = await fetch(`${SB_URL}/auth/v1/token?grant_type=refresh_token`, {
+      res = await fetch(`${SB_URL}/auth/v1/token?grant_type=refresh_token`, {
         method: 'POST',
         headers: { 'apikey': SB_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: rt })
       });
-      const data = await res.json();
-      if (data.access_token) {
-        state.token        = data.access_token;
-        state.refreshToken = data.refresh_token || rt;
-        localStorage.setItem('tm_token',   data.access_token);
-        localStorage.setItem('tm_refresh', data.refresh_token || rt);
-        return true;
-      }
-    } catch(e) { console.error('refreshAccessToken:', e); }
-    logout();
+    } catch(e) {
+      console.error('refreshAccessToken: فشل شبكة عابر — الجلسة لم تُمسح:', e.message);
+      return false;
+    }
+
+    let data = {};
+    try { data = await res.json(); } catch(e) {}
+
+    if (data.access_token) {
+      state.token        = data.access_token;
+      state.refreshToken = data.refresh_token || rt;
+      localStorage.setItem('tm_token',   data.access_token);
+      localStorage.setItem('tm_refresh', data.refresh_token || rt);
+      return true;
+    }
+
+    // السيرفر رد فعليًا لكن رفض الـrefresh token (منتهي/ملغى) — هنا بس
+    // يصح تسجيل الخروج، مش على أي استثناء أو فشل استجابة غامض
+    if (res.status === 400 || res.status === 401) {
+      logout();
+    } else {
+      console.warn('refreshAccessToken: رد غير متوقع من السيرفر، الجلسة لم تُمسح:', res.status);
+    }
     return false;
   })();
   try {
@@ -695,14 +714,16 @@ export async function login() {
       localStorage.setItem('tm_refresh', data.refresh_token || '');
       localStorage.setItem('tm_user',    JSON.stringify(data.user));
 
-      // ✅ "تذكرني" تحفظ الإيميل فقط لتعبئة الفورم — لا كلمة المرور إطلاقاً
-      // (كانت مخزَّنة بـ base64 وهو ترميز وليس تشفيرًا، أي قابل للفك فورًا)
-      localStorage.removeItem('tm_saved_pass'); // تنظيف أي كلمة مرور محفوظة من نسخة سابقة
+      // ⚠️ "تذكرني" ترجع تحفظ كلمة المرور بـ base64 بناءً على طلب صريح من
+      // المستخدم (2026-07-15) — base64 ترميز لا تشفير، قابل للفك فورًا من
+      // أي حد عنده وصول للجهاز. تم التحذير من المخاطرة الأمنية قبل التنفيذ.
       if (remember) {
         localStorage.setItem('tm_saved_email', email);
+        localStorage.setItem('tm_saved_pass',  btoa(unescape(encodeURIComponent(pass))));
         localStorage.setItem('tm_remember', '1');
       } else {
         localStorage.removeItem('tm_saved_email');
+        localStorage.removeItem('tm_saved_pass');
         localStorage.removeItem('tm_remember');
       }
 
