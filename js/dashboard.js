@@ -657,7 +657,7 @@ export async function loadViewerTab(idx) {
 
 export async function loadSummaryTab(fn, sys) {
   try {
-    const [vehicles, payments, expenses, sales, collections, partners, payouts, poArr, jeAll] = await Promise.all([
+    const [vehicles, payments, expenses, sales, collections, partners, payouts, poArr, jeAll, settlement] = await Promise.all([
       apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
@@ -666,7 +666,8 @@ export async function loadSummaryTab(fn, sys) {
       apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('purchase_orders', { select:'total_purchase,supplier,po_date,status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
-      apiGetAll('journal_entries', { select:'account_code,dr_amount,cr_amount', system_type:`eq.${sys}`, file_no:`eq.${fn}`, post_status:'eq.posted' }),
+      apiGetAll('journal_entries', { select:'account_code,dr_amount,cr_amount,ref_table,file_no', system_type:`eq.${sys}`, file_no:`eq.${fn}`, post_status:'eq.posted' }),
+      computePartnerSettlement(fn, sys),
     ]);
 
     state.currentVehicles = vehicles || [];
@@ -683,6 +684,7 @@ export async function loadSummaryTab(fn, sys) {
       partners:    partners    || [],
       payouts:     payouts     || [],
       po:          poArr?.[0]  || {},
+      settlement,
     };
 
     const totalPurchase  = +(poArr?.[0]?.total_purchase) || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
@@ -736,16 +738,14 @@ export async function loadSummaryTab(fn, sys) {
     const totalSales     = totalInvoiced; // للعرض والربحية
     const totalPayouts   = postedPout.reduce((s,p)=>s+(+p.amount||0),0);
     const fullCost       = totalPurchase + totalExp;
-    let jeSales=0, jeCOGS=0, jeDealExp=0;
-    (jeAll||[]).forEach(r => {
-      const acc = r.account_code||'';
-      if (acc.startsWith('4') && (+r.cr_amount||0)>0) jeSales   += +r.cr_amount;
-      if (acc.startsWith('5') && (+r.dr_amount||0)>0) jeCOGS    += +r.dr_amount;
-      if (acc.startsWith('6') && (+r.dr_amount||0)>0) jeDealExp += +r.dr_amount;
-    });
+    // ✅ من computeFinancials (core.js) — نفس مصدر لوحة التحكم وتقرير الأرباح
+    // وتسوية الشركاء بالضبط: صافي بعد قيود العكس، بدل حلقة يدوية كانت تتجاهلها
+    const fin            = computeFinancials(jeAll).byFile[fn] || { sales:0, cogs:0, dealExp:0, purchase:0 };
     const hasJEData      = (jeAll||[]).length > 0;
-    const jeDealProfit   = jeSales - jeCOGS - jeDealExp;
+    const jeDealProfit   = fin.sales - fin.cogs - fin.dealExp;
     const profit         = hasJEData ? jeDealProfit : (totalSales - fullCost);
+    // مخزون متبقٍ بالتكلفة لسه ما اتحمّلش على تكلفة بيع (صفقة مفتوحة جزئيًا/كليًا)
+    const unsoldCostBasis = Math.max(fullCost - fin.cogs - fin.dealExp, 0);
     const remaining      = totalPurchase - totalPaid;
     // المستحق = التحصيلات المسجلة غير المدفوعة بعد (يشمل المصاريف المضافة على الفاتورة)
     const uncollected    = totalPending;
@@ -790,34 +790,36 @@ export async function loadSummaryTab(fn, sys) {
       </div>
 
       <!-- Two cols -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
 
-        <!-- المالية -->
+        <!-- قائمة الدخل -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
-          <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px">💰 المالية</div>
-          ${summRow('تكلفة الشراء','text-blue',fmt(totalPurchase))}
-          ${summRow('المصاريف','text-red',fmt(totalExp))}
-          ${summRow('التكلفة الكاملة','',fmt(fullCost),true)}
-          <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
-          ${summRow('المبيعات','text-green',fmt(totalSales))}
-          ${summRow('مقبوض فعلاً','text-green',fmt(totalCollected))}
-          ${totalPending > 0 ? summRow('⏳ منتظر تحصيل','text-amber',fmt(totalPending)) : ''}
-          ${summRow('متبقي غير محصّل',uncollected>0?'text-amber':'text-green',fmt(uncollected))}
+          <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px">📊 قائمة الدخل</div>
+          ${summRow('المبيعات','text-green',fmt(fin.sales))}
+          ${summRow('(−) تكلفة البضاعة المباعة','text-red',fmt(fin.cogs))}
+          ${unsoldCostBasis > 0.01 ? `<div style="font-size:11px;color:var(--text2);padding:2px 0 4px">ℹ️ مخزون متبقٍ بالتكلفة: ${fmt(unsoldCostBasis)} — لسه ما اتحمّلش على تكلفة بيع</div>` : ''}
           <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
           <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:14px;font-weight:700">
-            <span>الربح الصافي</span>
+            <span>صافي ربح الصفقة</span>
             <span style="color:${profit>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(profit))} ${profit>=0?'✓':'↓'}</span>
           </div>
+          <div style="font-size:11px;color:var(--text2)">هامش ${margin}%${!hasJEData?' · بدون قيود محاسبية بعد':''}</div>
         </div>
 
-        <!-- المورد + السيارات -->
+        <!-- التحصيل والسداد -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
-          <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">🏭 المورد</div>
-          ${summRow('قيمة الصفقة','',fmt(totalPurchase))}
-          ${summRow('المدفوع','text-green',fmt(totalPaid))}
-          ${summRow('المتبقي',remaining>0?'text-red':'text-green',fmt(remaining) + (remaining<=0?' ✓':''))}
-          <hr style="border:none;border-top:1px solid var(--border);margin:10px 0">
-          <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">🚗 السيارات</div>
+          <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px">💵 التحصيل والسداد</div>
+          ${summRow('مقبوض فعلاً','text-green',fmt(totalCollected))}
+          ${totalPending > 0 ? summRow('⏳ منتظر تحصيل','text-amber',fmt(totalPending)) : ''}
+          ${summRow('غير محصّل',uncollected>0?'text-amber':'text-green',fmt(uncollected))}
+          <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
+          ${summRow('المدفوع للمورد','text-blue',fmt(totalPaid))}
+          ${summRow('المتبقي للمورد',remaining>0?'text-red':'text-green',fmt(Math.abs(remaining)))}
+        </div>
+
+        <!-- السيارات -->
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
+          <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px">🚗 السيارات</div>
           ${summRow('الإجمالي','',totalV)}
           ${summRow('مباع','text-green',soldV)}
           ${summRow('في المخزن',unsoldV>0?'text-amber':'',unsoldV)}
@@ -830,29 +832,57 @@ export async function loadSummaryTab(fn, sys) {
         </div>
       </div>`;
 
-    // ── Partners — بطاقة مفصّلة ──
+    // ── Partners — جدول تسوية موحّد + بطاقة مفصّلة، من computePartnerSettlement ──
     const isOpen = (totalV - soldV) > 0;
-    const allPartnersCount = (partners||[]).length;
+    const sp = settlement?.partners || [];
+    const diffSum = sp.reduce((s,x)=>s+(x.fairShareDiff||0),0);
+
+    const settlementTableHtml = sp.length ? `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;overflow-x:auto">
+        <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px">⚖️ تسوية الشركاء — مقارنة</div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">
+          <thead>
+            <tr style="color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:.5px">
+              <th style="text-align:right;padding:6px 8px">الشريك</th>
+              <th style="text-align:center;padding:6px 8px">الحصة</th>
+              <th style="text-align:left;padding:6px 8px">ساهم فعلاً</th>
+              <th style="text-align:left;padding:6px 8px">نصيبه العادل</th>
+              <th style="text-align:left;padding:6px 8px">الفرق</th>
+              <th style="text-align:left;padding:6px 8px">حصة الربح</th>
+              <th style="text-align:left;padding:6px 8px">صافي المستحق</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sp.map(x => `
+              <tr style="border-top:1px solid var(--border)">
+                <td style="padding:8px;font-weight:700">${x.name}${x.isTreasury?' 🏦':''}</td>
+                <td style="text-align:center;padding:8px;color:var(--text2)">${x.sharePercent}%</td>
+                <td style="text-align:left;padding:8px;font-family:var(--mono)">${fmt(x.actualContribution)}</td>
+                <td style="text-align:left;padding:8px;font-family:var(--mono);color:var(--text2)">${fmt(x.fairShare)}</td>
+                <td style="text-align:left;padding:8px;font-family:var(--mono);font-weight:700;color:${Math.abs(x.fairShareDiff)<0.01?'var(--text2)':(x.fairShareDiff>0?'var(--green)':'var(--red)')}">
+                  ${x.fairShareDiff>0?'+':''}${fmt(x.fairShareDiff)}
+                </td>
+                <td style="text-align:left;padding:8px;font-family:var(--mono)">${fmt(x.profitShare)}</td>
+                <td style="text-align:left;padding:8px;font-family:var(--mono);font-weight:700;color:${x.netDue>=0?'var(--green)':'var(--red)'}">${fmt(x.netDue)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        <div style="margin-top:8px;font-size:11px;color:${Math.abs(diffSum)<0.01?'var(--green)':'var(--red)'};display:flex;align-items:center;gap:4px">
+          ${Math.abs(diffSum)<0.01?'✓':'⚠️'} إجمالي الفروق = ${fmt(diffSum)}${Math.abs(diffSum)<0.01?' — التسوية متزنة':''}
+        </div>
+      </div>` : '';
+
     const partnersHtml = (partners||[]).map((p,i) => {
-      const share        = +p.share_percent || 0;
-      const _pc = allPartnersCount <= 1;
-      const capitalIn    = (payments||[])
-        .filter(isEffective)
-        .filter(px => _pc || px.payer === p.partner)
-        .reduce((s,px)=>s+(+px.amount||0),0);
-      const liability    = totalPurchase * (share/100);
-      const remainingLiab= Math.max(liability - capitalIn, 0);
-      const profitShare  = profit * (share/100);
-      const pPayouts     = (payouts||[]).filter(px=>isPosted(px)&&px.partner===p.partner);
-      const totalOut     = pPayouts.reduce((s,px)=>s+(+px.amount||0),0);
-      const expPaid      = (expenses||[]).filter(isPosted).filter(e =>
-        p.partner === TREASURY_PARTNER
-          ? (!e.paid_by || e.paid_by.trim() === TREASURY_PARTNER)
-          : (e.paid_by && e.paid_by.trim() === p.partner)
-      ).reduce((s,e)=>s+(+e.amount||0),0);
-      const netDue       = capitalIn + expPaid + profitShare - totalOut;
-      const pc           = profitShare >= 0 ? 'var(--green)' : 'var(--red)';
-      const nc           = netDue >= 0 ? 'var(--green)' : 'var(--red)';
+      const pName = (p.partner||'').trim();
+      const x = sp.find(s => s.name === pName) || {
+        share:0, sharePercent:+p.share_percent||0, isTreasury:false, capitalPaid:0, expPaid:0,
+        collectionsHeld:0, netJE2400:0, actualContribution:0, fairShare:0, fairShareDiff:0, profitShare:0, netDue:0,
+      };
+      const share        = x.sharePercent;
+      const liability     = fullCost * x.share;
+      const remainingLiab = Math.max(liability - x.actualContribution, 0);
+      const pc           = x.profitShare >= 0 ? 'var(--green)' : 'var(--red)';
+      const nc           = x.netDue >= 0 ? 'var(--green)' : 'var(--red)';
 
       return `<div style="border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;overflow:hidden;cursor:pointer"
         onclick="showPartnerDealStatement('${fn}','${p.partner}','${sys}')">
@@ -874,8 +904,8 @@ export async function loadSummaryTab(fn, sys) {
           <!-- رأس المال -->
           <div style="padding:12px 14px;border-left:1px solid var(--border);border-bottom:1px solid var(--border)">
             <div style="font-size:12px;color:var(--text2);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">رأس المال</div>
-            ${summRow('حصته في التكلفة','text-blue',fmt(liability))}
-            ${summRow('دفع فعلاً','text-green',fmt(capitalIn))}
+            ${summRow('حصته في التكلفة الكاملة','text-blue',fmt(liability))}
+            ${summRow('ساهم فعلاً (رأس مال+مصاريف)','text-green',fmt(x.actualContribution))}
             ${remainingLiab > 0.01
               ? summRow('المتبقي عليه','text-red',fmt(remainingLiab)+' ⚠️',true)
               : summRow('المتبقي عليه','text-green','صفر ✅',true)}
@@ -885,8 +915,8 @@ export async function loadSummaryTab(fn, sys) {
           <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
             <div style="font-size:12px;color:var(--text2);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">الربح / الخسارة</div>
             ${summRow('إجمالي المبيعات','text-green',fmt(totalSales))}
-            ${summRow('التكلفة الكاملة','text-red',fmt(fullCost))}
-            ${summRow('حصته ('+share+'%)','',fmt(profitShare),true,pc)}
+            ${summRow('تكلفة البضاعة المباعة','text-red',fmt(fin.cogs))}
+            ${summRow('حصته ('+share+'%)','',fmt(x.profitShare),true,pc)}
           </div>
         </div>
 
@@ -898,17 +928,16 @@ export async function loadSummaryTab(fn, sys) {
         <!-- المستحق النهائي -->
         <div style="background:var(--card2);padding:12px 16px;border-top:1px solid var(--border)">
           <div style="font-size:12px;color:var(--text2);margin-bottom:6px">
-            المستحق = رأس مال مدفوع${expPaid>0?' + مصروفات من جيبه':''} + حصة الربح − مسحوبات
+            ${x.isTreasury ? 'المستحق = حصة الربح فقط (الصندوق لا يسترد رأس مال من نفسه)' : 'المستحق = صافي حركته على حساب جاري الشركاء + حصة الربح'}
           </div>
           <div style="font-size:13px;color:var(--text2);font-family:var(--mono);margin-bottom:10px">
-            ${fmt(capitalIn)}${expPaid>0?` + ${fmt(expPaid)}`:''} + (${fmt(profitShare)}) − ${fmt(totalOut)} = <strong>${fmt(Math.abs(netDue))}</strong>
+            ${x.isTreasury ? fmt(x.profitShare) : `${fmt(x.netJE2400)} + (${fmt(x.profitShare)})`} = <strong>${fmt(Math.abs(x.netDue))}</strong>
           </div>
-          ${totalOut > 0 ? `<div style="font-size:13px;color:var(--text2);margin-bottom:8px">تم الصرف: <strong style="color:var(--accent)">${fmt(totalOut)}</strong></div>` : ''}
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:12px;font-weight:700;color:var(--text)">المستحق${isOpen?' (تقديري)':''}:</span>
             <div style="text-align:left">
-              <div style="font-size:20px;font-weight:700;color:${nc};font-family:var(--mono)">${fmt(Math.abs(netDue))} ${netDue>=0?'↑':'↓'}</div>
-              <div style="font-size:12px;color:var(--text2)">${netDue>=0?'مستحق له':'مدين عليه'}</div>
+              <div style="font-size:20px;font-weight:700;color:${nc};font-family:var(--mono)">${fmt(Math.abs(x.netDue))} ${x.netDue>=0?'↑':'↓'}</div>
+              <div style="font-size:12px;color:var(--text2)">${x.netDue>=0?'مستحق له':'مدين عليه'}</div>
             </div>
           </div>
         </div>
@@ -933,6 +962,7 @@ export async function loadSummaryTab(fn, sys) {
 
     el('sum-partners').innerHTML = `
       <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">👥 الشركاء</div>
+      ${settlementTableHtml}
       ${partnersHtml || '<div style="color:var(--text2);padding:8px;font-size:13px">لا يوجد شركاء</div>'}`;
 
     el('sum-vehicles').innerHTML = '';
