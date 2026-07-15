@@ -2196,71 +2196,53 @@ export async function loadPartnerAccountLedger() {
 
   try {
     // ── جلب كل البيانات دفعة واحدة ──
-    const [allDeals, allPayouts, accountEntries, partnerPayments, allPOs] = await Promise.all([
+    const [allDeals, allPayouts, accountEntries, partnerPayments] = await Promise.all([
       apiGetAll('partners_master', { select:'file_no,share_percent', system_type:`eq.${sys}`, partner:`eq.${partner}` }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, partner:`eq.${partner}`, order:'pay_date.asc' }),
       apiGet('partner_accounts',   { select:'*', system_type:`eq.${sys}`, partner:`eq.${partner}`, order:'entry_date.asc' }),
-      // ما دفعه الشريك للمورد — المصدر الجديد
+      // ما دفعه الشريك للمورد — للعرض التفصيلي لكل دفعة (الأرقام الإجمالية من المصدر الموحّد أدناه)
       apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, payer:`eq.${partner}`, order:'pay_date.asc' }),
-      apiGetAll('purchase_orders', { select:'file_no,total_purchase,status', system_type:`eq.${sys}` }),
     ]);
 
     const shareMap  = {};
-    const poMap     = {};
     (allDeals||[]).forEach(pm => { shareMap[pm.file_no] = (+pm.share_percent||0)/100; });
-    (allPOs||[]).forEach(po => { poMap[po.file_no] = +po.total_purchase||0; });
-
-    // ── جلب القيود لحساب الربح/الخسارة لكل صفقة ──
     const fileNos = Object.keys(shareMap);
-    const jeRows = fileNos.length
-      ? (await Promise.all(fileNos.map(fn =>
-          apiGet('journal_entries', {
-            select: 'account_code,dr_amount,cr_amount,file_no,ref_table',
-            system_type: `eq.${sys}`, file_no: `eq.${fn}`, post_status: 'eq.posted',
-          })
-        ))).flat()
-      : [];
 
-    // ── حساب P&L لكل صفقة ──
-    const byFile = {};
-    (jeRows||[]).forEach(r => {
-      const fn = r.file_no; if (!fn) return;
-      if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, expenses:0 };
-      const acc = r.account_code||'', dr = +r.dr_amount||0, cr = +r.cr_amount||0;
-      const ref = r.ref_table||'';
-      if (acc.startsWith('4') && cr > 0)                                               byFile[fn].sales    += cr;
-      // 5100 = COGS حقيقي (تكلفة المخزون المباع)
-      if (acc === '5100' && dr > 0)                                                    byFile[fn].cogs     += dr;
-      // 5200+ من ref=expenses = مصاريف صفقة (شحن/نقل) وليست COGS
-      // 6xxx من ref=expenses = مصاريف صفقة (جمارك، تأمين، إلخ)
-      if ((acc.startsWith('5') && acc !== '5100' || acc.startsWith('6')) && dr > 0 && ref === 'expenses') byFile[fn].expenses += dr;
-    });
+    // ✅ تسوية موحّدة لكل صفقة — computePartnerSettlement (core.js) بدل حلقة
+    // P&L محلية منفصلة (كانت نسخة ثالثة من نفس المعادلة، وناقصة مصاريف الجيب
+    // والتحصيلات الممسوكة تمامًا من هذا الدفتر). نفس مصدر تبويب الملخص وكشف
+    // حساب الشريك بالضبط.
+    const settlements  = await Promise.all(fileNos.map(fn => computePartnerSettlement(fn, sys)));
+    const settleByFile = {};
+    fileNos.forEach((fn,i) => { settleByFile[fn] = settlements[i]; });
 
     // ── بناء الحركات الكاملة لكل صفقة ──
     const allEntries = [];
-    let totalLiability = 0;   // إجمالي ما على الشريك
+    let totalLiability = 0;   // إجمالي حصته في التكلفة الكاملة (ما عليه)
     let totalPaid      = 0;   // إجمالي ما دفعه للمورد
+    let totalExpPaid   = 0;   // إجمالي مصاريف دفعها من جيبه (كانت غائبة تمامًا)
+    let totalCollHeld  = 0;   // إجمالي تحصيلات عملاء ممسوكة — تقلل المستحق
     let totalProfit    = 0;   // إجمالي حصته في الربح
     let totalPayout    = 0;   // إجمالي ما استرده
 
     for (const fn of fileNos) {
-      const share    = shareMap[fn];
-      const pct      = Math.round(share * 100);
-      const purchase = poMap[fn] || 0;
+      const share = shareMap[fn];
+      const pct   = Math.round(share * 100);
+      const x = (settleByFile[fn]?.partners||[]).find(p => p.name === partner)
+        || { fairShare:0, expPaid:0, collectionsHeld:0, profitShare:0 };
 
-      // 1. حصة الشريك في التكلفة (ما عليه)
-      const liability = purchase * share;
-      if (liability > 0) {
-        totalLiability += liability;
+      // 1. حصة الشريك في التكلفة الكاملة — شراء + مصاريف (ما عليه)
+      if (x.fairShare > 0) {
+        totalLiability += x.fairShare;
         allEntries.push({
           type: 'liability', file_no: fn,
-          amount: liability, entry_date: null,
-          description: `حصة ${pct}% في تكلفة الصفقة (${fmt(purchase)})`,
+          amount: x.fairShare, entry_date: null,
+          description: `حصة ${pct}% في التكلفة الكاملة (شراء + مصاريف)`,
           _sign: -1,  // ما عليه = يُنقص رصيده
         });
       }
 
-      // 2. ما دفعه للمورد في هذه الصفقة (يُقلّل المديونية)
+      // 2. ما دفعه للمورد في هذه الصفقة (يُقلّل المديونية) — تفصيل كل دفعة
       const paidInDeal = (partnerPayments||[])
         .filter(p => p.file_no === fn && isPosted(p))
         .reduce((s,p) => s + (+p.amount||0), 0);
@@ -2278,9 +2260,30 @@ export async function loadPartnerAccountLedger() {
         });
       }
 
+      // 2.5 مصاريف دفعها من جيبه في هذه الصفقة — من حساب 2400 (كانت غائبة من هذا الدفتر)
+      if (x.expPaid > 0.01) {
+        totalExpPaid += x.expPaid;
+        allEntries.push({
+          type: 'partner_expense', file_no: fn,
+          amount: x.expPaid, entry_date: null,
+          description: `مصاريف دفعها من جيبه — صفقة ${fn}`,
+          _sign: +1,
+        });
+      }
+
+      // 2.6 تحصيلات عملاء ممسوكة — فلوس في إيده فعليًا فتقلل المستحق له
+      if (x.collectionsHeld > 0.01) {
+        totalCollHeld += x.collectionsHeld;
+        allEntries.push({
+          type: 'collection_held', file_no: fn,
+          amount: x.collectionsHeld, entry_date: null,
+          description: `تحصيلات عملاء ممسوكة — صفقة ${fn}`,
+          _sign: -1,
+        });
+      }
+
       // 3. حصته في الربح/الخسارة
-      const d = byFile[fn] || { sales:0, cogs:0, expenses:0 };
-      const dealProfit = (d.sales - d.cogs - d.expenses) * share;
+      const dealProfit = x.profitShare;
       if (Math.abs(dealProfit) > 0.001) {
         totalProfit += dealProfit;
         allEntries.push({
@@ -2330,11 +2333,11 @@ export async function loadPartnerAccountLedger() {
     }
 
     // ── حساب الأرصدة ──
-    const netLiability = totalLiability - totalPaid;   // المديونية المتبقية (ما عليه - ما دفع)
-    const netBalance   = totalProfit - totalPayout - Math.max(netLiability, 0); // صافي الربح المتبقي
-    // ✅ إجمالي المستحق = رأس المال المدفوع + حصة الربح - ما استرده
-    // هذا هو الرقم الصحيح الذي يجب عرضه كـ "مستحق له"
-    const totalDue     = totalPaid + totalProfit - totalPayout;
+    const netLiability = totalLiability - totalPaid - totalExpPaid; // المديونية المتبقية
+    // ✅ إجمالي المستحق = رأس مال مدفوع + مصاريف من جيبه + حصة الربح − مسحوبات − تحصيلات ممسوكة
+    // (نفس معادلة netDue الموحّدة في computePartnerSettlement — كانت هنا تتجاهل
+    // مصاريف الجيب والتحصيلات الممسوكة تمامًا، فيفضل رقم مختلف عن باقي الشاشات)
+    const totalDue     = totalPaid + totalExpPaid + totalProfit - totalPayout - totalCollHeld;
 
     // ── KPIs ──
     const liabilityColor = netLiability > 0.01 ? 'var(--red)' : 'var(--green)';
@@ -2394,12 +2397,14 @@ export function renderPartnerAccountLedger() {
 
   const kpiLiability = entriesForKpi.filter(e=>e.type==='liability').reduce((s,e)=>s+(+e.amount||0),0);
   const kpiPaid      = entriesForKpi.filter(e=>e.type==='partner_payment').reduce((s,e)=>s+(+e.amount||0),0);
+  const kpiExpPaid   = entriesForKpi.filter(e=>e.type==='partner_expense').reduce((s,e)=>s+(+e.amount||0),0);
+  const kpiCollHeld  = entriesForKpi.filter(e=>e.type==='collection_held').reduce((s,e)=>s+(+e.amount||0),0);
   const kpiProfit    = entriesForKpi.filter(e=>e.type==='profit_credit').reduce((s,e)=>s+(+e.amount||0),0)
                      - entriesForKpi.filter(e=>e.type==='loss_debit').reduce((s,e)=>s+(+e.amount||0),0);
   const kpiPayout    = entriesForKpi.filter(e=>e.type==='deal_payout'||e.type==='general_withdraw'||e.type==='advance').reduce((s,e)=>s+(+e.amount||0),0);
-  const kpiNetLiab   = kpiLiability - kpiPaid;
-  // ✅ إجمالي المستحق = ما دفع + حصة الربح - ما استرده
-  const kpiTotalDue  = kpiPaid + kpiProfit - kpiPayout;
+  const kpiNetLiab   = kpiLiability - kpiPaid - kpiExpPaid;
+  // ✅ إجمالي المستحق = ما دفع + مصاريف من جيبه + حصة الربح − ما استرده − تحصيلات ممسوكة
+  const kpiTotalDue  = kpiPaid + kpiExpPaid + kpiProfit - kpiPayout - kpiCollHeld;
   const liabColor    = kpiNetLiab > 0.01 ? 'var(--red)' : 'var(--green)';
   const balColor     = kpiTotalDue > 0.01 ? 'var(--green)' : kpiTotalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
   const filterLabel  = filterFile ? ` — ${filterFile}` : ' — كل الصفقات';
@@ -2434,6 +2439,8 @@ export function renderPartnerAccountLedger() {
     loss_debit:      'حصة خسارة',
     liability:       'حصة في التكلفة',
     partner_payment: 'دفعة للمورد',
+    partner_expense: 'مصاريف من جيبه',
+    collection_held: 'تحصيل عملاء ممسوك',
     capital_credit:  'رأس مال مرصود',
     general_withdraw:'سحب عام',
     advance:         'سلفة',
@@ -2444,6 +2451,8 @@ export function renderPartnerAccountLedger() {
     loss_debit:      'var(--red)',
     liability:       'var(--blue)',
     partner_payment: 'var(--accent)',
+    partner_expense: 'var(--accent)',
+    collection_held: 'var(--red)',
     capital_credit:  'var(--blue)',
     general_withdraw:'var(--red)',
     advance:         'var(--amber)',
