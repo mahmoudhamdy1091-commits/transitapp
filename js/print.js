@@ -775,7 +775,10 @@ export async function printDealSummary(fn) {
       }
     });
     const fullCost       = totalPurchase + totalExp;
-    const profit         = totalSales - fullCost;
+    // ✅ من computePartnerSettlement (core.js عبر state.currentDealData.settlement،
+    // محسوبة في loadSummaryTab) — نفس رقم تبويب الملخص بالضبط، بدل حساب محلي
+    // مستقل كان يتجاهل قيود العكس تمامًا (totalSales - fullCost خام)
+    const profit         = d.settlement ? d.settlement.profit : (totalSales - fullCost);
     const margin         = totalSales > 0 ? Math.round(profit/totalSales*100) : 0;
     const remaining      = totalPurchase - totalPaid;
     const soldVins       = new Set(postedSal.map(s=>s.vin).filter(Boolean));
@@ -843,20 +846,19 @@ export async function printDealSummary(fn) {
       </div>
     </div>`;
 
-    // ── بطاقات الشركاء المفصّلة ──
+    // ── بطاقات الشركاء المفصّلة — من computePartnerSettlement (نفس مصدر الشاشة) ──
     const isOpen = (totalV - soldV) > 0;
+    const settlementPartners = d.settlement?.partners || [];
     const partnersTable = (partners||[]).length > 0 ? (partners||[]).map(p => {
-      const share       = +p.share_percent||0;
-      const _sp = (partners||[]).length <= 1;
-      const capitalIn   = (payments||[])
-        .filter(isEffective)
-        .filter(px => _sp || px.payer === p.partner)
-        .reduce((s,px)=>s+(+px.amount||0),0);
-      const liability   = totalPurchase*(share/100);
+      const share = +p.share_percent||0;
+      const x = settlementPartners.find(sp => sp.name === (p.partner||'').trim())
+        || { actualContribution:0, fairShare:0, profitShare: profit*(share/100), withdrawnViaPayout:0, collectionsHeld:0, netDue:0, isTreasury:false };
+      const capitalIn   = x.actualContribution;
+      const liability    = x.fairShare;
       const remaining_  = Math.max(liability - capitalIn, 0);
-      const profitShare = profit*(share/100);
-      const totalOut    = (payouts||[]).filter(px=>isPosted(px)&&px.partner===p.partner).reduce((s,px)=>s+(+px.amount||0),0);
-      const netDue      = capitalIn + profitShare - totalOut;
+      const profitShare = x.profitShare;
+      const totalOut    = x.withdrawnViaPayout + x.collectionsHeld;
+      const netDue      = x.netDue;
       const pc          = profitShare >= 0 ? '#15803d' : '#c0392b';
       const nc          = netDue >= 0 ? '#15803d' : '#c0392b';
       const rows = (label, val, bold, color) =>
@@ -903,9 +905,9 @@ export async function printDealSummary(fn) {
 
       // المستحق النهائي
       html += '<div style="background:#f9f8f6;padding:12px 16px;border-top:1px solid #e4e0d8">'
-            + '<div style="font-size:12px;color:#78716c;margin-bottom:6px">المستحق = رأس مال مدفوع + حصة الربح − مسحوبات</div>'
+            + '<div style="font-size:12px;color:#78716c;margin-bottom:6px">' + (x.isTreasury ? 'المستحق = حصة الربح فقط (لا يسترد رأس مال من نفسه)' : 'المستحق = صافي حركته على حساب جاري الشركاء + حصة الربح') + '</div>'
             + '<div style="font-size:13px;color:#57534e;font-family:monospace;margin-bottom:10px">'
-            + f2(capitalIn) + ' + (' + f2(profitShare) + ') − ' + f2(totalOut) + ' = <strong>' + f2(Math.abs(netDue)) + '</strong>'
+            + (x.isTreasury ? f2(profitShare) : (f2(x.netJE2400||0) + ' + (' + f2(profitShare) + ')')) + ' = <strong>' + f2(Math.abs(netDue)) + '</strong>'
             + '</div>'
             + (totalOut > 0 ? '<div style="font-size:13px;color:#57534e;margin-bottom:8px">تم الصرف: <span style="font-family:monospace;color:#d97706;font-weight:600">' + f2(totalOut) + '</span></div>' : '')
             + '<div style="display:flex;justify-content:space-between;align-items:center">'
