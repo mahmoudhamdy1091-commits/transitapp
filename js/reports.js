@@ -92,6 +92,7 @@ export async function runReport() {
       const ts        = fin.totSales;
       const tCOGS     = fin.totCOGS;
       const tDealExp  = fin.totDealExp;
+      const tExpAmt   = fin.totExpenseAmount; // إجمالي مصاريف الصفقات الحقيقي (توضيحي — محتسب ضمن tCOGS بالفعل)
       const tOpex     = fin.totOpex;
       const byFile    = fin.byFile;
 
@@ -123,7 +124,7 @@ export async function runReport() {
         <div class="j-kpi" style="border-right:3px solid var(--red)">
           <div class="j-kpi-label">مصاريف الصفقات</div>
           <div class="j-kpi-val text-red">${fmt(tDealExp)}</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:2px">من حسابات 6xxx</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">من حسابات 6xxx${tExpAmt>0.01?' · إجمالي مصاريف الملفات '+fmt(tExpAmt)+' مُرسملة ضمن تكلفة المخزون المباع':''}</div>
         </div>
         <div class="j-kpi" style="border-right:3px solid var(--accent);background:var(--accent-dim)">
           <div class="j-kpi-label">ربح الصفقات</div>
@@ -158,6 +159,8 @@ export async function runReport() {
         const je  = byFile[fn];
         const en  = enrichMap[fn] || {};
         const d   = dealMap[fn]   || {};
+        // ✅ الربح من je.cogs (يشمل المصاريف المُرسملة فعليًا وقت البيع) — je.dealExp
+        // يفضل ~صفر بعد سياسة الترسملة، فهو مش جزء من التكلفة هنا أصلاً
         const fullCost = je.cogs + je.dealExp;
         const profit   = je.sales - fullCost;
         return {
@@ -168,13 +171,14 @@ export async function runReport() {
           notes:      d.notes     || en.notes    || '',
           status:     d.status    || en.status   || '—',
           purchase:   je.purchase,
-          expenses:   je.dealExp,
+          expenses:   je.expenseAmount,
           sales:      je.sales,
           fullCost,
           profit,
-          // fields for renderDealsTable
+          // fields for renderDealsTable — expenseAmount = إجمالي مصاريف الملف
+          // الحقيقي (توضيحي، مُحتسب بالفعل ضمن je.cogs عند البيع)
           _totalCost: je.purchase,
-          _totalExp:  je.dealExp,
+          _totalExp:  je.expenseAmount,
           _fullCost:  fullCost,
           _totalSale: je.sales,
           _profit:    profit,

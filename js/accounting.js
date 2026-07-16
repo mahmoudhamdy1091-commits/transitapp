@@ -1758,7 +1758,14 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
           expPaid, expShould: settlement.totalExpenseAmount * x.share,
           expDiff: expPaid - (settlement.totalExpenseAmount * x.share),
           profit: x.profitShare, withdrawn: x.withdrawnViaPayout, collectedDirect: x.collectionsHeld, netDue: x.netDue,
-          pSalesShare: jeSales * x.share, pCOGSShare: jeCOGS * x.share, pExpShare: jeDealExp * x.share,
+          // ✅ pCOGSShare = تكلفة البيع الفعلية (شراء + مصاريف مُرسملة، ما تخصمه
+          // القيود فعليًا). pPurchaseShare/pExpenseShare توضيحيان بس (تفكيك نفس
+          // الرقم لمعرفة قد إيه شراء وقد إيه مصاريف) — بلا أي خصم إضافي، عشان
+          // مصروفات الصفقة المنفصلة (jeDealExp) بقت صفر دائمًا بعد سياسة
+          // الترسملة ولو فضلت بند خصم لوحدها كانت هتبقى ازدواج وهمي
+          pSalesShare: jeSales * x.share, pCOGSShare: jeCOGS * x.share,
+          pPurchaseShare: settlement.totalPurchase * x.share,
+          pExpenseShare: settlement.totalExpenseAmount * x.share,
         };
       });
 
@@ -2013,9 +2020,8 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                         <span style="color:#64748b">تكلفة البضاعة المباعة &nbsp;${ps.sharePercent}% × ${fmt2(ps.pCOGSShare/ps.share||0)}</span>
                         <span style="font-family:monospace;font-weight:600;color:#dc2626">− ${fmt2(ps.pCOGSShare)}</span>
                       </div>
-                      <div style="display:flex;justify-content:space-between;padding:2px 0">
-                        <span style="color:#64748b">مصروفات الصفقة &nbsp;${ps.sharePercent}% × ${fmt2(ps.pExpShare/ps.share||0)}</span>
-                        <span style="font-family:monospace;font-weight:600;color:#dc2626">− ${fmt2(ps.pExpShare)}</span>
+                      <div style="font-size:10px;color:#94a3b8;padding:0 0 2px 0">
+                        منها: شراء ${fmt2(ps.pPurchaseShare)} + مصاريف ${fmt2(ps.pExpenseShare)} — توضيحي فقط، غير مخصوم بشكل منفصل
                       </div>
                       <div style="border-top:1px dashed #cbd5e1;margin-top:5px;padding-top:5px;display:flex;justify-content:space-between;align-items:center">
                         <span style="font-weight:700;color:#64748b">= ${ps.profit>=0?'حصة الربح':'حصة الخسارة'}</span>

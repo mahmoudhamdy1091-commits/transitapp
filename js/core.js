@@ -392,10 +392,10 @@ export async function fetchJEForPeriod(sys, from, to) {
  * تُستخدم في لوحة التحكم وتقرير الأرباح والخسائر لضمان تطابق الأرقام بينهما
  */
 export function computeFinancials(jeRows) {
-  let totSales = 0, totCOGS = 0, totDealExp = 0, totOpex = 0, totPurchase = 0;
+  let totSales = 0, totCOGS = 0, totDealExp = 0, totOpex = 0, totPurchase = 0, totExpenseAmount = 0;
   const byFile = {};
   const ensure = fn => {
-    if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, dealExp:0, purchase:0 };
+    if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, dealExp:0, purchase:0, expenseAmount:0 };
   };
 
   (jeRows || []).forEach(r => {
@@ -420,10 +420,19 @@ export function computeFinancials(jeRows) {
       totPurchase += dr;
       if (fn) { ensure(fn); byFile[fn].purchase += dr; }
     }
-    // 6xxx مدين + ref=expenses = مصاريف صفقة
+    // 6xxx مدين + ref=expenses = مصاريف صفقة (تفضل ~صفر بعد سياسة الترسملة —
+    // المصاريف بقت جزء من 1300/5100 مش 6xxx. الحقل متسيّب زي ما هو لعدم
+    // كسر معادلة grossProfit؛ استخدم expenseAmount تحت للرقم التوضيحي الحقيقي)
     if (acc.startsWith('6') && dr > 0 && ref === 'expenses') {
       totDealExp += dr;
       if (fn) { ensure(fn); byFile[fn].dealExp += dr; }
+    }
+    // ✅ إجمالي مبلغ مصاريف الصفقة الحقيقي — الطرف الدائن لأي سطر مصروف،
+    // ثابت بغض النظر عن حساب الترسملة (1300/5100/6xxx). توضيحي فقط، لا يدخل
+    // في حساب الربح (مُحتسب بالفعل ضمن totCOGS عبر calcCOGS عند البيع)
+    if (ref === 'expenses') {
+      totExpenseAmount += cr;
+      if (fn) { ensure(fn); byFile[fn].expenseAmount += cr; }
     }
     // 6xxx مدين + ref=operating_expenses = مصاريف تشغيلية
     if (acc.startsWith('6') && dr > 0 && ref === 'operating_expenses') {
@@ -436,7 +445,7 @@ export function computeFinancials(jeRows) {
   // صافي الربح = مجمل الربح - المصاريف التشغيلية
   const netProfit = grossProfit - totOpex;
 
-  return { totSales, totCOGS, totDealExp, totOpex, totPurchase, grossProfit, netProfit, byFile };
+  return { totSales, totCOGS, totDealExp, totOpex, totPurchase, totExpenseAmount, grossProfit, netProfit, byFile };
 }
 
 /**
@@ -464,12 +473,10 @@ export async function computePartnerSettlement(fileNo, sys) {
     }),
   ]);
 
-  const fin = computeFinancials(jeAll).byFile[fileNo] || { sales:0, cogs:0, dealExp:0, purchase:0 };
+  const fin = computeFinancials(jeAll).byFile[fileNo] || { sales:0, cogs:0, dealExp:0, purchase:0, expenseAmount:0 };
   // مجموع الطرف الدائن لأي سطر مصروف — ثابت بغض النظر عن حساب الترسملة
   // (1300/5100/6xxx حسب سياسة الترسملة)، لأنه دائمًا الطرف المقابل للنقدية/2400
-  const totalExpenseAmount = (jeAll||[])
-    .filter(r => r.ref_table === 'expenses')
-    .reduce((s,r) => s + (+r.cr_amount||0), 0);
+  const totalExpenseAmount = fin.expenseAmount;
   const totalPurchase = fin.purchase;
   const fullCost = totalPurchase + totalExpenseAmount;
   const profit   = fin.sales - fin.cogs - fin.dealExp;
