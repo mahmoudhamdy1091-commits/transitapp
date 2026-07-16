@@ -1612,13 +1612,14 @@ export async function approveItem(type, id) {
       const item = approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
       if (!item) { toast('لم يُعثر على طلب الإلغاء','err'); return; }
 
-      // ① شيل فوراً
+      // ① شيل فوراً — نمرر item مباشرةً لأنه اتحذف من approvalState بخطوة _optimisticRemove
+      const _capturedItem = item;
       _optimisticRemove(type, id);
       toast('✅ تم تنفيذ الإلغاء بقيد عكسي','ok');
 
       // ② اكمل في الخلفية — نفس النواة المشتركة مع approveAll
       (async () => {
-        const res = await _processReversalApproval(id);
+        const res = await _processReversalApproval(id, _capturedItem);
         if (!res.ok) toast('خطأ في تنفيذ الإلغاء: '+res.message,'err');
         invalidateCache();
         loadApprovalQueue();
@@ -2086,8 +2087,8 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
 }
 
 // نواة معالجة "موافقة على طلب إلغاء" — نفس منطق approveItem للـ reversal
-export async function _processReversalApproval(id) {
-  const item = approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
+export async function _processReversalApproval(id, preloadedItem=null) {
+  const item = preloadedItem || approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
   if (!item) return { ok:false, message:'لم يُعثر على طلب الإلغاء' };
   try {
     await voidTransaction(item._srcType, item, true);
@@ -2116,7 +2117,7 @@ export async function approveAll() {
       }
       // ── طلبات الإلغاء (reversal): نفس نواة approveItem بالضبط ──
       if (r._type === 'reversal') {
-        const res = await _processReversalApproval(r.id);
+        const res = await _processReversalApproval(r.id, r);
         if (res.ok) okCount++; else failCount++;
         resultLines.push(`${res.ok ? '✅' : '❌'} إلغاء — ${_escHtml(r._desc||r.id)}${res.ok?'':': '+_escHtml(res.message)}`);
         continue;
