@@ -797,7 +797,7 @@ export async function loadSummaryTab(fn, sys) {
           <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px">📊 قائمة الدخل</div>
           ${summRow('المبيعات','text-green',fmt(fin.sales))}
           ${summRow('(−) تكلفة البضاعة المباعة','text-red',fmt(fin.cogs))}
-          <div style="font-size:11px;color:var(--text2);padding:0 0 4px">↳ إجمالي تكلفة الملف: شراء ${fmt(settlement.totalPurchase)} + مصاريف ${fmt(settlement.totalExpenseAmount)} (المصاريف بقت جزء من التكلفة مش بند منفصل)</div>
+          <div style="font-size:13px;color:var(--text2);padding:2px 0 6px;line-height:1.5">↳ إجمالي تكلفة الملف: شراء <strong style="color:var(--text)">${fmt(settlement.totalPurchase)}</strong> + مصاريف <strong style="color:var(--text)">${fmt(settlement.totalExpenseAmount)}</strong> (المصاريف بقت جزء من التكلفة مش بند منفصل)</div>
           ${unsoldCostBasis > 0.01 ? `<div style="font-size:11px;color:var(--text2);padding:2px 0 4px">ℹ️ مخزون متبقٍ بالتكلفة: ${fmt(unsoldCostBasis)} — لسه ما اتحمّلش على تكلفة بيع</div>` : ''}
           <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
           <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:14px;font-weight:700">
