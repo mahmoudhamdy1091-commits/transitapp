@@ -2232,14 +2232,19 @@ export async function loadPartnerAccountLedger() {
       const x = (settleByFile[fn]?.partners||[]).find(p => p.name === partner)
         || { fairShare:0, expPaid:0, collectionsHeld:0, profitShare:0 };
 
-      // 1. حصة الشريك في التكلفة الكاملة — شراء + مصاريف (ما عليه)
+      // 1. حصة الشريك في التكلفة الكاملة — شراء + مصاريف (مرجعي فقط)
+      // ✅ _sign:0 عمدًا: ده رقم مرجعي (نصيبه العادل لو اتقسمت التكلفة بالتساوي)
+      // مش معاملة نقدية فعلية — لو دخل في حساب "الرصيد" التراكمي جنب المعاملات
+      // الحقيقية (دفعات/أرباح) هيطلع رقم هجين مايطابقش "إجمالي المستحق له" في
+      // نفس المستند ولا في أي شاشة تانية بالتطبيق (باج مُكتشف فعليًا من مراجعة
+      // كشف حساب مطبوع — الرصيد التراكمي كان بيوقف عند رقم مختلف عن الكارت العلوي)
       if (x.fairShare > 0) {
         totalLiability += x.fairShare;
         allEntries.push({
           type: 'liability', file_no: fn,
           amount: x.fairShare, entry_date: null,
-          description: `حصة ${pct}% في التكلفة الكاملة (شراء + مصاريف)`,
-          _sign: -1,  // ما عليه = يُنقص رصيده
+          description: `حصة ${pct}% في التكلفة الكاملة (شراء + مصاريف) — مرجعي، لا يدخل في الرصيد`,
+          _sign: 0,
         });
       }
 
@@ -2349,7 +2354,7 @@ export async function loadPartnerAccountLedger() {
         <div class="j-kpi-label">إجمالي ما دفع للمورد</div>
         <div class="j-kpi-val" style="color:var(--blue)">${fmt(totalPaid)}</div>
         <div style="font-size:12px;color:${liabilityColor};font-weight:700">
-          ${netLiability > 0.01 ? `⚠️ متبقي عليه ${fmt(netLiability)}` : '✅ سوّى كامل التكلفة'}
+          ${netLiability > 0.01 ? `⚠️ متبقي عليه ${fmt(netLiability)}` : netLiability < -0.01 ? `✅ دفع زيادة عن حصته بـ ${fmt(Math.abs(netLiability))}` : '✅ سوّى حصته بالظبط'}
         </div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--green)">
@@ -2415,7 +2420,7 @@ export function renderPartnerAccountLedger() {
       <div class="j-kpi-label">ما دفع للمورد${filterLabel}</div>
       <div class="j-kpi-val" style="color:var(--blue)">${fmt(kpiPaid)}</div>
       <div style="font-size:12px;color:${liabColor};font-weight:700">
-        ${kpiNetLiab > 0.01 ? `⚠️ متبقي عليه ${fmt(kpiNetLiab)}` : '✅ سوّى كامل التكلفة'}
+        ${kpiNetLiab > 0.01 ? `⚠️ متبقي عليه ${fmt(kpiNetLiab)}` : kpiNetLiab < -0.01 ? `✅ دفع زيادة عن حصته بـ ${fmt(Math.abs(kpiNetLiab))}` : '✅ سوّى حصته بالظبط'}
       </div>
     </div>
     <div class="j-kpi" style="border-right:3px solid var(--green)">
@@ -2467,9 +2472,12 @@ export function renderPartnerAccountLedger() {
 
   let runningBalance = 0;
   // ✅ الحساب من القديم للحديث (الترتيب الصح للرصيد التراكمي)
+  // ✅ e._sign !== undefined بدل e._sign||fallback — الصفر falsy في JS، فكان
+  // أي بند _sign:0 (مرجعي، زي "حصة في التكلفة") بيرجع للـfallback (+1) بدل
+  // ما يتجاهل تمامًا من حساب الرصيد
   const rowsData = entries.map(e => {
     const type   = e.type || e.entry_type;
-    const sign   = e._sign || (type==='general_withdraw'||type==='advance'||type==='deal_payout' ? -1 : +1);
+    const sign   = e._sign !== undefined ? e._sign : (type==='general_withdraw'||type==='advance'||type==='deal_payout' ? -1 : +1);
     const amount = +e.amount || 0;
     runningBalance += sign * amount;
     return { e, type, sign, amount, balance: runningBalance };
@@ -2487,11 +2495,11 @@ export function renderPartnerAccountLedger() {
       </td>
       <td style="font-size:12px">${e.description||'—'}</td>
       <td class="mono text-amber" style="font-size:13px">${e.file_no||'—'}</td>
-      <td class="mono" style="color:${sign>0?'var(--green)':'var(--red)'};font-weight:700">
-        ${sign>0?'+':'−'}${fmt(amount)}
+      <td class="mono" style="color:${sign>0?'var(--green)':sign<0?'var(--red)':'var(--text2)'};font-weight:700">
+        ${sign>0?'+':sign<0?'−':'≈'}${fmt(amount)}
       </td>
       <td class="mono" style="font-weight:700;color:${balance>=0?'var(--blue)':'var(--red)'}">
-        ${fmt(balance)}
+        ${sign===0 ? `<span style="color:var(--text2);font-weight:400">${fmt(balance)} (بدون تغيير)</span>` : fmt(balance)}
       </td>
       <td style="font-size:13px;color:var(--text2)">${e.document||e.notes||'—'}</td>
     </tr>`;
