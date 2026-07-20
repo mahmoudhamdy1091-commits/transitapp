@@ -942,15 +942,17 @@ engineHooks.onVoidComplete = () => window.loadApprovalQueue?.();
     state.token        = savedToken;
     state.refreshToken = savedRefresh || null;
     state.user         = savedUser ? JSON.parse(savedUser) : { email: 'user@tm.com' };
-    // ✅ الموديول مؤجَّل بطبيعته، فـ readyState عملياً مش هيبقى 'loading'
-    // هنا أبداً — سايبين الفرع ده كطبقة أمان زيادة بس.
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        if (engineHooks.onAppReady) engineHooks.onAppReady();
-      });
-    } else {
+    // ✅ استدعاء onAppReady لازم يتأجل لـ DOMContentLoaded دايمًا، مش يتنفذ فورًا هنا.
+    // السبب: transactions.js (اللي بيعرّف initApp) بقى موديول زي engine.js بعد ترحيل
+    // Plan A (2026-07-08)، وترتيبه في index.html بعد engine.js — يعني وقت تنفيذ هذا
+    // السطر، window.initApp لسه undefined. الاستدعاء كان بيرجع بصمت (?.()) من غير
+    // ما يعمل حاجة، فشاشة الدخول تفضل ظاهرة حتى مع توكن سليم محفوظ (هي سبب اختفاء
+    // "استرجاع الجلسة بعد الريفرش" رغم إن التوكن والـremember me سليمين تمامًا).
+    // DOMContentLoaded بيتأجل لحد ما كل الموديولات (بما فيها transactions.js) تخلص
+    // تنفيذها بالضبط — فده مضمون يشتغل بغض النظر عن ترتيب الملفات.
+    document.addEventListener('DOMContentLoaded', () => {
       if (engineHooks.onAppReady) engineHooks.onAppReady();
-    }
+    });
   }
 
   // Prefill saved credentials
