@@ -1564,19 +1564,23 @@ export async function editFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id, item } = approvalState.currentItem;
   closeModal('approvalDetailModal');
-  // فتح الأمر مع إمكانية التعديل
-  if (type === 'purchase' && item?.file_no) {
+  // فتح الأمر مع إمكانية التعديل — نفس المودال سواء كان طلب إدخال أول مرة (purchase)
+  // أو طلب تعديل على سجل قائم بالفعل (purchase_edit) — الفرق بينهم بس post_status
+  const baseType = type.replace(/_edit$/, '');
+  if (baseType === 'purchase' && item?.file_no) {
     openNewFileModal(item.file_no);
-  } else if (type === 'sale') {
+  } else if (baseType === 'sale') {
     await openEditSaleApproval(id, item?.file_no, item?.inv_no || item?.invoice_no);
-  } else if (type === 'payment') {
+  } else if (baseType === 'payment') {
     openEditPaymentModal(id);
-  } else if (type === 'expense') {
+  } else if (baseType === 'expense') {
     openEditExpenseModal(id);
-  } else if (type === 'collection') {
+  } else if (baseType === 'collection') {
     openEditCollectionModal(id);
-  } else if (type === 'payout') {
+  } else if (baseType === 'payout') {
     openEditPayoutModal(id);
+  } else if (baseType === 'opex') {
+    openEditOpexModal(id);
   } else if (item?.file_no) {
     openViewer(item.file_no);
   } else {
