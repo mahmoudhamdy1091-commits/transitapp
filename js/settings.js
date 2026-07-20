@@ -188,7 +188,7 @@ export function renderActivityLog() {
   if (!list.length) { el('activityTableWrap').innerHTML = emptyHTML('🕵️','لا توجد سجلات'); return; }
 
   const rows = list.map(r => {
-    const dt       = r.created_at ? new Date(r.created_at).toLocaleString('ar-KW',{dateStyle:'short',timeStyle:'short'}) : '—';
+    const dt       = r.created_at ? `${fmtDate(r.created_at)} ${fmtTime(r.created_at)}` : '—';
     const email    = r.user_email || 'غير معروف';
     const username = displayUser(r.user_email);
     const initials = username[0]?.toUpperCase() || '?';
