@@ -359,7 +359,7 @@ export async function addPartnerRow() {
     <button class="btn-remove" onclick="this.parentElement.remove();updatePartnerSummary()" title="حذف">✕</button>
   `;
   const sel = div.querySelector('select');
-  sel.onchange = function() {
+  sel.onchange = async function() {
     if (this.value === '__new__') {
       const name = prompt('اسم الشريك الجديد:');
       if (name) {
@@ -367,6 +367,10 @@ export async function addPartnerRow() {
         opt.value = name; opt.textContent = name;
         this.insertBefore(opt, this.lastElementChild);
         this.value = name;
+        // ✅ نفس آلية ensureContact المستخدمة للموردين/العملاء — من غيرها الاسم
+        // كان بيفضل ظاهر بس جوه الـ<select> ده لحظيًا، ومتسجّلش كـcontact فعلي،
+        // فيختفي من أي قائمة شركاء تانية (ملف تاني) رغم إنه بقى موجود بالفعل
+        await ensureContact(name, 'partner');
       } else { this.value = ''; }
     }
     updatePartnerSummary();
