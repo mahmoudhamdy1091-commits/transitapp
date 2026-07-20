@@ -1079,7 +1079,7 @@
       </div>
 
       <!-- ════ APPROVAL DETAIL MODAL ════ -->
-      <div class="modal-overlay" id="approvalDetailModal" style="display:none">
+      <div class="modal-overlay" id="approvalDetailModal">
         <div class="modal" style="max-width:600px">
           <div class="modal-header">
             <div class="modal-icon" id="ad-icon" style="background:var(--accent-dim)">📋</div>
@@ -1090,7 +1090,10 @@
             <div id="ad-body"></div>
           </div>
           <div class="modal-footer" style="justify-content:space-between">
-            <button class="btn btn-danger btn-sm" onclick="rejectFromDetail()">🗑 مسح</button>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-danger btn-sm" onclick="rejectFromDetail()">🗑 مسح</button>
+              <button class="btn btn-secondary btn-sm" id="ad-fullfile-btn" onclick="openFullFileFromDetail()">📂 فتح الملف الكامل</button>
+            </div>
             <div style="display:flex;gap:8px">
               <button class="btn btn-secondary" onclick="cancelFromDetail()">⊘ إلغاء</button>
               <button class="btn btn-blue" id="ad-edit-btn" onclick="editFromDetail()">✏️ فتح وتعديل</button>

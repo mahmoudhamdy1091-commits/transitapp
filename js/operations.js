@@ -1223,18 +1223,14 @@ export async function openApprovalDetail(type, id) {
   const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
   if (!item || !cfg) return;
 
-  // ✅ فتح أصل المستند (الملف الكامل) للمراجعة بدل ملخص سطر واحد —
-  // البنود بلا ملف (مثل مصروف تشغيلي عام) تعرض الملخص القديم كحل احتياطي
-  if (item._file && typeof openViewer === 'function') {
-    await openViewer(item._file);
-    return;
-  }
-
   approvalState.currentItem = { type, id, item };
 
   el('ad-icon').textContent = cfg.icon;
   el('ad-icon').style.background = cfg.color + '22';
   el('ad-title').textContent = cfg.label + ' — مراجعة';
+
+  const fullFileBtn = el('ad-fullfile-btn');
+  if (fullFileBtn) fullFileBtn.style.display = item._file ? '' : 'none';
 
   const fields = Object.entries(item).filter(([k,v]) =>
     !SKIP_FIELDS.has(k) && v !== null && v !== undefined && v !== ''
@@ -1261,6 +1257,14 @@ export async function openApprovalDetail(type, id) {
     </table>`;
 
   openModal('approvalDetailModal');
+}
+
+export async function openFullFileFromDetail() {
+  if (!approvalState.currentItem) return;
+  const { item } = approvalState.currentItem;
+  if (!item._file) return;
+  closeModal('approvalDetailModal');
+  await openViewer(item._file);
 }
 
 export async function approveFromDetail() {
@@ -5632,7 +5636,7 @@ Object.assign(window, {
   exportOpexExcel, fetchOpexForJournal, loadOpexReport, closeDrillDownMain, closeDrillDown,
   toggleDrillDown, renderDrillDown, renderDDChart, regenFileNo, regenInvNo,
   showApprovalQueue, loadApprovalQueue, _optimisticRemove, filterApproval, renderApprovalList,
-  openApprovalDetail, approveFromDetail, cancelFromDetail, rejectFromDetail, openEditSaleApproval,
+  openApprovalDetail, approveFromDetail, cancelFromDetail, rejectFromDetail, openFullFileFromDetail, openEditSaleApproval,
   editFromDetail, approveItem, rejectItem, editApprovalRow, cancelApprovalRow,
   _ensureSaleJE, _createApprovalJE, _ensureApprovalJE, _approveLinkedPaidCollections, _processEditApproval,
   _processReversalApproval, approveAll, updateApprovalBadge, openPartnerAccountLedger, loadPartnerAccountLedger,
