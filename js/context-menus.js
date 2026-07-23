@@ -217,6 +217,11 @@ export function _ctxJournal(btn) {
   ];
   const tbl = tableMap[etype];
   if (tbl) items.push({icon:'📜', label:'السجل', action:()=>showRecordAudit({ table:tbl, fileNo:fno, id:p.dataset.erefid||'', title:'قيد — '+(p.dataset.etitle||'') })});
+  items.push('divider');
+  // ✅ حذف القيد من نفس صف اليومية — بيستخدم منطق التحذير/المنع نفسه اللي في deleteJEEntry
+  // (عبر _jDelete في journal.js): يمنع حذف القيود اليدوية المرحّلة (توجّه لـ"🔄 عكس")،
+  // ولباقي القيود بيعرض تحذير واضح إن الحذف نهائي قبل ما ينفّذ.
+  items.push({icon:'🗑️', label:'حذف', danger:true, action:()=>_jDelete(btn)});
   showCtxMenu(btn, items);
 }
 

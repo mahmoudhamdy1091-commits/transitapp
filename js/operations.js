@@ -4289,10 +4289,14 @@ export async function submitJE() {
   }
 }
 
-export async function deleteJEEntry(entryNo) {
-  const group = jeMgrState.grouped[entryNo];
+// opts (اختياري) — لإعادة استخدام نفس منطق الحذف من شاشات تانية غير دفتر القيود
+// (مثال: صف اليومية) من غير الاعتماد على jeMgrState اللي بيتملى بس لما تتفتح شاشة دفتر القيود:
+//   opts.group     — نفس شكل عنصر jeMgrState.grouped[entryNo] جاهز (بدل قراءته من jeMgrState)
+//   opts.onDeleted — دالة تحديث الشاشة الحالية بعد الحذف (بدل loadJEManager الافتراضية)
+export async function deleteJEEntry(entryNo, opts) {
+  const group = (opts && opts.group) || jeMgrState.grouped[entryNo];
   if (!group) return;
-  const isManual = group.isManual;
+  const isManual = group.isManual !== undefined ? group.isManual : (group.ref_table === 'manual' || !group.ref_table);
 
   // ✅ منع حذف قيد يدوي مُرحَّل نهائياً — يُفقد الأثر المحاسبي والتدقيق بلا رجعة.
   // التوجيه لـ"🔄 عكس" بدلاً منه (يحافظ على القيد الأصلي ويضيف قيداً عكسياً صحيحاً).
@@ -4316,7 +4320,8 @@ export async function deleteJEEntry(entryNo) {
       if (!delRes.ok && delRes.status !== 404) throw new Error('فشل الحذف: '+await delRes.text());
       await logAudit('DELETE','journal_entries', group.file_no||null, { entry_no:entryNo, desc:group.desc, totalDr:group.totalDr }, null);
       toast(`✅ تم حذف القيد ${entryNo}`,'ok');
-      await loadJEManager();
+      if (opts && typeof opts.onDeleted === 'function') await opts.onDeleted();
+      else await loadJEManager();
     } catch(e) { toast('خطأ: '+e.message,'err'); }
   });
 }

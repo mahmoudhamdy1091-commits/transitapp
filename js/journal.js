@@ -596,6 +596,19 @@ export function _jEdit(btn) {
   editJournalEntry(p.dataset.etype || '', null, p.dataset.fno || '');
 }
 
+// حذف قيد من شاشة اليومية مباشرة — بيستخدم نفس منطق deleteJEEntry (operations.js)
+// لكن بمجموعة بيانات جاهزة من journalState.entries بدل jeMgrState (مش متملية غير
+// لما شاشة "دفتر القيود" اتفتحت فعلاً)، وبتحديث اليومية بعد الحذف بدل دفتر القيود.
+export function _jDelete(btn) {
+  const p = btn.closest('.j-entry-actions') || btn.parentElement;
+  const entryNo = p.dataset.eno;
+  if (!entryNo) { toast('لا يوجد رقم قيد لهذا العنصر','err'); return; }
+  const entry = (journalState.entries || []).find(e => e.entryNo === entryNo);
+  const group = entry ? entry.raw : null;
+  if (!group) { toast('تعذر العثور على بيانات القيد — أعد تحميل الصفحة وحاول تاني','err'); return; }
+  deleteJEEntry(entryNo, { group, onDeleted: loadJournal });
+}
+
 // ════════════════════════════════════════
 // JOURNAL SALES DETAIL — نفس شكل جدول المبيعات جوا الملف
 // ════════════════════════════════════════
@@ -697,6 +710,6 @@ Object.assign(window, {
   journalState, typeLabels,
   showJournal, setJournalPeriod, getJournalDateRange, loadJournal, renderJournalKpis,
   filterJournalByType, renderJournalEntries, _extractInvToken, _renderSingleJournalEntry,
-  _renderGroupedSaleEntries, genSeqRef, exportCSV, _jEdit, _loadJournalSalesDetail,
+  _renderGroupedSaleEntries, genSeqRef, exportCSV, _jEdit, _jDelete, _loadJournalSalesDetail,
   _excludeReversalPairs,
 });
