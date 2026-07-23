@@ -2114,10 +2114,14 @@
             <span style="font-size:10px;background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-weight:700">🔄 تلقائي</span>
           </label>
           <div style="display:flex;gap:6px">
-            <input type="text" id="sale-invNo" placeholder="INV-BOX-001-001" style="direction:ltr;flex:1">
+            <input type="text" id="sale-invNo" placeholder="INV-BOX-001-001" readonly
+              title="رقم مُولَّد تلقائياً — لا يمكن تعديله يدوياً، استخدم 🔄 لتوليد رقم جديد"
+              style="direction:ltr;flex:1;opacity:.7;cursor:not-allowed;background:var(--card2)">
             <button type="button" onclick="regenInvNo()" title="توليد رقم جديد"
               style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;cursor:pointer;font-size:13px;flex-shrink:0">🔄</button>
           </div>
+          <input type="text" id="sale-invRef" placeholder="مرجع/ملاحظة إضافية (اختياري) — مثال: رقم فاتورة داخلي للعميل"
+            style="width:100%;margin-top:6px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:11px;box-sizing:border-box">
         </div>
         <div class="field">
           <label>تاريخ الفاتورة / Date *</label>

@@ -1241,6 +1241,7 @@ export async function openSaleModal(fileNoOverride = null) {
   // Reset
   el('sale-date').value  = today();
   el('sale-notes').value = '';
+  if (el('sale-invRef')) el('sale-invRef').value = '';
   el('sale-customer').value = '';
   el('saleError').style.display = 'none';
   el('saleTotalDisplay').textContent = '0.000';
@@ -1286,8 +1287,10 @@ export async function onSaleFileChange(fn) {
 
 export async function loadAvailableVehicles(fn, sys) {
   const vehicles = await apiGetAll('vehicles', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
-  const sales    = await apiGetAll('sales', { select:'vin', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
-  const soldVins = new Set((sales||[]).map(s=>s.vin).filter(Boolean));
+  const sales    = await apiGetAll('sales', { select:'vin,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
+  // ✅ سيارة بيعها الوحيد مُلغى (voided) تُعتبر متاحة مرة أخرى — استبعاد voided فقط
+  // من "مباعة" (isVisible: كل شيء إلا voided، تعامل null القديمة كمباعة كالمعتاد)
+  const soldVins = new Set((sales||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
   return (vehicles||[]).filter(v=>!soldVins.has(v.vin));
 }
 
@@ -1522,7 +1525,12 @@ export async function submitSale() {
   const invNo    = el('sale-invNo').value.trim();
   const customer = el('sale-customer')?.value?.trim() || '';
   const date     = el('sale-date').value;
-  const notes    = el('sale-notes').value.trim();
+  // ✅ رقم الفاتورة (sale-invNo) بقى للقراءة فقط (readonly) — لا يمكن الكتابة فوقه
+  // بالخطأ (حادثة BOX-138: كتابة يدوية لرقم "70700" بدل الرقم المولّد تلقائياً
+  // هي سبب بيع نفس الشاصيات مرتين). أي مرجع/ملاحظة إضافية يريدها المستخدم
+  // تُكتب في حقل منفصل (sale-invRef) وتُلحَق بملاحظات الفاتورة دون المساس بـinv_no.
+  const invRef   = el('sale-invRef')?.value?.trim() || '';
+  const notes    = [el('sale-notes').value.trim(), invRef ? `مرجع: ${invRef}` : ''].filter(Boolean).join(' | ');
 
   if (!fn)       { showFieldErr('saleError','يرجى اختيار رقم الملف'); return; }
   if (!customer) { showFieldErr('saleError','يرجى اختيار العميل'); return; }
@@ -1576,6 +1584,29 @@ export async function submitSale() {
       return;
     }
   } catch(e) { console.warn('duplicate invoice check:', e.message); }
+
+  // ── منع التكرار: تحقق من عدم بيع نفس الشاصي (VIN) مسبقاً تحت فاتورة أخرى ──
+  // فحص رقم الفاتورة وحده لا يكفي — نفس الشاصي ممكن يُباع مرتين تحت رقمي فاتورة
+  // مختلفين (حادثة فعلية: BOX-138 بتاريخ 2026-07-23 — نفس 7 شاصيات بيعت مرتين،
+  // مرة كـINV-BOX-138-004 ومرة أخرى كفاتورة "70700"). استثناء voided فقط —
+  // بيع مُلغى لا يمنع إعادة بيع حقيقية لنفس الشاصي.
+  try {
+    const vins = saleItems.map(i=>i.vin).filter(Boolean);
+    if (vins.length) {
+      const existingVinSales = await apiGetAll('sales', {
+        select:'vin,inv_no,post_status', system_type:`eq.${state.system}`, file_no:`eq.${fn}`,
+        vin:`in.(${vins.join(',')})`,
+      });
+      const conflicts = (existingVinSales||[])
+        .filter(isVisible) // استبعاد voided
+        .filter(s => !(el('saleSubmitBtn')._editMode && s.inv_no === invNo)); // استبعاد فاتورة التعديل الحالية نفسها
+      if (conflicts.length) {
+        const list = conflicts.map(c => `${c.vin} (فاتورة ${c.inv_no||'—'})`).join('، ');
+        showFieldErr('saleError', `⚠️ السيارة/السيارات التالية مباعة مسبقاً ولا يمكن بيعها مرة أخرى: ${list}`);
+        return;
+      }
+    }
+  } catch(e) { console.warn('duplicate vin check:', e.message); }
 
   const totalPrice = saleItems.reduce((s,i)=>s+i.price,0);
   const grandTotal = totalPrice + extraTotal; // إجمالي شامل المصاريف الإضافية

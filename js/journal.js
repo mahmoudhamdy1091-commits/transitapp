@@ -126,6 +126,11 @@ export async function loadJournal() {
       };
     }).sort((a,b) => (b.date||'').localeCompare(a.date||''));
 
+    // ✅ journalState.entries تبقى كاملة بلا فلترة — عليها تعتمد كروت KPI ولوحة
+    // "عرض التفاصيل" عند الضغط على كارت (filterJournalByType)، ولازم تطابق نفس
+    // الإجمالي المعروض في الكارت. فلتر استبعاد أزواج (قيد أصلي + قيد عكسه) يُطبَّق
+    // فقط عند نقطة العرض في renderJournalEntries() (القائمة الزمنية) وshowJournalReport()
+    // (تقرير اليومية) — أي view آخر يستخدم journalState.entries لا يتأثر.
     journalState.entries = entries;
     // ✅ حفظ نطاق التاريخ الفعلي لهذه البيانات حتى يطابقه تقرير الطباعة دائماً
     journalState.loadedFrom = from;
@@ -312,7 +317,10 @@ export function filterJournalByType(filterVal, key) {
 
 export function renderJournalEntries() {
   const typeFilter = el('jTypeFilter')?.value || 'all';
-  let entries = journalState.entries;
+  // ✅ فلتر عرض فقط لهذه القائمة الزمنية — يستبعد أزواج (قيد أصلي + قيد عكسه)
+  // (voided بقيد عكسي). journalState.entries نفسها تبقى كاملة (تعتمد عليها
+  // كروت KPI ولوحة "عرض التفاصيل" — انظر التعليق في loadJournal أعلاه).
+  let entries = _excludeReversalPairs(journalState.entries);
   if (typeFilter === 'expense') {
     // مصاريف الصفقات + المصاريف التشغيلية معاً
     entries = entries.filter(e => e.type === 'expense' || e.type === 'opex');
@@ -391,6 +399,75 @@ export function renderJournalEntries() {
 export function _extractInvToken(desc) {
   const m = (desc||'').match(/INV-[\s\S]*?(?=\s—|$)/);
   return m ? m[0].trim() : null;
+}
+
+// ════════════════════════════════════════════════════════════════
+// استبعاد أزواج (قيد أصلي + قيد عكسه) من عرض اليومية/تقريرها فقط —
+// عرض فقط، لا تعديل على journal_entries ولا على دفتر الأستاذ/الأرصدة.
+//
+// لا يوجد عمود ربط مباشر (reversed_by/reverses) يُعبّأ من أي مسار عكس في
+// التطبيق حتى الآن — الإسناد هنا بأفضل مجهود متاح:
+//  Tier 1 (موثوق): ref_id — voidTransaction (تحصيل/دفعة/مصروف/صرف شريك)
+//    وvoidPurchaseOrder يمرّرون نفس refId للقيد الأصلي وقيد عكسه، فنطابق به.
+//  Tier 2: البيع (je_sale/voidSaleInvoice لا يستخدمان ref_id إطلاقاً) —
+//    مطابقة نصية برقم الفاتورة (INV-...) المستخرج من الوصف + رقم الملف.
+//  Tier 3: القيد اليدوي المُعكوس عبر reverseManualJE — "عكس قيد {entry_no}".
+//
+// أي قيد ref_table='reversal' يُستبعد دائماً (ليس "نشاطاً" قائماً بذاته)،
+// وإن أمكن تحديد القيد الأصلي المقابل له ضمن نفس البيانات المحمّلة يُستبعد معه.
+// ════════════════════════════════════════════════════════════════
+export function _excludeReversalPairs(entries) {
+  const reversals = entries.filter(e => e.raw?.ref_table === 'reversal');
+  if (!reversals.length) return entries;
+
+  const toExclude = new Set(reversals.map(e => e.entryNo));
+
+  const REF_ID_SOURCE = [
+    { re:/^عكس تحصيل/,    type:'collection' },
+    { re:/^عكس دفعة/,     type:'payment'    },
+    { re:/^عكس مصروف/,    type:'expense'    },
+    { re:/^عكس صرف شريك/, type:'payout'     },
+    { re:/^عكس شراء/,     type:'purchase'   },
+  ];
+
+  reversals.forEach(rev => {
+    const desc = rev.title || '';
+
+    // Tier 1 — ref_id مباشر
+    if (rev.refId) {
+      const src = REF_ID_SOURCE.find(s => s.re.test(desc));
+      if (src) {
+        entries.forEach(e => {
+          if (e.type === src.type && e.refId === rev.refId) toExclude.add(e.entryNo);
+        });
+        return;
+      }
+    }
+
+    // Tier 2 — عكس بيع (فاتورة كاملة) — لا ref_id، مطابقة برقم الفاتورة + الملف
+    if (/^عكس (بيع فاتورة|\+ حذف فاتورة)/.test(desc)) {
+      const token = _extractInvToken(desc);
+      if (token) {
+        entries.forEach(e => {
+          if (e.type === 'sale' && e.fileNo === rev.fileNo && _extractInvToken(e.title) === token) {
+            toExclude.add(e.entryNo);
+          }
+        });
+      }
+      return;
+    }
+
+    // Tier 3 — عكس قيد يدوي: "عكس قيد {entry_no}"
+    const manualMatch = desc.match(/^عكس قيد (.+)$/);
+    if (manualMatch) {
+      const targetNo = manualMatch[1].trim();
+      entries.forEach(e => {
+        if (e.type === 'manual' && e.entryNo === targetNo) toExclude.add(e.entryNo);
+      });
+    }
+  });
+
+  return entries.filter(e => !toExclude.has(e.entryNo));
 }
 
 export function _renderSingleJournalEntry(e) {
@@ -621,4 +698,5 @@ Object.assign(window, {
   showJournal, setJournalPeriod, getJournalDateRange, loadJournal, renderJournalKpis,
   filterJournalByType, renderJournalEntries, _extractInvToken, _renderSingleJournalEntry,
   _renderGroupedSaleEntries, genSeqRef, exportCSV, _jEdit, _loadJournalSalesDetail,
+  _excludeReversalPairs,
 });

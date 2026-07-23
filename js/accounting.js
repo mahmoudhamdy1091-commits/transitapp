@@ -1362,7 +1362,9 @@ export function showJournalReport() {
   // إذا تغيّر فلتر الفترة بعد التحميل أو قبل اكتماله
   const from = journalState.loadedFrom || today();
   const to   = journalState.loadedTo   || today();
-  const rawEntries = journalState.entries || [];
+  // ✅ فلتر عرض فقط لهذا التقرير — يستبعد أزواج (قيد أصلي + قيد عكسه) الملغاة،
+  // بلا لمس journalState.entries نفسها (تعتمد عليها كروت KPI وعرض تفاصيلها)
+  const rawEntries = _excludeReversalPairs(journalState.entries || []);
 
   if (!rawEntries.length) { toast('لا توجد بيانات للتقرير','err'); return; }
 

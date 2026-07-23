@@ -1248,10 +1248,28 @@ export async function voidSaleInvoice(invNo, fileNo) {
         }
         // void السجلات
         await apiPatch('sales', { system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` }, { post_status:'voided' });
-        try { await apiPatch('collections', { system_type:`eq.${sys}`, inv_no:`eq.${invNo}` }, { post_status:'voided' }); } catch(e) {}
+        // ✅ عكس قيود التحصيلات المرحّلة/المدفوعة المرتبطة بهذه الفاتورة قبل إلغائها —
+        // وإلا يبقى قيدها (Dr نقد/بنك، Cr ذمم عملاء) حياً في journal_entries رغم
+        // إلغاء فاتورة البيع نفسها (حادثة فعلية: BOX-138 بتاريخ 2026-07-23 — فاتورة
+        // "70700" أُلغيت وعُكس قيد البيع، لكن قيد التحصيل التابع لها بقي بلا عكس).
+        // نستخدم نفس آلية voidTransaction المستخدمة في deleteSaleInvoice أدناه.
+        let colReverseFailures = 0;
+        try {
+          const relatedCols = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, inv_no:`eq.${invNo}` });
+          for (const c of (relatedCols||[])) {
+            if (c.post_status === 'voided') continue;
+            if (c.paid_date && c.post_status === 'posted') {
+              try { await voidTransaction('collection', c, true); }
+              catch(e) { colReverseFailures++; console.warn('voidSaleInvoice: فشل عكس قيد تحصيل مرتبط', c.id, e.message); }
+            } else {
+              try { await apiPatch('collections', { id:`eq.${c.id}` }, { post_status:'voided' }); } catch(e) {}
+            }
+          }
+        } catch(e) { console.warn('voidSaleInvoice: فشل جلب التحصيلات المرتبطة:', e.message); }
         await logAudit('VOID','sales', fileNo, {inv_no:invNo}, {voided_at:today()}, `إلغاء فاتورة بقيد عكسي`);
         invalidateCache();
         toast(`✅ تم إلغاء فاتورة ${invNo} بقيد عكسي`, 'ok');
+        if (colReverseFailures > 0) toast(`⚠️ تعذّر عكس قيد ${colReverseFailures} تحصيل مرتبط بهذه الفاتورة — راجعها يدوياً`, 'warn');
         await loadSalesTab(fileNo, sys);
         if (state.currentTab === 5) loadCollectionsTab(fileNo, sys);
         if (state.currentTab === 0) loadSummaryTab(fileNo, sys);
