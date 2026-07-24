@@ -70,8 +70,13 @@ export function updateAdminPostToggleUI() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// IN-PLACE JE UPDATE HELPER
-// يُحدِّث أسطر القيد الأصلي مباشرة دون إنشاء قيد جديد
+// IN-PLACE JE UPDATE HELPER — (الاسم قديم، لم يعد "in place" فعلياً)
+// القيد المُرحَّل لا يُعدَّل مطلقاً بعد اليوم (مبدأ ثبات القيد المُرحَّل):
+// بدل الـPATCH المباشر على الصف القديم، الدالة تعكس القيد القديم بقيمه
+// الأصلية بالضبط (Dr↔Cr معكوسة، بنفس أسلوب voidTransaction) ثم تُرحِّل قيداً
+// جديداً صحيحاً بنفس أسطر/حسابات القيد القديم بعد تطبيق التعديل عليها —
+// بنفس ref_table/ref_id الأصليين حتى يظل قابلاً للتعديل مرة أخرى لاحقاً
+// (كل استدعاء يجد أحدث قيد posted بنفس ref_table/ref_id عبر order:id.desc).
 // الاستخدام: updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch })
 // oldCost/newCost (اختياري): لقيود متعددة المبالغ (مثل البيع: إيراد + تكلفة) — يُحدَّث
 // كل زوج بمبلغه الخاص فقط (مطابقة بالقيمة الفعلية، لا "أي سطر موجب") حتى لا يُكتب
@@ -120,36 +125,83 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
     }
     if (!entryNo) return;
 
-    // جيب كل أسطر هذا القيد بالـ entry_no
+    // جيب كل أسطر هذا القيد بالـ entry_no — نحتاج account_code/account_name/description
+    // كاملة الآن (لا فقط dr/cr/contact) عشان نعيد ترحيلها كقيد جديد، مش نُعدِّلها في مكانها
     const allLines = await apiGetAll('journal_entries', {
-      select: 'id,dr_amount,cr_amount,contact_name,entry_date',
+      select: 'id,account_code,account_name,contact_name,dr_amount,cr_amount,entry_date,description',
       system_type: `eq.${sys}`,
       entry_no: `eq.${entryNo}`,
     });
+    if (!allLines?.length) return;
 
-    for (const line of (allLines||[])) {
-      const patch = {};
+    // ── ابنِ أسطر القيد الجديد الصحيح: نفس حسابات القيد القديم بالضبط، بعد
+    //    تطبيق التعديل على كل سطر بمطابقة القيمة الفعلية (نفس منطق المطابقة
+    //    القديم) — لا "أي سطر موجب"، حتى لا يُكتب مبلغ الإيراد فوق سطر التكلفة
+    let anyLineChanged = false;
+    const correctedLines = allLines.map(line => {
       const dr = +line.dr_amount||0, cr = +line.cr_amount||0;
-      // ✅ مطابقة بالقيمة الفعلية لكل سطر — لا "أي سطر موجب" — حتى لا يُكتب مبلغ
-      // الإيراد فوق سطر التكلفة (أو العكس) في قيود متعددة المبالغ مثل البيع
+      let newDr = dr, newCr = cr, contact = line.contact_name || null;
       if (amountChanged) {
-        if (Math.abs(dr - (+oldAmount||0)) < 0.001 && dr > 0) patch.dr_amount = +newAmount;
-        if (Math.abs(cr - (+oldAmount||0)) < 0.001 && cr > 0) patch.cr_amount = +newAmount;
+        if (Math.abs(dr - (+oldAmount||0)) < 0.001 && dr > 0) { newDr = +newAmount; anyLineChanged = true; }
+        if (Math.abs(cr - (+oldAmount||0)) < 0.001 && cr > 0) { newCr = +newAmount; anyLineChanged = true; }
       }
       if (costChanged) {
-        if (Math.abs(dr - (+oldCost||0)) < 0.001 && dr > 0) patch.dr_amount = +newCost;
-        if (Math.abs(cr - (+oldCost||0)) < 0.001 && cr > 0) patch.cr_amount = +newCost;
+        if (Math.abs(dr - (+oldCost||0)) < 0.001 && dr > 0) { newDr = +newCost; anyLineChanged = true; }
+        if (Math.abs(cr - (+oldCost||0)) < 0.001 && cr > 0) { newCr = +newCost; anyLineChanged = true; }
       }
-      if (contactChanged && contactPatch && (line.contact_name || (+line.cr_amount||0) > 0)) {
-        patch.contact_name = contactPatch;
-      }
-      // ✅ مزامنة تاريخ القيد مع تاريخ العملية الجديد (يشمل كل أسطر القيد)
-      if (dateChanged && line.entry_date !== newDate) {
-        patch.entry_date = newDate;
-      }
-      if (Object.keys(patch).length) {
-        await apiPatch('journal_entries', { id: `eq.${line.id}` }, patch);
-      }
+      if (contactChanged && contactPatch && (line.contact_name || cr > 0)) { contact = contactPatch; anyLineChanged = true; }
+      return {
+        acc: line.account_code, name: line.account_name,
+        dr: newDr, cr: newCr, contact,
+        desc: line.description || null,
+      };
+    });
+    if (!anyLineChanged && !dateChanged) return;   // لا تغيير فعلي على أي سطر — لا داعي لقيدين جديدين
+
+    const today_     = today();
+    const entryDate  = dateChanged ? newDate : (allLines[0].entry_date || today_);
+    const fallbackDesc = `تصحيح قيد ${refTable} — ملف ${fileNo||'—'}`;
+
+    // ── 1. ترحيل القيد الجديد الصحيح أولاً (قبل عكس القديم) ──
+    // ✅ الترتيب مقصود: لو رحّلنا العكس أولاً ثم فشل ترحيل الجديد (خطأ شبكة/عدم
+    // توازن/إلخ)، القيمة المحاسبية للعملية تتصفّر فعليًا وبصمت (القديم اتعكس،
+    // ولا بديل حل محله) — خطر تصفير صامت. بالترتيب العكسي (الجديد أولاً): لو
+    // فشل ترحيل الجديد، القديم يبقى كما هو (قيمة قديمة لكن غير صفر — لا فقدان
+    // بيانات، والخطأ يُسجَّل زي ما كان). لو نجح الجديد وفشل عكس القديم (الخطوة
+    // 2 تحت)، النتيجة ازدواج مكتشَف بسهولة (الرصيد يبقى مضاعفاً لا مصفَّراً)
+    // وله تنبيه صريح تحت بدل الابتلاع الصامت.
+    await postDoubleEntry({
+      sys, date: entryDate, fileNo,
+      refTable, refId,
+      desc: fallbackDesc,
+      lines: correctedLines,
+    });
+
+    // ── 2. عكس القيد القديم بالكامل بقيمه الأصلية (Dr↔Cr معكوسة) — بنفس أسلوب
+    //    voidTransaction، لكن الوصف يبدأ بـ"عكس تعديل" (لا "عكس" العادي) ويحمل
+    //    entry_no الصريح للقيد القديم المُعكوس — يستخدمه _excludeReversalPairs
+    //    (journal.js) ليُخفي هذا القيد بعينه فقط (لا مطابقة عبر ref_id: بعض
+    //    الأنواع مثل sales/operating_expenses ref_id فيها تاريخيًا null أو غير
+    //    متّسق مع القيمة المستخدمة هنا، فمطابقة ref_id كانت ستُبقي القيد القديم
+    //    ظاهراً "مكرراً" بجانب الجديد لهذين النوعين تحديداً)
+    const reversalLines = allLines.map(line => ({
+      acc: line.account_code, name: line.account_name,
+      dr: +line.cr_amount||0, cr: +line.dr_amount||0,
+      contact: line.contact_name || null,
+    }));
+    try {
+      await postDoubleEntry({
+        sys, date: today_, fileNo,
+        refTable: 'reversal', refId,
+        desc: `عكس تعديل ${refTable} — ملف ${fileNo||'—'} — تصحيح قيد ${entryNo}`,
+        lines: reversalLines,
+      });
+    } catch(revErr) {
+      // ✅ القيد الجديد اتُرحّل بنجاح لكن عكس القديم فشل — النتيجة ازدواج (قديم
+      // + جديد معاً)، لازم تنبيه صريح للمستخدم لأنه محتاج تنظيف يدوي فوري —
+      // لا يجوز ابتلاعه بصمت زي باقي أخطاء هذه الدالة
+      console.error(`updateJEInPlace [${refTable}]: فشل عكس القيد القديم بعد نجاح ترحيل الجديد — ازدواج محتمل في القيود:`, revErr.message);
+      toast(`⚠️ تم ترحيل التصحيح لكن فشل عكس القيد القديم (قيد ${entryNo}) — راجع اليومية يدوياً، قد يوجد قيد مكرر`, 'warn');
     }
   } catch(e) {
     console.warn(`updateJEInPlace [${refTable}]:`, e.message);

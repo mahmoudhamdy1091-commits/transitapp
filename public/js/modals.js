@@ -860,7 +860,14 @@ export async function submitEditFileFull() {
       }
     } catch(e) { console.warn('post-edit JE check:', e.message); }
 
-    await logAudit('EDIT','purchase_orders',oldFileNo,null,{newFileNo,supplier,finalTotal}, `تعديل سند الشراء ${oldFileNo}`);
+    // ✅ سجّل القيم القديمة الفعلية (لا null) — بدونها audit_log كان يفقد القيمة/المورد/دفعات
+    // الشركاء الأصلية عند التعديل، فيصير التتبّع وصفاً عاماً بلا قيمة إثباتية فعلية
+    await logAudit('EDIT','purchase_orders',oldFileNo,
+      { fileNo:oldFileNo, supplier:_originalPOSupplier, totalPurchase:_originalPOTotal,
+        partners:(_originalPartners||[]).map(p=>({name:p.name, share:p.share, paymentAmount:p.paymentAmount})) },
+      { fileNo:newFileNo, supplier, totalPurchase:finalTotal,
+        partners:partners.map(p=>({name:p.name, share:p.share, paid:p.paid})) },
+      `تعديل سند الشراء ${oldFileNo}`);
     await updateApprovalBadge();
 
     markSaving('newFileModal'); closeModal('newFileModal');
