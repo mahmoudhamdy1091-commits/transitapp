@@ -81,13 +81,38 @@ export async function loadJournal() {
       'operating_expenses': { type:'opex',        sign:-1, icon:'💼', color:'var(--purple)',  label:'مصروف تشغيلي'   },
       'manual':             { type:'manual',      sign: 0, icon:'✍️', color:'var(--text)',    label:'يدوي'           },
     };
+    // خريطة عكسية type→cfg — تُستخدم لتصنيف قيود العكس (ref_table='reversal')
+    // بنفس نوع العملية الأصلية بدل ما تقع كلها "يدوي" (غير محسوبة في أي كارت KPI)
+    const TYPE_CFG = {};
+    Object.values(RT).forEach(cfg => { TYPE_CFG[cfg.type] = cfg; });
+    const REVERSAL_TABLE_BY_NAME = {
+      purchase_orders:'purchase', sales:'sale', collections:'collection',
+      payments:'payment', expenses:'expense', partner_payouts:'payout', operating_expenses:'opex',
+    };
+    // قيود العكس لا نوع مصدر مباشر لها (ref_table='reversal' موحّد للكل) — نستنتج
+    // نوعها الحقيقي من نص البيان بنفس الأنماط المستخدمة في _excludeReversalPairs
+    function _resolveReversalType(desc) {
+      const d = desc || '';
+      const editMatch = d.match(/^عكس تعديل (\S+)/);
+      if (editMatch && REVERSAL_TABLE_BY_NAME[editMatch[1]]) return REVERSAL_TABLE_BY_NAME[editMatch[1]];
+      if (/^عكس (بيع فاتورة|\+ حذف فاتورة)/.test(d)) return 'sale';
+      if (/^عكس تحصيل/.test(d))    return 'collection';
+      if (/^عكس دفعة/.test(d))     return 'payment';
+      if (/^عكس مصروف/.test(d))    return 'expense';
+      if (/^عكس صرف شريك/.test(d)) return 'payout';
+      if (/^عكس شراء/.test(d))     return 'purchase';
+      return 'manual'; // عكس قيد يدوي، أو نمط غير معروف — يبقى يدوي كما كان
+    }
 
     // ── تجميع بـ entry_no ──
     const grouped = {};
     jeRows.forEach(r => {
       const no = r.entry_no || `single_${r.id}`;
       if (!grouped[no]) {
-        const cfg = RT[r.ref_table] || RT['manual'];
+        let cfg = RT[r.ref_table] || RT['manual'];
+        if (r.ref_table === 'reversal') {
+          cfg = TYPE_CFG[_resolveReversalType(r.description)] || RT['manual'];
+        }
         grouped[no] = { no, date: r.entry_date, desc: r.description,
           file_no: r.file_no, ref_table: r.ref_table, ref_id: r.ref_id,
           type: cfg.type, sign: cfg.sign, icon: cfg.icon,
@@ -144,6 +169,16 @@ export async function loadJournal() {
   }
 }
 
+// صافي مبلغ القيد لأغراض إجمالي الكارت: قيد العكس (ref_table='reversal') يُطرح
+// بدل ما يُضاف، عشان يصافي القيد الأصلي في نفس الكارت بدل ما يضخّمه. استثناء
+// 'sale': قيمتها أصلاً محسوبة بصافي (دائن-مدين) على حساب 4xxx (انظر loadJournal)
+// فتُعطي إشارة سالبة طبيعية لقيود عكس البيع من غير الحاجة لهذه المعالجة —
+// طرحها مرة تانية هنا كان هيقلب إشارتها غلط (طرح سالب = جمع).
+export function _netKpiAmount(e) {
+  if (e.type !== 'sale' && e.raw?.ref_table === 'reversal') return -e.amount;
+  return e.amount;
+}
+
 export function renderJournalKpis(entries) {
   const groups = {
     purchase:   entries.filter(e=>e.type==='purchase'),
@@ -154,12 +189,12 @@ export function renderJournalKpis(entries) {
     payout:     entries.filter(e=>e.type==='payout'),
   };
   const totals = {
-    purchase:   groups.purchase.reduce((s,e)=>s+e.amount,0),
-    sale:       groups.sale.reduce((s,e)=>s+e.amount,0),
-    expenses:   groups.expenses.reduce((s,e)=>s+e.amount,0),
-    collection: groups.collection.reduce((s,e)=>s+e.amount,0),
-    payment:    groups.payment.reduce((s,e)=>s+e.amount,0),
-    payout:     groups.payout.reduce((s,e)=>s+e.amount,0),
+    purchase:   groups.purchase.reduce((s,e)=>s+_netKpiAmount(e),0),
+    sale:       groups.sale.reduce((s,e)=>s+_netKpiAmount(e),0),
+    expenses:   groups.expenses.reduce((s,e)=>s+_netKpiAmount(e),0),
+    collection: groups.collection.reduce((s,e)=>s+_netKpiAmount(e),0),
+    payment:    groups.payment.reduce((s,e)=>s+_netKpiAmount(e),0),
+    payout:     groups.payout.reduce((s,e)=>s+_netKpiAmount(e),0),
   };
   const config = [
     { key:'purchase', label:'مشتريات',    icon:'📋', color:'var(--accent)', filterVal:'purchase'   },
@@ -223,10 +258,14 @@ export function filterJournalByType(filterVal, key) {
   }
 
   // Build detail table
-  const entries = journalState.entries.filter(e => {
+  // allEntries: كل قيود النوع بما فيها قيود العكس (لحساب الإجمالي الصافي الصحيح)
+  // listEntries: بلا قيود العكس (المعروضة كصفوف — عرض قيد عكس منفرد كصف عادي
+  // في جدول تفصيلي بيربك، والإجمالي أعلاه أصلاً بيعكس أثره)
+  const allEntries  = journalState.entries.filter(e => {
     if (key === 'expenses') return e.type==='expense'||e.type==='opex';
     return e.type === filterVal;
   });
+  const entries = allEntries.filter(e => e.raw?.ref_table !== 'reversal');
 
   const configs = {
     purchase:   { color:'var(--accent)',  title:'📋 تفاصيل المشتريات' },
@@ -237,7 +276,7 @@ export function filterJournalByType(filterVal, key) {
     payout:     { color:'var(--purple)',  title:'👥 تفاصيل صرف الشركاء' },
   };
   const cfg   = configs[key] || { color:'var(--text)', title:'تفاصيل' };
-  const total = entries.reduce((s,e)=>s+e.amount,0);
+  const total = allEntries.reduce((s,e)=>s+_netKpiAmount(e),0);
 
   // أعمدة مخصصة حسب النوع
   const isPurchase = key === 'purchase';
@@ -826,5 +865,5 @@ Object.assign(window, {
   showJournal, setJournalPeriod, getJournalDateRange, loadJournal, renderJournalKpis,
   filterJournalByType, renderJournalEntries, _extractInvToken, _renderSingleJournalEntry,
   _renderGroupedSaleEntries, genSeqRef, exportCSV, _jEdit, _jDelete, _loadJournalSalesDetail,
-  _excludeReversalPairs, openJournalEntryDetail, openFullFileFromJEDetail,
+  _excludeReversalPairs, openJournalEntryDetail, openFullFileFromJEDetail, _netKpiAmount,
 });

@@ -381,8 +381,10 @@ export async function reverseManualJE(entryNo) {
   // ✅ حارس دفاعي (أفضل مجهود، مطابقة نصية — لا يوجد ref_id حقيقي يربط
   // القيد بعكسه هنا، انظر project_dual_je_audit Case 1): يمنع عكس نفس
   // القيد مرتين لو القيد العكسي السابق لسه موجود بنفس وصف "عكس قيد {entryNo}"
+  // ✅ ref_table:'eq.reversal' (مش 'manual') — يطابق refTable الفعلي بالأسفل،
+  // بعد تصحيح تناقض كان يخلي هذا القيد يفلت من _excludeReversalPairs (journal.js)
   const already = await apiGetAll('journal_entries', {
-    select: 'id', system_type: `eq.${sys}`, ref_table: 'eq.manual',
+    select: 'id', system_type: `eq.${sys}`, ref_table: 'eq.reversal',
     description: `ilike.*عكس قيد ${entryNo}*`, limit: 1,
   });
   if (already?.length) throw new Error('هذا القيد تم عكسه بالفعل');
@@ -397,9 +399,11 @@ export async function reverseManualJE(entryNo) {
     contact: l.contact_name || null,
   }));
 
+  // ✅ refTable:'reversal' (كان 'manual' سابقاً — تناقض مع كل دوال العكس الأخرى)
+  // يخليه يُصنَّف ويُستبعد صح في journal.js (loadJournal/_excludeReversalPairs)
   await postDoubleEntry({
     sys, date: date_, fileNo,
-    refTable: 'manual', refId: null,
+    refTable: 'reversal', refId: null,
     desc: `عكس قيد ${entryNo}`,
     lines: reversalLines,
   });

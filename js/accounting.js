@@ -1407,12 +1407,14 @@ export function showJournalReport() {
   };
 
   // Group by type
+  // ✅ _netKpiAmount (journal.js): طبقة حماية إضافية لو مطابقة _excludeReversalPairs
+  // النصية فشلت تخفي أي زوج (أصلي+عكسه) — يمنع احتساب قيد العكس مرتين بدل صفر
   const groups = {};
   entries.forEach(e => {
     const t = e.type || 'أخرى';
     if (!groups[t]) groups[t] = { count:0, total:0 };
     groups[t].count++;
-    groups[t].total += e.amount || 0;
+    groups[t].total += _netKpiAmount(e);
   });
 
   const summaryRows = Object.entries(groups).map(([type,g]) =>
