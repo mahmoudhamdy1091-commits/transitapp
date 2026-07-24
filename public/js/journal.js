@@ -512,7 +512,7 @@ export function _renderSingleJournalEntry(e) {
               ${e.status==='draft'?'<span class="draft-badge" style="margin-right:6px">مسودة</span>':''}
             </div>
             <div class="j-entry-meta">
-              <span style="background:var(--card2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">${cfg.label}</span>
+              <span style="background:var(--card2);padding:2px 8px;border-radius:10px;font-size:13px;font-weight:700">${cfg.label}</span>
               ${e.postedAt ? `<span style="color:var(--text2)">🕐 ${fmtTime(e.postedAt)}</span>` : ''}
               ${e.fileNo ? `<span style="font-family:monospace;color:var(--accent)">📂 ${e.fileNo}</span>` : ''}
               ${lineCount ? `<span style="color:var(--text2)">${lineCount} سطر</span>` : ''}
@@ -551,8 +551,8 @@ export function _renderGroupedSaleEntries(items, key, typeConfig) {
           <div class="j-entry-body">
             <div class="j-entry-title">${token}</div>
             <div class="j-entry-meta">
-              <span style="background:var(--card2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">${cfg.label}</span>
-              <span style="background:var(--accent-dim);color:var(--accent);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">📑 مجمّع — ${items.length} قيود</span>
+              <span style="background:var(--card2);padding:2px 8px;border-radius:10px;font-size:13px;font-weight:700">${cfg.label}</span>
+              <span style="background:var(--accent-dim);color:var(--accent);padding:2px 8px;border-radius:10px;font-size:13px;font-weight:700">📑 مجمّع — ${items.length} قيود</span>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:6px">
