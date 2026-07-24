@@ -497,7 +497,10 @@ export function _renderSingleJournalEntry(e) {
     opex:       { icon:'💼', bg:'var(--purple-dim)',  label:'مصروف عام',         amountColor:'var(--purple)' },
   };
   const cfg = typeConfig[e.type] || { icon:'📌', bg:'var(--card2)', label:e.type, amountColor:'var(--text)' };
-  const metaFiltered = (e.meta||[]).filter(Boolean).join(' · ');
+  // البيان الأصلي غالباً متعدد الأسطر (بيان + "ملف ..." مكرر) — نعرض السطر الأول فقط
+  // في الصف؛ التفاصيل الكاملة (وأسطر القيد بالحساب) تظهر في كارت التفاصيل عند الضغط.
+  const titleLine = (e.title||'—').split('\n').map(s=>s.trim()).filter(Boolean)[0] || '—';
+  const lineCount = (e.raw?.lines || []).length;
   const amountSign = (e.sign < 0 || e.amount < 0) ? '-' : '+';
   return `
         <div class="j-entry j-type-${e.type}${e.status==='draft'?' is-draft':''}" style="cursor:pointer"
@@ -505,13 +508,14 @@ export function _renderSingleJournalEntry(e) {
           <div class="j-entry-icon" style="background:${cfg.bg}">${cfg.icon}</div>
           <div class="j-entry-body">
             <div class="j-entry-title">
-              ${e.title}
+              ${titleLine}
               ${e.status==='draft'?'<span class="draft-badge" style="margin-right:6px">مسودة</span>':''}
             </div>
             <div class="j-entry-meta">
               <span style="background:var(--card2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">${cfg.label}</span>
               ${e.postedAt ? `<span style="color:var(--text2)">🕐 ${fmtTime(e.postedAt)}</span>` : ''}
-              ${metaFiltered}
+              ${e.fileNo ? `<span style="font-family:monospace;color:var(--accent)">📂 ${e.fileNo}</span>` : ''}
+              ${lineCount ? `<span style="color:var(--text2)">${lineCount} سطر</span>` : ''}
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:6px">
@@ -649,51 +653,74 @@ export function openJournalEntryDetail(entryNo) {
   const g   = entry.raw || {};
   const cfg = _JED_TYPE_CFG[entry.type] || { icon:'📌', color:'var(--text)' };
 
-  _jedCurrentFileNo = entry.fileNo || null;
-  el('jed-icon').textContent = cfg.icon;
-  el('jed-icon').style.background = cfg.color + '22';
-  el('jed-title').textContent = entry.entryNo || 'تفاصيل القيد';
+  // البيان الأصلي غالباً متعدد الأسطر (بيان + "ملف ..." + رقم الملف مكرر) —
+  // نعرض السطر الأول فقط كعنوان، والباقي بيانات منفصلة (ملف/تاريخ) أوضح من تكديسها كلها معاً.
+  const descLines = (entry.title || '—').split('\n').map(s => s.trim()).filter(Boolean);
+  const mainDesc   = descLines[0] || '—';
 
-  const fullFileBtn = el('jed-fullfile-btn');
+  _jedCurrentFileNo = entry.fileNo || null;
+  el('jqd-icon').textContent = cfg.icon;
+  el('jqd-icon').style.background = cfg.color + '22';
+  el('jqd-title').textContent = entry.entryNo || 'تفاصيل القيد';
+
+  const fullFileBtn = el('jqd-fullfile-btn');
   if (fullFileBtn) fullFileBtn.style.display = entry.fileNo ? '' : 'none';
 
-  const linesHtml = (g.lines || []).map(l => {
-    const isDr = (+l.dr_amount||0) > 0;
-    const side = isDr
-      ? `<span style="color:var(--green);font-weight:700">مدين ${fmt(l.dr_amount)}</span>`
-      : `<span style="color:var(--red);font-weight:700">دائن ${fmt(l.cr_amount)}</span>`;
+  const lines = g.lines || [];
+  const totalDr = lines.reduce((s,l) => s + (+l.dr_amount||0), 0);
+  const totalCr = lines.reduce((s,l) => s + (+l.cr_amount||0), 0);
+  const balanced = Math.abs(totalDr - totalCr) < 0.01;
+
+  const linesHtml = lines.map((l, i) => {
+    const dr = +l.dr_amount || 0;
+    const cr = +l.cr_amount || 0;
     return `
-    <tr>
-      <td style="padding:7px 14px;font-family:monospace;color:var(--text2)">${l.account_code||''}</td>
-      <td style="padding:7px 14px">${l.account_name||'—'}${l.contact_name?` <span style="color:var(--text2);font-size:12px">— ${l.contact_name}</span>`:''}</td>
-      <td style="padding:7px 14px;text-align:left">${side}</td>
+    <tr style="${i % 2 ? 'background:var(--card2)' : ''}">
+      <td style="padding:9px 12px">
+        <div style="font-weight:700">${l.account_name||'—'}</div>
+        <div style="font-family:monospace;font-size:11px;color:var(--text2);margin-top:1px">${l.account_code||''}${l.contact_name?` · ${l.contact_name}`:''}</div>
+      </td>
+      <td style="padding:9px 12px;text-align:center;font-family:monospace;font-weight:700;color:var(--green)">${dr>0?fmt(dr):''}</td>
+      <td style="padding:9px 12px;text-align:center;font-family:monospace;font-weight:700;color:var(--red)">${cr>0?fmt(cr):''}</td>
     </tr>`;
   }).join('');
 
-  el('jed-body').innerHTML = `
-    <div style="background:${cfg.color}11;border:1px solid ${cfg.color}33;border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
-      <div>
-        <div style="font-size:13px;color:var(--text2)">${fmtDate(entry.date)}${entry.postedAt?` · 🕐 ${fmtTime(entry.postedAt)}`:''}</div>
-        <div style="font-size:14px;margin-top:2px">${entry.title||'—'}</div>
-        ${entry.fileNo?`<div style="font-size:13px;color:var(--accent);font-family:monospace;margin-top:2px">${entry.fileNo}</div>`:''}
+  el('jqd-body').innerHTML = `
+    <div style="background:${cfg.color}11;border:1px solid ${cfg.color}33;border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div style="font-size:15px;font-weight:700;line-height:1.5">${mainDesc}</div>
+        <div style="font-size:22px;font-weight:900;color:${cfg.color};font-family:monospace;white-space:nowrap">${fmt(Math.abs(entry.amount))}</div>
       </div>
-      <div style="font-size:22px;font-weight:900;color:${cfg.color};font-family:monospace">${fmt(Math.abs(entry.amount))}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;font-size:12px;color:var(--text2)">
+        <span>📅 ${fmtDate(entry.date)}${entry.postedAt?` · 🕐 ${fmtTime(entry.postedAt)}`:''}</span>
+        ${entry.fileNo?`<span style="background:var(--card2);border-radius:8px;padding:2px 9px;font-family:monospace;color:var(--accent);font-weight:700">📂 ${entry.fileNo}</span>`:''}
+      </div>
     </div>
-    <table class="data-table" style="font-size:13px;width:100%">
-      <thead><tr>
-        <td style="padding:6px 14px;color:var(--text2);font-size:12px">الحساب</td>
-        <td style="padding:6px 14px;color:var(--text2);font-size:12px">البيان</td>
-        <td style="padding:6px 14px;color:var(--text2);font-size:12px;text-align:left">القيمة</td>
-      </tr></thead>
+    <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px">🧾 أسطر القيد</div>
+    <table style="font-size:13px;width:100%;border-collapse:collapse;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+      <thead>
+        <tr style="background:var(--card2)">
+          <th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text2);font-weight:700">الحساب</th>
+          <th style="padding:8px 12px;text-align:center;font-size:11px;color:var(--green);font-weight:700">مدين</th>
+          <th style="padding:8px 12px;text-align:center;font-size:11px;color:var(--red);font-weight:700">دائن</th>
+        </tr>
+      </thead>
       <tbody>${linesHtml}</tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--border)">
+          <td style="padding:8px 12px;font-weight:900;font-size:12px">الإجمالي${balanced?' ✓ متوازن':''}</td>
+          <td style="padding:8px 12px;text-align:center;font-family:monospace;font-weight:900;color:var(--green)">${fmt(totalDr)}</td>
+          <td style="padding:8px 12px;text-align:center;font-family:monospace;font-weight:900;color:var(--red)">${fmt(totalCr)}</td>
+        </tr>
+      </tfoot>
     </table>`;
 
-  openModal('jeDetailModal');
+  openModal('jeQuickDetailModal');
 }
 
 export async function openFullFileFromJEDetail() {
   if (!_jedCurrentFileNo) return;
-  closeModal('jeDetailModal');
+  closeModal('jeQuickDetailModal');
   await openViewer(_jedCurrentFileNo);
 }
 

@@ -1094,25 +1094,25 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
 }
 .j-entry-body { flex: 1; min-width: 0; }
 .j-entry-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
 }
 .j-entry-meta {
   font-size: 12px;
   color: var(--text2);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 .j-entry-amount {
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 900;
   white-space: nowrap;
 }

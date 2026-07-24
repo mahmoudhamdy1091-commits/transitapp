@@ -1106,20 +1106,22 @@
         </div>
       </div>
 
-      <!-- JOURNAL ENTRY DETAIL CARD (اليومية — بديل عن فتح الملف مباشرة عند الضغط على العملية) -->
-      <div class="modal-overlay" id="jeDetailModal">
-        <div class="modal" style="max-width:600px">
+      <!-- JOURNAL ENTRY QUICK-VIEW CARD (اليومية — بديل عن فتح الملف مباشرة عند الضغط على العملية)
+           ملاحظة: اسم مودال مختلف عمداً عن jeDetailModal (js/accounting.js openJEDetail) لتفادي
+           تعارض id مكرر بين الاثنين — دول كارتين مختلفين لسياقين مختلفين (اليومية مقابل دفتر الأستاذ). -->
+      <div class="modal-overlay" id="jeQuickDetailModal">
+        <div class="modal" style="max-width:620px">
           <div class="modal-header">
-            <div class="modal-icon" id="jed-icon" style="background:var(--accent-dim)">📌</div>
-            <h3 id="jed-title">تفاصيل القيد</h3>
-            <button class="modal-close" onclick="closeModal('jeDetailModal')">✕</button>
+            <div class="modal-icon" id="jqd-icon" style="background:var(--accent-dim)">📌</div>
+            <h3 id="jqd-title">تفاصيل القيد</h3>
+            <button class="modal-close" onclick="closeModal('jeQuickDetailModal')">✕</button>
           </div>
           <div class="modal-body">
-            <div id="jed-body"></div>
+            <div id="jqd-body"></div>
           </div>
           <div class="modal-footer" style="justify-content:space-between">
-            <button class="btn btn-secondary btn-sm" id="jed-fullfile-btn" onclick="openFullFileFromJEDetail()">📂 فتح الملف الكامل</button>
-            <button class="btn btn-secondary" onclick="closeModal('jeDetailModal')">إغلاق</button>
+            <button class="btn btn-secondary btn-sm" id="jqd-fullfile-btn" onclick="openFullFileFromJEDetail()">📂 فتح الملف الكامل</button>
+            <button class="btn btn-secondary" onclick="closeModal('jeQuickDetailModal')">إغلاق</button>
           </div>
         </div>
       </div>
