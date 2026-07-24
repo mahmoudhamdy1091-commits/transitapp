@@ -209,6 +209,8 @@ export function renderTrialBalance() {
   if(search) list=list.filter(c=>(c.code||'').toLowerCase().includes(search)||(c.name||'').toLowerCase().includes(search));
   const sumDr=list.reduce((s,c)=>s+c.dr,0), sumCr=list.reduce((s,c)=>s+c.cr,0), diff=Math.abs(sumDr-sumCr);
   const sumOpening=list.reduce((s,c)=>s+(c.opening||0),0);
+  const sumBalDr=list.reduce((s,c)=>{const b=(c.opening||0)+c.dr-c.cr; return s+(b>0?b:0);},0);
+  const sumBalCr=list.reduce((s,c)=>{const b=(c.opening||0)+c.dr-c.cr; return s+(b<0?-b:0);},0);
   const TAL={asset:'أصول',liability:'التزامات',equity:'حقوق ملكية',revenue:'إيرادات',cogs:'تكلفة',expense:'مصروفات',other:'أخرى'};
   const TC={asset:'var(--blue)',liability:'var(--red)',equity:'var(--purple)',revenue:'var(--green)',cogs:'var(--accent)',expense:'var(--red)',other:'var(--text2)'};
   el('trialKpis').innerHTML=[
@@ -219,7 +221,7 @@ export function renderTrialBalance() {
   ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c}">${v}</div></div>`).join('');
   if(!list.length){el('trialTable').innerHTML=emptyHTML('⚖️','لا توجد بيانات');return;}
   const rows=list.map(c=>{
-    const opening=c.opening||0, bal=opening+c.dr-c.cr, bc=bal>0?'var(--green)':bal<0?'var(--red)':'var(--text2)';
+    const opening=c.opening||0, bal=opening+c.dr-c.cr;
     const oc=opening>0?'var(--green)':opening<0?'var(--red)':'var(--text2)';
     return `<tr style="cursor:pointer" onclick="showAccountLedger('${c.code}','${c.name.replace(/'/g,"\\'")}','${c.type}')"
       onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
@@ -229,7 +231,8 @@ export function renderTrialBalance() {
       <td class="mono" style="font-size:15px;text-align:left;color:${oc}">${fmt(Math.abs(opening))}</td>
       <td class="mono text-green" style="font-size:15px;text-align:left">${fmt(c.dr)}</td>
       <td class="mono text-red"   style="font-size:15px;text-align:left">${fmt(c.cr)}</td>
-      <td style="text-align:left"><span class="mono" style="font-size:16px;font-weight:900;color:${bc}">${fmt(Math.abs(bal))}</span> <span style="font-size:12px;color:${bc}">${bal>0?'مدين':bal<0?'دائن':'صفر'}</span></td>
+      <td class="mono text-green" style="font-size:16px;font-weight:900;text-align:left">${bal>0?fmt(bal):'—'}</td>
+      <td class="mono text-red"   style="font-size:16px;font-weight:900;text-align:left">${bal<0?fmt(Math.abs(bal)):'—'}</td>
     </tr>`;
   }).join('');
   el('trialTable').innerHTML=`<div style="font-size:13px;color:var(--text2);margin-bottom:6px">اضغط على أي حساب لعرض حركاته في دفتر الأستاذ${trialState.from?` · الافتتاحي = الصافي قبل ${trialState.from}`:''}</div>
@@ -237,14 +240,19 @@ export function renderTrialBalance() {
     <thead><tr>
     <th style="font-size:13px">الكود</th><th style="font-size:13px">اسم الحساب</th><th style="font-size:13px">النوع</th>
     <th style="font-size:13px;text-align:left">افتتاحي</th>
-    <th style="font-size:13px;color:var(--green);text-align:left">مدين</th><th style="font-size:13px;color:var(--red);text-align:left">دائن</th><th style="font-size:13px;text-align:left">الرصيد</th></tr></thead>
+    <th style="font-size:13px;color:var(--green);text-align:left">مدين</th><th style="font-size:13px;color:var(--red);text-align:left">دائن</th>
+    <th style="font-size:13px;color:var(--green);text-align:left">رصيد مدين</th><th style="font-size:13px;color:var(--red);text-align:left">رصيد دائن</th></tr></thead>
     <tbody>${rows}</tbody>
     <tfoot style="background:var(--card2)"><tr>
       <td colspan="3" style="padding:10px 16px;font-size:15px;font-weight:900">الإجمالي (${list.length})</td>
       <td class="mono" style="padding:10px 16px;font-size:15px;font-weight:900;text-align:left">${fmt(sumOpening)}</td>
       <td class="mono text-green" style="padding:10px 16px;font-size:15px;font-weight:900;text-align:left">${fmt(sumDr)}</td>
       <td class="mono text-red"   style="padding:10px 16px;font-size:15px;font-weight:900;text-align:left">${fmt(sumCr)}</td>
-      <td style="padding:10px 16px;font-size:16px;font-weight:900;color:${diff<0.01?'var(--green)':'var(--red)'};text-align:left">${diff<0.01?'✅ متوازن':fmt(diff)+' فرق'}</td>
+      <td class="mono text-green" style="padding:10px 16px;font-size:16px;font-weight:900;text-align:left">${fmt(sumBalDr)}</td>
+      <td class="mono text-red"   style="padding:10px 16px;font-size:16px;font-weight:900;text-align:left">${fmt(sumBalCr)}</td>
+    </tr>
+    <tr>
+      <td colspan="8" style="padding:8px 16px;font-size:14px;font-weight:700;text-align:center;color:${diff<0.01?'var(--green)':'var(--red)'}">${diff<0.01?'✅ الميزان متوازن':'⚠️ فرق بين المدين والدائن: '+fmt(diff)}</td>
     </tr></tfoot></table>`;
 }
 
