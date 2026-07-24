@@ -3522,6 +3522,8 @@ const jeMgrState = {
 };
 
 // ── الدوال الحسابية المعرّفة للحسابات ──
+// قائمة احتياطية بس لو فشل تحميل شجرة الحسابات الفعلية من الداتابيز (نادر) —
+// المصدر الأساسي دايماً _jeAccountOptions من جدول chart_of_accounts (بما فيها الحسابات الفرعية).
 const JE_ACCOUNT_SUGGESTIONS = [
   { code:'1110', name:'النقد',                  type:'أصول'        },
   { code:'1120', name:'البنك',                  type:'أصول'        },
@@ -3546,6 +3548,21 @@ const JE_ACCOUNT_SUGGESTIONS = [
   { code:'6600', name:'مصروفات حكومية',        type:'مصروفات'     },
   { code:'6700', name:'مصروفات أخرى',          type:'مصروفات'     },
 ];
+
+// المصدر الفعلي لأكواد الحسابات في القيد اليدوي — من شجرة الحسابات الحقيقية
+// (chart_of_accounts) بما فيها كل الحسابات الفرعية اللي المستخدم أنشأها، مش القائمة الثابتة فوق.
+let _jeAccountOptions = JE_ACCOUNT_SUGGESTIONS.slice();
+async function _loadJEAccountOptions() {
+  try {
+    const rows = await apiGetAll('chart_of_accounts', {
+      select: 'account_code,account_name,account_type,parent_code',
+      system_type: `eq.${state.system}`, is_active: 'eq.true', order: 'account_code.asc',
+    });
+    if (rows && rows.length) {
+      _jeAccountOptions = rows.map(a => ({ code:a.account_code, name:a.account_name, type:a.account_type, parent:a.parent_code||null }));
+    }
+  } catch(e) { console.warn('_loadJEAccountOptions:', e.message); }
+}
 
 export function showJEManager() {
   hideAllViews();
@@ -4060,7 +4077,7 @@ export function toggleJELines(row) {
 
 let _jeLines = []; // أسطر القيد الحالية في الموديل
 
-export function openNewJEModal() {
+export async function openNewJEModal() {
   jeMgrState.editEntryNo = null;
   _jeLines = [
     { acc:'', name:'', dr:0, cr:0 },
@@ -4075,9 +4092,11 @@ export function openNewJEModal() {
   el('jeError').style.display       = 'none';
   renderJELines();
   openModal('jeModal');
+  await _loadJEAccountOptions();
+  renderJELines();
 }
 
-export function openEditJEModal(entryNo) {
+export async function openEditJEModal(entryNo) {
   const group = jeMgrState.grouped[entryNo];
   if (!group) { toast('القيد غير موجود','err'); return; }
   if (!group.isManual) { toast('⚠️ لا يمكن تعديل القيود التلقائية — راجع العملية الأصلية','warn'); return; }
@@ -4092,15 +4111,19 @@ export function openEditJEModal(entryNo) {
   el('jeError').style.display       = 'none';
   renderJELines();
   openModal('jeModal');
+  await _loadJEAccountOptions();
+  renderJELines();
 }
 
 export function renderJELines() {
   const tbody = el('je-lines-body');
   if (!tbody) return;
   tbody.innerHTML = _jeLines.map((line, i) => {
-    const suggestions = JE_ACCOUNT_SUGGESTIONS.map(s =>
-      `<option value="${s.code}" data-name="${s.name}">${s.code} — ${s.name}</option>`
+    const suggestions = _jeAccountOptions.map(s =>
+      `<option value="${s.code}">${s.parent ? '↳ ' : ''}${s.code} — ${s.name}</option>`
     ).join('');
+    const match = _jeAccountOptions.find(s => s.code === (line.acc||'').trim());
+    const linked = !!match;
     return `<tr id="je-line-${i}">
       <td style="padding:4px 6px">
         <div style="position:relative">
@@ -4111,9 +4134,8 @@ export function renderJELines() {
         </div>
       </td>
       <td style="padding:4px 6px">
-        <input type="text" value="${line.name}" placeholder="اسم الحساب"
-          style="width:100%;min-width:160px;background:var(--card2);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px"
-          oninput="_jeLines[${i}].name=this.value">
+        <input type="text" id="je-line-name-${i}" value="${line.name}" readonly placeholder="${linked?'':'اختر رقم حساب صحيح من القائمة ⟵'}"
+          style="width:100%;min-width:160px;background:var(--card2);border:1px solid ${linked?'var(--border)':'var(--red)'};border-radius:4px;padding:5px 8px;color:${linked?'var(--text)':'var(--red)'};font-family:'Cairo',sans-serif;font-size:12px;cursor:not-allowed">
       </td>
       <td style="padding:4px 6px">
         <input type="number" value="${line.dr||''}" placeholder="0.00" min="0" step="0.01"
@@ -4144,28 +4166,28 @@ export function removeJELine(i) {
   renderJELines();
 }
 
+// اسم الحساب دايماً مرتبط تلقائيًا برقمه من شجرة الحسابات الفعلية — مفيش كتابة اسم مستقل
+// عن الرقم؛ لو الرقم مش موجود في الشجرة يفضل الاسم فاضغ (حقل قراءة فقط) لحد ما يختار رقم صحيح.
+function _syncJELineName(i) {
+  const match = _jeAccountOptions.find(s => s.code === (_jeLines[i].acc||'').trim());
+  _jeLines[i].name = match ? match.name : '';
+  const nameInp = el(`je-line-name-${i}`);
+  if (nameInp) {
+    nameInp.value = _jeLines[i].name;
+    nameInp.style.borderColor = match ? 'var(--border)' : 'var(--red)';
+    nameInp.style.color       = match ? 'var(--text)'   : 'var(--red)';
+    nameInp.placeholder       = match ? '' : 'اختر رقم حساب صحيح من القائمة ⟵';
+  }
+}
+
 export function onJEAccInput(i, val) {
   _jeLines[i].acc = val;
-  // auto-fill name from suggestions
-  const match = JE_ACCOUNT_SUGGESTIONS.find(s => s.code === val.trim());
-  if (match) {
-    _jeLines[i].name = match.name;
-    // update name input
-    const row  = el(`je-line-${i}`);
-    const ninp = row?.querySelectorAll('input[type="text"]')[1];
-    if (ninp) ninp.value = match.name;
-  }
+  _syncJELineName(i);
 }
 
 export function onJEAccChange(i, val) {
   _jeLines[i].acc = val.trim();
-  const match = JE_ACCOUNT_SUGGESTIONS.find(s => s.code === val.trim());
-  if (match && !_jeLines[i].name) {
-    _jeLines[i].name = match.name;
-    const row  = el(`je-line-${i}`);
-    const ninp = row?.querySelectorAll('input[type="text"]')[1];
-    if (ninp) ninp.value = match.name;
-  }
+  _syncJELineName(i);
 }
 
 export function updateJETotals() {
@@ -4218,6 +4240,9 @@ export async function submitJE() {
 
   const validLines = _jeLines.filter(l => l.acc || l.name || l.dr || l.cr);
   if (validLines.length < 2) { showFieldErr('jeError','يجب أن يكون في القيد سطران على الأقل'); return; }
+
+  const unlinked = validLines.find(l => !_jeAccountOptions.find(s => s.code === (l.acc||'').trim()));
+  if (unlinked) { showFieldErr('jeError',`❌ رقم الحساب "${unlinked.acc||'—'}" غير موجود في شجرة الحسابات — اختر رقمًا من القائمة أو أضِفه أولاً من شجرة الحسابات`); return; }
 
   const totalDr = validLines.reduce((s,l)=>s+(+l.dr||0),0);
   const totalCr = validLines.reduce((s,l)=>s+(+l.cr||0),0);
