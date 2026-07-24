@@ -1339,10 +1339,12 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
       let otherSoldVins = new Set();
       try {
         const otherSales = await apiGetAll('sales', {
-          select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`,
-          post_status:'not.eq.cancelled'
+          select:'vin,post_status', system_type:`eq.${state.system}`, file_no:`eq.${fileNo}`,
         });
-        (otherSales||[]).forEach(s => {
+        // ✅ 'cancelled' (رُفض من طابور الموافقات) و'voided' (اتعكس بعد الترحيل) حالتين
+        // مختلفتين — استبعاد cancelled بس كان بيسيب سيارة بيعها اتعكس فعليًا مقفولة
+        // للأبد من شاشات تعديل الفواتير التانية لنفس الملف (نفس مبدأ isVisible في core.js)
+        (otherSales||[]).filter(s => s.post_status !== 'cancelled' && s.post_status !== 'voided').forEach(s => {
           // استثنِ سيارات هذه الفاتورة
           if (!allSaleItems.find(si => si.vin === s.vin)) otherSoldVins.add(s.vin);
         });
