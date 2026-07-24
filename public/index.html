@@ -1106,6 +1106,24 @@
         </div>
       </div>
 
+      <!-- JOURNAL ENTRY DETAIL CARD (اليومية — بديل عن فتح الملف مباشرة عند الضغط على العملية) -->
+      <div class="modal-overlay" id="jeDetailModal">
+        <div class="modal" style="max-width:600px">
+          <div class="modal-header">
+            <div class="modal-icon" id="jed-icon" style="background:var(--accent-dim)">📌</div>
+            <h3 id="jed-title">تفاصيل القيد</h3>
+            <button class="modal-close" onclick="closeModal('jeDetailModal')">✕</button>
+          </div>
+          <div class="modal-body">
+            <div id="jed-body"></div>
+          </div>
+          <div class="modal-footer" style="justify-content:space-between">
+            <button class="btn btn-secondary btn-sm" id="jed-fullfile-btn" onclick="openFullFileFromJEDetail()">📂 فتح الملف الكامل</button>
+            <button class="btn btn-secondary" onclick="closeModal('jeDetailModal')">إغلاق</button>
+          </div>
+        </div>
+      </div>
+
       <!-- SETTINGS VIEW -->
       <div id="settingsView" style="display:none">
         <div style="font-size:16px;font-weight:900;margin-bottom:16px">⚙️ الإعدادات</div>

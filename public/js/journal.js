@@ -501,7 +501,7 @@ export function _renderSingleJournalEntry(e) {
   const amountSign = (e.sign < 0 || e.amount < 0) ? '-' : '+';
   return `
         <div class="j-entry j-type-${e.type}${e.status==='draft'?' is-draft':''}" style="cursor:pointer"
-          onclick="${e.fileNo ? `openViewer('${e.fileNo}')` : ''}">
+          onclick="openJournalEntryDetail('${e.entryNo}')">
           <div class="j-entry-icon" style="background:${cfg.bg}">${cfg.icon}</div>
           <div class="j-entry-body">
             <div class="j-entry-title">
@@ -625,6 +625,78 @@ export function _jDelete(btn) {
   deleteJEEntry(entryNo, { group, onDeleted: loadJournal });
 }
 
+// ════════════════════════════════════════════════════════════════
+// كارت تفاصيل القيد — يظهر عند الضغط على أي عملية في اليومية بدل ما
+// يفتح الملف الكامل مباشرة. فتح الملف بقى فعل صريح (زرار منفصل في
+// الكارت) بدل ما يكون فعل الضغط الافتراضي على الصف.
+// ════════════════════════════════════════════════════════════════
+let _jedCurrentFileNo = null;
+
+const _JED_TYPE_CFG = {
+  purchase:   { icon:'📋', color:'var(--accent)' },
+  sale:       { icon:'🤝', color:'var(--green)'  },
+  collection: { icon:'💰', color:'var(--blue)'   },
+  expense:    { icon:'💸', color:'var(--red)'    },
+  payment:    { icon:'💳', color:'var(--cyan)'   },
+  payout:     { icon:'👥', color:'var(--purple)' },
+  opex:       { icon:'💼', color:'var(--purple)' },
+  manual:     { icon:'✍️', color:'var(--text)'   },
+};
+
+export function openJournalEntryDetail(entryNo) {
+  const entry = (journalState.entries || []).find(e => e.entryNo === entryNo);
+  if (!entry) { toast('تعذر العثور على بيانات القيد — أعد تحميل الصفحة وحاول تاني','err'); return; }
+  const g   = entry.raw || {};
+  const cfg = _JED_TYPE_CFG[entry.type] || { icon:'📌', color:'var(--text)' };
+
+  _jedCurrentFileNo = entry.fileNo || null;
+  el('jed-icon').textContent = cfg.icon;
+  el('jed-icon').style.background = cfg.color + '22';
+  el('jed-title').textContent = entry.entryNo || 'تفاصيل القيد';
+
+  const fullFileBtn = el('jed-fullfile-btn');
+  if (fullFileBtn) fullFileBtn.style.display = entry.fileNo ? '' : 'none';
+
+  const linesHtml = (g.lines || []).map(l => {
+    const isDr = (+l.dr_amount||0) > 0;
+    const side = isDr
+      ? `<span style="color:var(--green);font-weight:700">مدين ${fmt(l.dr_amount)}</span>`
+      : `<span style="color:var(--red);font-weight:700">دائن ${fmt(l.cr_amount)}</span>`;
+    return `
+    <tr>
+      <td style="padding:7px 14px;font-family:monospace;color:var(--text2)">${l.account_code||''}</td>
+      <td style="padding:7px 14px">${l.account_name||'—'}${l.contact_name?` <span style="color:var(--text2);font-size:12px">— ${l.contact_name}</span>`:''}</td>
+      <td style="padding:7px 14px;text-align:left">${side}</td>
+    </tr>`;
+  }).join('');
+
+  el('jed-body').innerHTML = `
+    <div style="background:${cfg.color}11;border:1px solid ${cfg.color}33;border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:13px;color:var(--text2)">${fmtDate(entry.date)}${entry.postedAt?` · 🕐 ${fmtTime(entry.postedAt)}`:''}</div>
+        <div style="font-size:14px;margin-top:2px">${entry.title||'—'}</div>
+        ${entry.fileNo?`<div style="font-size:13px;color:var(--accent);font-family:monospace;margin-top:2px">${entry.fileNo}</div>`:''}
+      </div>
+      <div style="font-size:22px;font-weight:900;color:${cfg.color};font-family:monospace">${fmt(Math.abs(entry.amount))}</div>
+    </div>
+    <table class="data-table" style="font-size:13px;width:100%">
+      <thead><tr>
+        <td style="padding:6px 14px;color:var(--text2);font-size:12px">الحساب</td>
+        <td style="padding:6px 14px;color:var(--text2);font-size:12px">البيان</td>
+        <td style="padding:6px 14px;color:var(--text2);font-size:12px;text-align:left">القيمة</td>
+      </tr></thead>
+      <tbody>${linesHtml}</tbody>
+    </table>`;
+
+  openModal('jeDetailModal');
+}
+
+export async function openFullFileFromJEDetail() {
+  if (!_jedCurrentFileNo) return;
+  closeModal('jeDetailModal');
+  await openViewer(_jedCurrentFileNo);
+}
+
 // ════════════════════════════════════════
 // JOURNAL SALES DETAIL — نفس شكل جدول المبيعات جوا الملف
 // ════════════════════════════════════════
@@ -727,5 +799,5 @@ Object.assign(window, {
   showJournal, setJournalPeriod, getJournalDateRange, loadJournal, renderJournalKpis,
   filterJournalByType, renderJournalEntries, _extractInvToken, _renderSingleJournalEntry,
   _renderGroupedSaleEntries, genSeqRef, exportCSV, _jEdit, _jDelete, _loadJournalSalesDetail,
-  _excludeReversalPairs,
+  _excludeReversalPairs, openJournalEntryDetail, openFullFileFromJEDetail,
 });
