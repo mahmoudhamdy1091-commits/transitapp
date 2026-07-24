@@ -223,27 +223,28 @@ export function renderTrialBalance() {
     const oc=opening>0?'var(--green)':opening<0?'var(--red)':'var(--text2)';
     return `<tr style="cursor:pointer" onclick="showAccountLedger('${c.code}','${c.name.replace(/'/g,"\\'")}','${c.type}')"
       onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
-      <td class="mono" style="color:var(--accent);font-weight:700">${c.code}</td>
-      <td style="font-weight:600">${c.name}</td>
-      <td><span style="font-size:13px;font-weight:700;padding:2px 8px;border-radius:10px;background:${TC[c.type]||'var(--card2)'}22;color:${TC[c.type]||'var(--text2)'}">${TAL[c.type]||c.type}</span></td>
-      <td class="mono" style="text-align:left;color:${oc}">${fmt(Math.abs(opening))}</td>
-      <td class="mono text-green" style="text-align:left">${fmt(c.dr)}</td>
-      <td class="mono text-red"   style="text-align:left">${fmt(c.cr)}</td>
-      <td style="text-align:left"><span class="mono" style="font-weight:900;color:${bc}">${fmt(Math.abs(bal))}</span> <span style="font-size:12px;color:${bc}">${bal>0?'مدين':bal<0?'دائن':'صفر'}</span></td>
+      <td class="mono" style="font-size:15px;color:var(--accent);font-weight:700">${c.code}</td>
+      <td style="font-size:15px;font-weight:700">${c.name}</td>
+      <td><span style="font-size:13px;font-weight:700;padding:3px 9px;border-radius:10px;background:${TC[c.type]||'var(--card2)'}22;color:${TC[c.type]||'var(--text2)'}">${TAL[c.type]||c.type}</span></td>
+      <td class="mono" style="font-size:15px;text-align:left;color:${oc}">${fmt(Math.abs(opening))}</td>
+      <td class="mono text-green" style="font-size:15px;text-align:left">${fmt(c.dr)}</td>
+      <td class="mono text-red"   style="font-size:15px;text-align:left">${fmt(c.cr)}</td>
+      <td style="text-align:left"><span class="mono" style="font-size:16px;font-weight:900;color:${bc}">${fmt(Math.abs(bal))}</span> <span style="font-size:12px;color:${bc}">${bal>0?'مدين':bal<0?'دائن':'صفر'}</span></td>
     </tr>`;
   }).join('');
   el('trialTable').innerHTML=`<div style="font-size:13px;color:var(--text2);margin-bottom:6px">اضغط على أي حساب لعرض حركاته في دفتر الأستاذ${trialState.from?` · الافتتاحي = الصافي قبل ${trialState.from}`:''}</div>
     <table class="data-table">
-    <thead><tr><th>الكود</th><th>اسم الحساب</th><th>النوع</th>
-    <th style="text-align:left">افتتاحي</th>
-    <th style="color:var(--green);text-align:left">مدين</th><th style="color:var(--red);text-align:left">دائن</th><th style="text-align:left">الرصيد</th></tr></thead>
+    <thead><tr>
+    <th style="font-size:13px">الكود</th><th style="font-size:13px">اسم الحساب</th><th style="font-size:13px">النوع</th>
+    <th style="font-size:13px;text-align:left">افتتاحي</th>
+    <th style="font-size:13px;color:var(--green);text-align:left">مدين</th><th style="font-size:13px;color:var(--red);text-align:left">دائن</th><th style="font-size:13px;text-align:left">الرصيد</th></tr></thead>
     <tbody>${rows}</tbody>
     <tfoot style="background:var(--card2)"><tr>
-      <td colspan="3" style="padding:10px 16px;font-weight:700">الإجمالي (${list.length})</td>
-      <td class="mono" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(sumOpening)}</td>
-      <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(sumDr)}</td>
-      <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:left">${fmt(sumCr)}</td>
-      <td style="padding:10px 16px;font-weight:900;color:${diff<0.01?'var(--green)':'var(--red)'};text-align:left">${diff<0.01?'✅ متوازن':fmt(diff)+' فرق'}</td>
+      <td colspan="3" style="padding:10px 16px;font-size:15px;font-weight:900">الإجمالي (${list.length})</td>
+      <td class="mono" style="padding:10px 16px;font-size:15px;font-weight:900;text-align:left">${fmt(sumOpening)}</td>
+      <td class="mono text-green" style="padding:10px 16px;font-size:15px;font-weight:900;text-align:left">${fmt(sumDr)}</td>
+      <td class="mono text-red"   style="padding:10px 16px;font-size:15px;font-weight:900;text-align:left">${fmt(sumCr)}</td>
+      <td style="padding:10px 16px;font-size:16px;font-weight:900;color:${diff<0.01?'var(--green)':'var(--red)'};text-align:left">${diff<0.01?'✅ متوازن':fmt(diff)+' فرق'}</td>
     </tr></tfoot></table>`;
 }
 
@@ -472,10 +473,10 @@ export async function renderLedgerTable() {
   const SL=SOURCE_LABELS, SC=SOURCE_COLORS;
   let running=opening, rows='';
   if(opening&&!fileFilter) rows+=`<tr style="background:var(--card2)">
-    <td colspan="4" style="padding:8px 14px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
-    <td class="mono text-green" style="padding:8px 14px;text-align:left">${opening>0?fmt(opening):'—'}</td>
-    <td class="mono text-red"   style="padding:8px 14px;text-align:left">${opening<0?fmt(Math.abs(opening)):'—'}</td>
-    <td class="mono" style="padding:8px 14px;font-weight:700;text-align:left">${fmt(Math.abs(opening))}</td><td></td></tr>`;
+    <td colspan="4" style="padding:9px 14px;font-size:14px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
+    <td class="mono text-green" style="padding:9px 14px;font-size:15px;text-align:left">${opening>0?fmt(opening):'—'}</td>
+    <td class="mono text-red"   style="padding:9px 14px;font-size:15px;text-align:left">${opening<0?fmt(Math.abs(opening)):'—'}</td>
+    <td class="mono" style="padding:9px 14px;font-size:15px;font-weight:700;text-align:left">${fmt(Math.abs(opening))}</td><td></td></tr>`;
   rows+=list.map((e,i)=>{
     running+=e.debit-e.credit;
     const rc=running>=0?'var(--green)':'var(--red)';
@@ -484,36 +485,37 @@ export async function renderLedgerTable() {
     return `<tr style="${i%2?'background:var(--card2)':''}"
       onmouseover="this.style.background='var(--accent-dim)'" onmouseout="this.style.background='${i%2?'var(--card2)':''}'"
       onclick="openJEDetail('${e.ref}')">
-      <td class="mono" style="padding:8px 12px;font-size:13px;color:var(--text2);white-space:nowrap;cursor:default">${e.date||'—'}</td>
-      <td style="padding:8px 12px;cursor:default">
-        <span style="font-size:12px;font-weight:700;padding:1px 7px;border-radius:10px;background:${sc}22;color:${sc}">${src}</span> ${sb}
+      <td class="mono" style="padding:9px 12px;font-size:14px;color:var(--text2);white-space:nowrap;cursor:default">${e.date||'—'}</td>
+      <td style="padding:9px 12px;cursor:default">
+        <span style="font-size:13px;font-weight:700;padding:2px 8px;border-radius:10px;background:${sc}22;color:${sc}">${src}</span> ${sb}
       </td>
-      <td style="padding:8px 12px">
-        <div style="font-size:12px">${e.desc}</div>
-        ${e.file_no?`<div style="font-size:12px;color:var(--accent);font-family:monospace;cursor:pointer" onclick="event.stopPropagation();openViewer('${e.file_no}')">${e.file_no}</div>`:''}
-        ${e.contact?`<div style="font-size:12px;color:var(--blue);cursor:pointer;text-decoration:underline dotted"
+      <td style="padding:9px 12px">
+        <div style="font-size:14px;font-weight:600">${e.desc}</div>
+        ${e.file_no?`<div style="font-size:13px;color:var(--accent);font-family:monospace;cursor:pointer;margin-top:2px" onclick="event.stopPropagation();openViewer('${e.file_no}')">📂 ${e.file_no}</div>`:''}
+        ${e.contact?`<div style="font-size:13px;color:var(--blue);cursor:pointer;text-decoration:underline dotted;margin-top:2px"
           onclick="event.stopPropagation();filterLedgerByContact('${e.contact.replace(/'/g,"\\'")}')">👤 ${e.contact}</div>`:''}
       </td>
-      <td class="mono" style="padding:8px 12px;font-size:13px;color:var(--text2)">${e.ref||'—'}</td>
-      <td class="mono text-green" style="padding:8px 12px;font-weight:700;text-align:left">${e.debit>0?fmt(e.debit):'—'}</td>
-      <td class="mono text-red"   style="padding:8px 12px;font-weight:700;text-align:left">${e.credit>0?fmt(e.credit):'—'}</td>
-      <td class="mono" style="padding:8px 12px;font-weight:900;color:${rc};text-align:left">${fmt(Math.abs(running))}</td>
-      <td style="padding:8px 12px;text-align:center"><button class="btn btn-sm" onclick="event.stopPropagation();openJEDetail('${e.ref}')" title="تفاصيل القيد" style="padding:2px 7px;font-size:13px">🔍</button></td>
+      <td class="mono" style="padding:9px 12px;font-size:13px;color:var(--text2)">${e.ref||'—'}</td>
+      <td class="mono text-green" style="padding:9px 12px;font-size:15px;font-weight:700;text-align:left">${e.debit>0?fmt(e.debit):'—'}</td>
+      <td class="mono text-red"   style="padding:9px 12px;font-size:15px;font-weight:700;text-align:left">${e.credit>0?fmt(e.credit):'—'}</td>
+      <td class="mono" style="padding:9px 12px;font-size:16px;font-weight:900;color:${rc};text-align:left">${fmt(Math.abs(running))}</td>
+      <td style="padding:9px 12px;text-align:center"><button class="btn btn-sm" onclick="event.stopPropagation();openJEDetail('${e.ref}')" title="تفاصيل القيد" style="padding:3px 8px;font-size:14px">🔍</button></td>
     </tr>`;
   }).join('');
   el('ledgerTable').innerHTML=`
     <div style="font-size:13px;color:var(--text2);margin-bottom:6px">اضغط على أي حركة لعرض تفاصيل القيد والمرفقات</div>
     <table class="data-table" style="min-width:700px">
-    <thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>رقم القيد</th>
-    <th style="color:var(--green);text-align:left">مدين</th>
-    <th style="color:var(--red);text-align:left">دائن</th>
-    <th style="text-align:left">الرصيد</th><th></th></tr></thead>
+    <thead><tr>
+    <th style="font-size:13px">التاريخ</th><th style="font-size:13px">النوع</th><th style="font-size:13px">البيان</th><th style="font-size:13px">رقم القيد</th>
+    <th style="font-size:13px;color:var(--green);text-align:left">مدين</th>
+    <th style="font-size:13px;color:var(--red);text-align:left">دائن</th>
+    <th style="font-size:13px;text-align:left">الرصيد</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
     <tfoot style="background:var(--card2)"><tr>
-      <td colspan="4" style="padding:10px 16px;font-weight:700">الإجمالي</td>
-      <td class="mono text-green" style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalDr)}</td>
-      <td class="mono text-red"   style="padding:10px 16px;font-weight:900;text-align:left">${fmt(totalCr)}</td>
-      <td style="padding:10px 16px;font-weight:900;color:${finalBal>=0?'var(--green)':'var(--red)'};text-align:left">${fmt(Math.abs(finalBal))} ${finalBal>0?'مدين':finalBal<0?'دائن':'✓'}</td>
+      <td colspan="4" style="padding:10px 16px;font-size:15px;font-weight:900">الإجمالي</td>
+      <td class="mono text-green" style="padding:10px 16px;font-size:15px;font-weight:900;text-align:left">${fmt(totalDr)}</td>
+      <td class="mono text-red"   style="padding:10px 16px;font-size:15px;font-weight:900;text-align:left">${fmt(totalCr)}</td>
+      <td style="padding:10px 16px;font-size:16px;font-weight:900;color:${finalBal>=0?'var(--green)':'var(--red)'};text-align:left">${fmt(Math.abs(finalBal))} ${finalBal>0?'مدين':finalBal<0?'دائن':'✓'}</td>
       <td></td>
     </tr></tfoot></table>`;
   el('ledgerView').dataset.entries=JSON.stringify(list);
