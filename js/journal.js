@@ -407,6 +407,13 @@ export function _extractInvToken(desc) {
 //
 // لا يوجد عمود ربط مباشر (reversed_by/reverses) يُعبّأ من أي مسار عكس في
 // التطبيق حتى الآن — الإسناد هنا بأفضل مجهود متاح:
+//  Tier 0 (موثوق): "عكس تعديل {ref_table} ... تصحيح قيد {entry_no}" — من
+//    updateJEInPlace (engine.js) عند تصحيح قيمة عملية بعد الترحيل، لا إلغاءها.
+//    نستبعد القيد القديم المُعكوس بعينه عبر entry_no الصريح في الوصف (لا عبر
+//    ref_id — بعض الأنواع مثل sales/operating_expenses ref_id فيها تاريخيًا
+//    null أو غير متّسق، فمطابقة ref_id كانت ستُبقي القديم ظاهراً "مكرراً" مع
+//    الجديد). القيد الجديد الصحيح المُرحَّل بعدها يبقى ظاهراً دائماً (لم يُذكر
+//    في أي وصف عكس، فلا يُستبعد أبداً).
 //  Tier 1 (موثوق): ref_id — voidTransaction (تحصيل/دفعة/مصروف/صرف شريك)
 //    وvoidPurchaseOrder يمرّرون نفس refId للقيد الأصلي وقيد عكسه، فنطابق به.
 //  Tier 2: البيع (je_sale/voidSaleInvoice لا يستخدمان ref_id إطلاقاً) —
@@ -432,6 +439,15 @@ export function _excludeReversalPairs(entries) {
 
   reversals.forEach(rev => {
     const desc = rev.title || '';
+
+    // Tier 0 — عكس تعديل (تصحيح قيمة، لا إلغاء): "عكس تعديل {ref_table} — ...
+    // — تصحيح قيد {entry_no}". نستبعد القيد المذكور صراحة بعينه فقط — القيد
+    // الجديد الصحيح لا يُستبعد أبداً لأنه لا يُذكر في أي وصف عكس
+    const editMatch = desc.match(/تصحيح قيد (\S+)\s*$/);
+    if (editMatch) {
+      toExclude.add(editMatch[1].trim());
+      return;
+    }
 
     // Tier 1 — ref_id مباشر
     if (rev.refId) {
