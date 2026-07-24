@@ -1258,7 +1258,11 @@ export async function voidSaleInvoice(invNo, fileNo) {
           const relatedCols = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, inv_no:`eq.${invNo}` });
           for (const c of (relatedCols||[])) {
             if (c.post_status === 'voided') continue;
-            if (c.paid_date && c.post_status === 'posted') {
+            // ✅ pending_edit/pending_void لسه ممكن يكون ليها قيد مرحّل فعلي من قبل ما
+            // تدخل الحالة المعلّقة (المعلّق هنا معناه "في انتظار موافقة على تغيير"،
+            // مش "القيد اتعكس بالفعل") — فتتعامل زي posted بالظبط عند وجود paid_date
+            const hadLikelyPostedJE = c.post_status === 'posted' || c.post_status === 'pending_edit' || c.post_status === 'pending_void';
+            if (c.paid_date && hadLikelyPostedJE) {
               try { await voidTransaction('collection', c, true); }
               catch(e) { colReverseFailures++; console.warn('voidSaleInvoice: فشل عكس قيد تحصيل مرتبط', c.id, e.message); }
             } else {
