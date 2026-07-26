@@ -578,6 +578,30 @@ export async function exportTxExcel() {
   exportToExcel([{ name: cfg.title, headers: headers2, data }], cfg.title + '_' + today());
 }
 
+// ════════════════════════════════════════════════════════════
+// ✅ فحص نسخة التطبيق — يمنع تاب مفتوح لفترة طويلة من الاستمرار بكود قديم
+// بصمت بعد نشر إصلاح جديد على السيرفر. version.json (في public/) لازم يتحدّث
+// كخطوة يدوية في كل نشر (رقم/تاريخ عشوائي، مش لازم يكون semver حقيقي).
+// ════════════════════════════════════════════════════════════
+let _loadedAppVersion = null;
+export async function checkAppVersion() {
+  try {
+    const res = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const v = data?.version;
+    if (!v) return;
+    if (_loadedAppVersion === null) { _loadedAppVersion = v; return; } // أول فحص — تسجيل خط الأساس فقط
+    if (v !== _loadedAppVersion && !document.getElementById('appVersionBanner')) {
+      const b = document.createElement('div');
+      b.id = 'appVersionBanner';
+      b.style.cssText = 'position:fixed;top:0;right:0;left:0;z-index:99999;background:#1a73e8;color:#fff;padding:8px 16px;font-size:13px;text-align:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.2)';
+      b.textContent = '🔄 يوجد تحديث جديد للتطبيق — اضغط هنا للتحديث الآن';
+      b.onclick = () => location.reload();
+      document.body.appendChild(b);
+    }
+  } catch(e) { /* فشل شبكة عابر — تجاهل، هيتفحص تاني بعد 10 دقايق */ }
+}
 
 export async function initApp() {
   document.getElementById('loginScreen').style.display = 'none';
@@ -604,6 +628,15 @@ export async function initApp() {
     const ok = await refreshAccessToken();
     if (!ok) console.warn('Auto-refresh failed — session expired');
   }, 50 * 60 * 1000);
+
+  // ✅ فحص دوري لنسخة التطبيق — تاب فاضل مفتوح لأيام (بدون ريفرش) يفضل شغال
+  // بكود قديم في الذاكرة حتى لو السيرفر بقى فيه نسخة مصححة جديدة. ده بالظبط
+  // العامل اللي فاقم حادثة توجيه دفعة LOT 3 NEW (فجوة نشر 17 يوم + تاب مفتوح
+  // بلا ريفرش). نفس نمط _tokenRefreshTimer فوق، مش بديل عن الانضباط في مزامنة
+  // ونشر public/ فورًا بعد كل تعديل — شبكة أمان إضافية بس.
+  if (window._versionCheckTimer) clearInterval(window._versionCheckTimer);
+  checkAppVersion(); // بصمت — يسجّل النسخة الحالية كخط أساس، مش المفروض يفرق أول مرة
+  window._versionCheckTimer = setInterval(checkAppVersion, 10 * 60 * 1000);
 
   loadChartOfAccounts();
   setDashPeriod('year'); // ✅ default السنة الحالية
@@ -765,6 +798,6 @@ Object.assign(window, {
   renderTxTable, renderSalesInvoices, openInvoiceModal, downloadInvoicePDF,
   filterTxTable, exportTxPDF, exportTxExcel, initApp, approvalState,
   loadChartOfAccounts, getAccountName, getAccountTypeCOA, switchSystem,
-  updateSystemUI, dashState, setDashPeriod,
+  updateSystemUI, dashState, setDashPeriod, checkAppVersion,
 });
 
