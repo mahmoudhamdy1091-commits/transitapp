@@ -89,7 +89,7 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
   const dateChanged    = newDate != null && newDate !== '';   // ✅ مزامنة تاريخ القيد مع تاريخ العملية
   if (!amountChanged && !costChanged && !contactChanged && !dateChanged) return;
 
-  try {
+  {
     let entryNo = null;
 
     // ✅ المسار الأساسي: بحث مباشر عبر ref_id (بدون حد أقصى على عدد السطور) — يعمل بشكل صحيح حتى مع الملفات الكبيرة
@@ -123,7 +123,7 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
       );
       if (fallback) entryNo = fallback.entry_no;
     }
-    if (!entryNo) return;
+    if (!entryNo) throw new Error(`تعديل ${refTable}: لم يُعثر على القيد المحاسبي الأصلي لتحديثه — التعديل على السجل لن يكتمل`);
 
     // جيب كل أسطر هذا القيد بالـ entry_no — نحتاج account_code/account_name/description
     // كاملة الآن (لا فقط dr/cr/contact) عشان نعيد ترحيلها كقيد جديد، مش نُعدِّلها في مكانها
@@ -132,7 +132,7 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
       system_type: `eq.${sys}`,
       entry_no: `eq.${entryNo}`,
     });
-    if (!allLines?.length) return;
+    if (!allLines?.length) throw new Error(`تعديل ${refTable}: القيد ${entryNo} غير موجود بأسطره — التعديل على السجل لن يكتمل`);
 
     // ── ابنِ أسطر القيد الجديد الصحيح: نفس حسابات القيد القديم بالضبط، بعد
     //    تطبيق التعديل على كل سطر بمطابقة القيمة الفعلية (نفس منطق المطابقة
@@ -203,8 +203,6 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
       console.error(`updateJEInPlace [${refTable}]: فشل عكس القيد القديم بعد نجاح ترحيل الجديد — ازدواج محتمل في القيود:`, revErr.message);
       toast(`⚠️ تم ترحيل التصحيح لكن فشل عكس القيد القديم (قيد ${entryNo}) — راجع اليومية يدوياً، قد يوجد قيد مكرر`, 'warn');
     }
-  } catch(e) {
-    console.warn(`updateJEInPlace [${refTable}]:`, e.message);
   }
 }
 
@@ -285,9 +283,13 @@ export async function voidTransaction(type, record, force=false) {
       const drLine = (orig||[]).find(l => (+l.dr_amount||0) > 0);
       if (drLine) { eAcc = drLine.account_code; eName = drLine.account_name || record.exp_type || 'مصروف'; }
     } catch(e) { console.warn('void expense: فشل جلب القيد الأصلي:', e.message); }
+    // ✅ لو مفيش قيد أصلي مُرحَّل نلقاه لهذا السجل (اتحذف مباشرة من اليومية مثلاً)،
+    // ممنوع نكمل بحساب افتراضي بصمت — ده كان بيعمل قيد عكسي "يتيم" بلا نظير
+    // (Dr/Cr على حساب مش بالضرورة الصح) يفرق ميزان المراجعة فعلياً وبلا تنبيه
+    // (حصل فعلياً على ملف BOX-138 يوم 2026-07-25 — راجع project_dual_je_audit).
+    // الحل: نوقف العملية بخطأ صريح بدل التخمين.
     if (!eAcc) {
-      const t = await fileExpenseTarget(sys, record.file_no, record.exp_type||record.category);
-      eAcc = t.acc; eName = t.name;
+      throw new Error(`تعذّر إيجاد القيد المحاسبي الأصلي لهذا المصروف (${record.ref_no||record.id}) — على الأغلب اتحذف من اليومية مباشرة قبل الإلغاء. لا يمكن إلغاؤه بأمان بدون معرفة الحساب الأصلي؛ راجعي اليومية يدوياً أولاً أو أعيدي إدخال القيد.`);
     }
     const dr = _isPartnerPocket(record.paid_by)
       ? { acc:'2400', name:'حسابات الشركاء', dr:amount, cr:0, contact:record.paid_by.trim() }
@@ -453,6 +455,15 @@ export async function voidPurchaseOrder(fileNo) {
   // ── القيد العكسي: نفس قيمة total_purchase الحالية، عكس Dr1300/Cr2100 الأصلي ──
   const amount = +po.total_purchase || 0;
   const today_ = today();
+  // ✅ حارس: لو فيه قيد شراء مُرحَّل فعلاً على هذا الملف لكن amount قرأت صفر/غير
+  // صالحة (انجراف بيانات) — ميصحش نلغي السند بصمت من غير عكس القيد، يبقى فيه
+  // قيد يتيم بلا مصدر. نتأكد أولاً بدل الاعتماد على po.total_purchase فقط.
+  const existingPurchaseJE = await apiGetAll('journal_entries', {
+    select:'id', system_type:`eq.${sys}`, ref_table:'eq.purchase_orders', file_no:`eq.${fileNo}`, post_status:'eq.posted', limit:1,
+  });
+  if (existingPurchaseJE?.length && amount <= 0) {
+    throw new Error('يوجد قيد شراء مُرحَّل لهذا الملف لكن قيمته الحالية صفر/غير صالحة — لا يمكن إلغاء السند بأمان بدون عكس القيد، راجعي البيانات أولاً');
+  }
   if (amount > 0) {
     await postDoubleEntry({
       sys, date: today_, fileNo,
@@ -620,7 +631,7 @@ export async function calcCOGS(sys, fileNo, soldCount, { alreadySold = null, alr
 
 // شراء: مخزون Dr / مورد Cr
 export async function je_purchase({sys,date,amount,fileNo,supplier,refId}) {
-  if(!amount||amount<=0) return;
+  if(!amount||amount<=0) throw new Error(`قيمة شراء غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد السند`);
   await postDoubleEntry({sys,date,fileNo,refTable:'purchase_orders',refId,desc:`شراء — ملف ${fileNo} — ${supplier}`,lines:[
     {acc:'1300', name:getAccountName('1300'),  dr:amount, cr:0,      contact:null     },
     {acc:'2100', name:`ذمم الموردين`,           dr:0,      cr:amount, contact:supplier },
@@ -629,7 +640,7 @@ export async function je_purchase({sys,date,amount,fileNo,supplier,refId}) {
 
 // بيع: عميل Dr / إيراد Cr
 export async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
-  if(!amount||amount<=0) return;
+  if(!amount||amount<=0) throw new Error(`قيمة فاتورة بيع غير صالحة (${amount}) — لن يُسجَّل القيد ولا تُعتمد الفاتورة`);
   const lines = [
     {acc:'1200', name:`ذمم العملاء`,        dr:amount, cr:0,     contact:customer, desc:`فاتورة ${invNo}`},
     {acc:'4100', name:getAccountName('4100'), dr:0,    cr:amount, contact:null,     desc:`فاتورة ${invNo}`},
@@ -647,7 +658,11 @@ export async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
 // أي شريك آخر يدفع/يستلم من جيبه → القيد على حسابه 2400 بدل النقدية.
 // ════════════════════════════════════════
 export const TREASURY_PARTNER = 'الصندوق';
-export function _isPartnerPocket(name) { return !!(name && name.trim() && name.trim() !== TREASURY_PARTNER); }
+// ✅ TM: شركاء الملف دايمًا "صندوق الترانزيت"/"مازن الخلف" — لا يوجد شريك اسمه "الصندوق" أصلاً
+// في هذا النظام. "صندوق الترانزيت" هو الخزينة بعينها هنا (مرادف TREASURY_PARTNER)، فلازم يُستثنى
+// من "دفع جيب شريك" زي TREASURY_PARTNER بالظبط، وإلا كل قيود TM هتتقيّد غلط كصرف شخصي على 2400.
+const TREASURY_ALIASES = new Set([TREASURY_PARTNER, 'صندوق الترانزيت']);
+export function _isPartnerPocket(name) { const n = name && name.trim(); return !!(n && !TREASURY_ALIASES.has(n)); }
 
 export const USER_DISPLAY_NAMES = {
   'mahmoud.hamdy1091@gmail.com': 'محمود حمدي',
@@ -659,7 +674,7 @@ export function displayUser(email) {
 }
 
 export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method,receivedBy}) {
-  if(!amount||amount<=0) return;
+  if(!amount||amount<=0) throw new Error(`قيمة تحصيل غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد التحصيل`);
   // المدين: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو احتفظ بالمبلغ خارج الصندوق
   const debit = _isPartnerPocket(receivedBy)
     ? {acc:'2400', name:'حسابات الشركاء', dr:amount, cr:0, contact:receivedBy.trim()}
@@ -675,7 +690,7 @@ export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo
 // لو الدافع (payer) شريك مختلف عن المورد → يُضاف سطر ثالث على حساب الشريك 2400
 // حتى يظهر ما دفعه الشريك في كشف حسابه
 export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,payer,payerName,method}) {
-  if(!amount||amount<=0) return;
+  if(!amount||amount<=0) throw new Error(`قيمة دفعة مورد غير صالحة (${amount}) — لن يُسجَّل القيد ولا تُعتمد الدفعة`);
   let sup = supplier || supplierName || '';
   if (!sup && fileNo) {
     // ✅ احتياطي: لو لم يُمرَّر اسم المورد (مثلاً جدول payments بدون عمود supplier)
@@ -744,7 +759,7 @@ export async function fileExpenseTarget(sys, fileNo, expType) {
 
 // مصروف ملف: مخزون 1300 (أو 5100 لو الملف مُباع) Dr / نقد Cr — مصروف عام: حساب مصروف Dr / نقد Cr
 export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy}) {
-  if(!amount||amount<=0) return;
+  if(!amount||amount<=0) throw new Error(`قيمة مصروف غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
   const target = await fileExpenseTarget(sys, fileNo, expType);
   // الدائن: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو دفعها من جيبه
   const credit = _isPartnerPocket(paidBy)
@@ -759,7 +774,7 @@ export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,meth
 
 // صرف شريك: شريك Dr / نقد Cr
 export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
-  if(!amount||amount<=0) return;
+  if(!amount||amount<=0) throw new Error(`قيمة صرف شريك غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد الصرف`);
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
   await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',refId,desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
@@ -770,7 +785,7 @@ export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
 
 // عهدة: صرف = عهدة Dr / نقد Cr — تسوية = نقد Dr / عهدة Cr
 export async function je_custodian({sys, date, amount, custodian, desc, method, direction='issue', refId=null}) {
-  if (!amount || amount <= 0) return;
+  if (!amount || amount <= 0) throw new Error(`قيمة عهدة غير صالحة (${amount}) — لن يُسجَّل القيد`);
   const cashAcc = method === 'نقد' ? '1110' : '1120';
   const cashNm  = method === 'نقد' ? 'النقد' : 'البنك';
   if (direction === 'issue') {
@@ -792,7 +807,7 @@ export async function je_custodian({sys, date, amount, custodian, desc, method, 
 
 // مصروف تشغيلي: مصروف Dr / نقد Cr
 export async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
-  if(!amount||amount<=0) return;
+  if(!amount||amount<=0) throw new Error(`قيمة مصروف تشغيلي غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
   const eAcc    = OPEX_ACC_MAP[expType] || '6700';
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';

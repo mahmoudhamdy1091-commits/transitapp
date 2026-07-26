@@ -969,7 +969,9 @@ export async function _loadPaymentModalData(fn, sys) {
     }
     const payerList = rawPartners.includes(TREASURY_PARTNER) ? rawPartners : [TREASURY_PARTNER, ...rawPartners];
     el('pay-payer').innerHTML = payerList.map(p=>`<option value="${p}">${p}</option>`).join('');
-    el('pay-payer').value = TREASURY_PARTNER;
+    // ✅ TM: "صندوق الترانزيت" هو خزينة الملف الفعلية هنا — يُفضَّل كافتراضي لو موجود ضمن شركاء
+    // هذا الملف، بدل "الصندوق" العام (اللي أصلاً مش موجود كشريك في TM)
+    el('pay-payer').value = rawPartners.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
     // حفظ fn في الـ modal
     el('pay-payer').dataset.fileNo = fn;
   } catch(e) { console.error('_loadPaymentModalData:', e.message); toast('خطأ في تحميل بيانات الدفعة: ' + e.message, 'err'); }
@@ -997,7 +999,8 @@ export async function openExpenseModal() {
       const raw = (partners||[]).map(p => p.partner);
       const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
       paidByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
-      paidByEl.value = TREASURY_PARTNER;
+      // ✅ TM: "صندوق الترانزيت" هو خزينة الملف الفعلية هنا — افتراضي أولى من "الصندوق" العام
+      paidByEl.value = raw.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
     } catch(_) {
       paidByEl.innerHTML = `<option value="${TREASURY_PARTNER}">${TREASURY_PARTNER}</option>`;
     }
@@ -1814,7 +1817,8 @@ export async function openCollectionModal() {
       const raw = (partnersRes||[]).map(p => p.partner);
       const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
       recByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
-      recByEl.value = TREASURY_PARTNER;
+      // ✅ TM: "صندوق الترانزيت" هو خزينة الملف الفعلية هنا — افتراضي أولى من "الصندوق" العام
+      recByEl.value = raw.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
     }
 
     // مجموع المدفوع فعلاً (paid_date موجود) لكل فاتورة
@@ -1925,7 +1929,8 @@ export function onCollectionInvChange() {
         const raw = (partners||[]).map(p => p.partner);
         const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
         rb.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
-        rb.value = TREASURY_PARTNER;
+        // ✅ TM: "صندوق الترانزيت" هو خزينة الملف الفعلية هنا — افتراضي أولى من "الصندوق" العام
+        rb.value = raw.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
       }
     }).catch(() => {});
   }

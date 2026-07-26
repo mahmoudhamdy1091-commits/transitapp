@@ -389,14 +389,16 @@ export async function submitQuickCollection() {
 
   try {
     const refNo = (await genSeqRef('COL', state.system, fileNo, 'collections')) || `COL-${fileNo}-${Date.now()}`;
-    // FIX: paid_date لا يُحفظ في حالة Draft
+    // ✅ paid_date يُحفظ دائماً (الحقل إجباري في الفورم) — كان يُرمى عند Draft
+    // مما يخلي التحصيل يفضل "مستحق" للأبد حتى بعد الموافقة، لأن الموافقة
+    // لا تُعيد تاريخ الدفع ولا تُنشئ قيده بدونه (نفس نمط modals.js لفاتورة البيع)
     const isPostedNow = entryStatus() === 'posted';
     const data = {
       system_type: state.system, file_no: fileNo,
       pay_id: refNo, inv_no: invNo, customer: customer||null,
       vin: vin||null, amount, pay_method: method,
       document: doc||null, due_date: due||null,
-      paid_date: isPostedNow ? paid : null,
+      paid_date: paid || null,
       notes: notes||null, ref_no: refNo, received_by: receivedBy,
     post_status:entryStatus()};
     const qcIns = await apiPost('collections', data);

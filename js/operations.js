@@ -291,6 +291,17 @@ export async function deleteOpex(id) {
 
       // ✅ عكس القيد المحاسبي الأصلي (Dr eAcc / Cr cashAcc → عكسه)
       const amount = +o.amount || 0;
+      // ✅ حارس: لو فيه قيد مصروف تشغيلي مُرحَّل فعلاً بنفس ref_no (je_opex يمرر
+      // ref_no كـ refId) لكن amount قرأت صفر/غير صالحة — ميصحش نحذف السجل بصمت
+      // من غير عكس قيده، يبقى فيه قيد يتيم بلا مصدر بعد الحذف (والحذف نهائي).
+      if (amount <= 0 && o.ref_no) {
+        const existingOpexJE = await apiGet('journal_entries', {
+          select:'id', system_type:`eq.${state.system}`, ref_table:'eq.operating_expenses', ref_id:`eq.${o.ref_no}`, post_status:'eq.posted', limit:1,
+        });
+        if (existingOpexJE?.length) {
+          throw new Error('يوجد قيد مصروف تشغيلي مُرحَّل لهذا السجل لكن قيمته الحالية صفر/غير صالحة — لا يمكن الحذف بأمان بدون عكس القيد، راجعي البيانات أولاً');
+        }
+      }
       if (amount > 0) {
         const eAcc    = OPEX_ACC_MAP[o.exp_type] || '6700';
         const cashAcc = o.pay_method === 'نقد' ? '1110' : '1120';
@@ -4332,6 +4343,28 @@ export async function deleteJEEntry(entryNo, opts) {
   if (isManual && isPosted(group.lines[0] || {})) {
     toast('⚠️ لا يمكن حذف قيد يدوي مُرحَّل نهائياً — استخدم "🔄 عكس" من القائمة بدلاً منه', 'warn');
     return;
+  }
+
+  // ✅ منع حذف قيد تلقائي مرتبط بسجل تشغيلي لسه فعّال (posted) لأربعة الأنواع
+  // اللي بيديرها محرك الإلغاء (payments/expenses/collections/partner_payouts).
+  // لو حذفنا القيد وسبنا السجل فعّال، لاحقاً أي محاولة "إلغاء" للسجل هتفشل تلاقي
+  // القيد الأصلي، وبعض الأنواع (زي expense) بترجع لحساب افتراضي بصمت وتعمل
+  // قيد عكسي يتيم بلا نظير — فرق حقيقي دايم في ميزان المراجعة (حصل فعلياً على
+  // ملف BOX-138 يوم 2026-07-25). الحل: لو السجل لسه posted، امنعي ووجّهي لـ"إلغاء".
+  const reversibleTableMap = { payments:'payment', expenses:'expense', collections:'collection', partner_payouts:'payout' };
+  const srcTable = reversibleTableMap[group.ref_table] ? group.ref_table : null;
+  if (srcTable) {
+    const refId = group.lines[0]?.ref_id;
+    if (refId) {
+      try {
+        const srcRows = await apiGet(srcTable, { select:'post_status', id:`eq.${refId}` });
+        const src = srcRows?.[0];
+        if (src && src.post_status === 'posted') {
+          toast(`⚠️ العملية الأصلية (${group.ref_table}) لسه فعّالة ولم تُلغَ — حذف القيد مباشرة هيسيب السجل بلا أثر محاسبي ويكسر أي إلغاء لاحق. استخدمي "إلغاء" من شاشة العملية بدلاً من حذف القيد.`, 'warn');
+          return;
+        }
+      } catch(e) { console.warn('deleteJEEntry: فشل التحقق من حالة السجل الأصلي:', e.message); }
+    }
   }
 
   const warnTxt  = isManual
