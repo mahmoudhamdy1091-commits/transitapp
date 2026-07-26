@@ -1877,19 +1877,24 @@ export async function cancelApprovalRow(type, id) {
 }
 
 // ════════════════════════════════════════════════════════════
-// ✅ ضمان قيد بيع واحد فقط لكل فاتورة — يمنع التكرار عند الموافقة الفردية
-// المتسارعة على سيارات متعددة من نفس الفاتورة (كل نقرة تستدعي هذه الدالة
-// بنفس مفتاح الفاتورة؛ النقرات المتزامنة تنتظر نفس الـPromise بدل بدء
-// فحص-ثم-إنشاء منفصل، فلا تتسابق على "هل يوجد قيد؟"). يُستخدم من
-// approveItem و _ensureApprovalJE معاً حتى لا يتفرّق المنطق.
+// ✅ طابور تسلسلي على مستوى الملف — يمنع تشغيل post_sale_je لأكثر من فاتورة
+// من نفس الملف في نفس اللحظة من نفس التاب (مثال حقيقي: BOX-138، فاتورتا
+// "70700" و"-004" لنفس السيارات اتعتمدا بفرق 30 ثانية عبر نقرتين منفصلتين).
+// ✅ حماية إضافية فوق قفل القاعدة (post_sale_je RPC — SELECT...FOR UPDATE)، مش
+// بديل عنه: القفل الحقيقي عابر-التابات/المستخدمين هو قفل القاعدة، وده بس
+// طبقة تحسين محلية (تقليل عدد الطلبات المتزامنة المنتظرة على نفس القفل).
+// ✅ طابور حقيقي لا cache مشترك: كل استدعاء (حتى لفاتورة مختلفة لنفس الملف)
+// لازم ينفّذ شغله الخاص ويرجّع نتيجته الخاصة — لا يكفي مفتاح مشترك بسيط
+// (كان هيخلي فاتورة تانية تستنى وترجع نتيجة فاتورة غيرها من غير ما ترحّل خالص)
+// يُستخدم من approveItem و_ensureApprovalJE معاً حتى لا يتفرّق المنطق.
 // ════════════════════════════════════════════════════════════
-const _saleJEInFlight = new Map(); // key: `${sys}:${fileNo}:${invNo}` → Promise
+const _saleJEQueue = new Map(); // key: `${sys}:${fileNo}` → Promise (ذيل الطابور الحالي لهذا الملف)
 export async function _ensureSaleJE(sys, fileNo, invNo, dateFallback, customerFallback) {
   if (!fileNo || !invNo) return;
-  const key = `${sys}:${fileNo}:${invNo}`;
-  if (_saleJEInFlight.has(key)) return _saleJEInFlight.get(key);
+  const fileKey = `${sys}:${fileNo}`;
+  const prevTail = _saleJEQueue.get(fileKey) || Promise.resolve();
 
-  const p = (async () => {
+  const p = prevTail.catch(() => {}).then(async () => {
     const allInvSales = await apiGetAll('sales', {
       select:'sale_price,vin', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}`,
     });
@@ -1907,10 +1912,14 @@ export async function _ensureSaleJE(sys, fileNo, invNo, dateFallback, customerFa
       p_sale_amount: totalAmt,
     });
     if (!row) throw new Error('post_sale_je: لم يرجع نتيجة — تحقق من تنفيذ sql/post_sale_je.sql على القاعدة');
-  })();
+  });
 
-  _saleJEInFlight.set(key, p);
-  try { await p; } finally { _saleJEInFlight.delete(key); }
+  _saleJEQueue.set(fileKey, p);
+  try { await p; } finally {
+    // ✅ امسح المفتاح بس لو لسه بيشاور على نفس الـpromise ده — لو استدعاء تاني
+    // (لفاتورة تالتة) كان خلاله ضاف ذيل جديد، ميتحذفش بالغلط
+    if (_saleJEQueue.get(fileKey) === p) _saleJEQueue.delete(fileKey);
+  }
   return p;
 }
 
