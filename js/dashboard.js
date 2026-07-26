@@ -1336,10 +1336,16 @@ export async function deleteSaleInvoice(invNo, fileNo) {
           if (lines.length) await postDoubleEntry({ sys, date:today(), fileNo, refTable:'reversal', desc:`عكس + حذف فاتورة ${invNo} — ${first.customer||''}`, lines });
         }
         // 2. عكس قيود التحصيلات المدفوعة المرتبطة قبل حذفها
+        // ✅ try/catch لكل عنصر — بدون كده فشل عكس تحصيل واحد (مثلاً قيده الأصلي
+        // اتحذف مباشرة من اليومية) كان يوقف الحذف كله في نص الطريق (فاتورة اتعكس
+        // قيدها بالفعل في الخطوة 1 لكن السجلات نفسها متحذفتش)، بنفس أسلوب
+        // voidSaleInvoice (تحذير بدل توقف صامت)
+        let colDeleteFailures = 0;
         const cols = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, inv_no:`eq.${invNo}` });
         for (const c of (cols||[])) {
           if (c.paid_date && c.post_status === 'posted') {
-            await voidTransaction('collection', c, true);
+            try { await voidTransaction('collection', c, true); }
+            catch(e) { colDeleteFailures++; console.warn('deleteSaleInvoice: فشل عكس قيد تحصيل مرتبط', c.id, e.message); }
           }
         }
         // 3. حذف السجلات
@@ -1361,6 +1367,7 @@ export async function deleteSaleInvoice(invNo, fileNo) {
         } catch(e) { console.warn('updateDealStatus after delete:', e.message); }
         invalidateCache();
         toast(`✅ تم حذف فاتورة ${invNo}`, 'ok');
+        if (colDeleteFailures > 0) toast(`⚠️ تعذّر عكس قيد ${colDeleteFailures} تحصيل مرتبط بهذه الفاتورة — راجعها يدوياً`, 'warn');
         await loadSalesTab(fileNo, sys);
         if (state.currentTab === 5) loadCollectionsTab(fileNo, sys);
         if (state.currentTab === 0) loadSummaryTab(fileNo, sys);

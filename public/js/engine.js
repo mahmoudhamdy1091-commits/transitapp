@@ -258,16 +258,34 @@ export async function voidTransaction(type, record, force=false) {
   let refTable      = 'reversal';
 
   if (type === 'payment') {
-    const cashAcc = (record.pay_method||'') === 'نقد' ? '1110' : '1120';
-    const cashNm  = (record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك';
+    // الأصلي: Dr 2100 ذمم موردين / Cr (نقد/بنك أو 2400 لو دفعها شريك)
+    // ✅ نقرا الحساب الفعلي من القيد الأصلي (بحث بـref_id) بدل إعادة حسابه بمنطق
+    // التوجيه الحالي وقت الإلغاء — نفس مبدأ فرع expense تحت بالحرف. لو منطق
+    // التوجيه اتغيّر لاحقًا، أو القيد الأصلي اتقيد وقت فجوة نشر قديمة (حصل فعليًا:
+    // JE-2026-00412 على ملف LOT 3 NEW — دفعة اتقيدت غلط على 2400 قبل ما إصلاح
+    // التوجيه يوصل للنشر، وبعدين العكس استخدم الحساب "الصح" الجديد فمتقابلوش)،
+    // إعادة الحساب كانت بتنتج عكسًا لا يطابق الأصل، وتسيب أثر حقيقي دائم في الدفاتر.
+    let crAcc = null, crName = null, crContact = null;
+    try {
+      // ✅ order:'id.desc' — لو السجل اتعدّل قبل كده (تغيير توجيه عبر submitEditPayment)
+      // ممكن يكون فيه أكتر من سطر posted بنفس ref_id (القديم المُستبدَل + الجديد
+      // الفعلي، عمدًا زي ما هو موثّق — راجع updateJEInPlace)؛ من غير ترتيب كنا
+      // ممكن نمسك السطر القديم الميت بدل الفعلي (نفس فئة باج c799ed7)
+      const orig = await apiGetAll('journal_entries', {
+        select:'account_code,account_name,contact_name,cr_amount',
+        system_type:`eq.${sys}`, ref_table:'eq.payments', ref_id:`eq.${record.id}`, post_status:'eq.posted',
+        order:'id.desc',
+      });
+      const crLine = (orig||[]).find(l => (+l.cr_amount||0) > 0);
+      if (crLine) { crAcc = crLine.account_code; crName = crLine.account_name; crContact = crLine.contact_name || null; }
+    } catch(e) { console.warn('void payment: فشل جلب القيد الأصلي:', e.message); }
+    if (!crAcc) {
+      throw new Error(`تعذّر إيجاد القيد المحاسبي الأصلي لهذه الدفعة (${record.ref_no||record.pay_id||record.id}) — على الأغلب اتحذف من اليومية مباشرة قبل الإلغاء. لا يمكن إلغاؤها بأمان بدون معرفة الحساب الأصلي؛ راجعي اليومية يدوياً أولاً أو أعيدي إدخال القيد.`);
+    }
     const sup     = record.supplier || 'مورد';
     reversalDesc  = `عكس دفعة ${record.ref_no||record.pay_id||''} — ${sup} — ملف ${record.file_no}`;
-    // الأصلي: Dr 2100 ذمم موردين / Cr (نقد/بنك أو 2400 لو دفعها شريك) — العكس بالمقابل تماماً
-    const cr = _isPartnerPocket(record.payer)
-      ? { acc:'2400', name:'حسابات الشركاء', dr:amount, cr:0, contact:record.payer.trim() }
-      : { acc:cashAcc, name:cashNm, dr:amount, cr:0, contact:null };
     reversalLines = [
-      cr,
+      { acc: crAcc, name: crName, dr: amount, cr: 0, contact: crContact },
       { acc: '2100',  name: 'ذمم الموردين',   dr: 0,      cr: amount, contact: sup  },
     ];
 
@@ -276,9 +294,11 @@ export async function voidTransaction(type, record, force=false) {
     // نعكس الحساب المدين الفعلي من القيد الأصلي (بحث بـ ref_id) — يدعم القديم والجديد معاً
     let eAcc = null, eName = null;
     try {
+      // ✅ order:'id.desc' — نفس سبب فرع payment فوق (احتمال سطر قديم مُستبدَل)
       const orig = await apiGetAll('journal_entries', {
         select:'account_code,account_name,dr_amount',
         system_type:`eq.${sys}`, ref_table:'eq.expenses', ref_id:`eq.${record.id}`, post_status:'eq.posted',
+        order:'id.desc',
       });
       const drLine = (orig||[]).find(l => (+l.dr_amount||0) > 0);
       if (drLine) { eAcc = drLine.account_code; eName = drLine.account_name || record.exp_type || 'مصروف'; }
@@ -301,15 +321,28 @@ export async function voidTransaction(type, record, force=false) {
     ];
 
   } else if (type === 'collection') {
-    // الأصلي: Dr (نقد/بنك أو 2400 لو احتفظ بها شريك) / Cr 1200 — العكس بالمقابل تماماً
+    // الأصلي: Dr (نقد/بنك أو 2400 لو احتفظ بها شريك) / Cr 1200
+    // ✅ نفس مبدأ فرع payment/expense فوق: نقرا الحساب الفعلي من القيد الأصلي
+    // بدل إعادة حسابه بمنطق التوجيه الحالي وقت الإلغاء
+    let drAcc = null, drName = null, drContact = null;
+    try {
+      // ✅ order:'id.desc' — نفس سبب فرع payment فوق (احتمال سطر قديم مُستبدَل)
+      const orig = await apiGetAll('journal_entries', {
+        select:'account_code,account_name,contact_name,dr_amount',
+        system_type:`eq.${sys}`, ref_table:'eq.collections', ref_id:`eq.${record.id}`, post_status:'eq.posted',
+        order:'id.desc',
+      });
+      const drLine = (orig||[]).find(l => (+l.dr_amount||0) > 0);
+      if (drLine) { drAcc = drLine.account_code; drName = drLine.account_name; drContact = drLine.contact_name || null; }
+    } catch(e) { console.warn('void collection: فشل جلب القيد الأصلي:', e.message); }
+    if (!drAcc) {
+      throw new Error(`تعذّر إيجاد القيد المحاسبي الأصلي لهذا التحصيل (${record.ref_no||record.id}) — على الأغلب اتحذف من اليومية مباشرة قبل الإلغاء. لا يمكن إلغاؤه بأمان بدون معرفة الحساب الأصلي؛ راجعي اليومية يدوياً أولاً أو أعيدي إدخال القيد.`);
+    }
     const cust    = record.customer || 'عميل';
-    const cr = _isPartnerPocket(record.received_by)
-      ? { acc:'2400', name:'حسابات الشركاء', dr:0, cr:amount, contact:record.received_by.trim() }
-      : { acc:((record.pay_method||'')==='نقد'?'1110':'1120'), name:((record.pay_method||'')==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null };
     reversalDesc  = `عكس تحصيل ${record.ref_no||''} — ${cust} — فاتورة ${record.inv_no||''}`;
     reversalLines = [
       { acc: '1200', name: 'ذمم العملاء', dr: amount, cr: 0, contact: cust },
-      cr,
+      { acc: drAcc, name: drName, dr: 0, cr: amount, contact: drContact },
     ];
 
   } else if (type === 'payout') {
