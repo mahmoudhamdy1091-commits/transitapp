@@ -265,7 +265,11 @@ export function filterJournalByType(filterVal, key) {
     if (key === 'expenses') return e.type==='expense'||e.type==='opex';
     return e.type === filterVal;
   });
-  const entries = allEntries.filter(e => e.raw?.ref_table !== 'reversal');
+  // ✅ نفس استبعاد correction هنا كمان — حاليًا خامل عمليًا (قيود التصحيح بتتصنّف
+  // 'manual' في loadJournal فمتوصلش أصلاً لأي مجموعة من الست دول)، لكن لو
+  // تصنيفها الاحتياطي اتغيّر مستقبلًا هذا يمنع تسربها هنا بصمت بدل ما يعتمد
+  // على تصنيف جانبي غير مضمون
+  const entries = allEntries.filter(e => e.raw?.ref_table !== 'reversal' && e.raw?.ref_table !== 'correction');
 
   const configs = {
     purchase:   { color:'var(--accent)',  title:'📋 تفاصيل المشتريات' },
@@ -461,12 +465,19 @@ export function _extractInvToken(desc) {
 //
 // أي قيد ref_table='reversal' يُستبعد دائماً (ليس "نشاطاً" قائماً بذاته)،
 // وإن أمكن تحديد القيد الأصلي المقابل له ضمن نفس البيانات المحمّلة يُستبعد معه.
+//
+// ✅ ref_table='correction' (فيز 4 تثبيت COGS + تصحيح توجيه الدفعات، 2026-07-26):
+// قيود تصحيح تاريخية لخطأ برمجي قديم — لا تمثّل عملية تجارية جديدة حصلت، فتُستبعد
+// من العرض بنفس مبدأ 'reversal' بالضبط. الفرق: مفيش "قيد أصلي" مقابل تستبعده معاه
+// (القيد التاريخي الحقيقي ده أصلاً ظاهر وصحيح ولازم يفضل ظاهر) — القيد التصحيحي
+// نفسه بس هو اللي يُستبعد، بلا أي بحث عن نظير.
 // ════════════════════════════════════════════════════════════════
 export function _excludeReversalPairs(entries) {
-  const reversals = entries.filter(e => e.raw?.ref_table === 'reversal');
-  if (!reversals.length) return entries;
+  const reversals   = entries.filter(e => e.raw?.ref_table === 'reversal');
+  const corrections = entries.filter(e => e.raw?.ref_table === 'correction');
+  if (!reversals.length && !corrections.length) return entries;
 
-  const toExclude = new Set(reversals.map(e => e.entryNo));
+  const toExclude = new Set([...reversals.map(e => e.entryNo), ...corrections.map(e => e.entryNo)]);
 
   const REF_ID_SOURCE = [
     { re:/^عكس تحصيل/,    type:'collection' },
