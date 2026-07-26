@@ -2934,7 +2934,7 @@ export async function runAllReviewChecks() {
       apiGetAll('payments',        { select:'*', system_type:`eq.${sys}` }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}` }),
       apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}` }),
-      apiGet('journal_entries', { select:'id,dr_amount,cr_amount,entry_no,file_no,account_code,ref_table', system_type:`eq.${sys}`, post_status:'eq.posted' }).catch(()=>[]),
+      apiGet('journal_entries', { select:'id,dr_amount,cr_amount,entry_no,file_no,account_code,ref_table,ref_id', system_type:`eq.${sys}`, post_status:'eq.posted' }).catch(()=>[]),
     ]);
 
     const deals=state.allDeals||[], vehicles=state.allVehicles||[];
@@ -3135,6 +3135,93 @@ export async function runAllReviewChecks() {
         actionLabel: '📋 كشف الحساب',
       })) });
 
+    // ══ E (تابع). قيود عكس بلا نظير + سجل معلّق له قيد مُرحَّل فعلاً ══
+    // ✅ E4: قيد عكس (reversal) بلا سطر أصلي مقابل بنفس الملف/الحساب بالقيمة
+    // المعاكسة — بالظبط نفس نمط JE-2026-00463 (عُثر عليه وحُذف يدويًا اليوم،
+    // كان محتاج ملاحظة بصرية عرضية بدل فحص تلقائي). فحص تقريبي (heuristic)،
+    // فحالته 'warn' لا 'fail' — يحتاج مراجعة بشرية لتأكيد الحالة.
+    const jeByFileAcc = {};
+    (jeData||[]).forEach(e => {
+      // ✅ مقصود: نتجاهل بس لو الحساب نفسه غايب (بيانات فاسدة) — لكن file_no=null
+      // حالة شرعية (قيد يدوي بلا ملف، زي "اختبار الربط") ولازم يتفهرس برضو، وإلا
+      // أي عكس لقيد بلا file_no هيتصنّف يتيم غلط لمجرد إنه اتستبعد من الفهرس أصلاً
+      if (!e.account_code) return;
+      const k = `${e.file_no}|${e.account_code}`;
+      (jeByFileAcc[k] = jeByFileAcc[k]||[]).push(e);
+    });
+    const reversalsByEntryNo = {};
+    (jeData||[]).filter(e=>e.ref_table==='reversal').forEach(e=>{
+      (reversalsByEntryNo[e.entry_no] = reversalsByEntryNo[e.entry_no]||[]).push(e);
+    });
+    const orphanReversalEntries = [];
+    Object.entries(reversalsByEntryNo).forEach(([entryNo, lines]) => {
+      const allMatched = lines.every(e => {
+        const k = `${e.file_no}|${e.account_code}`;
+        const candidates = (jeByFileAcc[k]||[]).filter(o => o.ref_table !== 'reversal');
+        return candidates.some(o =>
+          Math.abs((+o.dr_amount||0)-(+e.cr_amount||0))<0.01 &&
+          Math.abs((+o.cr_amount||0)-(+e.dr_amount||0))<0.01
+        );
+      });
+      if (!allMatched) orphanReversalEntries.push({ entry_no: entryNo, file_no: lines[0]?.file_no });
+    });
+    checks.push({ cat:'E', icon:'📒', catLabel:'القيود المحاسبية',
+      id:'E4', label:'قيود عكس (reversal) بلا نظير واضح',
+      status: orphanReversalEntries.length===0?'pass':'warn',
+      value: orphanReversalEntries.length===0?'✓ لا يوجد':orphanReversalEntries.length,
+      detail: orphanReversalEntries.length===0?'كل قيود العكس لها نظير واضح ✓':`${orphanReversalEntries.length} قيد عكس محتاج مراجعة يدوية (فحص تقريبي — راجع دفتر القيود قبل أي حذف)`,
+      rows: orphanReversalEntries.slice(0,5).map(r=>({ cols:[r.entry_no, r.file_no||'—', '⚠️ بلا نظير واضح'], action: r.file_no?`openViewer('${r.file_no}')`:null, actionLabel:'📂 فتح' })) });
+
+    // ✅ E5: سجل لسه draft/pending_edit/pending_void لكن ليه قيد posted فعلاً —
+    // يحصل لو انقطع النت بين ترحيل القيد وتحديث حالة السجل (خطوتان منفصلتان
+    // في approveItem/_ensureSaleJE). يعتمد على ref_id الحقيقي (post_sale_je
+    // RPC وما بعدها) — قيود قديمة بـref_id=null ما بتظهرش هنا أصلاً
+    const jeRefIdSet = new Set((jeData||[]).map(e => e.ref_table && e.ref_id ? `${e.ref_table}|${e.ref_id}` : '').filter(Boolean));
+    const isStuck = r => r.post_status!=='posted' && r.post_status && r.post_status!=='voided' && r.post_status!=='cancelled';
+    const draftButPosted = [];
+    sales.filter(isStuck).forEach(s=>{ if (s.inv_no && jeRefIdSet.has(`sales|${s.inv_no}`)) draftButPosted.push({ type:'بيع', file_no:s.file_no, ref:s.inv_no }); });
+    expenses.filter(isStuck).forEach(e=>{ if (jeRefIdSet.has(`expenses|${e.id}`)) draftButPosted.push({ type:'مصروف', file_no:e.file_no, ref:e.ref_no||e.id }); });
+    (allPayments||[]).filter(isStuck).forEach(p=>{ if (jeRefIdSet.has(`payments|${p.id}`)) draftButPosted.push({ type:'دفعة', file_no:p.file_no, ref:p.ref_no||p.id }); });
+    collections.filter(isStuck).forEach(c=>{ if (jeRefIdSet.has(`collections|${c.id}`)) draftButPosted.push({ type:'تحصيل', file_no:c.file_no, ref:c.ref_no||c.id }); });
+    (allPayouts||[]).filter(isStuck).forEach(p=>{ if (jeRefIdSet.has(`partner_payouts|${p.id}`)) draftButPosted.push({ type:'صرف شريك', file_no:p.file_no, ref:p.ref_no||p.id }); });
+    checks.push({ cat:'E', icon:'📒', catLabel:'القيود المحاسبية',
+      id:'E5', label:'سجل معلّق له قيد مُرحَّل فعلاً (تعارض حالة)',
+      status: draftButPosted.length===0?'pass':'fail',
+      value: draftButPosted.length===0?'✓ لا يوجد':draftButPosted.length,
+      detail: draftButPosted.length===0?'كل السجلات المعلّقة بلا قيود ✓':`${draftButPosted.length} سجل قيده موجود لكن حالته لسه معلّقة — راجعه واعتمده يدويًا`,
+      rows: draftButPosted.slice(0,5).map(r=>({ cols:[r.type, r.file_no||'—', String(r.ref)], action: r.file_no?`openViewer('${r.file_no}')`:null, actionLabel:'📂 فتح' })) });
+
+    // ══ H. تكلفة المخزون المباع (COGS) ══
+    // ✅ فحص شامل لكل ملفات النظام — نفس منطق auditAllFilesCOGS (engine.js)
+    // لكن بيستخدم بيانات الـcache الموجودة أصلاً (بدون طلبات شبكة إضافية)،
+    // ويظهر هنا لأول مرة (كان قبل كده console فقط، أو محتاج فتح كل ملف لوحده)
+    const finByFile = computeFinancials(jeData||[]).byFile;
+    const cogsDrifted = [];
+    deals.forEach(d => {
+      const fn = d.file_no;
+      if (!fn) return;
+      const vList = vehicles.filter(v=>v.file_no===fn);
+      if (!vList.length) return;
+      // ✅ نفس fallback وnفس فلتر loadSummaryTab (dashboard.js) بالحرف — وإلا ملف
+      // بقيمة شراء صفر (زي فحص F3 فوق) أو ليه مصروف pending_edit ممكن يظهر
+      // نظيف هنا بينما تبويب الملخص بتاعه فعليًا شايف انحراف، أو العكس
+      const totalPurchase = +d.total_purchase || vList.reduce((s,v)=>s+(+v.purchase_price||0),0);
+      const totalExp = expenses.filter(e=>e.file_no===fn && isActive(e)).reduce((s,e)=>s+(+e.amount||0),0);
+      const soldVinsSet = new Set(sales.filter(s=>s.file_no===fn && isActive(s)).map(s=>s.vin).filter(Boolean));
+      const fin = finByFile[fn] || { cogs:0, dealExp:0 };
+      const fullCost = totalPurchase + totalExp;
+      const actualRemaining = Math.max(fullCost - fin.cogs - fin.dealExp, 0);
+      const check = checkCOGSInvariant({ vehicles: vList, soldVins: soldVinsSet, totalPurchase, totalExp, actualRemaining });
+      if (check.hasDrift) cogsDrifted.push({ file_no: fn, ...check });
+    });
+    checks.push({ cat:'H', icon:'🏷️', catLabel:'تكلفة المخزون (COGS)',
+      id:'H1', label:'انحراف بين التكلفة المتوقعة والفعلية للمخزون',
+      status: cogsDrifted.length===0?'pass':'fail',
+      value: cogsDrifted.length===0?'✓ لا يوجد':cogsDrifted.length,
+      detail: cogsDrifted.length===0?'كل الملفات متطابقة التكلفة ✓':`${cogsDrifted.length} ملف فيه انحراف حقيقي بين المتوقع والفعلي — يحتاج قيد تصحيحي`,
+      rows: cogsDrifted.slice(0,10).map(c=>({ cols:[c.file_no, fmt(c.expectedRemaining), fmt(c.actualRemaining), fmt(c.drift), c.direction], action:`openViewer('${c.file_no}')`, actionLabel:'📂 فتح' })),
+      action: cogsDrifted.length>0?{ label:'📂 فتح أول ملف منحرف', fn:`openViewer('${cogsDrifted[0]?.file_no}')` }:null });
+
     // ════ النتائج الإجمالية ════
     const passCount = checks.filter(c=>c.status==='pass').length;
     const warnCount = checks.filter(c=>c.status==='warn').length;
@@ -3172,8 +3259,8 @@ export async function runAllReviewChecks() {
     }
 
     // عرض الفحوصات مقسّمة بالفئة
-    const cats = ['A','B','C','D','E','F','G'];
-    const catLabels2 = { A:'⏳ العمليات المعلقة', B:'💰 التحصيلات', C:'🏭 الموردون', D:'🚗 المخزون', E:'📒 القيود المحاسبية', F:'🛡️ سلامة البيانات', G:'👥 حسابات الشركاء' };
+    const cats = ['A','B','C','D','E','F','G','H'];
+    const catLabels2 = { A:'⏳ العمليات المعلقة', B:'💰 التحصيلات', C:'🏭 الموردون', D:'🚗 المخزون', E:'📒 القيود المحاسبية', F:'🛡️ سلامة البيانات', G:'👥 حسابات الشركاء', H:'🏷️ تكلفة المخزون (COGS)' };
     wrap.innerHTML = cats.map(cat => {
       const catChecks = checks.filter(c=>c.cat===cat);
       if (!catChecks.length) return '';

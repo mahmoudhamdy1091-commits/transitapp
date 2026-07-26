@@ -1079,7 +1079,10 @@ export async function loadExpensesTab(fn, sys) {
     const effectiveExpenses = data.filter(isEffective);
     effectiveExpenses.forEach(e => { const k=`${e.amount}__${e.description}__${e.exp_date}`; dupKeyCount[k]=(dupKeyCount[k]||0)+1; });
     const dupIds = new Set(effectiveExpenses.filter(e=>dupKeyCount[`${e.amount}__${e.description}__${e.exp_date}`]>1).map(e=>e.id));
-    const dupWarning = dupIds.size ? `<div style="background:var(--red-dim);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--red);display:flex;align-items:center;gap:8px">⚠️ <span>يوجد <strong>${dupIds.size}</strong> مصروف مشبوه بنفس المبلغ والبيان والتاريخ — مُعلَّم بالأحمر</span></div>` : '';
+    // ✅ نفس درجة الخطورة والألوان المستخدمة لتحذير الدفعات المكررة (loadPaymentsTab)
+    // — كان هذا التحذير أحمر (fail) بينما نظيره في الدفعات أصفر (warn) لنفس فئة
+    // المشكلة بالضبط (احتمال تكرار)، بلا سبب حقيقي للفرق
+    const dupWarning = dupIds.size ? `<div style="background:var(--yellow-dim,#fffbe6);border:1px solid var(--yellow,#f5a623);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--yellow-dark,#b07d00);display:flex;align-items:center;gap:8px">⚠️ <span>يوجد <strong>${dupIds.size}</strong> مصروف بنفس المبلغ والبيان والتاريخ — قد يكون تكرارًا</span></div>` : '';
 
     const csvRows = data.map(e=>[e.ref_no||'—', e.description||'—', e.exp_type||'—', +e.amount||0, e.pay_method||'—', e.document||'—', e.exp_date||'—']);
     const csvHeaders = ['رقم المصروف','الوصف','النوع','المبلغ','طريقة الدفع','المستند','التاريخ'];
@@ -1098,8 +1101,8 @@ export async function loadExpensesTab(fn, sys) {
         <tbody>
           ${data.filter(isVisible).map((e,i)=>{
             const isDup = dupIds.has(e.id);
-            const dupBadge = isDup ? '<span style="font-size:13px;background:var(--red);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">مكرر؟</span>' : '';
-            return `<tr style="${isDup?'background:var(--red-dim);':''}">
+            const dupBadge = isDup ? '<span style="font-size:13px;background:var(--yellow,#f5a623);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">مكرر؟</span>' : '';
+            return `<tr style="${isDup?'background:var(--yellow-dim,#fffbe6);':''}">
               <td style="text-align:center;font-size:13px;color:var(--text3);font-weight:700">${i+1}</td>
               <td class="mono" style="color:var(--red);font-weight:700;font-size:13px">${e.ref_no||'—'}</td>
               <td>${e.description||'—'}</td>
