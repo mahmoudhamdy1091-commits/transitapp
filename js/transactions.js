@@ -607,8 +607,15 @@ export async function initApp() {
 
   loadChartOfAccounts();
   setDashPeriod('year'); // ✅ default السنة الحالية
-  loadDashboard().then(() => {
-    // Restore last view after refresh
+
+  // ✅ استرجاع آخر شاشة بعد الريفرش — بقى مستقل عن نجاح تحميل لوحة التحكم
+  // الكاملة تمامًا. قبل كده: كل منطق الاسترجاع كان جوه loadDashboard().then(...)
+  // — لو تحميل لوحة التحكم فشل أو اتأخر (شبكة بطيئة/خطأ مؤقت)، المستخدم كان
+  // يفضل عالق في لوحة التحكم بصمت من غير أي محاولة رجوع لملفه أو شاشته.
+  // كمان استبدلنا loadDashboard() (بتحمّل وترسم كل كروت لوحة التحكم كاملة)
+  // بـensureCache() وحدها — نفس بيانات state.allDeals اللي openViewer محتاجها
+  // لعرض هيدر الملف، من غير حساب ورسم لوحة تحكم كاملة قبل ما نتنقل عنها فورًا.
+  ensureCache().catch(e => console.warn('initApp: ensureCache قبل الاسترجاع فشلت:', e.message)).then(() => {
     const lastView = sessionStorage.getItem('tm_last_view');
     if (lastView === 'contacts') showContacts();
     else if (lastView === 'journal') showJournal();
@@ -626,6 +633,11 @@ export async function initApp() {
       openViewer(fileNo).then(() => {
         const tab = +(sessionStorage.getItem('tm_last_tab')||0);
         if (tab) switchTab(tab);
+      }).catch(e => {
+        // ✅ فشل استرجاع الملف (اتحذف، أو نظام غلط، إلخ) — رجوع صريح للوحة
+        // التحكم بدل ما يفضل الشخص عالق على شاشة فاضية/معطوبة بصمت
+        console.warn('initApp: فشل استرجاع الملف بعد الريفرش:', e.message);
+        showDashboard();
       });
     }
     else showDashboard();
@@ -672,9 +684,11 @@ export function getAccountTypeCOA(code) {
 export function switchSystem(sys) {
   state.system = sys;
   state.currentFileNo = null;
+  // ✅ حفظ اختيار النظام — بدونه أي ريفرش كان بيرجّع لـBOX الافتراضي حتى لو
+  // المستخدم شغال في TM (state.system مالوش أي حفظ قبل كده، engine.js init()
+  // بيسترجع التوكن بس)
+  localStorage.setItem('tm_system', sys);
   invalidateCache(); // إجبار إعادة تحميل بيانات النظام الجديد
-  document.getElementById('sysBox').classList.toggle('active', sys === 'BOX');
-  document.getElementById('sysTm').classList.toggle('active', sys === 'TM');
   updateSystemUI();
   loadChartOfAccounts();
   showDashboard(); // showDashboard تستدعي loadDashboard داخلياً
@@ -684,6 +698,11 @@ export function updateSystemUI() {
   const sys = state.system;
   document.getElementById('topBarSub').textContent = `نظام ${sys}`;
   document.getElementById('nfSystemLabel').textContent = sys;
+  // ✅ نُقلت هنا من switchSystem — كانت الأزرار بتفضل واقفة على آخر حالة يدوية
+  // (BOX افتراضيًا) بعد الريفرش لو النظام المسترجَع TM، رغم إن state.system
+  // والعنوان صح؛ دلوقتي updateSystemUI مصدر واحد لعرض النظام الحالي بالكامل
+  document.getElementById('sysBox')?.classList.toggle('active', sys === 'BOX');
+  document.getElementById('sysTm')?.classList.toggle('active', sys === 'TM');
 }
 
 // ════════════════════════════════════════

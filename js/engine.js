@@ -1082,6 +1082,12 @@ engineHooks.onAppReady     = () => window.initApp?.();
 engineHooks.onVoidComplete = () => window.loadApprovalQueue?.();
 
 (function init() {
+  // ✅ استرجاع النظام المختار (BOX/TM) قبل أي تحميل بيانات — بدونه initApp/
+  // loadDashboard كانوا بيشتغلوا دايمًا على state.system الافتراضي ('BOX')
+  // بغض النظر عن آخر نظام كان شغال فيه المستخدم قبل الريفرش
+  const savedSystem = localStorage.getItem('tm_system');
+  if (savedSystem === 'BOX' || savedSystem === 'TM') state.system = savedSystem;
+
   const savedToken   = localStorage.getItem('tm_token');
   const savedRefresh = localStorage.getItem('tm_refresh');
   const savedUser    = localStorage.getItem('tm_user');
