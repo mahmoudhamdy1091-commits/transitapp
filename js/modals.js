@@ -1655,10 +1655,16 @@ export async function submitSale() {
 
     if (entryStatus()==='posted') {
       try {
-        // ✅ COGS = (إجمالي الشراء + المصاريف المرحّلة) ÷ عدد السيارات × عدد المباعة في الفاتورة
-        const totalCOGS = await calcCOGS(state.system, fn, saleItems.length, { soldVins: saleItems.map(i=>i.vin) });
-        // ✅ القيد يستخدم grandTotal (شامل extra charges) لتطابق قيمة التحصيل
-        await je_sale({sys:state.system, date, amount:grandTotal, cost:totalCOGS, fileNo:fn, customer, invNo});
+        // ✅ post_sale_je (RPC — sql/post_sale_je.sql): يحسب التكلفة ويرحّل
+        // القيد ذرّيًا في القاعدة (قفل صفّي على الملف) بدل calcCOGS+je_sale
+        // على العميل — القيد يستخدم grandTotal (شامل extra charges) لتطابق
+        // قيمة التحصيل
+        await apiRpc('post_sale_je', {
+          p_sys: state.system, p_file_no: fn, p_inv_no: invNo,
+          p_customer: customer || '', p_date: date,
+          p_sold_vins: saleItems.map(i=>i.vin).filter(Boolean),
+          p_sale_amount: grandTotal,
+        });
       } catch(jeErr) {
         if (saleIds.length) await apiPatch('sales', { id:`in.(${saleIds.join(',')})` }, { post_status:'draft' });
         toast(`⚠️ تم حفظ الفاتورة بدون ترحيل قيدها — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
@@ -1677,8 +1683,9 @@ export async function submitSale() {
 
     // ── تحديث حالة الصفقة ──
     const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
-    const allS = await apiGetAll('sales', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
-    const soldSet = new Set((allS||[]).map(s=>s.vin).filter(Boolean));
+    const allS = await apiGetAll('sales', { select:'vin,post_status', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
+    // ✅ استبعاد voided فقط — وإلا ملف كل بيوعه اتلغت يفضل معروض "CLOSED" غلط
+    const soldSet = new Set((allS||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
     const allSold = (allV||[]).every(v=>soldSet.has(v.vin));
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` },
       { status: allSold ? 'CLOSED' : 'IN PROGRESS' });

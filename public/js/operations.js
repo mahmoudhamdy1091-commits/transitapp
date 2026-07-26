@@ -1519,11 +1519,15 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
             let oldCost = 0;
             try {
               const cogsLines = await apiGetAll('journal_entries', {
-                select:'dr_amount,description', system_type:`eq.${sys}`,
+                select:'dr_amount,description,ref_id', system_type:`eq.${sys}`,
                 ref_table:`eq.sales`, file_no:`eq.${fileNo}`, account_code:`eq.5100`, post_status:`eq.posted`,
               });
-              oldCost = (cogsLines||[]).filter(r => (r.description||'').includes(invNo))
-                .reduce((s,r)=>s+(+r.dr_amount||0), 0);
+              // ✅ ref_id أولاً (قيود ما بعد post_sale_je RPC)، fallback نصي بس للقيود القديمة
+              const byRefId = (cogsLines||[]).filter(r => r.ref_id === invNo);
+              const oldCostRows = byRefId.length
+                ? byRefId
+                : (cogsLines||[]).filter(r => !r.ref_id && (r.description||'').includes(invNo));
+              oldCost = oldCostRows.reduce((s,r)=>s+(+r.dr_amount||0), 0);
             } catch(e) { console.warn('openEditSaleApproval oldCost lookup:', e.message); }
             // ✅ تكلفة البضاعة الجديدة محسوبة على السيارات النشطة الفعلية بعد التعديل —
             // نستثني مساهمة هذه الفاتورة نفسها (قيدها القديم لا يزال posted حتى لحظة updateJEInPlace
@@ -1533,17 +1537,24 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
               const _isPart = v => (v||'').startsWith('PART-');
               const [otherSales, allCogsLines] = await Promise.all([
                 apiGetAll('sales', { select:'vin,inv_no', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
-                apiGetAll('journal_entries', { select:'dr_amount,description', system_type:`eq.${sys}`, ref_table:'eq.sales', file_no:`eq.${fileNo}`, account_code:'eq.5100', post_status:'eq.posted' }),
+                apiGetAll('journal_entries', { select:'dr_amount,description,ref_id', system_type:`eq.${sys}`, ref_table:'eq.sales', file_no:`eq.${fileNo}`, account_code:'eq.5100', post_status:'eq.posted' }),
               ]);
               const otherAlreadySold = (otherSales||[]).filter(s => s.inv_no !== invNo && !_isPart(s.vin)).length;
-              const otherAlreadyCOGS = (allCogsLines||[]).filter(r => !(r.description||'').includes(invNo))
+              // ✅ ref_id أولاً (استبعاد دقيق لسطور هذه الفاتورة)، fallback نصي بس
+              // للقيود القديمة اللي ref_id فيها null
+              const otherAlreadyCOGS = (allCogsLines||[])
+                .filter(r => r.ref_id ? r.ref_id !== invNo : !(r.description||'').includes(invNo))
                 .reduce((s,r)=>s+(+r.dr_amount||0), 0);
               newCost = await calcCOGS(sys, fileNo, checkedRows.length, {
                 soldVins: [...checkedVins], alreadySold: otherAlreadySold, alreadyCOGS: otherAlreadyCOGS,
               });
             } catch(e) { console.warn('openEditSaleApproval newCost calc:', e.message); }
             await updateJEInPlace({
-              sys, fileNo, refTable:'sales', refId: oldSales?.[0]?.id||null,
+              // ✅ refId=رقم الفاتورة (مش id سطر سيارة) — يطابق ref_id الحقيقي اللي
+              // post_sale_je بيرحّله دلوقتي، فالمسار الأساسي في updateJEInPlace
+              // (ref_id-based) بقى يلاقي القيد مباشرة بدل الاعتماد الدائم على fallback
+              // مطابقة المبلغ (لسه موجود كـfallback للقيود القديمة بلا ref_id)
+              sys, fileNo, refTable:'sales', refId: invNo||null,
               oldAmount: totalOld, newAmount: totalNew,
               oldCost, newCost,
               contactPatch: newCustomer !== oldCustomer ? newCustomer : null,
@@ -1879,19 +1890,23 @@ export async function _ensureSaleJE(sys, fileNo, invNo, dateFallback, customerFa
   if (_saleJEInFlight.has(key)) return _saleJEInFlight.get(key);
 
   const p = (async () => {
-    const existingJE = await apiGetAll('journal_entries', {
-      select:'entry_no,description', system_type:`eq.${sys}`,
-      ref_table:'eq.sales', file_no:`eq.${fileNo}`, post_status:'eq.posted',
-    });
-    if ((existingJE||[]).some(j => (j.description||'').includes(invNo))) return;
     const allInvSales = await apiGetAll('sales', {
       select:'sale_price,vin', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}`,
     });
     const totalAmt = (allInvSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
-    const cogs = await calcCOGS(sys, fileNo, (allInvSales||[]).length, { soldVins:(allInvSales||[]).map(s=>s.vin) });
-    if (totalAmt > 0) {
-      await je_sale({ sys, date:dateFallback||today(), amount:totalAmt, cost:cogs, fileNo, customer:customerFallback||'', invNo });
-    }
+    if (totalAmt <= 0) return;
+    // ✅ الحساب والترحيل بقى ذرّي داخل القاعدة (post_sale_je RPC — sql/post_sale_je.sql)
+    // بدل calcCOGS+je_sale على العميل: يمنع سباق فاتورتين لنفس الملف اتعتمدوا
+    // بفرق ثوانٍ (زي حادثة BOX-138 70700/-004)، ويتأكد idempotency عبر ref_id
+    // حقيقي (رقم الفاتورة) بدل مطابقة نص description القديمة — والقيد بيترحّل
+    // ومعاه ref_id=invNo فعليًا (كان دايمًا null قبل كده)
+    const [row] = await apiRpc('post_sale_je', {
+      p_sys: sys, p_file_no: fileNo, p_inv_no: invNo,
+      p_customer: customerFallback || '', p_date: dateFallback || today(),
+      p_sold_vins: (allInvSales||[]).map(s=>s.vin).filter(Boolean),
+      p_sale_amount: totalAmt,
+    });
+    if (!row) throw new Error('post_sale_je: لم يرجع نتيجة — تحقق من تنفيذ sql/post_sale_je.sql على القاعدة');
   })();
 
   _saleJEInFlight.set(key, p);
@@ -2022,17 +2037,10 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
           ref_table:`eq.operating_expenses`, ref_id:`eq.${item.ref_no||item.id}`, limit:'1',
         });
       } else if (type === 'sale_edit') {
-        // je_sale لا يخزن ref_id لكل فاتورة (فاتورة واحدة = عدة سطور sales) —
-        // نطابق عبر description (يحتوي "فاتورة {inv_no}" دايماً في القيود الحقيقية) +
-        // file_no، فلترة على السيرفر (ilike) بدل جلب كل قيود الملف وفلترتها يدوياً.
-        // ⚠️ مؤقت — هيتحسّن بمطابقة تامة عبر ref_id في مجهود منفصل بعد backfill.
-        existingJE = item.inv_no
-          ? await apiGet('journal_entries', {
-              select:'entry_no', system_type:`eq.${state.system}`,
-              ref_table:`eq.sales`, file_no:`eq.${item.file_no}`, post_status:`eq.posted`,
-              description:`ilike.*${item.inv_no}*`, limit:'1',
-            })
-          : [];
+        // ✅ post_sale_je (RPC) بيتحقق idempotency داخليًا بـref_id=inv_no
+        // حقيقي — مفيش داعي لفحص مسبق هنا بمطابقة نص، فنسيب existingJE فاضية
+        // ونخلي الاستدعاء تحت (يشتغل دايمًا لـsale_edit) يتولى الأمر بأمان
+        existingJE = [];
       } else {
         existingJE = await apiGet('journal_entries', {
           select:'entry_no', system_type:`eq.${state.system}`,
@@ -2063,8 +2071,14 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
         } else if (type === 'sale_edit' && item.inv_no && item.file_no) {
           const allInvSales = await apiGetAll('sales', { select:'sale_price,vin', system_type:`eq.${state.system}`, file_no:`eq.${item.file_no}`, inv_no:`eq.${item.inv_no}` });
           const totalAmt = (allInvSales||[]).reduce((s,x)=>s+(+x.sale_price||0),0);
-          const cogs = await calcCOGS(state.system, item.file_no, (allInvSales||[]).length, { soldVins:(allInvSales||[]).map(s=>s.vin) });
-          if (totalAmt > 0) await je_sale({ sys:state.system, date:item.sale_date||today(), amount:totalAmt, cost:cogs, fileNo:item.file_no, customer:item.customer||'', invNo:item.inv_no||'' });
+          if (totalAmt > 0) {
+            await apiRpc('post_sale_je', {
+              p_sys: state.system, p_file_no: item.file_no, p_inv_no: item.inv_no,
+              p_customer: item.customer || '', p_date: item.sale_date || today(),
+              p_sold_vins: (allInvSales||[]).map(s=>s.vin).filter(Boolean),
+              p_sale_amount: totalAmt,
+            });
+          }
         }
       }
     }
@@ -3902,8 +3916,14 @@ export async function fixUnbalancedEntries() {
           });
           for (const s of Object.values(byInv)) {
             if (s.total > 0) {
-              const cogs = await calcCOGS(sys, s.file_no, s.soldCount, { soldVins: s.vins });
-              await je_sale({ sys, date:s.sale_date||today(), amount:s.total, cost:cogs, fileNo:s.file_no, customer:s.customer||'', invNo:s.inv_no||'' });
+              // ✅ post_sale_je idempotent بـref_id=inv_no — لو فاتورة تانية في
+              // نفس الملف ليها قيد صحيح بالفعل، بترجع already_posted بدل ما
+              // تكرره (كانت calcCOGS+je_sale القديمة بتكرر بلا شرط)
+              await apiRpc('post_sale_je', {
+                p_sys: sys, p_file_no: s.file_no, p_inv_no: s.inv_no || ('SALE-' + s.id),
+                p_customer: s.customer || '', p_date: s.sale_date || today(),
+                p_sold_vins: s.vins.filter(Boolean), p_sale_amount: s.total,
+              });
             }
           }
 
@@ -4921,10 +4941,13 @@ export async function loadVehiclesForTransfer(fileNo) {
   try {
     const [vehicles, sales, existing] = await Promise.all([
       apiGetAll('vehicles',       { select:'*',          system_type:`eq.${state.system}`, file_no:`eq.${fn}` }),
-      apiGetAll('sales',          { select:'vin',        system_type:`eq.${state.system}`, file_no:`eq.${fn}` }),
+      apiGetAll('sales',          { select:'vin,post_status', system_type:`eq.${state.system}`, file_no:`eq.${fn}` }),
       apiGetAll('stock_locations',{ select:'vin,location_name', system_type:`eq.${state.system}`, file_no:`eq.${fn}` }),
     ]);
-    const soldVins    = new Set((sales||[]).map(s=>s.vin).filter(Boolean));
+    // ✅ سيارة بيعها الوحيد مُلغى (voided) لازم ترجع "متاحة" — استبعاد voided فقط
+    // (نفس اتفاقية loadAvailableVehicles في modals.js). من غير الفلتر ده، سيارة
+    // اتباعت ثم اتلغى بيعها كانت تفضل معطّلة "مباع" هنا للأبد
+    const soldVins    = new Set((sales||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
     const transferMap = {};
     (existing||[]).forEach(t => { transferMap[t.vin] = t.location_name; });
     if (!vehicles?.length) { wrap.innerHTML = `<div style="color:var(--red);font-size:12px;text-align:center;padding:10px">لم يُعثر على سيارات في هذه الصفقة</div>`; return; }
@@ -5050,7 +5073,9 @@ export async function loadVehiclesTab(fn, sys) {
       apiGetAll('stock_locations',{ select:'vin,location_name', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
     state.currentVehicles = data || [];
-    const soldVins   = new Set((state.currentSales||[]).map(s=>s.vin).filter(Boolean));
+    // ✅ استبعاد voided فقط — نفس اتفاقية loadAvailableVehicles/loadVehiclesForTransfer،
+    // وإلا سيارة اتباعت ثم اتلغى بيعها تفضل ظاهرة "مباع" هنا للأبد
+    const soldVins   = new Set((state.currentSales||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
     const locMap     = {};
     (locations||[]).forEach(t => { locMap[t.vin] = t.location_name; });
 

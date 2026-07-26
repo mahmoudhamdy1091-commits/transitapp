@@ -758,6 +758,13 @@ export async function loadSummaryTab(fn, sys) {
     const margin         = totalSales > 0 ? Math.round(profit/totalSales*100) : 0;
     const draftBanner    = draftCount > 0 ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:8px 14px;margin-bottom:12px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px">⏳ <strong>${draftCount} عملية معلقة</strong> لم تُرحَّل بعد — الأرقام تعكس المرحَّل فقط &nbsp;<a onclick="showApprovalQueue()" href="javascript:void(0)" style="color:#92400e;font-weight:700;text-decoration:underline">راجعها</a></div>` : '';
 
+    // ✅ فحص تطابق تكلفة المخزون (checkCOGSInvariant, engine.js) — يتأكد إن
+    // (شراء+مصاريف) = (تكلفة مباعة) + (نصيب السيارات الباقية العادل) لهذا
+    // الملف. اكتُشف انحراف حقيقي فعليًا على BOX-138 (~29 ألف) قبل ما يتلاحظ
+    // بالصدفة — الهدف إظهاره فورًا من هنا بدل انتظار مراجعة يدوية
+    const cogsCheck  = checkCOGSInvariant({ vehicles, soldVins, totalPurchase, totalExp, actualRemaining: unsoldCostBasis });
+    const cogsBanner = cogsCheck.hasDrift ? `<div style="background:#fee2e2;border:1px solid #ef4444;border-radius:var(--radius-sm);padding:8px 14px;margin-bottom:12px;font-size:12px;color:#991b1b;display:flex;align-items:center;gap:8px">⚠️ <strong>عدم تطابق في تكلفة المخزون المباع</strong> — المتوقع ${fmt(cogsCheck.expectedRemaining)} والفعلي ${fmt(cogsCheck.actualRemaining)} (فرق ${fmt(Math.abs(cogsCheck.drift))} — ${cogsCheck.direction})، راجع الملف محاسبيًا</div>` : '';
+
     // ── KPI Strip ──
     // زرار طباعة ملخص الصفقة
     el('sum-financial').innerHTML = `
@@ -765,7 +772,7 @@ export async function loadSummaryTab(fn, sys) {
         <button class="btn btn-secondary btn-sm" onclick="printDealSummary('${fn}')" style="color:var(--blue)">
           🖨️ طباعة ملخص الصفقة
         </button>
-      </div>` + draftBanner + `
+      </div>` + draftBanner + cogsBanner + `
       <div id="kpiGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
         ${[
           // ── التكاليف ──
@@ -1224,11 +1231,17 @@ export async function voidSaleInvoice(invNo, fileNo) {
         let totalCOGS = 0;
         try {
           const cogsLines = await apiGetAll('journal_entries', {
-            select:'dr_amount,description', system_type:`eq.${sys}`,
+            select:'dr_amount,description,ref_id', system_type:`eq.${sys}`,
             ref_table:`eq.sales`, file_no:`eq.${fileNo}`, account_code:`eq.5100`, post_status:`eq.posted`,
           });
-          totalCOGS = (cogsLines||[]).filter(r => (r.description||'').includes(invNo))
-            .reduce((s,r)=>s+(+r.dr_amount||0), 0);
+          // ✅ مطابقة أولاً بـref_id الحقيقي (قيود ما بعد post_sale_je RPC — ref_id=رقم
+          // الفاتورة بالظبط) — fallback لمطابقة النص القديمة بس للقيود التاريخية
+          // اللي ref_id فيها لسه null (قبل الفيز 1)، عشان ملفات قديمة تفضل تشتغل صح
+          const byRefId = (cogsLines||[]).filter(r => r.ref_id === invNo);
+          const cogsRows = byRefId.length
+            ? byRefId
+            : (cogsLines||[]).filter(r => !r.ref_id && (r.description||'').includes(invNo));
+          totalCOGS = cogsRows.reduce((s,r)=>s+(+r.dr_amount||0), 0);
         } catch(e) { console.warn('voidSaleInvoice cogs lookup:', e.message); }
         // قيد عكسي للمبيعات (+ التكلفة لو وُجدت)
         const reversalLines = [];
@@ -1298,10 +1311,15 @@ export async function deleteSaleInvoice(invNo, fileNo) {
           let totalCOGS = 0;
           try {
             const cogsLines = await apiGetAll('journal_entries', {
-              select:'dr_amount,description', system_type:`eq.${sys}`,
+              select:'dr_amount,description,ref_id', system_type:`eq.${sys}`,
               ref_table:`eq.sales`, file_no:`eq.${fileNo}`, account_code:`eq.5100`, post_status:`eq.posted`,
             });
-            totalCOGS = (cogsLines||[]).filter(r=>(r.description||'').includes(invNo)).reduce((s,r)=>s+(+r.dr_amount||0),0);
+            // ✅ نفس منطق voidSaleInvoice: ref_id أولاً، fallback نصي بس للقيود القديمة
+            const byRefId = (cogsLines||[]).filter(r => r.ref_id === invNo);
+            const cogsRows = byRefId.length
+              ? byRefId
+              : (cogsLines||[]).filter(r => !r.ref_id && (r.description||'').includes(invNo));
+            totalCOGS = cogsRows.reduce((s,r)=>s+(+r.dr_amount||0),0);
           } catch(e) { console.warn('deleteSale cogs lookup:', e.message); }
           const lines = [];
           if (totalSale > 0) {
@@ -1329,8 +1347,9 @@ export async function deleteSaleInvoice(invNo, fileNo) {
         try {
           const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           const allS = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
-          const soldSet = new Set((allS||[]).map(s=>s.vin).filter(Boolean));
-          const hasAnySales = (allS||[]).length > 0;
+          // ✅ استبعاد voided فقط — وإلا ملف كل بيوعه اتلغت يفضل معروض "CLOSED" غلط
+          const soldSet = new Set((allS||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
+          const hasAnySales = (allS||[]).filter(isVisible).length > 0;
           const allSold = hasAnySales && (allV||[]).every(v=>soldSet.has(v.vin));
           await apiPatch('purchase_orders',
             { system_type:`eq.${sys}`, file_no:`eq.${fileNo}` },

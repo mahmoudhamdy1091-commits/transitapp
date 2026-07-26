@@ -153,8 +153,9 @@ export async function loadQuickVins(fileNo) {
   _vinLoadTimer = setTimeout(async () => {
     try {
       const vehicles = await apiGetAll('vehicles', { select:'vin,model,vehicle_type', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
-      const sales    = await apiGetAll('sales', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
-      const soldVins = new Set((sales||[]).map(s=>s.vin).filter(Boolean));
+      const sales    = await apiGetAll('sales', { select:'vin,post_status', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
+      // ✅ استبعاد voided فقط — سيارة بيعها الوحيد اتلغى لازم تظهر تاني كمتاحة للبيع السريع
+      const soldVins = new Set((sales||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
       const unsold   = (vehicles||[]).filter(v => !soldVins.has(v.vin));
       el('qs-vin').innerHTML = unsold.length
         ? unsold.map(v=>`<option value="${v.vin}" title="${v.model||v.vehicle_type||''}">${v.vin}</option>`).join('')
@@ -330,9 +331,16 @@ export async function submitQuickSale() {
     if (entryStatus()==='posted') {
       const saleId = qsIns?.[0]?.id || null;
       try {
-        // COGS = (إجمالي الشراء + المصاريف) ÷ عدد السيارات × 1 (سيارة واحدة في البيع السريع)
-        const _qsCOGS = await calcCOGS(state.system, fileNo, 1, { soldVins:[vin] });
-        await je_sale({sys:state.system,date,amount:price,cost:_qsCOGS,fileNo,customer,invNo:invNo||'QS'});
+        // ✅ post_sale_je (RPC) بيستخدم p_inv_no كمعرّف idempotency حقيقي —
+        // لو مفيش رقم فاتورة (شائع في البيع السريع) لازم fallback فريد لكل
+        // عملية (مش النص الثابت 'QS' القديم)، وإلا بيع سريع تاني بلا رقم
+        // فاتورة في نفس الملف هيتعامل معاه كـ"نفس الفاتورة" ويتجاهل قيده
+        const qsRef = invNo || ('QS-' + (saleId || Date.now()));
+        await apiRpc('post_sale_je', {
+          p_sys: state.system, p_file_no: fileNo, p_inv_no: qsRef,
+          p_customer: customer || '', p_date: date,
+          p_sold_vins: [vin], p_sale_amount: price,
+        });
       } catch(jeErr) {
         if (saleId) await apiPatch('sales', { id:`eq.${saleId}` }, { post_status:'draft' });
         toast(`⚠️ تم حفظ البيع بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');

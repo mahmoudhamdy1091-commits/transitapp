@@ -629,6 +629,82 @@ export async function calcCOGS(sys, fileNo, soldCount, { alreadySold = null, alr
   }
 }
 
+// ── فحص تطابق تكلفة المخزون (Reconciliation Check) ──
+// يتأكد إن: (شراء + مصاريف مرحّلة) = (تكلفة مباعة فعليًا) + (نصيب السيارات
+// الباقية العادل) لملف معيّن. حساب "النصيب العادل" هنا مرآة لمنطق calcCOGS
+// بالضبط (نفس فصل قطع PART- عن متوسط الشاحنات) — عشان الفحص يقيس calcCOGS
+// نفسه، مش تخمين منفصل قد يختلف معاه بالصدفة.
+// ✅ دالة نقية (sync، بلا طلبات شبكة) — تاخد بيانات جاهزة من المستدعي:
+//   - loadSummaryTab (dashboard.js) عندها البيانات دي أصلاً مجلوبة لكل ملف
+//   - auditAllFilesCOGS (تحت) بتجيبها لكل الملفات دفعة واحدة للمسح الشامل
+// actualRemaining = "المخزون المتبقي بالتكلفة" الفعلي — نفس unsoldCostBasis
+// المحسوبة في dashboard.js (fullCost - fin.cogs - fin.dealExp) عشان نفس
+// مصدر computeFinancials يبقى مرجع واحد لكل الشاشات.
+export function checkCOGSInvariant({ vehicles, soldVins, totalPurchase, totalExp, actualRemaining }) {
+  const _isPart    = vin => (vin||'').startsWith('PART-');
+  const allVeh     = vehicles || [];
+  const sold       = soldVins || new Set();
+  const fullCost   = (+totalPurchase||0) + (+totalExp||0);
+  const partsCost  = allVeh.filter(v => _isPart(v.vin)).reduce((s,v)=>s+(+v.purchase_price||0),0);
+  const truckCount = allVeh.filter(v => !_isPart(v.vin)).length;
+  const truckCost  = Math.max(fullCost - partsCost, 0);
+
+  const unsoldPartsCost = allVeh
+    .filter(v => _isPart(v.vin) && !sold.has(v.vin))
+    .reduce((s,v)=>s+(+v.purchase_price||0),0);
+  const unsoldTrucks = allVeh.filter(v => !_isPart(v.vin) && !sold.has(v.vin)).length;
+  const expectedTruckRemaining = truckCount > 0 ? truckCost * (unsoldTrucks / truckCount) : 0;
+  const expectedRemaining = Math.round((unsoldPartsCost + expectedTruckRemaining) * 100) / 100;
+
+  const actual = Math.round((+actualRemaining || 0) * 100) / 100;
+  const drift  = Math.round((actual - expectedRemaining) * 100) / 100;
+  // ✅ هامش تسامح: أكبر من (وحدة عملة واحدة) أو (0.5% من التكلفة الكلية) —
+  // يمنع إنذارات كاذبة من انجراف تقريب بسيط عبر عمليات كتير
+  const epsilon = Math.max(1, fullCost * 0.005);
+
+  return {
+    expectedRemaining, actualRemaining: actual, drift,
+    hasDrift: Math.abs(drift) > epsilon,
+    direction: drift > 0 ? 'مخزون زيادة عن المتوقع (COGS ناقص)' : 'مخزون ناقص عن المتوقع (COGS زيادة)',
+    fullCost,
+  };
+}
+
+// ── مسح شامل لكل ملفات نظام معيّن — يكتشف كل الملفات اللي فيها انحراف ──
+// قراءة فقط، بلا أي كتابة. يُستخدم من الكونسول: await auditAllFilesCOGS('BOX')
+export async function auditAllFilesCOGS(sys) {
+  const poRows = await apiGetAll('purchase_orders', { select:'file_no,total_purchase', system_type:`eq.${sys}` });
+  const files  = (poRows||[]).map(p => p.file_no).filter(Boolean);
+  const results = [];
+  for (const fileNo of files) {
+    try {
+      const [vehRows, expRows, salesRows, jeRows] = await Promise.all([
+        apiGetAll('vehicles',        { select:'vin,purchase_price', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+        apiGetAll('expenses',        { select:'amount',             system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
+        apiGetAll('sales',           { select:'vin,post_status',    system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+        apiGetAll('journal_entries', { select:'account_code,dr_amount,cr_amount,ref_table,file_no', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted' }),
+      ]);
+      const totalPurchase = +((poRows||[]).find(p=>p.file_no===fileNo)?.total_purchase || 0);
+      const totalExp      = (expRows||[]).reduce((s,e)=>s+(+e.amount||0),0);
+      const soldVins      = new Set((salesRows||[]).filter(isActive).map(s=>s.vin).filter(Boolean));
+      const fin           = computeFinancials(jeRows||[]).byFile[fileNo] || { cogs:0, dealExp:0 };
+      const fullCost      = totalPurchase + totalExp;
+      const actualRemaining = Math.max(fullCost - fin.cogs - fin.dealExp, 0);
+      const check = checkCOGSInvariant({ vehicles: vehRows, soldVins, totalPurchase, totalExp, actualRemaining });
+      results.push({ file_no: fileNo, ...check });
+    } catch(e) {
+      results.push({ file_no: fileNo, error: e.message });
+    }
+  }
+  const drifted = results.filter(r => r.hasDrift);
+  console.table(results.map(r => ({
+    file_no: r.file_no, expected: r.expectedRemaining, actual: r.actualRemaining,
+    drift: r.drift, direction: r.direction || r.error || '',
+  })));
+  console.log(`✅ فحص ${results.length} ملف — ${drifted.length} ملف فيه انحراف حقيقي (أكبر من هامش التسامح).`);
+  return { results, drifted };
+}
+
 // شراء: مخزون Dr / مورد Cr
 export async function je_purchase({sys,date,amount,fileNo,supplier,refId}) {
   if(!amount||amount<=0) throw new Error(`قيمة شراء غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد السند`);
@@ -984,7 +1060,7 @@ Object.assign(window, {
   isAdminUser, adminPostsImmediately, entryStatus,
   toggleAdminPostSetting, updateAdminPostToggleUI,
   updateJEInPlace, voidTransaction, reverseManualJE, voidPurchaseOrder,
-  _jeNo, postDoubleEntry, calcCOGS,
+  _jeNo, postDoubleEntry, calcCOGS, checkCOGSInvariant, auditAllFilesCOGS,
   je_purchase, je_sale, je_collection, je_payment, je_expense, je_payout,
   je_custodian, je_opex, simulateDraftJE,
   TREASURY_PARTNER, _isPartnerPocket, USER_DISPLAY_NAMES, displayUser,
