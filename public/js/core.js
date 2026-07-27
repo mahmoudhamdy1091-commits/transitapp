@@ -518,7 +518,7 @@ export async function computePartnerSettlement(fileNo, sys) {
   const partners = (partnersRaw||[]).map(p => {
     const name  = (p.partner||'').trim();
     const share = (+p.share_percent||0) / 100;
-    const isTreasury = name === TREASURY_PARTNER;
+    const isTreasury = TREASURY_ALIASES.has(name);
     const c = byContact[name] || { cr:0, dr:0, crByRef:{payments:0,expenses:0}, drByRef:{collections:0,partner_payouts:0}, movements:[] };
 
     const capitalPaid        = c.crByRef.payments;
