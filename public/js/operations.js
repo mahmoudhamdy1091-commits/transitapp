@@ -306,6 +306,18 @@ export async function deleteOpex(id) {
         const eAcc    = OPEX_ACC_MAP[o.exp_type] || '6700';
         const cashAcc = o.pay_method === 'نقد' ? '1110' : '1120';
         const cashNm  = o.pay_method === 'نقد' ? 'النقد' : 'البنك';
+        // ✅ id للقيد الأصلي فقط للربط (reverses/reversed_by، project_dual_je_audit
+        // Case 1) — أفضل مجهود، لا يُستخدم لحساب الحساب (بيتحسب من o مباشرة فوق)
+        let origId = null;
+        if (o.ref_no) {
+          try {
+            const orig = await apiGet('journal_entries', {
+              select:'id', system_type:`eq.${state.system}`, ref_table:'eq.operating_expenses', ref_id:`eq.${o.ref_no}`,
+              post_status:'eq.posted', order:'id.desc', limit:1,
+            });
+            if (orig?.[0]) origId = orig[0].id || null;
+          } catch(e) { console.warn('deleteOpex: فشل جلب id القيد الأصلي:', e.message); }
+        }
         await postDoubleEntry({
           sys: state.system, date: today(), fileNo: null,
           refTable: 'reversal', refId: o.id,
@@ -314,6 +326,7 @@ export async function deleteOpex(id) {
             { acc: cashAcc, name: cashNm,                                 dr: amount, cr: 0,      contact: null },
             { acc: eAcc,    name: `مصروف تشغيلي — ${o.exp_type||'أخرى'}`, dr: 0,      cr: amount, contact: null },
           ],
+          reversesId: origId,
         });
       }
       // ✅ operating_expenses بلا عمود post_status — لا يمكن وضع voided (كان يسبب فشل الحذف).

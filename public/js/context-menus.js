@@ -260,7 +260,13 @@ export async function _ctxDeal(btn) {
   } catch(e) { console.warn('_ctxDeal post_status check:', e.message); }
   if (can('delete')) {
     items.push('divider');
-    items.push({icon:'🗑', label:'حذف الصفقة', danger:true, action:()=>confirmAction('حذف الصفقة','هل أنت متأكد من حذف هذه الصفقة؟',()=>deleteOrphanDeal(id||fn))});
+    // ✅ deleteDealCompletely (reports.js) — نقطة الدخول الموحّدة الوحيدة للحذف
+    // الكامل (Tier 0 بند 2)، تمنع الحذف تلقائيًا لو فيه أي نشاط مالي مرحّل
+    items.push({icon:'🗑', label:'حذف الصفقة', danger:true, action:()=>confirmAction(
+      'حذف الصفقة',
+      `سيتم حذف كل بيانات الملف ${fn} نهائياً — مسموح فقط لو الصفقة لسه مسودة (لم تُرحَّل بعد). هل أنت متأكد؟`,
+      ()=>deleteDealCompletely(fn)
+    )});
   }
   showCtxMenu(btn, items);
 }

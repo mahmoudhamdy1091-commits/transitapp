@@ -933,19 +933,6 @@ export const apiDelete = async function(table, matchParams) {
 }
 
 // ════════════════════════════════════════
-// DELETE ORPHAN DEAL (no file_no)
-// ════════════════════════════════════════
-export async function deleteOrphanDeal(dealId) {
-  if (!confirm('هل تريد حذف هذا الملف نهائياً؟ لا يمكن التراجع.')) return;
-  try {
-    // Delete by id (works even with null file_no)
-    await apiDelete('purchase_orders', { id:`eq.${dealId}` });
-    toast('✅ تم الحذف','ok');
-    await loadDashboard();
-  } catch(e) { alert('خطأ: ' + e.message); }
-}
-
-// ════════════════════════════════════════
 // EXPORT ENGINE — Excel + PDF/Print
 // ════════════════════════════════════════
 
@@ -3012,7 +2999,7 @@ Object.assign(window, {
   loadChartOfAccountsView, seedDefaultAccounts, openNewAccountModal, openEditAccountModal,
   submitAccount, deleteAccount, exportTrialCSV, exportLedgerCSV, getAccountType, downloadCSV,
   openContactModal, submitContact, deleteContact, getEditVehicleId, openEditVehicleModal,
-  submitEditVehicle, deleteOrphanDeal, exportToExcel, exportPurchaseOrderExcel, exportDealExcel,
+  submitEditVehicle, exportToExcel, exportPurchaseOrderExcel, exportDealExcel,
   exportCurrentReportExcel, exportTrialBalanceExcel, uploadLicenseForRow, uploadMultipleLicenses,
   readLicenseIntoRow, readMultipleLicenses, extractLicenseData, fillRowFromLicense, saveDraft,
   postEntry, loadJournalDrafts, postDraftEntry, deleteDraftEntry, editJournalEntry,

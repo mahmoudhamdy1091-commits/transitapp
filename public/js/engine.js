@@ -195,6 +195,7 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
         refTable: 'reversal', refId,
         desc: `عكس تعديل ${refTable} — ملف ${fileNo||'—'} — تصحيح قيد ${entryNo}`,
         lines: reversalLines,
+        reversesId: allLines[0].id,
       });
     } catch(revErr) {
       // ✅ القيد الجديد اتُرحّل بنجاح لكن عكس القديم فشل — النتيجة ازدواج (قديم
@@ -256,6 +257,9 @@ export async function voidTransaction(type, record, force=false) {
   let reversalLines = [];
   let reversalDesc  = '';
   let refTable      = 'reversal';
+  // ✅ id لسطر من القيد الأصلي — يُمرَّر لـpostDoubleEntry لكتابة reverses/reversed_by
+  // الفعليين (project_dual_je_audit Case 1)، بدل الاعتماد على مطابقة نصية/ref_id فقط
+  let origId        = null;
 
   if (type === 'payment') {
     // الأصلي: Dr 2100 ذمم موردين / Cr (نقد/بنك أو 2400 لو دفعها شريك)
@@ -272,12 +276,12 @@ export async function voidTransaction(type, record, force=false) {
       // الفعلي، عمدًا زي ما هو موثّق — راجع updateJEInPlace)؛ من غير ترتيب كنا
       // ممكن نمسك السطر القديم الميت بدل الفعلي (نفس فئة باج c799ed7)
       const orig = await apiGetAll('journal_entries', {
-        select:'account_code,account_name,contact_name,cr_amount',
+        select:'id,account_code,account_name,contact_name,cr_amount',
         system_type:`eq.${sys}`, ref_table:'eq.payments', ref_id:`eq.${record.id}`, post_status:'eq.posted',
         order:'id.desc',
       });
       const crLine = (orig||[]).find(l => (+l.cr_amount||0) > 0);
-      if (crLine) { crAcc = crLine.account_code; crName = crLine.account_name; crContact = crLine.contact_name || null; }
+      if (crLine) { crAcc = crLine.account_code; crName = crLine.account_name; crContact = crLine.contact_name || null; origId = crLine.id || null; }
     } catch(e) { console.warn('void payment: فشل جلب القيد الأصلي:', e.message); }
     if (!crAcc) {
       throw new Error(`تعذّر إيجاد القيد المحاسبي الأصلي لهذه الدفعة (${record.ref_no||record.pay_id||record.id}) — على الأغلب اتحذف من اليومية مباشرة قبل الإلغاء. لا يمكن إلغاؤها بأمان بدون معرفة الحساب الأصلي؛ راجعي اليومية يدوياً أولاً أو أعيدي إدخال القيد.`);
@@ -296,12 +300,12 @@ export async function voidTransaction(type, record, force=false) {
     try {
       // ✅ order:'id.desc' — نفس سبب فرع payment فوق (احتمال سطر قديم مُستبدَل)
       const orig = await apiGetAll('journal_entries', {
-        select:'account_code,account_name,dr_amount',
+        select:'id,account_code,account_name,dr_amount',
         system_type:`eq.${sys}`, ref_table:'eq.expenses', ref_id:`eq.${record.id}`, post_status:'eq.posted',
         order:'id.desc',
       });
       const drLine = (orig||[]).find(l => (+l.dr_amount||0) > 0);
-      if (drLine) { eAcc = drLine.account_code; eName = drLine.account_name || record.exp_type || 'مصروف'; }
+      if (drLine) { eAcc = drLine.account_code; eName = drLine.account_name || record.exp_type || 'مصروف'; origId = drLine.id || null; }
     } catch(e) { console.warn('void expense: فشل جلب القيد الأصلي:', e.message); }
     // ✅ لو مفيش قيد أصلي مُرحَّل نلقاه لهذا السجل (اتحذف مباشرة من اليومية مثلاً)،
     // ممنوع نكمل بحساب افتراضي بصمت — ده كان بيعمل قيد عكسي "يتيم" بلا نظير
@@ -328,12 +332,12 @@ export async function voidTransaction(type, record, force=false) {
     try {
       // ✅ order:'id.desc' — نفس سبب فرع payment فوق (احتمال سطر قديم مُستبدَل)
       const orig = await apiGetAll('journal_entries', {
-        select:'account_code,account_name,contact_name,dr_amount',
+        select:'id,account_code,account_name,contact_name,dr_amount',
         system_type:`eq.${sys}`, ref_table:'eq.collections', ref_id:`eq.${record.id}`, post_status:'eq.posted',
         order:'id.desc',
       });
       const drLine = (orig||[]).find(l => (+l.dr_amount||0) > 0);
-      if (drLine) { drAcc = drLine.account_code; drName = drLine.account_name; drContact = drLine.contact_name || null; }
+      if (drLine) { drAcc = drLine.account_code; drName = drLine.account_name; drContact = drLine.contact_name || null; origId = drLine.id || null; }
     } catch(e) { console.warn('void collection: فشل جلب القيد الأصلي:', e.message); }
     if (!drAcc) {
       throw new Error(`تعذّر إيجاد القيد المحاسبي الأصلي لهذا التحصيل (${record.ref_no||record.id}) — على الأغلب اتحذف من اليومية مباشرة قبل الإلغاء. لا يمكن إلغاؤه بأمان بدون معرفة الحساب الأصلي؛ راجعي اليومية يدوياً أولاً أو أعيدي إدخال القيد.`);
@@ -348,6 +352,15 @@ export async function voidTransaction(type, record, force=false) {
   } else if (type === 'payout') {
     // القيد الأصلي: Dr 2400 حسابات شركاء / Cr 1110|1120
     // العكس:        Dr 1110|1120 / Cr 2400
+    // ✅ جلب id الأصلي فقط للربط (reverses/reversed_by) — لا يُستخدم لحساب
+    // الحساب هنا (بيتحسب من record.pay_method مباشرة)، فأفضل مجهود لا يوقف العملية
+    try {
+      const orig = await apiGetAll('journal_entries', {
+        select:'id', system_type:`eq.${sys}`, ref_table:'eq.partner_payouts', ref_id:`eq.${record.id}`,
+        post_status:'eq.posted', order:'id.desc', limit:1,
+      });
+      if (orig?.[0]) origId = orig[0].id || null;
+    } catch(e) { console.warn('void payout: فشل جلب id الأصلي:', e.message); }
     const cashAcc = (record.pay_method||'') === 'نقد' ? '1110' : '1120';
     const cashNm  = (record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك';
     reversalDesc  = `عكس صرف شريك ${record.pay_id||record.ref_no||''} — ${record.partner||''} — ملف ${record.file_no}`;
@@ -369,6 +382,7 @@ export async function voidTransaction(type, record, force=false) {
     refId:     record.id || null,
     desc:      reversalDesc,
     lines:     reversalLines,
+    reversesId: origId,
   });
 
   // ── 2. وضع post_status = 'voided' على السجل التشغيلي ──
@@ -441,6 +455,7 @@ export async function reverseManualJE(entryNo) {
     refTable: 'reversal', refId: null,
     desc: `عكس قيد ${entryNo}`,
     lines: reversalLines,
+    reversesId: lines[0].id,
   });
 
   await logAudit(
@@ -491,8 +506,11 @@ export async function voidPurchaseOrder(fileNo) {
   // ✅ حارس: لو فيه قيد شراء مُرحَّل فعلاً على هذا الملف لكن amount قرأت صفر/غير
   // صالحة (انجراف بيانات) — ميصحش نلغي السند بصمت من غير عكس القيد، يبقى فيه
   // قيد يتيم بلا مصدر. نتأكد أولاً بدل الاعتماد على po.total_purchase فقط.
+  // ✅ order:'id.desc' — لو فيه أكتر من قيد شراء posted لنفس الملف (تكرار تاريخي
+  // مثل BOX-135، راجع project_dual_je_audit Case 5) نمسك الأحدث/الفعلي دائماً،
+  // لا صف عشوائي (نفس فئة باج c799ed7 لو اتسيبت بلا ترتيب)
   const existingPurchaseJE = await apiGetAll('journal_entries', {
-    select:'id', system_type:`eq.${sys}`, ref_table:'eq.purchase_orders', file_no:`eq.${fileNo}`, post_status:'eq.posted', limit:1,
+    select:'id', system_type:`eq.${sys}`, ref_table:'eq.purchase_orders', file_no:`eq.${fileNo}`, post_status:'eq.posted', limit:1, order:'id.desc',
   });
   if (existingPurchaseJE?.length && amount <= 0) {
     throw new Error('يوجد قيد شراء مُرحَّل لهذا الملف لكن قيمته الحالية صفر/غير صالحة — لا يمكن إلغاء السند بأمان بدون عكس القيد، راجعي البيانات أولاً');
@@ -506,6 +524,7 @@ export async function voidPurchaseOrder(fileNo) {
         { acc:'2100', name:'ذمم الموردين',     dr:amount, cr:0,      contact:po.supplier||null },
         { acc:'1300', name:'المخزون — سيارات', dr:0,      cr:amount, contact:null               },
       ],
+      reversesId: existingPurchaseJE?.[0]?.id || null,
     });
   }
 
@@ -536,7 +555,16 @@ export async function _jeNo(sys) {
   } catch(e) { return `JE-${Date.now()}`; }
 }
 
-export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines}) {
+// reversesId (اختياري): id لأي سطر من سطور القيد الأصلي لو هذا القيد عكسي —
+// النوع الفعلي لعمودي reverses/reversed_by هو integer (تحقّقنا منه مباشرة على
+// بيانات تجريبية قبل الاعتماد عليه — راجع project_dual_je_audit Case 1)، فيُمرَّر
+// id حقيقي من المستدعي مباشرة، لا entry_no نصي — العمود بلا UNIQUE constraint
+// وله تاريخ تضارب فعلي قبل next_je_no الذري (انظر next_je_no.sql)، فالاعتماد
+// عليه كمفتاح تفرّد عالمي كان سيخاطر بربط سطور قيد غير ذي علاقة لو تطابق نصياً.
+// نتحقق أدناه إن كل سطور القيد الأصلي (المُجمَّعة بـentry_no) تشترك فعلاً في
+// نفس ref_table/ref_id قبل نشر reversed_by عليها — لو لأ، نتخطى الربط بأمان
+// بدل التخمين.
+export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines, reversesId=null}) {
   if (!lines || !lines.length) { console.warn('postDoubleEntry: no lines'); return; }
   const dr = lines.reduce((s,l)=>s+(+l.dr||0),0);
   const cr = lines.reduce((s,l)=>s+(+l.cr||0),0);
@@ -545,6 +573,26 @@ export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc,
     console.error(msg);
     throw new Error(msg);
   }
+
+  // ✅ تحقّق من هوية القيد الأصلي بالكامل (أفضل مجهود — فشل التحقق لا يوقف ترحيل القيد نفسه)
+  let origSiblingIds = null;
+  if (reversesId) {
+    try {
+      const anchor = await apiGetAll('journal_entries', {
+        select:'entry_no,ref_table,ref_id', system_type:`eq.${sys}`, id:`eq.${reversesId}`, limit:1,
+      });
+      if (anchor?.[0]) {
+        const { entry_no, ref_table, ref_id } = anchor[0];
+        const siblings = await apiGetAll('journal_entries', {
+          select:'id,ref_table,ref_id', system_type:`eq.${sys}`, entry_no:`eq.${entry_no}`,
+        });
+        const allMatch = siblings?.length && siblings.every(s => s.ref_table === ref_table && s.ref_id === ref_id);
+        if (allMatch) { origSiblingIds = siblings.map(s => s.id); }
+        else console.warn(`postDoubleEntry: entry_no ${entry_no} غير موثوق للربط (تضارب ref_table/ref_id بين سطوره) — تخطي reversed_by`);
+      }
+    } catch(e) { console.warn('postDoubleEntry: فشل التحقق من القيد الأصلي للربط', reversesId, e.message); }
+  }
+
   const no      = await _jeNo(sys);
   const now     = new Date().toISOString();
   const inserts = lines.map(l => ({
@@ -562,12 +610,15 @@ export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc,
     file_no:      fileNo   || null,
     post_status:  'posted',
     posted_at:    now,
+    reverses:     reversesId,
   }));
 
   // ── Batch insert: كل الأسطر في request واحد — إما كلها أو لا شيء ──
+  // ✅ return=representation (بدل minimal) — نحتاج id الأسطر الجديدة فورًا لكتابة
+  // reversed_by على الأصلي، بدل استعلام SELECT إضافي منفصل بعد الإدراج
   const res = await fetch(`${SB_URL}/rest/v1/journal_entries`, {
     method:  'POST',
-    headers: { ...headers(), 'Prefer': 'return=minimal' },
+    headers: { ...headers(), 'Prefer': 'return=representation' },
     body:    JSON.stringify(inserts),   // array = batch
   });
 
@@ -579,6 +630,22 @@ export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc,
         { method:'DELETE', headers: headers() });
     } catch(_) {}
     throw new Error(`فشل تسجيل القيد "${desc}" — ${res.status}: ${body}`);
+  }
+
+  // ✅ ربط الأصل بالعكس (reversed_by) — على مجموعة id المتحقَّق منها فقط
+  // (origSiblingIds)، لا بمطابقة entry_no مباشرة — أفضل مجهود، لا يوقف نجاح العملية لو فشل
+  if (origSiblingIds?.length) {
+    try {
+      const inserted = await res.json().catch(()=>[]);
+      const newId = inserted?.[0]?.id || null;
+      if (newId) {
+        await fetch(`${SB_URL}/rest/v1/journal_entries?id=in.(${origSiblingIds.join(',')})`, {
+          method:  'PATCH',
+          headers: { ...headers(), 'Prefer': 'return=minimal' },
+          body:    JSON.stringify({ reversed_by: newId }),
+        });
+      }
+    } catch(e) { console.warn('postDoubleEntry: فشل تحديث reversed_by على القيد الأصلي', reversesId, e.message); }
   }
 }
 
