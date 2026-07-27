@@ -1230,22 +1230,25 @@ export async function voidSaleInvoice(invNo, fileNo) {
         if (!saleItems.length) { toast('⚠️ لا توجد سيارات نشطة في هذه الفاتورة لعكسها', 'warn'); return; }
         const first = saleItems[0];
         const totalSale = saleItems.reduce((s,r)=>s+(+r.sale_price||0),0);
-        // ✅ جلب قيد التكلفة (COGS) الأصلي المرتبط بهذه الفاتورة — لعكسه أيضاً
-        let totalCOGS = 0;
+        // ✅ جلب كل سطور القيد الأصلي (بيع + تكلفة) دفعة واحدة — تفيد في حساب
+        // totalCOGS وفي إيجاد entry_no الأصلي للربط (reverses/reversed_by،
+        // project_dual_je_audit Case 1) معاً، فبدل استعلامين صار استعلام واحد
+        let totalCOGS = 0, origId = null;
         try {
-          const cogsLines = await apiGetAll('journal_entries', {
-            select:'dr_amount,description,ref_id', system_type:`eq.${sys}`,
-            ref_table:`eq.sales`, file_no:`eq.${fileNo}`, account_code:`eq.5100`, post_status:`eq.posted`,
+          const saleJELines = await apiGetAll('journal_entries', {
+            select:'id,account_code,dr_amount,description,ref_id', system_type:`eq.${sys}`,
+            ref_table:`eq.sales`, file_no:`eq.${fileNo}`, post_status:`eq.posted`,
           });
           // ✅ مطابقة أولاً بـref_id الحقيقي (قيود ما بعد post_sale_je RPC — ref_id=رقم
-          // الفاتورة بالظبط) — fallback لمطابقة النص القديمة بس للقيود التاريخية
+          // الفاتورة بالظبط، موثوق) — fallback لمطابقة النص القديمة بس للقيود التاريخية
           // اللي ref_id فيها لسه null (قبل الفيز 1)، عشان ملفات قديمة تفضل تشتغل صح
-          const byRefId = (cogsLines||[]).filter(r => r.ref_id === invNo);
-          const cogsRows = byRefId.length
+          const byRefId = (saleJELines||[]).filter(r => r.ref_id === invNo);
+          const jeLines = byRefId.length
             ? byRefId
-            : (cogsLines||[]).filter(r => !r.ref_id && (r.description||'').includes(invNo));
-          totalCOGS = cogsRows.reduce((s,r)=>s+(+r.dr_amount||0), 0);
-        } catch(e) { console.warn('voidSaleInvoice cogs lookup:', e.message); }
+            : (saleJELines||[]).filter(r => !r.ref_id && (r.description||'').includes(invNo));
+          totalCOGS = jeLines.filter(r => r.account_code === '5100').reduce((s,r)=>s+(+r.dr_amount||0), 0);
+          origId    = jeLines[0]?.id || null;
+        } catch(e) { console.warn('voidSaleInvoice: فشل جلب القيد الأصلي:', e.message); }
         // قيد عكسي للمبيعات (+ التكلفة لو وُجدت)
         const reversalLines = [];
         if (totalSale > 0) {
@@ -1260,6 +1263,7 @@ export async function voidSaleInvoice(invNo, fileNo) {
           await postDoubleEntry({ sys, date:today(), fileNo,
             refTable:'reversal', desc:`عكس بيع فاتورة ${invNo} — ${first.customer||''}`,
             lines: reversalLines,
+            reversesId: origId,
           });
         }
         // void السجلات
@@ -1311,19 +1315,20 @@ export async function deleteSaleInvoice(invNo, fileNo) {
         if (activeItems.some(r => r.post_status === 'posted')) {
           const totalSale = activeItems.reduce((s,r)=>s+(+r.sale_price||0),0);
           const first = activeItems[0];
-          let totalCOGS = 0;
+          let totalCOGS = 0, origId = null;
           try {
-            const cogsLines = await apiGetAll('journal_entries', {
-              select:'dr_amount,description,ref_id', system_type:`eq.${sys}`,
-              ref_table:`eq.sales`, file_no:`eq.${fileNo}`, account_code:`eq.5100`, post_status:`eq.posted`,
+            const saleJELines = await apiGetAll('journal_entries', {
+              select:'id,account_code,dr_amount,description,ref_id', system_type:`eq.${sys}`,
+              ref_table:`eq.sales`, file_no:`eq.${fileNo}`, post_status:`eq.posted`,
             });
-            // ✅ نفس منطق voidSaleInvoice: ref_id أولاً، fallback نصي بس للقيود القديمة
-            const byRefId = (cogsLines||[]).filter(r => r.ref_id === invNo);
-            const cogsRows = byRefId.length
+            // ✅ نفس منطق voidSaleInvoice: ref_id أولاً (موثوق بعد post_sale_je RPC)، fallback نصي بس للقيود القديمة
+            const byRefId = (saleJELines||[]).filter(r => r.ref_id === invNo);
+            const jeLines = byRefId.length
               ? byRefId
-              : (cogsLines||[]).filter(r => !r.ref_id && (r.description||'').includes(invNo));
-            totalCOGS = cogsRows.reduce((s,r)=>s+(+r.dr_amount||0),0);
-          } catch(e) { console.warn('deleteSale cogs lookup:', e.message); }
+              : (saleJELines||[]).filter(r => !r.ref_id && (r.description||'').includes(invNo));
+            totalCOGS = jeLines.filter(r => r.account_code === '5100').reduce((s,r)=>s+(+r.dr_amount||0),0);
+            origId    = jeLines[0]?.id || null;
+          } catch(e) { console.warn('deleteSale: فشل جلب القيد الأصلي:', e.message); }
           const lines = [];
           if (totalSale > 0) {
             lines.push({acc:'4100', name:'إيرادات المبيعات', dr:totalSale, cr:0, contact:null});
@@ -1333,7 +1338,7 @@ export async function deleteSaleInvoice(invNo, fileNo) {
             lines.push({acc:'1300', name:'المخزون — سيارات', dr:totalCOGS, cr:0, contact:null});
             lines.push({acc:'5100', name:'تكلفة المخزون المباع', dr:0, cr:totalCOGS, contact:null});
           }
-          if (lines.length) await postDoubleEntry({ sys, date:today(), fileNo, refTable:'reversal', desc:`عكس + حذف فاتورة ${invNo} — ${first.customer||''}`, lines });
+          if (lines.length) await postDoubleEntry({ sys, date:today(), fileNo, refTable:'reversal', desc:`عكس + حذف فاتورة ${invNo} — ${first.customer||''}`, lines, reversesId: origId });
         }
         // 2. عكس قيود التحصيلات المدفوعة المرتبطة قبل حذفها
         // ✅ try/catch لكل عنصر — بدون كده فشل عكس تحصيل واحد (مثلاً قيده الأصلي
