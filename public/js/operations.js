@@ -3231,10 +3231,20 @@ export async function runAllReviewChecks() {
     // كلها ref_table='payments') بسبب فجوة نشر إصلاح je_payment (07-07→07-24)
     // ولأن "صندوق الترانزيت" ما كانش معروف كخزينة في TM إلا اليوم — الفحص ده
     // يمنع نفس النمط من الاختباء أسابيع تانية لو تكرر لأي سبب مستقبلًا.
-    const treasuryIn2400 = (jeData||[]).filter(e =>
-      e.account_code === '2400' && TREASURY_ALIASES.has((e.contact_name||'').trim())
-    );
-    const treasuryFiles = [...new Set(treasuryIn2400.map(e=>e.file_no).filter(Boolean))];
+    // ✅ صافي (دائن-مدين) لكل ملف، مش عدّ الأسطر الخام — قيد التصحيح (ref_table=
+    // 'correction') نفسه بيسجّل سطر Dr 2400 بنفس اسم الخزينة عشان يصفّر الأثر
+    // (نفس نمط JE-2026-00483)، فلو عددنا الأسطر الخام هيفضل يظهر "فشل" حتى بعد
+    // التصحيح الناجح. الصافي=صفر يعني اتصحح فعلًا، الصافي≠صفر يعني لسه فيه خلل
+    // (سواء أصلي جديد أو تصحيح جزئي)
+    const treasuryNet = {};
+    (jeData||[]).forEach(e => {
+      if (e.account_code !== '2400') return;
+      const name = (e.contact_name||'').trim();
+      if (!TREASURY_ALIASES.has(name)) return;
+      const fn = e.file_no || '—';
+      treasuryNet[fn] = (treasuryNet[fn]||0) + (+e.cr_amount||0) - (+e.dr_amount||0);
+    });
+    const treasuryFiles = Object.keys(treasuryNet).filter(fn => Math.abs(treasuryNet[fn]) > 0.01);
     checks.push({ cat:'I', icon:'🏦', catLabel:'توجيه الخزينة',
       id:'I1', label:'قيود خزينة (الصندوق) مُقيَّدة غلط على حساب الشركاء (2400)',
       status: treasuryFiles.length===0?'pass':'fail',
