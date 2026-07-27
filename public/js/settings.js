@@ -785,8 +785,8 @@ export async function loadDealStatement(fn, sys) {
           // مصروفات دفعها هذا الشريك من جيبه
           const expCapital   = (expenses||[])
             .filter(isSettled)
-            .filter(e => p.partner === TREASURY_PARTNER
-              ? (!e.paid_by || e.paid_by.trim() === TREASURY_PARTNER)
+            .filter(e => TREASURY_ALIASES.has(p.partner)
+              ? (!e.paid_by || TREASURY_ALIASES.has(e.paid_by.trim()))
               : (e.paid_by && e.paid_by.trim() === p.partner))
             .reduce((s,e) => s + (+e.amount||0), 0);
           // حصته في الربح
