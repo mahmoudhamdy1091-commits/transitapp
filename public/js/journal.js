@@ -448,18 +448,21 @@ export function _extractInvToken(desc) {
 // استبعاد أزواج (قيد أصلي + قيد عكسه) من عرض اليومية/تقريرها فقط —
 // عرض فقط، لا تعديل على journal_entries ولا على دفتر الأستاذ/الأرصدة.
 //
-// لا يوجد عمود ربط مباشر (reversed_by/reverses) يُعبّأ من أي مسار عكس في
-// التطبيق حتى الآن — الإسناد هنا بأفضل مجهود متاح:
-//  Tier 0 (موثوق): "عكس تعديل {ref_table} ... تصحيح قيد {entry_no}" — من
-//    updateJEInPlace (engine.js) عند تصحيح قيمة عملية بعد الترحيل، لا إلغاءها.
-//    نستبعد القيد القديم المُعكوس بعينه عبر entry_no الصريح في الوصف (لا عبر
-//    ref_id — بعض الأنواع مثل sales/operating_expenses ref_id فيها تاريخيًا
-//    null أو غير متّسق، فمطابقة ref_id كانت ستُبقي القديم ظاهراً "مكرراً" مع
-//    الجديد). القيد الجديد الصحيح المُرحَّل بعدها يبقى ظاهراً دائماً (لم يُذكر
-//    في أي وصف عكس، فلا يُستبعد أبداً).
-//  Tier 1 (موثوق): ref_id — voidTransaction (تحصيل/دفعة/مصروف/صرف شريك)
-//    وvoidPurchaseOrder يمرّرون نفس refId للقيد الأصلي وقيد عكسه، فنطابق به.
-//  Tier 2: البيع (je_sale/voidSaleInvoice لا يستخدمان ref_id إطلاقاً) —
+// ✅ Tier -1 (الأوثق، بند 7 — بعد بند 1): reverses الفعلي (عمود integer
+// حقيقي يشير لـid سطر من القيد الأصلي، تكتبه postDoubleEntry/_handoffPrimaryLine
+// من 2026-07-27). يحدّد القيد الأصلي بيقين تام (id، لا نص) — يُستخدم أولاً
+// دائماً، ويغني عن كل المطابقة النصية تحت لأي قيد عكسي جديد. القيود اللي
+// اتعكست *قبل* هذا التاريخ لسه reverses=null فيها (لم تُملأ رجعياً — سكربت
+// backfill اختياري منفصل، sql/backfill_reverses_reversed_by.sql)، فتفضل
+// تعتمد على الطبقات النصية تحت كـfallback فقط.
+//
+// الطبقات النصية (fallback للقيود القديمة السابقة على بند 1 فقط):
+//  Tier 0: "عكس تعديل {ref_table} ... تصحيح قيد {entry_no}" — من updateJEInPlace
+//    عند تصحيح قيمة عملية بعد الترحيل، لا إلغاءها. نستبعد القيد المذكور صراحة
+//    بعينه فقط (لا عبر ref_id — بعض الأنواع مثل sales/operating_expenses ref_id
+//    فيها تاريخيًا null أو غير متّسق).
+//  Tier 1: ref_id — voidTransaction (تحصيل/دفعة/مصروف/صرف شريك) وvoidPurchaseOrder.
+//  Tier 2: البيع (je_sale/voidSaleInvoice لا يستخدمان ref_id تاريخيًا) —
 //    مطابقة نصية برقم الفاتورة (INV-...) المستخرج من الوصف + رقم الملف.
 //  Tier 3: القيد اليدوي المُعكوس عبر reverseManualJE — "عكس قيد {entry_no}".
 //
@@ -479,6 +482,13 @@ export function _excludeReversalPairs(entries) {
 
   const toExclude = new Set([...reversals.map(e => e.entryNo), ...corrections.map(e => e.entryNo)]);
 
+  // ✅ فهرس id (سطر journal_entries حقيقي) → entryNo القيد المحمَّل حاليًا —
+  // يُبنى من كل الأسطر الخام المتاحة، يخدم مطابقة reverses الفعلي (Tier -1)
+  const idToEntryNo = {};
+  entries.forEach(e => {
+    (e.raw?.lines || []).forEach(l => { if (l.id != null) idToEntryNo[l.id] = e.entryNo; });
+  });
+
   const REF_ID_SOURCE = [
     { re:/^عكس تحصيل/,    type:'collection' },
     { re:/^عكس دفعة/,     type:'payment'    },
@@ -488,6 +498,14 @@ export function _excludeReversalPairs(entries) {
   ];
 
   reversals.forEach(rev => {
+    // ✅ Tier -1 — reverses الفعلي: أي سطر من سطور هذا القيد العكسي يحمل نفس
+    // القيمة (postDoubleEntry تكتبها موحّدة على كل الأسطر) — id حقيقي، لا تخمين
+    const reversesId = (rev.raw?.lines || []).find(l => l.reverses != null)?.reverses;
+    if (reversesId != null && idToEntryNo[reversesId]) {
+      toExclude.add(idToEntryNo[reversesId]);
+      return;
+    }
+
     const desc = rev.title || '';
 
     // Tier 0 — عكس تعديل (تصحيح قيمة، لا إلغاء): "عكس تعديل {ref_table} — ...
