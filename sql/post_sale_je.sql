@@ -68,9 +68,12 @@ begin
   limit 1;
 
   if v_existing_entry is not null then
+    -- ⚠️ entry_no لازم يتأهّل باسم الجدول (journal_entries.entry_no) — عمود returns
+    -- table(entry_no ...) بيعمل متغيّر PL/pgSQL بنفس الاسم في نطاق الدالة، فالعمود
+    -- المجرّد كان يطلع "column reference entry_no is ambiguous" (اتأكد حيًّا 2026-07-27)
     select coalesce(sum(dr_amount), 0) into v_already_cogs_raw
     from journal_entries
-    where system_type = p_sys and entry_no = v_existing_entry and account_code = '5100';
+    where system_type = p_sys and journal_entries.entry_no = v_existing_entry and account_code = '5100';
     return query select v_existing_entry, v_already_cogs_raw, true;
     return;
   end if;
@@ -97,9 +100,10 @@ begin
   limit 1;
 
   if v_existing_entry is not null then
+    -- ⚠️ نفس تأهيل journal_entries.entry_no أعلاه — هذا هو الفحص الثاني بعد القفل
     select coalesce(sum(dr_amount), 0) into v_already_cogs_raw
     from journal_entries
-    where system_type = p_sys and entry_no = v_existing_entry and account_code = '5100';
+    where system_type = p_sys and journal_entries.entry_no = v_existing_entry and account_code = '5100';
     return query select v_existing_entry, v_already_cogs_raw, true;
     return;
   end if;
