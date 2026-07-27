@@ -393,9 +393,15 @@ export async function fetchJEForPeriod(sys, from, to) {
  */
 export function computeFinancials(jeRows) {
   let totSales = 0, totCOGS = 0, totDealExp = 0, totOpex = 0, totPurchase = 0, totExpenseAmount = 0;
+  // ✅ totCorrections (Tier 0 بند 6): تتبّع موازٍ لقد إيه من totSales/totCOGS فوق
+  // أصله قيد ref_table='correction' — تصحيح انحراف تراكمي قديم (لا "أصل" بعينه
+  // يقابله في نفس الفترة، بعكس reversal العادي) لا يغيّر أي رقم محسوب، بس
+  // بيسمح لأي مستهلك لهذه الدالة (التقارير) يعرض شفافية عن حجم التصحيحات
+  // المُتضمّنة في رقم الفترة، بدل ما تظهر كأرقام "طبيعية" بلا تفسير
+  let totCorrections = 0;
   const byFile = {};
   const ensure = fn => {
-    if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, dealExp:0, purchase:0, expenseAmount:0 };
+    if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, dealExp:0, purchase:0, expenseAmount:0, corrections:0 };
   };
 
   (jeRows || []).forEach(r => {
@@ -409,11 +415,13 @@ export function computeFinancials(jeRows) {
     if (acc.startsWith('4')) {
       totSales += (cr - dr);
       if (fn) { ensure(fn); byFile[fn].sales += (cr - dr); }
+      if (ref === 'correction') { totCorrections += Math.abs(cr - dr); if (fn) byFile[fn].corrections += Math.abs(cr - dr); }
     }
     // 5xxx (عدا التشغيلية) = تكلفة مخزون مباع — (dr - cr) لمعالجة قيود العكس
     if (acc.startsWith('5') && ref !== 'operating_expenses') {
       totCOGS += (dr - cr);
       if (fn) { ensure(fn); byFile[fn].cogs += (dr - cr); }
+      if (ref === 'correction') { totCorrections += Math.abs(dr - cr); if (fn) byFile[fn].corrections += Math.abs(dr - cr); }
     }
     // 1300 مدين = تكلفة شراء المخزون (للصفقة)
     if (acc === '1300' && dr > 0 && ref === 'purchase_orders') {
@@ -445,7 +453,7 @@ export function computeFinancials(jeRows) {
   // صافي الربح = مجمل الربح - المصاريف التشغيلية
   const netProfit = grossProfit - totOpex;
 
-  return { totSales, totCOGS, totDealExp, totOpex, totPurchase, totExpenseAmount, grossProfit, netProfit, byFile };
+  return { totSales, totCOGS, totDealExp, totOpex, totPurchase, totExpenseAmount, totCorrections, grossProfit, netProfit, byFile };
 }
 
 /**
