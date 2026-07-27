@@ -147,11 +147,27 @@ begin
       and inv_no is distinct from p_inv_no
       and vin not like 'PART-%';
 
-    select coalesce(sum(dr_amount), 0) into v_already_cogs_raw
+    -- ✅ ref_id is not distinct from (لا = العادي) — اكتُشف حيًّا 2026-07-27 (BOX-138):
+    -- كل مبيعات ما قبل هذا الإصلاح (2026-07-26) لها ref_id=NULL. NOT(true AND NULL)
+    -- يُقيَّم NULL في SQL، وWHERE بيستبعد أي صف نتيجته NULL (مش true بس) — فكل سطور
+    -- COGS القديمة بلا ref_id كانت تُشال بالكامل من "المُرحَّل مسبقًا"، مش سطر الفاتورة
+    -- الحالية بس كما كان مقصودًا. النتيجة: v_already_cogs_raw مبخوس، فـv_remaining_cost
+    -- (وبالتالي COGS الفاتورة الجديدة) يتضخّم بكل قيمة المبيعات القديمة المُستبعدة غلط.
+    -- IS NOT DISTINCT FROM يعامل NULL كقيمة قابلة للمقارنة (NULL=NULL → true،
+    -- NULL≠نص → false، لا NULL أبدًا) فيستبعد سطر الفاتورة الحالية فقط كما هو مقصود.
+    --
+    -- ✅ dr_amount - cr_amount بدل sum(dr_amount) وحده — اكتُشف حيًّا 2026-07-27
+    -- أثناء حساب تصحيح BOX-138: لو فاتورة سابقة اتعكست (voidSaleInvoice يكتب
+    -- سطر عكسي بـcr_amount على 5100)، كان sum(dr_amount) القديم بيفضل يعدّ سطر
+    -- الـdr الأصلي "متبقاة محقّقة" من غير ما يطرح عكسه، فيبخس v_remaining_cost
+    -- بدل ما يزيده (عكس اتجاه علة NULL أعلاه). نفس المبدأ ينطبق على أي قيد
+    -- تصحيح مستقبلي بسطر cr على 5100 (زي تصحيح BOX-138 الحالي نفسه). الطرح هنا
+    -- يصفّي أي زوج dr/cr على نفس الحساب تلقائيًا بغض النظر عن ref_table.
+    select coalesce(sum(dr_amount - cr_amount), 0) into v_already_cogs_raw
     from journal_entries
     where system_type = p_sys and file_no = p_file_no and account_code = '5100'
       and post_status = 'posted'
-      and not (ref_table = 'sales' and ref_id = p_inv_no);
+      and not (ref_table = 'sales' and ref_id is not distinct from p_inv_no);
 
     -- ✅ نطرح حصة القطع (PART-) المباعة سابقًا من الرصيد الخام — نفس
     -- engine.js:611-616 بالظبط. من غير الطرح ده، رصيد "الباقي" بتاع الشاحنات
