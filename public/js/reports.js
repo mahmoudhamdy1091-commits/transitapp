@@ -109,6 +109,15 @@ export async function runReport() {
             تحقق من أن أكواد حسابات الإيراد تبدأ بـ <strong>4</strong>، والتكاليف بـ <strong>5</strong>، والمصاريف بـ <strong>6</strong> في شجرة الحسابات.
            </div>` : '';
 
+      // ✅ بانر مستوى الفترة (Tier 0 بند 6): قيود ref_table='correction' تصحّح
+      // انحرافًا تراكميًا من فترة سابقة غير محدَّدة (لا "أصل" بعينه في نفس
+      // الفترة يُقارَن بيه، بعكس reversal العادي) — تُؤرَّخ بتاريخ التصحيح
+      // نفسه فتظهر كرقم "طبيعي" في هذه الفترة بلا أي تفسير من غير هذا التنويه
+      const correctionsWarn = fin.totCorrections > 0.01
+        ? `<div style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--text2)">
+            ℹ️ تتضمن أرقام هذه الفترة <strong>${fmt(fin.totCorrections)}</strong> من تصحيحات محاسبية لانحراف تراكمي من فترات سابقة (وليست نشاطًا تجاريًا جديدًا) — راجع اليومية (قيود بنوع "تصحيح") للتفاصيل.
+           </div>` : '';
+
       // ── KPIs ──
       el('reportKpis').innerHTML = `
         <div class="j-kpi" style="border-right:3px solid var(--green)">
@@ -190,7 +199,7 @@ export async function runReport() {
 
       reportState.data = rows_data;
 
-      el('reportTable').innerHTML = previewBanner + acctWarn + (rows_data.length
+      el('reportTable').innerHTML = previewBanner + acctWarn + correctionsWarn + (rows_data.length
         ? '<div id="reportDealsTable"></div>'
         : emptyHTML('📈', 'لا توجد بيانات في هذه الفترة'));
 
