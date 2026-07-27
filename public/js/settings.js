@@ -1135,11 +1135,18 @@ export async function submitEditPayment() {
 
       // 2. تحديث القيد المحاسبي في مكانه
       if (routingChanged) {
+        // ✅ id سطور القيد القديم — قبل العكس، عشان نسلّم is_primary_line بعدين
+        const oldJELines = await apiGetAll('journal_entries', {
+          select:'id', system_type:`eq.${state.system}`, ref_table:'eq.payments', ref_id:`eq.${id}`, post_status:'eq.posted',
+        });
         // 2a. عكس القيد القديم بناءً على بيانات السجل القديم (قبل التعديل)
         await voidTransaction('payment', old, true);
-        // 2b. إنشاء قيد جديد بالتوجيه الجديد
-        await je_payment({ sys:state.system, date, amount, fileNo:old.file_no, refId:id,
-          supplierName: old.supplier||'', payerName: payer, method });
+        // 2b. إنشاء قيد جديد بالتوجيه الجديد — isPrimary:false لحد ما نتأكد إن العكس نجح
+        const newJE = await je_payment({ sys:state.system, date, amount, fileNo:old.file_no, refId:id,
+          supplierName: old.supplier||'', payerName: payer, method, isPrimary:false });
+        if (newJE?.ids?.length) {
+          await _handoffPrimaryLine({ sys: state.system, oldIds: (oldJELines||[]).map(l=>l.id), newIds: newJE.ids });
+        }
         // 2c. إعادة status إلى pending_edit (voidTransaction يضع 'voided' على السجل لكننا نريد void للقيود فقط)
         await apiPatch('payments', { id:`eq.${id}` }, { post_status: 'pending_edit' });
       } else {
@@ -1335,11 +1342,20 @@ export async function submitEditExpense() {
       });
 
       if (routingChanged) {
+        // ✅ id سطور القيد القديم (كل ما هو posted لهذا ref_id) — قبل العكس،
+        // عشان نسلّم is_primary_line بعدين (uq_je_ref_primary_posted، Tier 0 بند 4)
+        const oldJELines = await apiGetAll('journal_entries', {
+          select:'id', system_type:`eq.${state.system}`, ref_table:'eq.expenses', ref_id:`eq.${id}`, post_status:'eq.posted',
+        });
         // 2a. عكس القيد القديم بناءً على بيانات السجل القديم (قبل التعديل)
         await voidTransaction('expense', old, true);
-        // 2b. إنشاء قيد جديد بالتوجيه الجديد
-        await je_expense({ sys:state.system, date, amount, fileNo:old.file_no, refId:id,
-          desc, expType:type||old.exp_type||'أخرى', method, paidBy: paidBy||null });
+        // 2b. إنشاء قيد جديد بالتوجيه الجديد — isPrimary:false لحد ما نتأكد
+        // إن العكس فوق نجح فعلاً، بعدين نسلّم الـslot صراحة تحت
+        const newJE = await je_expense({ sys:state.system, date, amount, fileNo:old.file_no, refId:id,
+          desc, expType:type||old.exp_type||'أخرى', method, paidBy: paidBy||null, isPrimary:false });
+        if (newJE?.ids?.length) {
+          await _handoffPrimaryLine({ sys: state.system, oldIds: (oldJELines||[]).map(l=>l.id), newIds: newJE.ids });
+        }
         // 2c. إعادة status إلى pending_edit (voidTransaction يضع 'voided' على السجل لكننا نريد void للقيود فقط)
         await apiPatch('expenses', { id:`eq.${id}` }, { post_status: 'pending_edit' });
       } else {
@@ -1432,12 +1448,19 @@ export async function submitEditCollection() {
       });
 
       if (routingChanged) {
+        // ✅ id سطور القيد القديم — قبل العكس، عشان نسلّم is_primary_line بعدين
+        const oldJELines = await apiGetAll('journal_entries', {
+          select:'id', system_type:`eq.${state.system}`, ref_table:'eq.collections', ref_id:`eq.${id}`, post_status:'eq.posted',
+        });
         // 2a. عكس القيد القديم بناءً على السجل القديم
         await voidTransaction('collection', old, true);
-        // 2b. قيد جديد بالتوجيه الجديد
-        await je_collection({ sys:state.system, date:paid||old.paid_date, amount,
+        // 2b. قيد جديد بالتوجيه الجديد — isPrimary:false لحد ما نتأكد إن العكس نجح
+        const newJE = await je_collection({ sys:state.system, date:paid||old.paid_date, amount,
           fileNo:old.file_no, refId:id, customer:old.customer||'—',
-          invNo:old.inv_no||'', method, receivedBy: receivedBy||null });
+          invNo:old.inv_no||'', method, receivedBy: receivedBy||null, isPrimary:false });
+        if (newJE?.ids?.length) {
+          await _handoffPrimaryLine({ sys: state.system, oldIds: (oldJELines||[]).map(l=>l.id), newIds: newJE.ids });
+        }
         // 2c. إعادة status إلى pending_edit
         await apiPatch('collections', { id:`eq.${id}` }, { post_status: 'pending_edit' });
       } else {
