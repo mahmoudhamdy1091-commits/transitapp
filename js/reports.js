@@ -751,28 +751,49 @@ export function showConfirmHtml(title, htmlMsg, onConfirm) {
 }
 
 // Override browser confirm() for delete operations
+// ════════════════════════════════════════════════════════════
+// حذف صفقة/ملف كامل — نقطة الدخول الموحّدة الوحيدة (Tier 0 بند 2)
+//   تستبدل مسارين منفصلين كانا يعملان بشكل خطير: confirmDeleteDealFromModal
+//   (كان يحذف 11 جدول في حلقة غير ذرّية بلا أي حارس) وdeleteOrphanDeal
+//   (كان يحذف صف purchase_orders فقط ويسيب كل البيانات المرتبطة أيتام دائمين).
+//   كل منطق الحذف والحارس الآن في delete_deal_completely (RPC ذرّي بالكامل —
+//   انظر sql/delete_deal_completely.sql). الدالة دي مجرد استدعاء + عرض نتيجة.
+// ════════════════════════════════════════════════════════════
+export async function deleteDealCompletely(fileNo, { onSuccess } = {}) {
+  // ✅ فحص صلاحية صريح — الاستدعاء القديم (confirmDeleteDealFromModal) كان يمر
+  // بـapiDelete لكل جدول فيعيد هذا الفحص تلقائيًا؛ apiRpc لا يفعل، فكان لازم
+  // نضيفه هنا صراحة (اكتشفته مراجعة مستقلة: زر الحذف في مودال التعديل ما كانش
+  // بيتخفي فعليًا لغير الأدمن — applyRoleRestrictions لا يُستدعى عند فتح المودال)
+  if (!can('delete')) { toast('🔒 ليس لديك صلاحية الحذف', 'err'); throw new Error('غير مصرح بالحذف'); }
+  let summary;
+  try {
+    [summary] = await apiRpc('delete_deal_completely', { p_sys: state.system, p_file_no: fileNo });
+  } catch(e) { toast('⚠️ ' + e.message, 'err'); throw e; }
+  await logAudit('DELETE', 'purchase_orders', fileNo, { file_no: fileNo, ...summary }, null, `حذف صفقة كاملة (مسودة/فاضية) — ${fileNo}`);
+  toast(`✅ تم حذف الصفقة ${fileNo}`, 'ok');
+  // ✅ onSuccess خارج try الخاص بالـRPC عمدًا — فشل هنا (مثلاً loadDashboard)
+  // لا يعني فشل الحذف نفسه (اللي نجح فعلاً)، فما ينفعش يظهر كـ"خطأ حذف" ولا
+  // يُعاد تفعيل زرار الحذف لإعادة محاولة حذف ملف اتحذف بالفعل
+  if (onSuccess) await onSuccess();
+  else { await loadDashboard(); showDashboard(); }
+}
+
 export async function confirmDeleteDealFromModal() {
   const fn = getNfEditFileNo();
   if (!fn) return;
   showConfirm(
     `حذف الصفقة ${fn}`,
-    `سيتم حذف كل السيارات والعمليات والمدفوعات المرتبطة بها نهائياً. هذا الإجراء لا يمكن التراجع عنه.`,
+    `سيتم حذف كل السيارات والعمليات المرتبطة بها نهائياً. مسموح فقط لو الصفقة لسه مسودة (لم تُرحَّل بعد) — أي نشاط مالي مرحّل يمنع الحذف. هذا الإجراء لا يمكن التراجع عنه.`,
     async () => {
       const btn = el('nfDeleteBtn');
       btn.disabled = true; btn.textContent = '⏳ جاري الحذف...';
       try {
-        const sys = state.system;
-        const tables = ['vehicles','payments','expenses','sales','collections','partner_payouts','partners_master','ledger_entries','journal_entries','opex_entries','account_ledger'];
-        for (const t of tables) { try { await apiDelete(t, { system_type:`eq.${sys}`, file_no:`eq.${fn}` }); } catch(e) { console.warn(`deleteDeal table ${t}:`, e.message); } }
-        await logAudit('DELETE','purchase_orders', fn, {file_no:fn}, null, 'حذف صفقة كاملة');
-        // ✅ لا تحذف audit_log أبداً — كان يمحو هنا أثر الحذف نفسه (وأي سجل تدقيق سابق
-        // لنفس الملف)، فلا يبقى أي دليل على من حذف الصفقة أو متى أو ماذا كانت تحتوي
-        await apiDelete('purchase_orders', { system_type:`eq.${sys}`, file_no:`eq.${fn}` });
-        closeModal('newFileModal');
-        toast(`✅ تم حذف الصفقة ${fn}`,'ok');
-        state.currentFileNo = null;
-        await loadDashboard(); showDashboard();
-      } catch(e) { toast('خطأ: '+e.message,'err'); btn.disabled=false; btn.textContent='🗑 حذف الصفقة'; }
+        await deleteDealCompletely(fn, { onSuccess: async () => {
+          closeModal('newFileModal');
+          state.currentFileNo = null;
+          await loadDashboard(); showDashboard();
+        }});
+      } catch(e) { btn.disabled=false; btn.textContent='🗑 حذف الصفقة'; }
     }
   );
 }
@@ -1034,7 +1055,7 @@ Object.assign(window, {
   showReport, setReportPeriod, setReportType, runReport,
   runCashFlowReport, runInventoryReport, filterInventoryByWarehouse, exportReportCSV,
   togglePassword, clearSavedLogin,
-  showConfirm, showConfirmHtml, confirmDeleteDealFromModal, confirmDeleteVehicle, deletePayoutEntry,
+  showConfirm, showConfirmHtml, confirmDeleteDealFromModal, deleteDealCompletely, confirmDeleteVehicle, deletePayoutEntry,
   openRolesModal, getPendingRole, setPendingRole, setRole, updateRoleUI, saveRole, applyRoleRestrictions,
   checkVinDuplicate, onVinBlur,
   sendWhatsappInvoice,
