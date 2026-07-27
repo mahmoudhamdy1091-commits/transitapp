@@ -770,7 +770,10 @@ export const TREASURY_PARTNER = 'الصندوق';
 // ✅ TM: شركاء الملف دايمًا "صندوق الترانزيت"/"مازن الخلف" — لا يوجد شريك اسمه "الصندوق" أصلاً
 // في هذا النظام. "صندوق الترانزيت" هو الخزينة بعينها هنا (مرادف TREASURY_PARTNER)، فلازم يُستثنى
 // من "دفع جيب شريك" زي TREASURY_PARTNER بالظبط، وإلا كل قيود TM هتتقيّد غلط كصرف شخصي على 2400.
-const TREASURY_ALIASES = new Set([TREASURY_PARTNER, 'صندوق الترانزيت']);
+// ✅ مُصدَّرة (كانت خاصة بالملف) — مصدر واحد لأسماء الخزينة يُعاد استخدامه في
+// فحص "مراجعة الحسابات" (operations.js) وcomputePartnerSettlement (core.js)
+// بدل ما تتكرر كنسخة ثانية قد تنحرف عن هذي مستقبلًا (زي ما حصل مع TM قبل كده)
+export const TREASURY_ALIASES = new Set([TREASURY_PARTNER, 'صندوق الترانزيت']);
 export function _isPartnerPocket(name) { const n = name && name.trim(); return !!(n && !TREASURY_ALIASES.has(n)); }
 
 export const USER_DISPLAY_NAMES = {
@@ -1096,7 +1099,7 @@ Object.assign(window, {
   _jeNo, postDoubleEntry, calcCOGS, checkCOGSInvariant, auditAllFilesCOGS,
   je_purchase, je_sale, je_collection, je_payment, je_expense, je_payout,
   je_custodian, je_opex, simulateDraftJE,
-  TREASURY_PARTNER, _isPartnerPocket, USER_DISPLAY_NAMES, displayUser,
+  TREASURY_PARTNER, TREASURY_ALIASES, _isPartnerPocket, USER_DISPLAY_NAMES, displayUser,
 });
 
 // ════════════════════════════════════════

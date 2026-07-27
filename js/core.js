@@ -504,7 +504,15 @@ export async function computePartnerSettlement(fileNo, sys) {
     byContact[name].movements.push({ date:r.entry_date, desc:r.description, ref:r.entry_no, dr, cr, refTable:r.ref_table });
   });
 
-  const nonTreasurySum = Object.values(byContact).reduce((s,c) => s + c.crByRef.payments + c.crByRef.expenses, 0);
+  // ✅ استثناء صريح لأسماء الخزينة (TREASURY_ALIASES, engine.js) من مجموع
+  // "مساهمات باقي الشركاء" — لو اسم الخزينة ظهر هنا (بسبب باج توجيه، مكتشف
+  // فعليًا على 9 ملفات: قيد دفعة كان المفروض يروح نقد/بنك مباشرة اتقيد غلط على
+  // 2400 بدل كده)، من غيرها كانت مساهمة الخزينة الحقيقية (treasuryActual تحت)
+  // بتتطرح من نفسها — فيظهر "متبقي عليه" رغم إنها دفعت بالفعل. الحساب دلوقتي
+  // صحيح دايمًا بغض النظر عن نظافة البيانات، مش بس لما التوجيه يكون سليم
+  const nonTreasurySum = Object.entries(byContact)
+    .filter(([name]) => !TREASURY_ALIASES.has(name))
+    .reduce((s,[,c]) => s + c.crByRef.payments + c.crByRef.expenses, 0);
   const treasuryActual = Math.max(0, fullCost - nonTreasurySum);
 
   const partners = (partnersRaw||[]).map(p => {

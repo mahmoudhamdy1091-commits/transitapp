@@ -2934,7 +2934,7 @@ export async function runAllReviewChecks() {
       apiGetAll('payments',        { select:'*', system_type:`eq.${sys}` }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}` }),
       apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}` }),
-      apiGet('journal_entries', { select:'id,dr_amount,cr_amount,entry_no,file_no,account_code,ref_table,ref_id', system_type:`eq.${sys}`, post_status:'eq.posted' }).catch(()=>[]),
+      apiGet('journal_entries', { select:'id,dr_amount,cr_amount,entry_no,file_no,account_code,ref_table,ref_id,contact_name', system_type:`eq.${sys}`, post_status:'eq.posted' }).catch(()=>[]),
     ]);
 
     const deals=state.allDeals||[], vehicles=state.allVehicles||[];
@@ -3222,6 +3222,27 @@ export async function runAllReviewChecks() {
       rows: cogsDrifted.slice(0,10).map(c=>({ cols:[c.file_no, fmt(c.expectedRemaining), fmt(c.actualRemaining), fmt(c.drift), c.direction], action:`openViewer('${c.file_no}')`, actionLabel:'📂 فتح' })),
       action: cogsDrifted.length>0?{ label:'📂 فتح أول ملف منحرف', fn:`openViewer('${cogsDrifted[0]?.file_no}')` }:null });
 
+    // ══ I. توجيه الخزينة (2400) ══
+    // ✅ الخزينة (TREASURY_ALIASES، engine.js — نفس المصدر اللي بيحدّد التوجيه
+    // الفعلي في je_payment/je_expense/je_collection/je_payout) لازم ما تظهرش
+    // أبدًا في حساب الشركاء 2400 — دي بالتصميم حسابها نقد/بنك مباشرة (1110/1120)،
+    // مش "شريك خارجي" له جيب منفصل. أي ظهور = خطأ توجيه أكيد 100% (مش تخمين
+    // زي E4)، فحالته 'fail' مباشرة. اكتُشف فعليًا على 9 ملفات (BOX-138 وغيرها،
+    // كلها ref_table='payments') بسبب فجوة نشر إصلاح je_payment (07-07→07-24)
+    // ولأن "صندوق الترانزيت" ما كانش معروف كخزينة في TM إلا اليوم — الفحص ده
+    // يمنع نفس النمط من الاختباء أسابيع تانية لو تكرر لأي سبب مستقبلًا.
+    const treasuryIn2400 = (jeData||[]).filter(e =>
+      e.account_code === '2400' && TREASURY_ALIASES.has((e.contact_name||'').trim())
+    );
+    const treasuryFiles = [...new Set(treasuryIn2400.map(e=>e.file_no).filter(Boolean))];
+    checks.push({ cat:'I', icon:'🏦', catLabel:'توجيه الخزينة',
+      id:'I1', label:'قيود خزينة (الصندوق) مُقيَّدة غلط على حساب الشركاء (2400)',
+      status: treasuryFiles.length===0?'pass':'fail',
+      value: treasuryFiles.length===0?'✓ لا يوجد':treasuryFiles.length,
+      detail: treasuryFiles.length===0?'كل قيود الخزينة موجّهة صح (نقد/بنك) ✓':`${treasuryFiles.length} ملف فيه قيد خزينة مُقيَّد غلط على 2400 — بيشوّه حساب تسوية الشركاء لهذا الملف`,
+      rows: treasuryFiles.slice(0,10).map(fn=>({ cols:[fn, '⚠️ يحتاج قيد تصحيحي'], action:`openViewer('${fn}')`, actionLabel:'📂 فتح' })),
+      action: treasuryFiles.length>0?{ label:'📂 فتح أول ملف متأثر', fn:`openViewer('${treasuryFiles[0]}')` }:null });
+
     // ════ النتائج الإجمالية ════
     const passCount = checks.filter(c=>c.status==='pass').length;
     const warnCount = checks.filter(c=>c.status==='warn').length;
@@ -3259,8 +3280,8 @@ export async function runAllReviewChecks() {
     }
 
     // عرض الفحوصات مقسّمة بالفئة
-    const cats = ['A','B','C','D','E','F','G','H'];
-    const catLabels2 = { A:'⏳ العمليات المعلقة', B:'💰 التحصيلات', C:'🏭 الموردون', D:'🚗 المخزون', E:'📒 القيود المحاسبية', F:'🛡️ سلامة البيانات', G:'👥 حسابات الشركاء', H:'🏷️ تكلفة المخزون (COGS)' };
+    const cats = ['A','B','C','D','E','F','G','H','I'];
+    const catLabels2 = { A:'⏳ العمليات المعلقة', B:'💰 التحصيلات', C:'🏭 الموردون', D:'🚗 المخزون', E:'📒 القيود المحاسبية', F:'🛡️ سلامة البيانات', G:'👥 حسابات الشركاء', H:'🏷️ تكلفة المخزون (COGS)', I:'🏦 توجيه الخزينة' };
     wrap.innerHTML = cats.map(cat => {
       const catChecks = checks.filter(c=>c.cat===cat);
       if (!catChecks.length) return '';
