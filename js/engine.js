@@ -170,11 +170,15 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
     // بيانات، والخطأ يُسجَّل زي ما كان). لو نجح الجديد وفشل عكس القديم (الخطوة
     // 2 تحت)، النتيجة ازدواج مكتشَف بسهولة (الرصيد يبقى مضاعفاً لا مصفَّراً)
     // وله تنبيه صريح تحت بدل الابتلاع الصامت.
-    await postDoubleEntry({
+    // ✅ isPrimary:false — القديم يفضل حامل uq_je_ref_primary_posted لحد ما
+    // عكسه (الخطوة 2) ينجح كمان؛ التسليم الفعلي مؤجَّل لـ_handoffPrimaryLine
+    // تحت، بعد نجاح الاتنين معاً (راجع تعليق postDoubleEntry لتفصيل السبب)
+    const newPosted = await postDoubleEntry({
       sys, date: entryDate, fileNo,
       refTable, refId,
       desc: fallbackDesc,
       lines: correctedLines,
+      isPrimary: false,
     });
 
     // ── 2. عكس القيد القديم بالكامل بقيمه الأصلية (Dr↔Cr معكوسة) — بنفس أسلوب
@@ -197,6 +201,10 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
         lines: reversalLines,
         reversesId: allLines[0].id,
       });
+      // ✅ الاتنين نجحوا (الجديد + عكس القديم) — دلوقتي بس نسلّم is_primary_line
+      if (newPosted?.ids?.length) {
+        await _handoffPrimaryLine({ sys, oldIds: allLines.map(l => l.id), newIds: newPosted.ids });
+      }
     } catch(revErr) {
       // ✅ القيد الجديد اتُرحّل بنجاح لكن عكس القديم فشل — النتيجة ازدواج (قديم
       // + جديد معاً)، لازم تنبيه صريح للمستخدم لأنه محتاج تنظيف يدوي فوري —
@@ -564,7 +572,14 @@ export async function _jeNo(sys) {
 // نتحقق أدناه إن كل سطور القيد الأصلي (المُجمَّعة بـentry_no) تشترك فعلاً في
 // نفس ref_table/ref_id قبل نشر reversed_by عليها — لو لأ، نتخطى الربط بأمان
 // بدل التخمين.
-export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines, reversesId=null}) {
+// isPrimary (اختياري، افتراضي true): يضبط is_primary_line=true على أول سطر
+// بس من هذا القيد — يشارك في uq_je_ref_primary_posted (Tier 0 بند 4)، القيد
+// الفريد الوحيد المسموح بيه لكل (system_type, file_no, ref_id, ref_table)
+// posted. مرّر false وقت ترحيل قيد "جديد صحيح" بديل لقيد قديم لسه posted
+// (updateJEInPlace/فروع تغيير التوجيه) — القديم يفضل حاملاً للـslot لحد ما
+// ينجح كل شيء (الجديد + عكس القديم)، وبعدها المستدعي ينده _handoffPrimaryLine
+// صراحة ليسلّم الـslot — بدل تسليم مبكر ممكن يسيب فترة بلا حماية لو أي خطوة فشلت.
+export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc, lines, reversesId=null, isPrimary=true}) {
   if (!lines || !lines.length) { console.warn('postDoubleEntry: no lines'); return; }
   const dr = lines.reduce((s,l)=>s+(+l.dr||0),0);
   const cr = lines.reduce((s,l)=>s+(+l.cr||0),0);
@@ -595,7 +610,7 @@ export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc,
 
   const no      = await _jeNo(sys);
   const now     = new Date().toISOString();
-  const inserts = lines.map(l => ({
+  const inserts = lines.map((l, idx) => ({
     system_type:  sys,
     entry_no:     no,
     entry_date:   date || today(),
@@ -611,6 +626,10 @@ export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc,
     post_status:  'posted',
     posted_at:    now,
     reverses:     reversesId,
+    // ✅ سطر واحد بس (الأول) يحمل is_primary_line=true — كل سطور نفس القيد
+    // تشترك في نفس (file_no, ref_id, ref_table)، فلو أكتر من سطر حمل true
+    // كانوا هيتصادموا مع بعض على uq_je_ref_primary_posted من نفس الإدراج
+    is_primary_line: isPrimary && idx === 0,
   }));
 
   // ── Batch insert: كل الأسطر في request واحد — إما كلها أو لا شيء ──
@@ -632,21 +651,58 @@ export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc,
     throw new Error(`فشل تسجيل القيد "${desc}" — ${res.status}: ${body}`);
   }
 
+  const inserted = await res.json().catch(()=>[]);
+  const insertedIds = inserted.map(r => r.id).filter(Boolean);
+
   // ✅ ربط الأصل بالعكس (reversed_by) — على مجموعة id المتحقَّق منها فقط
   // (origSiblingIds)، لا بمطابقة entry_no مباشرة — أفضل مجهود، لا يوقف نجاح العملية لو فشل
   if (origSiblingIds?.length) {
     try {
-      const inserted = await res.json().catch(()=>[]);
       const newId = inserted?.[0]?.id || null;
       if (newId) {
-        await fetch(`${SB_URL}/rest/v1/journal_entries?id=in.(${origSiblingIds.join(',')})`, {
+        const patchRes = await fetch(`${SB_URL}/rest/v1/journal_entries?id=in.(${origSiblingIds.join(',')})`, {
           method:  'PATCH',
           headers: { ...headers(), 'Prefer': 'return=minimal' },
           body:    JSON.stringify({ reversed_by: newId }),
         });
+        if (!patchRes.ok) console.warn('postDoubleEntry: فشل تحديث reversed_by (رفض القاعدة)', await patchRes.text().catch(()=>''));
       }
     } catch(e) { console.warn('postDoubleEntry: فشل تحديث reversed_by على القيد الأصلي', reversesId, e.message); }
   }
+
+  // ✅ يسمح للمستدعي (مثلاً updateJEInPlace) بمعرفة entry_no/ids الجديدة —
+  // لازمة لتسليم is_primary_line المؤجَّل عبر _handoffPrimaryLine بعدين
+  return { entryNo: no, ids: insertedIds };
+}
+
+// تسليم is_primary_line من قيد قديم لقيد جديد بعد نجاح كل خطوات الاستبدال —
+// الترتيب إلزامي (قديم=false أولاً، بعدها جديد=true): لو عكسنا الترتيب، لحظة
+// وجود الاتنين true معاً كانت هتصطدم بـuq_je_ref_primary_posted. أفضل مجهود
+// (لا تستوقف العملية لو فشلت) — أسوأ نتيجة ممكنة هي عدم وجود "حامل" مؤقت لهذا
+// الـref_id، مش تعارض ولا فساد بيانات (updateJEInPlace وباقي المسارات لا تعتمد
+// على is_primary_line لإيجاد القيد النشط أصلاً، تعتمد على post_status/ref_id).
+// ✅ newIds[0] فقط بيُكتب true — مش كل newIds: كل سطور نفس القيد تشترك في نفس
+// (file_no, ref_id, ref_table)، فلو أكتر من سطر واحد اتعلّم true كانوا هيتصادموا
+// مع بعض على uq_je_ref_primary_posted (اكتُشف حيًّا: PATCH لعدة id بنفس القيمة
+// true رفضته القاعدة بصمت — fetch() ما بيرفضش على status غير ok، فكان لازم نفحص
+// res.ok صراحة ونحذّر لو فشل، بدل الاعتماد على "مفيش استثناء = نجح").
+export async function _handoffPrimaryLine({ sys, oldIds, newIds }) {
+  try {
+    if (oldIds?.length) {
+      const res = await fetch(`${SB_URL}/rest/v1/journal_entries?id=in.(${oldIds.join(',')})`, {
+        method: 'PATCH', headers: { ...headers(), 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ is_primary_line: false }),
+      });
+      if (!res.ok) console.warn('_handoffPrimaryLine: فشل تصفير is_primary_line على القديم', await res.text().catch(()=>''));
+    }
+    if (newIds?.[0]) {
+      const res = await fetch(`${SB_URL}/rest/v1/journal_entries?id=eq.${newIds[0]}`, {
+        method: 'PATCH', headers: { ...headers(), 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ is_primary_line: true }),
+      });
+      if (!res.ok) console.warn('_handoffPrimaryLine: فشل ضبط is_primary_line على الجديد', await res.text().catch(()=>''));
+    }
+  } catch(e) { console.warn('_handoffPrimaryLine: فشل تسليم is_primary_line', e.message); }
 }
 
 // ── حساب تكلفة المخزون المباع (COGS) — المنطق الصح ──
@@ -852,14 +908,14 @@ export function displayUser(email) {
   return USER_DISPLAY_NAMES[email] || email.split('@')[0];
 }
 
-export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method,receivedBy}) {
+export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method,receivedBy,isPrimary=true}) {
   if(!amount||amount<=0) throw new Error(`قيمة تحصيل غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد التحصيل`);
   // المدين: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو احتفظ بالمبلغ خارج الصندوق
   const debit = _isPartnerPocket(receivedBy)
     ? {acc:'2400', name:'حسابات الشركاء', dr:amount, cr:0, contact:receivedBy.trim()}
     : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:amount, cr:0, contact:null};
   const tail = _isPartnerPocket(receivedBy) ? ` — احتفظ بها ${receivedBy.trim()}` : '';
-  await postDoubleEntry({sys,date,fileNo,refTable:'collections',refId,desc:`تحصيل ${invNo} — ${customer} — ملف ${fileNo}${tail}`,lines:[
+  return await postDoubleEntry({sys,date,fileNo,refTable:'collections',refId,isPrimary,desc:`تحصيل ${invNo} — ${customer} — ملف ${fileNo}${tail}`,lines:[
     debit,
     {acc:'1200',  name:`ذمم العملاء`,    dr:0,      cr:amount, contact:customer },
   ]});
@@ -868,7 +924,7 @@ export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo
 // دفعة مورد: مورد Dr / نقد Cr
 // لو الدافع (payer) شريك مختلف عن المورد → يُضاف سطر ثالث على حساب الشريك 2400
 // حتى يظهر ما دفعه الشريك في كشف حسابه
-export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,payer,payerName,method}) {
+export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,payer,payerName,method,isPrimary=true}) {
   if(!amount||amount<=0) throw new Error(`قيمة دفعة مورد غير صالحة (${amount}) — لن يُسجَّل القيد ولا تُعتمد الدفعة`);
   let sup = supplier || supplierName || '';
   if (!sup && fileNo) {
@@ -891,14 +947,14 @@ export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplier
     // الشريك يدفع للمورد نيابةً عن الصفقة:
     // DR ذمم الموردين (يُبرئ ذمة المورد)
     // CR حسابات الشركاء (الشريك يُقرض الصفقة)
-    await postDoubleEntry({sys,date,fileNo,refTable:'payments',refId,
+    return await postDoubleEntry({sys,date,fileNo,refTable:'payments',refId,isPrimary,
       desc:`دفعة للمورد ${sup} بواسطة ${payerStr} — ملف ${fileNo}`,lines:[
       {acc:'2100', name:`ذمم الموردين`,   dr:amount, cr:0,     contact:sup      },
       {acc:'2400', name:`حسابات الشركاء`, dr:0,      cr:amount, contact:payerStr },
     ]});
   } else {
     // الدفع مباشرة من نقدية الشركة
-    await postDoubleEntry({sys,date,fileNo,refTable:'payments',refId,
+    return await postDoubleEntry({sys,date,fileNo,refTable:'payments',refId,isPrimary,
       desc:`دفعة للمورد ${sup} — ملف ${fileNo}`,lines:[
       {acc:'2100',  name:`ذمم الموردين`, dr:amount, cr:0,     contact:sup  },
       {acc:cashAcc, name:cashNm,         dr:0,      cr:amount, contact:null },
@@ -937,7 +993,7 @@ export async function fileExpenseTarget(sys, fileNo, expType) {
 }
 
 // مصروف ملف: مخزون 1300 (أو 5100 لو الملف مُباع) Dr / نقد Cr — مصروف عام: حساب مصروف Dr / نقد Cr
-export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy}) {
+export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,isPrimary=true}) {
   if(!amount||amount<=0) throw new Error(`قيمة مصروف غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
   const target = await fileExpenseTarget(sys, fileNo, expType);
   // الدائن: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو دفعها من جيبه
@@ -945,7 +1001,7 @@ export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,meth
     ? {acc:'2400', name:'حسابات الشركاء', dr:0, cr:amount, contact:paidBy.trim()}
     : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null};
   const tail = _isPartnerPocket(paidBy) ? ` — دفعها ${paidBy.trim()}` : '';
-  await postDoubleEntry({sys,date,fileNo,refTable:'expenses',refId,desc:`${desc} — ملف ${fileNo||'عام'}${tail}`,lines:[
+  return await postDoubleEntry({sys,date,fileNo,refTable:'expenses',refId,isPrimary,desc:`${desc} — ملف ${fileNo||'عام'}${tail}`,lines:[
     {acc:target.acc, name:target.name, dr:amount, cr:0, contact:null},
     credit,
   ]});
@@ -1163,7 +1219,7 @@ Object.assign(window, {
   isAdminUser, adminPostsImmediately, entryStatus,
   toggleAdminPostSetting, updateAdminPostToggleUI,
   updateJEInPlace, voidTransaction, reverseManualJE, voidPurchaseOrder,
-  _jeNo, postDoubleEntry, calcCOGS, checkCOGSInvariant, auditAllFilesCOGS,
+  _jeNo, postDoubleEntry, _handoffPrimaryLine, calcCOGS, checkCOGSInvariant, auditAllFilesCOGS,
   je_purchase, je_sale, je_collection, je_payment, je_expense, je_payout,
   je_custodian, je_opex, simulateDraftJE,
   TREASURY_PARTNER, TREASURY_ALIASES, _isPartnerPocket, USER_DISPLAY_NAMES, displayUser,
