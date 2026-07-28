@@ -1567,17 +1567,23 @@ export async function openEditPayoutModal(payoutId) {
         }
         if (!newAmount) { showFieldErr('poutError','يرجى إدخال المبلغ'); return; }
 
+        // ✅ pending_edit يعني "معتمد فعلاً وليه قيد حي، وفيه تعديل تحت المراجعة" —
+        // لو الصرف أصلاً draft (لسه ما اعتمدش، مفيش قيد له خالص)، الحفظ يفضل draft
+        // عادي، مش يترقّى لـpending_edit وهميًا (نفس علة sales المكتشفة 2026-07-28
+        // على BOX-133 — التصحيح هنا احترازي بنفس النمط، غير مؤكَّد حصوله فعليًا هنا)
+        const wasPosted = p.post_status === 'posted' || p.post_status === 'pending_edit';
+
         // 1. تحديث السجل مباشرة
         await apiPatch('partner_payouts', { id:`eq.${payoutId}` }, {
           partner: newPartner, payout_type: newType, pay_date: newDate,
           pay_method: newMethod, document: newDoc||null, notes: newNotes||null,
           amount: newAmount,
           capital_amount: newCapital||null, profit_amount: newProfit||null,
-          post_status: 'pending_edit',
+          post_status: wasPosted ? 'pending_edit' : 'draft',
         });
 
         // 2. تحديث القيد في مكانه
-        if (p.post_status === 'posted' || p.post_status === 'pending_edit') {
+        if (wasPosted) {
           await updateJEInPlace({
             sys: state.system, fileNo: p.file_no,
             refTable: 'partner_payouts', refId: payoutId,
@@ -1590,7 +1596,7 @@ export async function openEditPayoutModal(payoutId) {
         await logAudit('EDIT','partner_payouts', p.file_no, p, {newPartner,newAmount,newType}, `تعديل صرف شريك ${p.ref_no||payoutId}`);
         await updateApprovalBadge();
         closeModal('payoutModal');
-        toast('⚠️ تم تعديل الصرف والقيد — في انتظار الموافقة','warn');
+        toast(wasPosted ? '⚠️ تم تعديل الصرف والقيد — في انتظار الموافقة' : '✏️ تم حفظ تعديل الصرف (لا يزال بانتظار الاعتماد الأول)', 'warn');
         invalidateCache();
         loadPartnersTab(state.currentFileNo, state.system);
       } catch(err) { showFieldErr('poutError','خطأ: '+err.message); }

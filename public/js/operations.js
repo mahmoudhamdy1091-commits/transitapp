@@ -1460,6 +1460,13 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
           const totalOld     = (oldSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
           const oldCustomer  = oldSales?.[0]?.customer || '';
           const wasPosted    = (oldSales||[]).some(s => s.post_status === 'posted' || s.post_status === 'pending_edit');
+          // ✅ pending_edit يعني "معتمدة فعلاً وليها قيد حي، وفيه تعديل تحت المراجعة" —
+          // لو الفاتورة أصلاً draft (لسه ما اعتمدتش، مفيش قيد لها خالص)، حفظ التعديل
+          // لازم يفضل draft عادي، مش يترقّى لـpending_edit وهميًا. غير كده، لما تتوافَق
+          // لاحقًا من قائمة الاعتمادات، الكود بيفترض "القيد اتحدّث مسبقاً" ويكتفي بتغيير
+          // الحالة لـposted من غير ما يرحّل أي قيد أصلاً — فجوة محاسبية صامتة حقيقية
+          // (اكتُشفت حيًّا 2026-07-28 على BOX-133، فاتورة اتحذفت وأُعيد إدخالها بعد الإصلاح)
+          const savedStatus  = wasPosted ? 'pending_edit' : 'draft';
 
           // ── 1. حساب الإجمالي الجديد من الـ form ──
           const rows = el('saleVehiclesContainer').querySelectorAll('tr.sale-v-row');
@@ -1496,7 +1503,7 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
             await apiPatch('sales', { id:`eq.${s.id}` }, {
               customer: newCustomer, sale_date: newDate,
               sale_price: newPrice, notes: rowNotes||null,
-              post_status: 'pending_edit',
+              post_status: savedStatus,
             });
           }
 
@@ -1513,7 +1520,7 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
               customer: newCustomer,
               sale_price: newPrice, sale_date: newDate,
               notes: rowNotes||null,
-              post_status: 'pending_edit',
+              post_status: savedStatus,
             };
             await apiPost('sales', newSaleData);
           }
@@ -1580,7 +1587,7 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
           submitBtn.onclick  = () => submitSale();
           submitBtn._editMode= false;
           closeModal('saleModal');
-          toast('⚠️ تم تعديل الفاتورة والقيد — في انتظار الموافقة','warn');
+          toast(wasPosted ? '⚠️ تم تعديل الفاتورة والقيد — في انتظار الموافقة' : '✏️ تم حفظ تعديل الفاتورة (لا تزال بانتظار الاعتماد الأول)', 'warn');
           invalidateCache();
           if (typeof loadSalesTab === 'function') await loadSalesTab(fileNo, sys);
         } catch(e) {
