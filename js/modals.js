@@ -1834,10 +1834,14 @@ export async function openCollectionModal() {
     const collectedMap = {};
     // مجموع كل التحصيلات المسجلة (مدفوعة + منتظرة) لكل فاتورة — هو الإجمالي الحقيقي
     const invoicedMap  = {};
+    // ✅ سطور التحصيل المعلّقة (posted بلا paid_date) لكل فاتورة — تُستخدم لاكتشاف
+    // "فيه تحصيل معلّق بالفعل" واستكماله بدل إنشاء سطر مكرر (راجع submitCollection)
+    const pendingMap   = {};
     (collections||[]).filter(c => c.inv_no && isPosted(c)).forEach(c => {
       const key = `${c.file_no}__${c.inv_no}`;
       invoicedMap[key] = (invoicedMap[key]||0) + (+c.amount||0);
       if (c.paid_date) collectedMap[key] = (collectedMap[key]||0) + (+c.amount||0);
+      else (pendingMap[key] = pendingMap[key]||[]).push(c);
     });
 
     // تجميع بالفاتورة (inv_no + file_no) — لجلب بيانات العميل والـ VINs فقط
@@ -1860,12 +1864,18 @@ export async function openCollectionModal() {
       const realTotal  = invoicedMap[key] > 0 ? invoicedMap[key] : inv.total;
       const collected  = collectedMap[key] || 0;
       const remaining  = realTotal - collected;
+      // ✅ لو فيه سطر تحصيل معلّق واحد بس، نحتفظ بمعرّفه ومبلغه — submitCollection
+      // هيكمله (يحدّث تاريخ الدفع عليه) بدل ما ينشئ سطر جديد لو المبلغ يطابق
+      const pendingRows = pendingMap[key] || [];
+      const singlePending = pendingRows.length === 1 ? pendingRows[0] : null;
       return {
         ...inv,
         sale_price: realTotal,
         vin:        inv.vins.join(' / '),
         collected,
         remaining,
+        pendingId:     singlePending ? singlePending.id : null,
+        pendingAmount: singlePending ? (+singlePending.amount||0) : null,
       };
     }).filter(inv => inv.remaining > 0.001)
       .sort((a,b) => (a.sale_date||'') > (b.sale_date||'') ? -1 : 1);
@@ -1884,7 +1894,9 @@ export async function openCollectionModal() {
           data-total="${s.sale_price||0}"
           data-collected="${s.collected}"
           data-remaining="${s.remaining}"
-          data-saledate="${s.sale_date||''}">
+          data-saledate="${s.sale_date||''}"
+          data-pendingid="${s.pendingId||''}"
+          data-pendingamount="${s.pendingAmount!=null?s.pendingAmount:''}">
           ${s.inv_no} — ${s.customer||'—'} — ملف: ${s.file_no||'—'} — ${s.vins.length} سيارة (باقي: ${fmt(s.remaining)})
         </option>`).join('');
 
@@ -1935,6 +1947,11 @@ export function onCollectionInvChange() {
   if (dueEl && !dueEl.value) dueEl.value = opt.dataset.saledate || '';
   const paidEl = el('col-paidDate');
   if (paidEl && !paidEl.value) paidEl.value = today();
+
+  // ✅ تنبيه لو الفاتورة عندها تحصيل معلّق موجود بالفعل — الحفظ هيكمله بدل
+  // إنشاء سطر جديد (راجع submitCollection) — يمنع تكرار سطور "مستحق" لنفس المبلغ
+  const pendingHint = el('col-pending-hint');
+  if (pendingHint) pendingHint.style.display = opt.dataset.pendingid ? 'block' : 'none';
 
   el('col-inv-card').style.display    = 'block';
   el('col-form-fields').style.display = 'block';
@@ -1996,23 +2013,47 @@ export async function submitCollection() {
   }
 
   try {
-    const refNo  = (await genSeqRef('COL', state.system, fn, 'collections')) || `COL-${fn}-${Date.now()}`;
-    const pay_id = refNo;
-    // FIX: paid_date لا يُحفظ في حالة Draft — سيُضاف عند الموافقة أو عند تسجيل الدفع
     const isPostedNow = entryStatus() === 'posted';
-    const data = {
-      system_type: state.system, file_no: fn,
-      pay_id, inv_no: invNo, customer: cust, vin: vin||null, amount,
-      pay_method: method, document: doc||null,
-      due_date: due||null, paid_date: (paid && isPostedNow) ? paid : null,
-      notes: notes||null, ref_no: refNo, post_status: entryStatus(),
-      received_by: receivedBy || null,
-    };
-    const colIns = await apiPost('collections', data);
-    await logAudit('INSERT','collections',fn,null,data);
+
+    // ✅ لو فيه سطر تحصيل معلّق واحد بالفعل لنفس الفاتورة بنفس المبلغ، نكمله
+    // (نحدّث تاريخ الدفع عليه) بدل إنشاء سطر جديد — يمنع تكرار "مستحق" لنفس
+    // المبلغ (اكتُشف حيًّا 2026-07-28 على BOX-133 وLOT 3 NEW). أي حالة أعقد
+    // (أكتر من سطر معلّق، أو مبلغ مختلف/جزئي) تفضل تنشئ سطر جديد زي القديم.
+    const pendingId     = opt2?.dataset?.pendingid || null;
+    const pendingAmtRaw = opt2?.dataset?.pendingamount;
+    const pendingAmount = pendingAmtRaw !== undefined && pendingAmtRaw !== '' ? parseFloat(pendingAmtRaw) : null;
+    const completeExisting = !!pendingId && pendingAmount != null && Math.abs(pendingAmount - amount) < 0.001;
+
+    let colId;
+    if (completeExisting) {
+      const patchData = {
+        pay_method: method, document: doc||null,
+        due_date: due||null, paid_date: paid,
+        notes: notes||null, received_by: receivedBy||null,
+        post_status: entryStatus(),
+      };
+      await apiPatch('collections', { id:`eq.${pendingId}` }, patchData);
+      await logAudit('EDIT','collections',fn,null,patchData,`استكمال تحصيل معلّق — فاتورة ${invNo}`);
+      colId = pendingId;
+    } else {
+      const refNo  = (await genSeqRef('COL', state.system, fn, 'collections')) || `COL-${fn}-${Date.now()}`;
+      const pay_id = refNo;
+      // FIX: paid_date لا يُحفظ في حالة Draft — سيُضاف عند الموافقة أو عند تسجيل الدفع
+      const data = {
+        system_type: state.system, file_no: fn,
+        pay_id, inv_no: invNo, customer: cust, vin: vin||null, amount,
+        pay_method: method, document: doc||null,
+        due_date: due||null, paid_date: (paid && isPostedNow) ? paid : null,
+        notes: notes||null, ref_no: refNo, post_status: entryStatus(),
+        received_by: receivedBy || null,
+      };
+      const colIns = await apiPost('collections', data);
+      await logAudit('INSERT','collections',fn,null,data);
+      colId = colIns?.[0]?.id || null;
+    }
+
     if (cust) await ensureContact(cust, 'customer');
     if (isPostedNow && cust && paid) {
-      const colId = colIns?.[0]?.id || null;
       try {
         await je_collection({sys:state.system,date:paid,amount,fileNo:fn,refId:colId,customer:cust,invNo:invNo||'',method,receivedBy});
       } catch(jeErr) {
