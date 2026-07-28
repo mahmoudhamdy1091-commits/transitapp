@@ -176,6 +176,18 @@ export function isVisible(row) {
   return row.post_status !== 'voided';
 }
 
+// isOccupying: تشغل الشاصي/الفتحة فعليًا (كل شيء إلا cancelled/voided) — يُستخدم
+// لحساب "هل هذا الشاصي مباع/محجوز حاليًا" في كل شاشات توفّر السيارات (بيع جديد،
+// نقل مخزن، تبويب السيارات، الطباعة، تحديث حالة الصفقة). draft/pending_edit/
+// pending_void لسه تحجز السيارة (منع بيع مزدوج لبيع تحت المراجعة)، لكن cancelled
+// (مرفوضة) و voided (ملغاة) الاتنين يُفرِجان عن السيارة.
+// ✅ اكتُشف حيًّا 2026-07-28: كل هذه الشاشات كانت تستخدم isVisible خطأً (توثيقها
+// الصريح "للعرض فقط — لا للحساب") فسيارة بيعها اتُرفض (cancelled) كانت تفضل
+// "مباعة" للأبد — لا تظهر متاحة للبيع رغم رفض الفاتورة فعليًا.
+export function isOccupying(row) {
+  return row.post_status !== 'cancelled' && row.post_status !== 'voided';
+}
+
 // isPending: طلب معلق (تعديل أو إلغاء)
 export function isPending(row) {
   return row.post_status === 'pending_edit' || row.post_status === 'pending_void';
@@ -779,7 +791,7 @@ export function logout() {
 // ── window bridge: تعريض الدوال والحالة للاستخدام من classic scripts وسمات onclick ──
 Object.assign(window, {
   cacheStale, ensureCache, _doLoadCache, invalidateCache, isPosted,
-  isDraft, isActive, isEffective, isVisible, isPending,
+  isDraft, isActive, isEffective, isVisible, isOccupying, isPending,
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, computeFinancials, computePartnerSettlement, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,

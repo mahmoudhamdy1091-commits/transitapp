@@ -1298,9 +1298,10 @@ export async function onSaleFileChange(fn) {
 export async function loadAvailableVehicles(fn, sys) {
   const vehicles = await apiGetAll('vehicles', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
   const sales    = await apiGetAll('sales', { select:'vin,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
-  // ✅ سيارة بيعها الوحيد مُلغى (voided) تُعتبر متاحة مرة أخرى — استبعاد voided فقط
-  // من "مباعة" (isVisible: كل شيء إلا voided، تعامل null القديمة كمباعة كالمعتاد)
-  const soldVins = new Set((sales||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
+  // ✅ سيارة بيعها الوحيد مُلغى (cancelled) أو معكوس (voided) تُعتبر متاحة مرة
+  // أخرى — isOccupying (core.js) يستبعد الاتنين، بعكس isVisible القديم اللي كان
+  // بيستبعد voided بس ويسيب cancelled "مباعة" للأبد غلط (اكتُشف حيًّا 2026-07-28)
+  const soldVins = new Set((sales||[]).filter(isOccupying).map(s=>s.vin).filter(Boolean));
   return (vehicles||[]).filter(v=>!soldVins.has(v.vin));
 }
 
@@ -1608,7 +1609,7 @@ export async function submitSale() {
         vin:`in.(${vins.join(',')})`,
       });
       const conflicts = (existingVinSales||[])
-        .filter(isVisible) // استبعاد voided
+        .filter(isOccupying) // استبعاد cancelled/voided — سيارة بيع مرفوض تُباع تاني بحرية
         .filter(s => !(el('saleSubmitBtn')._editMode && s.inv_no === invNo)); // استبعاد فاتورة التعديل الحالية نفسها
       if (conflicts.length) {
         const list = conflicts.map(c => `${c.vin} (فاتورة ${c.inv_no||'—'})`).join('، ');
@@ -1684,8 +1685,9 @@ export async function submitSale() {
     // ── تحديث حالة الصفقة ──
     const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
     const allS = await apiGetAll('sales', { select:'vin,post_status', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
-    // ✅ استبعاد voided فقط — وإلا ملف كل بيوعه اتلغت يفضل معروض "CLOSED" غلط
-    const soldSet = new Set((allS||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
+    // ✅ استبعاد cancelled/voided (isOccupying) — وإلا ملف فيه بيع مرفوض يفضل
+    // السيارة معروضة "مباعة"/الصفقة "CLOSED" غلط
+    const soldSet = new Set((allS||[]).filter(isOccupying).map(s=>s.vin).filter(Boolean));
     const allSold = (allV||[]).every(v=>soldSet.has(v.vin));
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` },
       { status: allSold ? 'CLOSED' : 'IN PROGRESS' });

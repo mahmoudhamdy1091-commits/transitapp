@@ -5091,10 +5091,10 @@ export async function loadVehiclesForTransfer(fileNo) {
       apiGetAll('sales',          { select:'vin,post_status', system_type:`eq.${state.system}`, file_no:`eq.${fn}` }),
       apiGetAll('stock_locations',{ select:'vin,location_name', system_type:`eq.${state.system}`, file_no:`eq.${fn}` }),
     ]);
-    // ✅ سيارة بيعها الوحيد مُلغى (voided) لازم ترجع "متاحة" — استبعاد voided فقط
-    // (نفس اتفاقية loadAvailableVehicles في modals.js). من غير الفلتر ده، سيارة
-    // اتباعت ثم اتلغى بيعها كانت تفضل معطّلة "مباع" هنا للأبد
-    const soldVins    = new Set((sales||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
+    // ✅ سيارة بيعها الوحيد مُلغى (cancelled) أو معكوس (voided) لازم ترجع "متاحة" —
+    // isOccupying (core.js) يستبعد الاتنين (نفس اتفاقية loadAvailableVehicles في
+    // modals.js، صُحِّحت حيًّا 2026-07-28)
+    const soldVins    = new Set((sales||[]).filter(isOccupying).map(s=>s.vin).filter(Boolean));
     const transferMap = {};
     (existing||[]).forEach(t => { transferMap[t.vin] = t.location_name; });
     if (!vehicles?.length) { wrap.innerHTML = `<div style="color:var(--red);font-size:12px;text-align:center;padding:10px">لم يُعثر على سيارات في هذه الصفقة</div>`; return; }
@@ -5220,9 +5220,9 @@ export async function loadVehiclesTab(fn, sys) {
       apiGetAll('stock_locations',{ select:'vin,location_name', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
     state.currentVehicles = data || [];
-    // ✅ استبعاد voided فقط — نفس اتفاقية loadAvailableVehicles/loadVehiclesForTransfer،
-    // وإلا سيارة اتباعت ثم اتلغى بيعها تفضل ظاهرة "مباع" هنا للأبد
-    const soldVins   = new Set((state.currentSales||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
+    // ✅ استبعاد cancelled/voided (isOccupying) — نفس اتفاقية loadAvailableVehicles،
+    // وإلا سيارة بيعها اتُرفض أو اتلغى تفضل ظاهرة "مباع" هنا للأبد
+    const soldVins   = new Set((state.currentSales||[]).filter(isOccupying).map(s=>s.vin).filter(Boolean));
     const locMap     = {};
     (locations||[]).forEach(t => { locMap[t.vin] = t.location_name; });
 

@@ -154,8 +154,9 @@ export async function loadQuickVins(fileNo) {
     try {
       const vehicles = await apiGetAll('vehicles', { select:'vin,model,vehicle_type', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
       const sales    = await apiGetAll('sales', { select:'vin,post_status', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
-      // ✅ استبعاد voided فقط — سيارة بيعها الوحيد اتلغى لازم تظهر تاني كمتاحة للبيع السريع
-      const soldVins = new Set((sales||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
+      // ✅ استبعاد cancelled/voided (isOccupying) — سيارة بيعها الوحيد اتلغى أو
+      // اتُرفض لازم تظهر تاني كمتاحة للبيع السريع
+      const soldVins = new Set((sales||[]).filter(isOccupying).map(s=>s.vin).filter(Boolean));
       const unsold   = (vehicles||[]).filter(v => !soldVins.has(v.vin));
       el('qs-vin').innerHTML = unsold.length
         ? unsold.map(v=>`<option value="${v.vin}" title="${v.model||v.vehicle_type||''}">${v.vin}</option>`).join('')
