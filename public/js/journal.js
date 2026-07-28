@@ -650,10 +650,21 @@ export const typeLabels = { customer:'عميل', supplier:'مورد', partner:'�
 
 export async function genSeqRef(prefix, sys, fileNo, table) {
   const safe = (fileNo || 'GEN').toString().replace(/[^A-Za-z0-9\-]/g,'');
+  const base = `${prefix}-${safe}-`;
   try {
-    const rows = await apiGet(table, { select:'id', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, limit:1000 });
-    const next = ((rows && rows.length) || 0) + 1;
-    return `${prefix}-${safe}-${String(next).padStart(3,'0')}`;
+    // ✅ أعلى رقم لاحقة مُستخدَم فعليًا بدل عدّ الصفوف — اكتُشف حيًّا 2026-07-28
+    // على BOX-133: عدّ التحصيلات (8) لا يطابق أعلى رقم مُستخدَم فعليًا (009، بسبب
+    // فجوة ناتجة عن سطر "-005-R" الخاص بباقي دفعة جزئية) فتولّد رقم مكرر ويرتد
+    // 409 duplicate key عند أي عملية جديدة على الملف. الحساب هنا يتحمّل أي فجوات
+    // أو حذف سابق لأنه يعتمد على الأرقام الفعلية الموجودة، لا على عددها فقط.
+    const rows = await apiGet(table, { select:'ref_no', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, limit:1000 });
+    let maxN = 0;
+    for (const r of (rows||[])) {
+      if (!r.ref_no || !r.ref_no.startsWith(base)) continue;
+      const m = /^(\d+)/.exec(r.ref_no.slice(base.length));
+      if (m) { const n = parseInt(m[1], 10); if (n > maxN) maxN = n; }
+    }
+    return `${base}${String(maxN+1).padStart(3,'0')}`;
   } catch(e) {
     return `${prefix}-${safe}-${String(Date.now()).slice(-5)}`;
   }
