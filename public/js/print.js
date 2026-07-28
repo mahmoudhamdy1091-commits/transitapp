@@ -964,8 +964,9 @@ export async function printDealSummary(fn) {
 // ── السيارات ──
 export function printVehiclesTab(data, fn) {
   // soldVins من state.currentSales — نفس المصدر اللي بيستخدمه الجدول على الشاشة
-  // ✅ استبعاد voided فقط — وإلا سيارة بيعها الوحيد اتلغى تفضل مطبوعة "مباع" غلط
-  const soldVins = new Set((state.currentSales||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
+  // ✅ استبعاد cancelled/voided (isOccupying) — وإلا سيارة بيعها اتُرفض أو اتلغى
+  // تفضل مطبوعة "مباع" غلط
+  const soldVins = new Set((state.currentSales||[]).filter(isOccupying).map(s=>s.vin).filter(Boolean));
   const cols = [
     {label:'#',            w:0.4, align:'center', format:(_,i)=>i+1},
     {label:'الكود',        w:1.8, format:(v,i)=>`${fn}-V${String(i+1).padStart(2,'0')}`},

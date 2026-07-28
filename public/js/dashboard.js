@@ -1361,9 +1361,10 @@ export async function deleteSaleInvoice(invNo, fileNo) {
         try {
           const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           const allS = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
-          // ✅ استبعاد voided فقط — وإلا ملف كل بيوعه اتلغت يفضل معروض "CLOSED" غلط
-          const soldSet = new Set((allS||[]).filter(isVisible).map(s=>s.vin).filter(Boolean));
-          const hasAnySales = (allS||[]).filter(isVisible).length > 0;
+          // ✅ استبعاد cancelled/voided (isOccupying) — وإلا ملف فيه بيع مرفوض/مُلغى
+          // يفضل معروض "CLOSED"/"IN PROGRESS" غلط
+          const soldSet = new Set((allS||[]).filter(isOccupying).map(s=>s.vin).filter(Boolean));
+          const hasAnySales = (allS||[]).filter(isOccupying).length > 0;
           const allSold = hasAnySales && (allV||[]).every(v=>soldSet.has(v.vin));
           await apiPatch('purchase_orders',
             { system_type:`eq.${sys}`, file_no:`eq.${fileNo}` },
