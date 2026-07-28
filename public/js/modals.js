@@ -1883,7 +1883,8 @@ export async function openCollectionModal() {
           data-vin="${s.vin||''}"
           data-total="${s.sale_price||0}"
           data-collected="${s.collected}"
-          data-remaining="${s.remaining}">
+          data-remaining="${s.remaining}"
+          data-saledate="${s.sale_date||''}">
           ${s.inv_no} — ${s.customer||'—'} — ملف: ${s.file_no||'—'} — ${s.vins.length} سيارة (باقي: ${fmt(s.remaining)})
         </option>`).join('');
 
@@ -1926,6 +1927,14 @@ export function onCollectionInvChange() {
 
   // اقتراح المبلغ = الباقي كاملاً
   el('col-amount').value = remaining > 0 ? remaining.toFixed(3) : '';
+
+  // ✅ تاريخ الاستحقاق الرسمي في النظام = تاريخ البيع نفسه — يتعبّى تلقائيًا
+  // من الفاتورة، مش إدخال يدوي. تاريخ الدفع = تاريخ اليوم افتراضيًا (الشاشة
+  // دي بقت لتسجيل تحصيل فعلي بيحصل الآن)، وقابل للتعديل لو الدفع كان بتاريخ تاني
+  const dueEl = el('col-dueDate');
+  if (dueEl && !dueEl.value) dueEl.value = opt.dataset.saledate || '';
+  const paidEl = el('col-paidDate');
+  if (paidEl && !paidEl.value) paidEl.value = today();
 
   el('col-inv-card').style.display    = 'block';
   el('col-form-fields').style.display = 'block';
