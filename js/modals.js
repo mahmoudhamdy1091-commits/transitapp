@@ -1841,8 +1841,12 @@ export async function openCollectionModal() {
     });
 
     // تجميع بالفاتورة (inv_no + file_no) — لجلب بيانات العميل والـ VINs فقط
+    // ✅ استبعاد cancelled/voided (isOccupying) — اكتُشف حيًّا 2026-07-28: فاتورة
+    // ملغاة بالكامل (مثل "70700" في BOX-138، معكوسة عبر voidSaleInvoice) كانت
+    // بتظهر في قائمة "غير محصّلة" بكامل قيمتها الأصلية، لأن مفيش تحصيلات نشطة
+    // عليها فيُحسب remaining = sale_price كأنها لسه مستحقة بالكامل
     const invMap = {};
-    (sales||[]).filter(s => s.inv_no).forEach(s => {
+    (sales||[]).filter(s => s.inv_no && isOccupying(s)).forEach(s => {
       const k = `${s.file_no}__${s.inv_no}`;
       if (!invMap[k]) invMap[k] = { inv_no:s.inv_no, customer:s.customer, file_no:s.file_no, sale_date:s.sale_date, total:0, vins:[] };
       invMap[k].total += +s.sale_price || 0;
