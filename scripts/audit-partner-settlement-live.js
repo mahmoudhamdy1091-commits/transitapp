@@ -33,7 +33,11 @@ async function apiGetAll(table, params) {
 }
 
 // نفس computeFinancials (core.js) — الحقول اللي محتاجينها هنا بس
+// ✅ الشراء بيُحدَّد عبر entry_no فيه سطر 2100 (مش ref_table='purchase_orders'
+// وحدها) — يلتقط قيد العكس بعد تعديل/إلغاء سند شراء، اتصلح 2026-07-29
 function computeFinancials(jeRows) {
+  const purchaseEntryNos = new Set();
+  (jeRows || []).forEach(r => { if (r.account_code === '2100' && r.entry_no) purchaseEntryNos.add(r.entry_no); });
   const byFile = {};
   const ensure = fn => { if (!byFile[fn]) byFile[fn] = { sales: 0, cogs: 0, dealExp: 0, purchase: 0, expenseAmount: 0 }; };
   (jeRows || []).forEach(r => {
@@ -45,7 +49,7 @@ function computeFinancials(jeRows) {
     ensure(fn);
     if (acc.startsWith('4')) byFile[fn].sales += (cr - dr);
     if (acc.startsWith('5') && ref !== 'operating_expenses') byFile[fn].cogs += (dr - cr);
-    if (acc === '1300' && dr > 0 && ref === 'purchase_orders') byFile[fn].purchase += dr;
+    if (acc === '1300' && purchaseEntryNos.has(r.entry_no)) byFile[fn].purchase += (dr - cr);
     if (acc.startsWith('6') && dr > 0 && ref === 'expenses') byFile[fn].dealExp += dr;
     if (ref === 'expenses') byFile[fn].expenseAmount += cr;
   });
@@ -58,7 +62,7 @@ async function computePartnerSettlement(fileNo, sys) {
   const [partnersRaw, jeAll] = await Promise.all([
     apiGetAll('partners_master', { select: 'partner,share_percent', system_type: `eq.${sys}`, file_no: `eq.${fileNo}` }),
     apiGetAll('journal_entries', {
-      select: 'account_code,contact_name,dr_amount,cr_amount,ref_table,file_no',
+      select: 'account_code,contact_name,dr_amount,cr_amount,ref_table,file_no,entry_no',
       system_type: `eq.${sys}`, file_no: `eq.${fileNo}`, post_status: 'eq.posted',
     }),
   ]);
