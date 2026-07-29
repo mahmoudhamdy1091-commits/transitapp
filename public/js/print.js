@@ -380,13 +380,6 @@ export function printSaleInvoice({ invNo, customer, date, fn, notes, items, tota
   <div class="doc-footer">${companyName} · ${companyAddress} · شكراً لتعاملكم معنا · Thank you for your business</div>`;
 
   renderPrint(fragment, `فاتورة ${invNo}`);
-
-  setTimeout(() => {
-    if (confirm('إرسال الفاتورة عبر واتساب؟')) {
-      const phone = prompt('رقم واتساب العميل (مثال: 96512345678)\nاتركه فارغاً لاختيار يدوي:','');
-      if (phone !== null) sendWhatsappInvoice({ invNo, customer, date, fn, notes, items, total, extraCharges, grandTotal, phone });
-    }
-  }, 800);
 }
 
 // ════════════════════════════════════════════════════════════
