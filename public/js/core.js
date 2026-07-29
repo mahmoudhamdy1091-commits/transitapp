@@ -550,7 +550,15 @@ export async function computePartnerSettlement(fileNo, sys) {
     const fairShare      = fullCost * share;
     const fairShareDiff  = actualContribution - fairShare;
     const profitShare    = profit * share;
-    const netDue          = isTreasury ? profitShare : (netJE2400 + profitShare);
+    // ✅ صافي المستحق = فرق العدالة (رأس المال) + حصة الربح — موحّد لكل الشركاء
+    // بما فيهم الخزينة (fairShareDiff بتاعها محسوب أصلاً بالمتبقي، treasuryActual
+    // فوق). قرار المستخدم 2026-07-28: مين ساهم زيادة عن حصته العادلة ياخد
+    // الفائض + نصيبه من الربح، ومين ساهم أقل يتخصم منه النقص من نصيبه في الربح.
+    // بما إن مجموع fairShareDiff عبر كل الشركاء = صفر دايمًا (تحقق ذاتي أعلاه)،
+    // مجموع netDue عبر كل الشركاء = صافي ربح/خسارة الملف بالظبط — رقم قابل للتدقيق.
+    // (الصيغة القديمة كانت تعتمد netJE2400 — الحركة الفعلية على 2400 — واللي
+    // كانت بتطابق fairShareDiff بالصدفة بس لو الشريك مالوش أي صرفات سابقة)
+    const netDue = fairShareDiff + profitShare;
 
     return {
       name, share, sharePercent: +p.share_percent, isTreasury,
