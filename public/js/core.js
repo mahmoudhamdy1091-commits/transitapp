@@ -416,6 +416,20 @@ export function computeFinancials(jeRows) {
     if (!byFile[fn]) byFile[fn] = { sales:0, cogs:0, dealExp:0, purchase:0, expenseAmount:0, corrections:0 };
   };
 
+  // ✅ أي entry_no فيه سطر على حساب 2100 (ذمم الموردين) — الحساب الوحيد
+  // المُستخدَم حصريًا مع الشراء وعكسه (تعديل/إلغاء)، بعكس 1300 اللي بيُستخدم
+  // كمان في البيع/التصحيح. اكتُشف حيًّا 2026-07-29 (BOX-141): تعديل سند شراء
+  // بعد الترحيل بيعكس القيد الأصلي بـref_table='reversal' (مش 'purchase_orders')
+  // — فالشرط القديم (ref==='purchase_orders' فقط، بلا طرح cr) كان يتجاهل قيد
+  // العكس تمامًا ويجمع الشراء القديم والجديد معًا (تضخيم كامل بقيمة السند).
+  // المطابقة عبر entry_no تلتقط القيد الأصلي وعكسه معًا (كل واحد بيحمل سطر
+  // 2100 في نفس entry_no بتاعه) بغض النظر عن ref_table، وتستثني تلقائيًا
+  // البيع/التصحيح (بيستخدما 1300 لكن من غير أي سطر 2100 في نفس القيد)
+  const purchaseEntryNos = new Set();
+  (jeRows || []).forEach(r => {
+    if (r.account_code === '2100' && r.entry_no) purchaseEntryNos.add(r.entry_no);
+  });
+
   (jeRows || []).forEach(r => {
     const acc = r.account_code || '';
     const dr  = +r.dr_amount  || 0;
@@ -435,10 +449,12 @@ export function computeFinancials(jeRows) {
       if (fn) { ensure(fn); byFile[fn].cogs += (dr - cr); }
       if (ref === 'correction') { totCorrections += Math.abs(dr - cr); if (fn) byFile[fn].corrections += Math.abs(dr - cr); }
     }
-    // 1300 مدين = تكلفة شراء المخزون (للصفقة)
-    if (acc === '1300' && dr > 0 && ref === 'purchase_orders') {
-      totPurchase += dr;
-      if (fn) { ensure(fn); byFile[fn].purchase += dr; }
+    // 1300 = تكلفة شراء المخزون (للصفقة) — صافي (dr-cr) ضمن قيود الشراء
+    // (تحديدها فوق عبر وجود سطر 2100 بنفس entry_no)، يشمل عكس التعديل/الإلغاء
+    // تلقائيًا مهما كان ref_table لسطر العكس
+    if (acc === '1300' && purchaseEntryNos.has(r.entry_no)) {
+      totPurchase += (dr - cr);
+      if (fn) { ensure(fn); byFile[fn].purchase += (dr - cr); }
     }
     // 6xxx مدين + ref=expenses = مصاريف صفقة (تفضل ~صفر بعد سياسة الترسملة —
     // المصاريف بقت جزء من 1300/5100 مش 6xxx. الحقل متسيّب زي ما هو لعدم
