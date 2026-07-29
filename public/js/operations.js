@@ -2729,6 +2729,7 @@ export async function loadDealNotes() {
       'مشكلة':   { icon:'⚠️', bg:'var(--accent-dim)',  border:'var(--accent)',  color:'var(--accent)' },
       'مهم':     { icon:'🔴', bg:'var(--red-dim)',      border:'var(--red)',     color:'var(--red)'    },
       'تم':      { icon:'✅', bg:'var(--green-dim)',    border:'var(--green)',   color:'var(--green)'  },
+      'نقل مخزن':{ icon:'🚛', bg:'var(--purple-dim)',   border:'var(--purple)',  color:'var(--purple)' },
     };
 
     const rows = notes.map(n => {
@@ -4982,6 +4983,7 @@ export function renderWhTable(transfers, soldVins) {
       <td><span style="font-size:12px;font-weight:700;padding:2px 8px;border-radius:10px;background:${isSold?'var(--green-dim)':'var(--accent-dim)'};color:${isSold?'var(--green)':'var(--accent)'}">${isSold?'✅ مباع':'📦 في المخزن'}</span></td>
       <td>
         <button class="btn btn-sm" onclick="openViewer('${t.file_no}')" style="padding:2px 8px;font-size:12px">📂</button>
+        ${t.notes ? `<button class="btn btn-sm" onclick="viewTransferNote(${t.id})" title="عرض الملاحظة" style="padding:2px 8px;font-size:12px;background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple)">📝</button>` : ''}
         ${t.id ? `<button class="btn btn-sm" onclick="deleteTransfer(${t.id},'${t.vin}')" style="padding:2px 8px;font-size:12px;background:var(--red-dim);color:var(--red);border:1px solid var(--red)">🗑</button>` : ''}
       </td>
     </tr>`;
@@ -5183,6 +5185,21 @@ export async function submitStockTransfer() {
     if (!res.ok) throw new Error(await res.text());
 
     await logAudit('INSERT','stock_locations', fileNo, null, { location, vins:[..._stSelectedVins], date });
+
+    // مرآة الملاحظة (لو اتكتبت) في ملاحظات الملف — نفس نظام DEAL_NOTE
+    if (notes) {
+      await apiPost('audit_log', {
+        system_type: state.system,
+        action:      'DEAL_NOTE',
+        table_name:  'stock_locations',
+        file_no:     fileNo,
+        notes:       `تحويل إلى مخزن "${location}" (${[..._stSelectedVins].join(', ')}):\n${notes}`,
+        old_value:   'نقل مخزن',
+        new_value:   date,
+        user_email:  state.user?.email || 'unknown',
+      });
+    }
+
     toast(`✅ تم تحويل ${_stSelectedVins.size} سيارة إلى ${location}`,'ok');
     closeModal('stockTransferModal');
     await loadWarehouses();
@@ -5192,6 +5209,12 @@ export async function submitStockTransfer() {
     showFieldErr('stError','خطأ: '+e.message);
     if (btn) { btn.disabled=false; btn.textContent='🚛 تأكيد التحويل'; }
   }
+}
+
+export function viewTransferNote(id) {
+  const t = (whState.allTransfers||[]).find(x => String(x.id) === String(id));
+  if (!t || !t.notes) return;
+  alert(`📝 ملاحظة تحويل ${t.vin||''} إلى مخزن "${t.location_name||''}"\n\n${t.notes}`);
 }
 
 export async function deleteTransfer(id, vin) {
@@ -5894,7 +5917,7 @@ Object.assign(window, {
   loadWarehouses, renderWhKpis, renderWhCards, renderWhTable, openManageWarehousesModal,
   refreshWhList, refreshWhSelect, addWarehouse, deleteWarehouse, openNewTransferModal,
   loadVehiclesForTransfer, toggleVinSelect, selectAllVehicles, updateSelectedCount, submitStockTransfer,
-  deleteTransfer, exportWhCard, loadVehiclesTab, showContactStatement, loadContactStatement,
+  deleteTransfer, viewTransferNote, exportWhCard, loadVehiclesTab, showContactStatement, loadContactStatement,
   exportContactStatementCSV, showImportWizard, setImportStep, selectImportType, downloadImportTemplate,
   handleImportDrop, handleImportFile, processImportFile, parseImportFile, readFileAsRows,
   renderImportPreview, runImport, runPostImportMigration, installPWA,
