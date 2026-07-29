@@ -376,7 +376,7 @@ export async function fetchJEForPeriod(sys, from, to) {
     `&entry_date=gte.${encodeURIComponent(from)}` +
     `&entry_date=lte.${encodeURIComponent(toEOD)}` +
     `&post_status=eq.posted` +
-    `&select=id,account_code,account_name,dr_amount,cr_amount,ref_table,file_no` +
+    `&select=id,entry_no,account_code,account_name,dr_amount,cr_amount,ref_table,file_no` +
     `&limit=49999`;
 
   const fetchOne = async (url) => {
