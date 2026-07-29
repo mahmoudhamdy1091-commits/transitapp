@@ -1,0 +1,101 @@
+#!/usr/bin/env node
+// بيئة Node بلا متصفح لاستيراد الوحدات الحقيقية للتطبيق (core.js/permissions.js/
+// periods.js/utils.js/engine.js/operations.js) وتشغيل دوالها الفعلية — بلا DOM حقيقي،
+// عبر polyfills خفيفة (document/localStorage/sessionStorage/window كـglobalThis).
+//
+// الهدف: مجموعات اختبار الانحدار (scripts/regression-*.js) تستدعي الكود الإنتاجي
+// الحقيقي (postDoubleEntry, updateJEInPlace, voidTransaction, je_payment, je_expense,
+// je_collection, je_payout, _processEditApproval, _processReversalApproval...) بدل
+// إعادة كتابته يدويًا — أي تغيير حقيقي في هذه الدوال ينكشف تلقائيًا في الاختبار.
+//
+// ✅ engine.js وحدها فيها كود تهيئة صفحة عند نهاية الملف (login-form prefill,
+// DOMContentLoaded wiring, serviceWorker unregister) داخل `(function init() {...})()`
+// — مقترن بـDOM حقيقي بشكل لا يمكن تشغيله بلا متصفح فعلي. هذا الجزء بس يُقصّ عند
+// الاستيراد (كل ما فوقه — كل الدوال المُصدَّرة الفعلية — يُستورد كما هو، بلا تعديل).
+// لو تغيّرت بنية الملف بحيث `(function init() {` لم تعد موجودة، الاستيراد يفشل
+// برسالة صريحة بدل صمت — حدّث marker أسفل عند الحاجة.
+//
+// باقي الملفات (core/permissions/periods/utils/operations) بلا أي كود تهيئة DOM
+// خطير عند نهايتها (تحقّقنا فعليًا 2026-07-29) فتُستورد كاملة بلا أي تعديل.
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const ROOT = 'C:/Users/hamdy/Documents/tarnsit app/transitapp';
+
+function stubEl() {
+  return {
+    value: '', checked: false, style: {}, textContent: '', innerHTML: '',
+    addEventListener() {}, querySelector() { return null; }, querySelectorAll() { return []; },
+    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+  };
+}
+
+function installPolyfills() {
+  globalThis.window = globalThis;
+  globalThis.localStorage   = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.document = {
+    getElementById: stubEl,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    createElement: () => stubEl(),
+    addEventListener() {},
+    body: stubEl(),
+  };
+  globalThis.addEventListener = function () {};
+  // ✅ showConfirm/showConfirmHtml (utils.js) — نوافذ تأكيد UI حقيقية تنتظر ضغطة
+  // مستخدم؛ في السياق الآلي هنا نوافق تلقائيًا (نفّذ onConfirm فورًا) — الاختبارات
+  // لا تحتاج "تأكيد بصري"، وده بيخلي rejectItem/approveAll الحقيقيين قابلين للاستدعاء
+  globalThis.showConfirm     = (title, msg, onConfirm) => { if (onConfirm) onConfirm(); };
+  globalThis.showConfirmHtml = (title, html, onConfirm) => { if (onConfirm) onConfirm(); };
+}
+
+function u(p) { return 'file:///' + (ROOT + p).replace(/ /g, '%20'); }
+
+async function loadStrippedEngine() {
+  const src = fs.readFileSync(path.join(ROOT, 'js/engine.js'), 'utf8');
+  const marker = '(function init() {';
+  const idx = src.indexOf(marker);
+  if (idx === -1) {
+    throw new Error(
+      'headless-app-env: لم يُعثر على marker "(function init() {" في js/engine.js — ' +
+      'بنية الملف تغيّرت. حدّث الـmarker هنا قبل الوثوق في نتيجة أي اختبار انحدار.'
+    );
+  }
+  const stripped = src.slice(0, idx) +
+    '\n// [_headless-app-env.js: تذييل تهيئة الصفحة المقترن بـDOM اتحذف هنا للاختبار بلا متصفح]\n';
+  const tmpFile = path.join(os.tmpdir(), `engine-headless-${process.pid}-${Date.now()}.mjs`);
+  fs.writeFileSync(tmpFile, stripped, 'utf8');
+  try {
+    return await import('file:///' + tmpFile.replace(/\\/g, '/'));
+  } finally {
+    fs.unlinkSync(tmpFile);
+  }
+}
+
+/**
+ * يحمّل الوحدات الحقيقية بترتيب index.html (core → permissions → periods → utils
+ * → engine → operations) ويرجّع كل الـexports + state. استدعِها مرة واحدة في بداية
+ * أي سكريبت اختبار.
+ */
+async function loadApp() {
+  installPolyfills();
+  const core        = await import(u('/js/core.js'));
+  const permissions  = await import(u('/js/permissions.js'));
+  const periods      = await import(u('/js/periods.js'));
+  const utils        = await import(u('/js/utils.js'));
+  const lifecycle    = await import(u('/js/lifecycle.js'));
+  const engine       = await loadStrippedEngine();
+  const operations   = await import(u('/js/operations.js'));
+
+  core.state.system = 'BOX';
+  core.state.user    = { email: 'zztest-regression@headless.local' };
+  // ✅ token يفضل null → headers() (core.js) يقع تلقائيًا على anon key — نفس
+  // سلوك تطبيق حقيقي بلا جلسة، وتحقّقنا 2026-07-29 إن الـRLS تسمح بالكتابة بيه
+
+  return { core, permissions, periods, utils, lifecycle, engine, operations, state: core.state };
+}
+
+module.exports = { loadApp };
