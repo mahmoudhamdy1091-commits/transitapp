@@ -1568,11 +1568,9 @@ export async function openEditPayoutModal(payoutId) {
         }
         if (!newAmount) { showFieldErr('poutError','يرجى إدخال المبلغ'); return; }
 
-        // ✅ pending_edit يعني "معتمد فعلاً وليه قيد حي، وفيه تعديل تحت المراجعة" —
-        // لو الصرف أصلاً draft (لسه ما اعتمدش، مفيش قيد له خالص)، الحفظ يفضل draft
-        // عادي، مش يترقّى لـpending_edit وهميًا (نفس علة sales المكتشفة 2026-07-28
-        // على BOX-133 — التصحيح هنا احترازي بنفس النمط، غير مؤكَّد حصوله فعليًا هنا)
-        const wasPosted = p.post_status === 'posted' || p.post_status === 'pending_edit';
+        // ✅ Track A / Phase 1 — قرار موحَّد عبر js/lifecycle.js (كان مكرَّرًا هنا
+        // وفي 5 أماكن تانية). راجع lifecycle.js لتفاصيل العلة الأصلية (BOX-133).
+        const wasPosted = wasAlreadyPosted(p.post_status);
 
         // 1. تحديث السجل مباشرة
         await apiPatch('partner_payouts', { id:`eq.${payoutId}` }, {
@@ -1580,7 +1578,7 @@ export async function openEditPayoutModal(payoutId) {
           pay_method: newMethod, document: newDoc||null, notes: newNotes||null,
           amount: newAmount,
           capital_amount: newCapital||null, profit_amount: newProfit||null,
-          post_status: wasPosted ? 'pending_edit' : 'draft',
+          post_status: statusAfterEdit(p.post_status),
         });
 
         // 2. تحديث القيد في مكانه

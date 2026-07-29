@@ -1459,13 +1459,9 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
           });
           const totalOld     = (oldSales||[]).reduce((s,r)=>s+(+r.sale_price||0),0);
           const oldCustomer  = oldSales?.[0]?.customer || '';
-          const wasPosted    = (oldSales||[]).some(s => s.post_status === 'posted' || s.post_status === 'pending_edit');
-          // ✅ pending_edit يعني "معتمدة فعلاً وليها قيد حي، وفيه تعديل تحت المراجعة" —
-          // لو الفاتورة أصلاً draft (لسه ما اعتمدتش، مفيش قيد لها خالص)، حفظ التعديل
-          // لازم يفضل draft عادي، مش يترقّى لـpending_edit وهميًا. غير كده، لما تتوافَق
-          // لاحقًا من قائمة الاعتمادات، الكود بيفترض "القيد اتحدّث مسبقاً" ويكتفي بتغيير
-          // الحالة لـposted من غير ما يرحّل أي قيد أصلاً — فجوة محاسبية صامتة حقيقية
-          // (اكتُشفت حيًّا 2026-07-28 على BOX-133، فاتورة اتحذفت وأُعيد إدخالها بعد الإصلاح)
+          // ✅ Track A / Phase 1 — قرار موحَّد عبر js/lifecycle.js (كان مكرَّرًا هنا
+          // وفي 5 أماكن تانية). راجع js/lifecycle.js لتفاصيل العلة الأصلية (BOX-133).
+          const wasPosted    = (oldSales||[]).some(s => wasAlreadyPosted(s.post_status));
           const savedStatus  = wasPosted ? 'pending_edit' : 'draft';
 
           // ── 1. حساب الإجمالي الجديد من الـ form ──
