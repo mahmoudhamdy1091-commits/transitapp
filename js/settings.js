@@ -1120,8 +1120,9 @@ export async function submitEditPayment() {
     const old = oldData?.[0];
     if (!old) { showFieldErr('epError','لم يُعثر على السجل'); return; }
 
-    if (old.post_status === 'posted' || old.post_status === 'pending_edit') {
+    if (wasAlreadyPosted(old.post_status)) {
       // ── السجل مرحّل: تعديل مباشر في السجل + القيد الأصلي + إرسال للموافقة ──
+      // ✅ Track A / Phase 1 — قرار موحَّد عبر js/lifecycle.js
       const oldAmount = +old.amount;
       const oldPayer  = old.payer;
       const routingChanged = _isPartnerPocket(oldPayer?.trim() || TREASURY_PARTNER) !== _isPartnerPocket(payer?.trim() || TREASURY_PARTNER);
@@ -1325,8 +1326,9 @@ export async function submitEditExpense() {
     const old = oldData?.[0];
     if (!old) { showFieldErr('eeError','لم يُعثر على السجل'); return; }
 
-    if (old.post_status === 'posted' || old.post_status === 'pending_edit') {
+    if (wasAlreadyPosted(old.post_status)) {
       // ── تعديل مباشر في السجل + القيد الأصلي + إرسال للموافقة ──
+      // ✅ Track A / Phase 1 — قرار موحَّد عبر js/lifecycle.js
       const oldAmount = +old.amount;
 
       const oldPaidByNorm = old.paid_by?.trim() || TREASURY_PARTNER;
@@ -1430,7 +1432,11 @@ export async function submitEditCollection() {
     const oldData = await apiGetAll('collections', { select:'*', id:`eq.${id}` });
     const old = oldData?.[0] || {};
 
-    if ((old.post_status === 'posted' || old.post_status === 'pending_edit') && old.paid_date) {
+    // ✅ Track A / Phase 1 — قرار موحَّد عبر js/lifecycle.js. الشرط الإضافي
+    // (old.paid_date) خاص بالتحصيلات تحديدًا: تحصيل "مستحق" بلا paid_date ما
+    // عندوش قيد فعلي حتى لو post_status='posted' — يفضل جزء من قرار هذا الكيان،
+    // مش من القرار العام المشترك
+    if (wasAlreadyPosted(old.post_status) && old.paid_date) {
       // ── تعديل مباشر في السجل + القيد الأصلي + إرسال للموافقة ──
       const oldAmount = +old.amount;
 
