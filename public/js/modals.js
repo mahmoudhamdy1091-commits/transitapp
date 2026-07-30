@@ -822,20 +822,30 @@ export async function submitEditFileFull() {
       }
     }
 
-    // 4. تحديث القيد المحاسبي في مكانه (كل أسطر القيد)
-    await updateJEInPlace({
-      sys: state.system, fileNo: oldFileNo,
-      refTable: 'purchase_orders', refId: poId,
-      oldAmount: _originalPOTotal || finalTotal,
-      newAmount: finalTotal,
-      contactPatch: supplier !== _originalPOSupplier ? supplier : null,
-      newDate: poDate || null,   // ✅ مزامنة تاريخ قيد الشراء مع تاريخ السند الجديد
-    });
+    // ✅ Track A / Phase 1 Step B — قرار موحَّد عبر js/lifecycle.js (نفس الخمسة
+    // مواقع التانية). العلة الأصلية هنا: كان الكود بيستدعي updateJEInPlace وبيرقّي
+    // pending_edit بلا شرط، حتى لو السند كان لسه draft (مفيش قيد له خالص) —
+    // فـupdateJEInPlace كانت ترمي خطأ ("لم يُعثر على القيد المحاسبي الأصلي")
+    // بعد ما تكون خطوات 1-3 فوق (السند/السيارات/الشركاء) اتحفظت فعليًا بصمت،
+    // بلا rollback وبلا تسجيل تدقيق. اكتُشف حيًّا 2026-07-29.
+    const wasPosted = wasAlreadyPosted(_originalPOPostStatus);
 
-    // 5. تحديث حالة الصفقة → pending_edit للموافقة
+    // 4. تحديث القيد المحاسبي في مكانه (كل أسطر القيد) — فقط لو كان فيه قيد أصلًا
+    if (wasPosted) {
+      await updateJEInPlace({
+        sys: state.system, fileNo: oldFileNo,
+        refTable: 'purchase_orders', refId: poId,
+        oldAmount: _originalPOTotal || finalTotal,
+        newAmount: finalTotal,
+        contactPatch: supplier !== _originalPOSupplier ? supplier : null,
+        newDate: poDate || null,   // ✅ مزامنة تاريخ قيد الشراء مع تاريخ السند الجديد
+      });
+    }
+
+    // 5. تحديث حالة الصفقة — pending_edit لو كانت مُرحَّلة فعلًا، وإلا تفضل draft
     await apiPatch('purchase_orders',
       { system_type:`eq.${state.system}`, file_no:`eq.${newFileNo}` },
-      { post_status: 'pending_edit' }
+      { post_status: statusAfterEdit(_originalPOPostStatus) }
     );
 
     // 6. فحص سريع (غير معطِّل): تأكيد أن القيود المُرحَّلة تعكس القيم الجديدة بعد التحديث
@@ -871,7 +881,9 @@ export async function submitEditFileFull() {
     await updateApprovalBadge();
 
     markSaving('newFileModal'); closeModal('newFileModal');
-    toast(`⚠️ تم تعديل الصفقة ${newFileNo} والقيد — في انتظار الموافقة`,'warn');
+    toast(wasPosted
+      ? `⚠️ تم تعديل الصفقة ${newFileNo} والقيد — في انتظار الموافقة`
+      : `✏️ تم حفظ تعديل الصفقة ${newFileNo} (لا تزال بانتظار الاعتماد الأول)`, 'warn');
     await loadDashboard();
     if (state.currentFileNo === oldFileNo || state.currentFileNo === newFileNo) {
       state.currentFileNo = newFileNo;
