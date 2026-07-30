@@ -46,8 +46,57 @@ export function statusAfterEdit(currentStatus) {
   return wasAlreadyPosted(currentStatus) ? 'pending_edit' : 'draft';
 }
 
+// ╔══════════════════════════════════════════════════════════╗
+// ║  Track A / Phase 2 — قرار "حذف/إلغاء سجل" الموحَّد        ║
+// ╚══════════════════════════════════════════════════════════╝
+//
+// المشكلة: زر "حذف" لكل كيان لازم يقرر "فيه قيد محاسبي حي لهذا السجل ولا لأ؟"
+// (لو أيوه → إلغاء بقيد عكسي عبر voidTransaction، لو لأ → حذف حقيقي مباشر) —
+// كان مُعاد كتابته يدويًا 4 مرات بنتائج مختلفة:
+//   - deletePayoutEntry (reports.js): صحيحة أصلًا — فرع صريح posted/draft
+//   - deletePaymentEntry/deleteExpenseEntry (settings.js): بلا أي فرع، دايمًا
+//     voidTransaction — سجل draft (بلا قيد) كان يدخل pending_void بهدوء لو
+//     entryStatus() المستخدم='draft' (وضع الموافقة الافتراضي)، أو يُرفض بخطأ
+//     مربك (JE not found) لو entryStatus()='posted' — بغض النظر عن حالة
+//     السجل نفسه، لأن القرار كان معتمدًا خطأً على وضع المستخدم العام بدل حالة
+//     السجل. اكتُشف حيًّا 2026-07-29 عبر سويت اختبار حقيقي (scripts/regression-track-a.js)
+//   - deleteCollectionEntry (settings.js): كانت تتفرّع على paid_date مباشرة،
+//     وللسجل بلا قيد كانت تعمل PATCH→voided (سجل يفضل موجود، مُعلَّم "ملغى")
+//     بدل حذف حقيقي — قرار سياسة اتحسم 2026-07-30: توحيد كامل لحذف حقيقي
+//     زي باقي الثلاثة، بلا استثناء لـcollections
+//
+// ✅ التصميم مبنيّ حرفيًا على deletePayoutEntry (المرجع الصحيح أصلًا) — قرار
+// بالحالة مباشرة posted/draft/غير كده، **مش** boolean "hasJE" عام. جرّبنا
+// أول تصميم بـhasJE=wasAlreadyPosted(status) لكنه غلط لحالة pending_void
+// تحديدًا: السجل ده له قيد حي فعليًا (لسه ما اتعكسش، بس فيه طلب إلغاء معلّق)،
+// لكن wasAlreadyPosted('pending_void') ترجع false (تعريفها الأصلي من Phase 1
+// بيستثنيها عمدًا) — لو استخدمناها هنا كانت pending_void هتتحذف حذفًا حقيقيًا
+// غلط. القرار المباشر بالحالة هنا أأمن وأوضح ومطابق للمرجع الوحيد المُثبَت
+// صحته فعليًا (deletePayoutEntry، 3/3 في سويت الاختبار).
+//
+// لكيانات فيها قيد "مشروط" بحقل إضافي غير post_status (collections تحديدًا:
+// قيدها الفعلي مرتبط بـpaid_date كمان — تحصيل posted بلا paid_date ما عندوش
+// قيد فعلي، سياسة الترسملة القديمة) — المستدعي بيطبّق تعديل بسيط فوق النتيجة
+// هنا (لو 'void' لكن مفيش قيد فعلي حقيقي → 'delete')، مش الدالة دي بتعرف
+// حاجة عن أي كيان بعينه عمدًا. راجع deleteCollectionEntry (settings.js).
+
+/**
+ * قرار "حذف/إلغاء" سجل — بناءً على حالته الحالية مباشرة:
+ * - 'posted' → 'void' (فيه قيد حي، المستدعي ينده voidTransaction)
+ * - 'draft'  → 'delete' (لسه ما اتحفظش، مفيش قيد له خالص، حذف حقيقي مباشر)
+ * - أي حالة تانية (pending_edit/pending_void/cancelled/voided) → 'reject'
+ *   (السجل في حالة انتقالية أو نهائية — هذا الزر مش مكان التعامل معاها؛
+ *   pending_edit/pending_void لها قيد حي لكن تحت مراجعة بالفعل، cancelled/voided
+ *   لا تحتاج أي فعل جديد)
+ */
+export function resolveDeleteAction(status) {
+  if (status === 'posted') return 'void';
+  if (status === 'draft') return 'delete';
+  return 'reject';
+}
+
 // ════════════════════════════════════════
 // WINDOW BRIDGE — تعريض الرمز للسكريبتات الكلاسيكية (نفس نمط باقي الملفات —
 // لا imports حقيقية بين ملفات js/*.js في هذا المشروع، الاعتماد على globals)
 // ════════════════════════════════════════
-Object.assign(window, { wasAlreadyPosted, statusAfterEdit });
+Object.assign(window, { wasAlreadyPosted, statusAfterEdit, resolveDeleteAction });
