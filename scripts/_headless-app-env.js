@@ -33,10 +33,23 @@ function stubEl() {
   };
 }
 
+// ✅ مخزن حقيقي في الذاكرة (مش no-op) — Phase 2 محتاجة تتحكّم فعليًا في
+// localStorage['tm_admin_post'] (entryStatus() في engine.js بتقرأه) لاختبار
+// وضعي الإلغاء الاثنين (طلب مراجعة مقابل تنفيذ فوري)
+function makeStorageStub() {
+  const store = new Map();
+  return {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => { store.delete(k); },
+    clear: () => store.clear(),
+  };
+}
+
 function installPolyfills() {
   globalThis.window = globalThis;
-  globalThis.localStorage   = { getItem: () => null, setItem() {}, removeItem() {} };
-  globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.localStorage   = makeStorageStub();
+  globalThis.sessionStorage = makeStorageStub();
   globalThis.document = {
     getElementById: stubEl,
     querySelector: () => null,
@@ -46,11 +59,34 @@ function installPolyfills() {
     body: stubEl(),
   };
   globalThis.addEventListener = function () {};
-  // ✅ showConfirm/showConfirmHtml (utils.js) — نوافذ تأكيد UI حقيقية تنتظر ضغطة
-  // مستخدم؛ في السياق الآلي هنا نوافق تلقائيًا (نفّذ onConfirm فورًا) — الاختبارات
-  // لا تحتاج "تأكيد بصري"، وده بيخلي rejectItem/approveAll الحقيقيين قابلين للاستدعاء
-  globalThis.showConfirm     = (title, msg, onConfirm) => { if (onConfirm) onConfirm(); };
-  globalThis.showConfirmHtml = (title, html, onConfirm) => { if (onConfirm) onConfirm(); };
+  installConfirmStub();
+}
+
+// ✅ showConfirm/showConfirmHtml — تُعرَّف فعليًا في js/reports.js:744 (فتحت
+// modal حقيقي وتنتظر ضغطة زر — لا تُنادي onConfirm إلا من onclick حقيقي).
+// إعادة تعيين globalThis.showConfirm بعد الاستيراد **لا تكفي** لأي دالة معرَّفة
+// في *نفس ملف* reports.js (زي deletePayoutEntry) — الجافاسكريبت بيحل المعرِّف
+// الحر lexically من نطاق الموديول أولاً (نفس الملف)، مش من الكائن العام، حتى
+// لو الاتنين اسمهم زي بعض. اكتُشف حيًّا 2026-07-29 (كل سيناريوهات Phase 2 لـ
+// partner_payouts كانت بترجع بلا أي تغيير، بصمت، بدون أي toast — الـstub
+// المُعاد تعيينه في window كان شغّال لدوال settings.js العابرة للملفات بس،
+// مش لـdeletePayoutEntry جوه نفس ملف reports.js). الحل الوحيد الموثوق: تعديل
+// نص reports.js نفسه وقت الاستيراد (نفس أسلوب قصّ تذييل engine.js) — استبدال
+// جسم الدالتين فقط بنداء لـ__autoConfirm المشتركة، بلا لمس الملف الأصلي على القرص.
+//
+// في السياق الآلي هنا نوافق تلقائيًا (نفّذ onConfirm فورًا) — الاختبارات لا
+// تحتاج "تأكيد بصري"، وده بيخلي rejectItem/approveAll والدوال المشغِّلة للحذف
+// (deletePaymentEntry وغيرها) الحقيقية قابلة للاستدعاء.
+// ⚠️ الكود الحقيقي بينادي showConfirm(title,msg,onConfirm) من غير await —
+// onConfirm نفسه async وبيشتغل في الخلفية. لازم أي سيناريو اختبار يستدعي
+// trigger function زي deletePaymentEntry ثم await waitForLastConfirm() فورًا
+// بعدها، وإلا الـassertions هتتنفّذ قبل ما الحذف/الإلغاء الفعلي يخلص.
+let _lastConfirmPromise = Promise.resolve();
+globalThis.__autoConfirm = (onConfirm) => { _lastConfirmPromise = Promise.resolve(onConfirm ? onConfirm() : undefined); };
+function installConfirmStub() {
+  globalThis.showConfirm     = (title, msg, onConfirm) => globalThis.__autoConfirm(onConfirm);
+  globalThis.showConfirmHtml = (title, html, onConfirm) => globalThis.__autoConfirm(onConfirm);
+  globalThis.__waitForLastConfirm = () => _lastConfirmPromise;
 }
 
 function u(p) { return 'file:///' + (ROOT + p).replace(/ /g, '%20'); }
@@ -76,6 +112,35 @@ async function loadStrippedEngine() {
   }
 }
 
+async function loadPatchedReports() {
+  const src = fs.readFileSync(path.join(ROOT, 'js/reports.js'), 'utf8');
+  // ✅ مطابقة عبر توقيع الدالة + regex لجسمها (بدل نص كامل ثابت) — النص الكامل
+  // بيحتوي تعليقات عربية بعلامات تشكيل ممكن تختلف في الترميز (NFC/NFD) بين نسخ
+  // مختلفة من نفس الملف حرفيًا بصريًا، فمطابقة exact-string كانت بتفشل بصمت
+  // (اكتُشف حيًّا 2026-07-29). \n\} (قوس إغلاق وحيد في بداية سطر) موثوق بما إن
+  // القوس الداخلي الوحيد جوه الجسم (btn.onclick = async () => {...};) على نفس
+  // السطر مع كود تاني، مش وحيد على سطره.
+  const reSC  = /export function showConfirm\(title, msg, onConfirm\) \{[\s\S]*?\n\}/;
+  const reSCH = /export function showConfirmHtml\(title, htmlMsg, onConfirm\) \{[\s\S]*?\n\}/;
+  if (!reSC.test(src) || !reSCH.test(src)) {
+    throw new Error(
+      'headless-app-env: توقيع showConfirm/showConfirmHtml في js/reports.js تغيّر عن ' +
+      'المتوقَّع هنا — حدّث reSC/reSCH في loadPatchedReports() قبل الوثوق في نتيجة أي ' +
+      'اختبار انحدار يستخدم reports.js (deletePayoutEntry وغيرها).'
+    );
+  }
+  const patched = src
+    .replace(reSC,  `export function showConfirm(title, msg, onConfirm) { globalThis.__autoConfirm(onConfirm); }`)
+    .replace(reSCH, `export function showConfirmHtml(title, htmlMsg, onConfirm) { globalThis.__autoConfirm(onConfirm); }`);
+  const tmpFile = path.join(os.tmpdir(), `reports-headless-${process.pid}-${Date.now()}.mjs`);
+  fs.writeFileSync(tmpFile, patched, 'utf8');
+  try {
+    return await import('file:///' + tmpFile.replace(/\\/g, '/'));
+  } finally {
+    fs.unlinkSync(tmpFile);
+  }
+}
+
 /**
  * يحمّل الوحدات الحقيقية بترتيب index.html (core → permissions → periods → utils
  * → engine → operations) ويرجّع كل الـexports + state. استدعِها مرة واحدة في بداية
@@ -94,14 +159,31 @@ async function loadApp() {
   // تحقّقنا (2026-07-29): بلا أي كود تهيئة مقترن بـDOM عند نهايتها (Object.assign
   // bridge بس)، فتُستورد كاملة بلا تعديل زي operations.js بالضبط.
   const transactions = await import(u('/js/transactions.js'));
+  // ✅ accounting.js: apiDelete (deletePayoutEntry بتستخدمها لحذف draft مباشرة)
+  // مُصدَّرة من هنا، مش core.js. بلا كود تهيئة مقترن بـDOM عند نهايتها (تحقّقنا)
+  const accounting   = await import(u('/js/accounting.js'));
+  // ✅ reports.js (deletePayoutEntry) وsettings.js (deletePaymentEntry/
+  // deleteExpenseEntry/deleteCollectionEntry) — Phase 2. reports.js تحديدًا
+  // تُستورد عبر loadPatchedReports() (راجع تعليقها) لأنها الملف الوحيد اللي
+  // بيعرِّف showConfirm الحقيقية جوه نفس ملف الدالة المُختبَرة (deletePayoutEntry)
+  const reports      = await loadPatchedReports();
+  const settings     = await import(u('/js/settings.js'));
   const operations   = await import(u('/js/operations.js'));
+
+  // ✅ إعادة تثبيت — reports.js دهس الـstub بالتعريف الحقيقي في تذييله، راجع
+  // تعليق installConfirmStub فوق
+  installConfirmStub();
 
   core.state.system = 'BOX';
   core.state.user    = { email: 'zztest-regression@headless.local' };
   // ✅ token يفضل null → headers() (core.js) يقع تلقائيًا على anon key — نفس
   // سلوك تطبيق حقيقي بلا جلسة، وتحقّقنا 2026-07-29 إن الـRLS تسمح بالكتابة بيه
 
-  return { core, permissions, periods, utils, lifecycle, engine, transactions, operations, state: core.state };
+  return {
+    core, permissions, periods, utils, lifecycle, engine, transactions, accounting, reports, settings, operations,
+    state: core.state,
+    waitForLastConfirm: () => globalThis.__waitForLastConfirm(),
+  };
 }
 
 module.exports = { loadApp };

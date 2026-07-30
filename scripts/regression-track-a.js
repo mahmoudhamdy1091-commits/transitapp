@@ -144,6 +144,12 @@ function buildEntityConfigs(app) {
         sys: SYS, date: row.pay_date, amount: +row.amount, fileNo: FILE_NO, refId: row.id,
         supplierName: 'ZZTEST-SUPPLIER', payerName: row.payer, method: row.pay_method,
       }),
+      // ✅ Phase 2 — الدالة المُشغِّلة الحقيقية (settings.js:1182). لا await على
+      // النداء نفسه (نفس استخدام onclick الحقيقي) — الانتظار الفعلي عبر waitForLastConfirm
+      // ⚠️ لازم await على النداء نفسه أولًا — الدالة async وفيها await (apiGetAll)
+      // قبل ما توصل لـshowConfirm، فلو مانتظرناش دلوقتي waitForLastConfirm()
+      // ممكن يمسك القيمة القديمة (سباق حقيقي، اكتُشف أثناء بناء Phase 2)
+      deleteFn: async (app, id, fileNo) => { await app.settings.deletePaymentEntry(id, fileNo); await app.waitForLastConfirm(); },
     },
     {
       label: 'expenses',
@@ -160,6 +166,8 @@ function buildEntityConfigs(app) {
         sys: SYS, date: row.exp_date, amount: +row.amount, fileNo: FILE_NO, refId: row.id,
         desc: row.description, expType: row.exp_type, method: row.pay_method, paidBy: row.paid_by,
       }),
+      // ✅ Phase 2 — settings.js:1216
+      deleteFn: async (app, id, fileNo) => { await app.settings.deleteExpenseEntry(id, fileNo); await app.waitForLastConfirm(); },
     },
     {
       label: 'collections',
@@ -179,6 +187,9 @@ function buildEntityConfigs(app) {
         sys: SYS, date: row.paid_date, amount: +row.amount, fileNo: FILE_NO, refId: row.id,
         customer: row.customer, invNo: row.inv_no, method: row.pay_method, receivedBy: row.received_by,
       }),
+      // ✅ Phase 2 — settings.js:1242. تتفرّع على paid_date لا post_status (راجع
+      // ملاحظة Phase 2 التوثيقية) — نفس الدالة، فحصها جزء من نفس السويت
+      deleteFn: async (app, id, fileNo) => { await app.settings.deleteCollectionEntry(id, fileNo); await app.waitForLastConfirm(); },
     },
     {
       label: 'partner_payouts',
@@ -195,6 +206,9 @@ function buildEntityConfigs(app) {
         sys: SYS, date: row.pay_date, amount: +row.amount, fileNo: FILE_NO, refId: row.id,
         partner: row.partner, method: row.pay_method,
       }),
+      // ✅ Phase 2 — reports.js:822. الدالة الوحيدة من الأربعة بفرع draft/posted
+      // صريح وصحيح بالفعل — مرجع الهدف اللي باقي الثلاثة لازم يتوحّدوا معاه
+      deleteFn: async (app, id, fileNo) => { await app.reports.deletePayoutEntry(id, fileNo); await app.waitForLastConfirm(); },
     },
   ];
 }
@@ -502,6 +516,137 @@ async function poS3_pendingEditApprove(app) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// PHASE 2 — قرار "الحذف/الإلغاء" (draft→حذف مباشر بلا قيد، posted→voidTransaction)
+// ════════════════════════════════════════════════════════════════════════
+// يستدعي الدوال المُشغِّلة الحقيقية (deletePaymentEntry/deleteExpenseEntry/
+// deleteCollectionEntry من settings.js، deletePayoutEntry من reports.js) —
+// showConfirm مُعاد توجيهه تلقائيًا (_headless-app-env.js)، والانتظار الفعلي
+// عبر app.waitForLastConfirm() بعد كل نداء (الدالة الحقيقية لا تنتظر showConfirm).
+//
+// الهدف الموثَّق من الجرد: سجل draft (بلا قيد خالص) لازم يتحذف مباشرة بغض النظر
+// عن entryStatus() (وضع المستخدم العام لـ"ترحيل فوري")، لأن القرار ده خاص
+// بحالة *السجل* نفسه لا بوضع المستخدم وقت الحذف. حاليًا:
+//   - deletePayoutEntry (reports.js:822): صحيحة — فرع صريح posted/draft/غير كده
+//   - deletePaymentEntry/deleteExpenseEntry: بلا أي فرع، بينادوا voidTransaction
+//     دايمًا — سلوكهم لسجل draft يعتمد بالكامل على entryStatus() الحالي:
+//       entryStatus()='posted' → voidTransaction تحاول تلاقي قيد فترمي خطأ
+//         (مُمسوك داخليًا بـtoast) — السجل يفضل draft زي ما هو، بلا ضرر لكن UX سيئة
+//       entryStatus()='draft'  → مسار "طلب" بلا أي فحص لوجود قيد أصلًا — السجل
+//         يدخل pending_void بهدوء رغم عدم وجود قيد له خالص (الحالة الأخطر)
+//   - deleteCollectionEntry (settings.js:1242): تتفرّع على paid_date لا
+//     post_status — تُختبَر بحالتين: draft+paid_date موجود (نفس فجوة
+//     payments/expenses بالضبط، لأن paid_date وحده لا يضمن وجود قيد فعلي)،
+//     وdraft بلا paid_date (المسار "الآمن" الحالي، لكن نهايته "voided" بـPATCH
+//     مباشر، مش حذف حقيقي زي deletePayoutEntry — سؤال تصميم مفتوح لم يُحسم
+//     بعد، مُسجَّل هنا بدون افتراض إجابة، القرار يُترك لخطوة التنفيذ الفعلية)
+
+// ✅ role='admin' دايمًا — accounting.js's apiDelete (اللي deletePayoutEntry بتستخدمها
+// لحذف draft) عندها حارس صلاحية can('delete') منفصل تمامًا عن entryStatus()، وROLES
+// بتاعت readonly/employee كلاهما delete:false. لو غيّرنا الدور لـ'readonly' لاختبار
+// entryStatus()='draft'، الحارس ده كان بيمنع الحذف قبل ما نوصل لمنطق entryStatus()
+// أصلًا (اكتُشف حيًّا 2026-07-29 — رسالة "🔒 ليس لديك صلاحية الحذف" مش من منطق
+// الحذف نفسه). الدور والـentryStatus() محورين منفصلين فعليًا — admin ثابت هنا
+// يعزل تأثير tm_admin_post وحده، وهو الشيء المطلوب اختباره فعلًا.
+function setEntryStatus(app, mode) {
+  app.permissions.setCurrentRole('admin');
+  globalThis.localStorage.setItem('tm_admin_post', mode === 'posted' ? 'posted' : 'draft');
+}
+
+// سجل draft (بلا قيد) — يُختبَر تحت وضعي entryStatus() الاثنين
+async function p2_draftDelete(cfg, app, entryMode) {
+  setEntryStatus(app, entryMode);
+  // ✅ مبلغ مختلف حسب entryMode — لو السجل الأول لم يُحذف فعليًا (العلة قيد
+  // الفحص) لا يصطدم بحارس التكرار الحقيقي في apiPost (core.js:601) مع السجل الثاني
+  const amt = entryMode === 'posted' ? 701 : 700;
+  const row = await apiPost(cfg.table, {
+    system_type: SYS, file_no: FILE_NO, post_status: 'draft', ...cfg.baseFields(amt),
+  });
+  const created = row[0];
+  registerCleanup(cfg.table, created.id);
+
+  await cfg.deleteFn(app, created.id, FILE_NO);
+
+  const after = (await apiGetAll(cfg.table, { select: '*', id: `eq.${created.id}` }))[0];
+  const jeCount = await apiGetAll('journal_entries', {
+    select: 'id', system_type: `eq.${SYS}`, ref_table: `eq.${cfg.table}`, ref_id: `eq.${created.id}`,
+  });
+  assert((jeCount || []).length === 0, `[entryMode=${entryMode}] المتوقع صفر قيود لسجل draft، طلع ${jeCount.length}`);
+  assert(!after, `[entryMode=${entryMode}] المتوقع حذف مباشر لسجل draft (السطر يختفي)، لكنه لسه موجود بحالة "${after?.post_status}"`);
+}
+
+// سجل posted (بقيد حقيقي) — المسار السعيد الحالي، لازم يفضل شغّال بعد أي توحيد لاحق
+async function p2_postedDelete(cfg, app) {
+  setEntryStatus(app, 'posted'); // تنفيذ فوري، نتأكد من مسار العكس الفعلي مباشرة
+  const row = await apiPost(cfg.table, {
+    system_type: SYS, file_no: FILE_NO, post_status: 'posted', ...cfg.baseFields(800),
+  });
+  const created = row[0];
+  registerCleanup(cfg.table, created.id);
+  await cfg.postJE(created);
+
+  await cfg.deleteFn(app, created.id, FILE_NO);
+
+  const after = (await apiGetAll(cfg.table, { select: '*', id: `eq.${created.id}` }))[0];
+  assert(after && after.post_status === 'voided', `المتوقع voided، طلع ${after?.post_status}`);
+  const reversalLines = await apiGetAll('journal_entries', {
+    select: 'dr_amount,cr_amount', system_type: `eq.${SYS}`,
+    ref_table: `eq.reversal`, ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  assert((reversalLines || []).length >= 2, `المتوقع قيد عكسي متوازن (سطرين على الأقل)، طلع ${reversalLines.length}`);
+  const drSum = reversalLines.reduce((s, l) => s + (+l.dr_amount || 0), 0);
+  const crSum = reversalLines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(drSum - crSum) < 0.01, `القيد العكسي غير متوازن: dr=${drSum} cr=${crSum}`);
+}
+
+// collections فقط — حالة حافة: draft بلا paid_date (المسار الحالي "الآمن" —
+// بيوثّق النتيجة الفعلية بدل افتراض إجابة، السؤال التصميمي لسه مفتوح)
+// ✅ قرار سياسة اتحسم 2026-07-30: توحيد كامل — كلا الحالتين (draft، وposted
+// بلا paid_date) لازم يتحذفوا حذفًا حقيقيًا زي باقي الكيانات، بلا استثناء
+async function p2_collectionsNoPaidDate(app, status) {
+  setEntryStatus(app, 'draft');
+  const row = await apiPost('collections', {
+    system_type: SYS, file_no: FILE_NO, post_status: status,
+    pay_id: zid('COL'), ref_no: zid('COL'), customer: 'ZZTEST-CUSTOMER', inv_no: 'ZZTEST-INV',
+    pay_method: 'تحويل بنكي', due_date: today(), paid_date: null, amount: 750, received_by: null,
+    notes: 'ZZTEST regression',
+  });
+  const created = row[0];
+  registerCleanup('collections', created.id);
+
+  await app.settings.deleteCollectionEntry(created.id, FILE_NO);
+  await app.waitForLastConfirm();
+
+  const after = (await apiGetAll('collections', { select: '*', id: `eq.${created.id}` }))[0];
+  const jeCount = await apiGetAll('journal_entries', {
+    select: 'id', system_type: `eq.${SYS}`, ref_table: `eq.collections`, ref_id: `eq.${created.id}`,
+  });
+  assert((jeCount || []).length === 0, `المتوقع صفر قيود (لا paid_date، لا JE أصلًا)، طلع ${jeCount.length}`);
+  assert(!after, `[status=${status}, بلا paid_date] المتوقع حذف حقيقي (قرار 2026-07-30)، لكن السطر لسه موجود بحالة "${after?.post_status}"`);
+}
+
+// ✅ فروع 'reject' الجديدة (Phase 2) — pending_edit له قيد حي فعلًا لكن تحت
+// مراجعة تعديل بالفعل؛ الزر ده مش مكان التعامل معاه. سلوك جديد لـpayments/
+// expenses/collections (متبنّى من deletePayoutEntry، المرجع الصحيح أصلًا)
+async function p2_rejectPendingEdit(cfg, app) {
+  setEntryStatus(app, 'draft');
+  const row = await apiPost(cfg.table, {
+    system_type: SYS, file_no: FILE_NO, post_status: 'pending_edit', ...cfg.baseFields(760),
+  });
+  const created = row[0];
+  registerCleanup(cfg.table, created.id);
+  await cfg.postJE(created); // pending_edit فعليًا له قيد حي — نتأكد إنه يفضل كده بعد الرفض
+
+  await cfg.deleteFn(app, created.id, FILE_NO);
+
+  const after = (await apiGetAll(cfg.table, { select: '*', id: `eq.${created.id}` }))[0];
+  assert(after && after.post_status === 'pending_edit', `المتوقع يفضل pending_edit (الزر يرفض التعامل)، طلع ${after?.post_status}`);
+  const jeLines = await apiGetAll('journal_entries', {
+    select: 'id', system_type: `eq.${SYS}`, ref_table: `eq.${cfg.table}`, ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  assert((jeLines || []).length >= 2, `المتوقع القيد الحي يفضل كما هو (سطرين على الأقل)، طلع ${jeLines.length}`);
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // MAIN
 // ════════════════════════════════════════════════════════════════════════
 (async () => {
@@ -562,6 +707,20 @@ async function poS3_pendingEditApprove(app) {
     await scenario('purchase_orders / S1 draft→edit يفضل draft بلا قيد', () => poS1_draftEditStaysDraft(app));
     await scenario('purchase_orders / S2 posted→edit يترقّى pending_edit + قيد محدَّث فعليًا', () => poS2_postedEditPromotes(app));
     await scenario('purchase_orders / S3 pending_edit→موافقة يبقى posted بلا تكرار قيد', () => poS3_pendingEditApprove(app));
+
+    // ✅ Phase 2 — قرار الحذف/الإلغاء (draft→حذف مباشر، posted→voidTransaction)
+    // يختبر الدوال المُشغِّلة الحقيقية عبر وضعي entryStatus() الاثنين — راجع
+    // الشرح التوثيقي فوق p2_draftDelete لتفاصيل الفجوة المتوقَّعة حاليًا
+    console.log(`\n── Phase 2: قرار الحذف/الإلغاء ──`);
+    for (const cfg of configs) {
+      await scenario(`${cfg.label} / P2-draft حذف مباشر (entryStatus=draft)`, () => p2_draftDelete(cfg, app, 'draft'));
+      await scenario(`${cfg.label} / P2-draft حذف مباشر (entryStatus=posted)`, () => p2_draftDelete(cfg, app, 'posted'));
+      await scenario(`${cfg.label} / P2-posted إلغاء بقيد عكسي متوازن`, () => p2_postedDelete(cfg, app));
+      await scenario(`${cfg.label} / P2-reject pending_edit يفضل كما هو`, () => p2_rejectPendingEdit(cfg, app));
+    }
+    await scenario('collections / P2 حالة حافة — draft بلا paid_date → حذف حقيقي', () => p2_collectionsNoPaidDate(app, 'draft'));
+    await scenario('collections / P2 حالة حافة — posted بلا paid_date → حذف حقيقي', () => p2_collectionsNoPaidDate(app, 'posted'));
+    setEntryStatus(app, 'draft'); // إعادة الوضع الافتراضي بعد خلوص السويت
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
