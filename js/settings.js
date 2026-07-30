@@ -1089,7 +1089,7 @@ export async function openEditPaymentModal(paymentId) {
       partners = (all||[]).map(x=>({partner:x.name}));
     }
     const rawPartners = (partners||[]).map(pm=>pm.partner);
-    const payerList = rawPartners.includes(TREASURY_PARTNER) ? rawPartners : [TREASURY_PARTNER, ...rawPartners];
+    const payerList = rawPartners.some(p => TREASURY_ALIASES.has(p)) ? rawPartners : [TREASURY_PARTNER, ...rawPartners];
     el('ep-id').value     = p.id;
     el('ep-payer').innerHTML = payerList.map(pm => `<option value="${pm}">${pm}</option>`).join('');
     el('ep-payer').value  = p.payer    || TREASURY_PARTNER;
@@ -1385,7 +1385,10 @@ export async function openEditExpenseModal(expenseId) {
         select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${e.file_no}`
       });
       const raw = (partners||[]).map(p => p.partner);
-      const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+      // ✅ نتحقق من وجود أي اسم خزينة (TREASURY_ALIASES) لا "الصندوق" الحرفي بس —
+      // TM مسجّلة باسم "صندوق الترانزيت" فعليًا كشريك حقيقي في partners_master؛
+      // كانت المقارنة القديمة تفشل معه فتحقن "الصندوق" العام كخيار وهمي ثالث
+      const list = raw.some(p => TREASURY_ALIASES.has(p)) ? raw : [TREASURY_PARTNER, ...raw];
       paidByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
       paidByEl.value = e.paid_by?.trim() || TREASURY_PARTNER;
       // ✅ قائمة التوزيع تستثني الصندوق، وتُعلِّم الشركاء المختارين فعلاً في السجل
@@ -1529,7 +1532,10 @@ export async function openEditCollectionModal(collectionId) {
         select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${c.file_no}`
       });
       const raw = (partners||[]).map(p => p.partner);
-      const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+      // ✅ نتحقق من وجود أي اسم خزينة (TREASURY_ALIASES) لا "الصندوق" الحرفي بس —
+      // TM مسجّلة باسم "صندوق الترانزيت" فعليًا كشريك حقيقي في partners_master؛
+      // كانت المقارنة القديمة تفشل معه فتحقن "الصندوق" العام كخيار وهمي ثالث
+      const list = raw.some(p => TREASURY_ALIASES.has(p)) ? raw : [TREASURY_PARTNER, ...raw];
       recByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
       recByEl.value = c.received_by?.trim() || TREASURY_PARTNER;
     }
@@ -1674,7 +1680,10 @@ export async function markCollectionPaid(collectionId, fileNo) {
             select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${c.file_no}`
           });
           const raw  = (partners||[]).map(p => p.partner);
-          const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+          // ✅ نتحقق من وجود أي اسم خزينة (TREASURY_ALIASES) لا "الصندوق" الحرفي بس —
+      // TM مسجّلة باسم "صندوق الترانزيت" فعليًا كشريك حقيقي في partners_master؛
+      // كانت المقارنة القديمة تفشل معه فتحقن "الصندوق" العام كخيار وهمي ثالث
+      const list = raw.some(p => TREASURY_ALIASES.has(p)) ? raw : [TREASURY_PARTNER, ...raw];
           recByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
         } catch(e) {}
       }

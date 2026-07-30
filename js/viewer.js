@@ -305,9 +305,15 @@ export async function loadQuickReceivedBy(fileNo) {
   try {
     const partners = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${state.system}`, file_no:`eq.${fileNo.trim()}` });
     const raw  = (partners||[]).map(p=>p.partner);
-    const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+    // ✅ نتحقق من وجود أي اسم خزينة (TREASURY_ALIASES) لا "الصندوق" الحرفي بس —
+    // TM مسجّلة باسم "صندوق الترانزيت" فعليًا كشريك حقيقي في partners_master؛
+    // كانت المقارنة القديمة تفشل معه فتحقن "الصندوق" العام كخيار وهمي ثالث
+    const list = raw.some(p => TREASURY_ALIASES.has(p)) ? raw : [TREASURY_PARTNER, ...raw];
     const rb = el('qc-receivedBy');
-    if (rb) { rb.innerHTML = list.map(p=>`<option value="${p}">${p}</option>`).join(''); rb.value = TREASURY_PARTNER; }
+    if (rb) {
+      rb.innerHTML = list.map(p=>`<option value="${p}">${p}</option>`).join('');
+      rb.value = raw.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
+    }
   } catch(e) { console.warn('loadQuickReceivedBy:', e.message); }
 }
 
@@ -498,9 +504,11 @@ export async function loadPaymentPOCard(fileNo) {
 
     // الدافع
     const rawPartners = (partners||[]).map(p=>p.partner);
-    const payerList = rawPartners.includes(TREASURY_PARTNER) ? rawPartners : [TREASURY_PARTNER, ...rawPartners];
+    // ✅ نفس إصلاح TREASURY_ALIASES أعلى الملف (loadQuickReceivedBy) — TM مسجّلة
+    // باسم "صندوق الترانزيت" فعليًا، فمقارنة "الصندوق" الحرفي كانت تحقن خيارًا وهميًا
+    const payerList = rawPartners.some(p => TREASURY_ALIASES.has(p)) ? rawPartners : [TREASURY_PARTNER, ...rawPartners];
     el('qp-payer').innerHTML = payerList.map(p=>`<option value="${p}">${p}</option>`).join('');
-    el('qp-payer').value = TREASURY_PARTNER;
+    el('qp-payer').value = rawPartners.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
 
     el('qp-po-card').style.display    = 'block';
     el('qp-form-fields').style.display = 'block';
