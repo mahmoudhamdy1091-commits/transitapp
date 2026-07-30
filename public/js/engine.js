@@ -302,18 +302,29 @@ export async function voidTransaction(type, record, force=false) {
     ];
 
   } else if (type === 'expense') {
-    // الأصلي: Dr 1300|5100 (سياسة الترسملة) أو 6xxx/52xx (قيود قديمة) / Cr (نقد/بنك أو 2400)
-    // نعكس الحساب المدين الفعلي من القيد الأصلي (بحث بـ ref_id) — يدعم القديم والجديد معاً
-    let eAcc = null, eName = null;
+    // الأصلي: Dr 1300|5100 (سياسة الترسملة) أو 6xxx/52xx (قيود قديمة) / Cr (نقد/بنك
+    // أو 2400 — سطر واحد لمصروف عادي، أو N سطر لمصروف موزَّع بالتساوي على شركاء)
+    // ✅ نقرأ كل أسطر القيد الفعلي (كل الأسطر المشتركة في نفس entry_no لسطر
+    // المدين المكتشَف) ونعكسها كما هي بالضبط — بدل إعادة بناء سطر دائن واحد من
+    // record.paid_by (كانت هذه إعادة البناء تفترض دائمًا شريكًا واحدًا بالضبط،
+    // فتفشل تمامًا لمصروف موزَّع على أكثر من شريك؛ نفس مبدأ updateJEInPlace/
+    // reverseManualJE أصلاً: نعكس ما هو مكتوب فعليًا في اليومية، لا نعيد تخمينه)
+    let eAcc = null, eName = null, expenseLines = [];
     try {
-      // ✅ order:'id.desc' — نفس سبب فرع payment فوق (احتمال سطر قديم مُستبدَل)
+      // ✅ order:'id.desc' — نفس سبب فرع payment فوق (احتمال أكثر من entry_no
+      // posted بنفس ref_id فى نفس الوقت، لو السجل اتعدّل قبل كده بتغيير توجيه)
       const orig = await apiGetAll('journal_entries', {
-        select:'id,account_code,account_name,dr_amount',
+        select:'id,entry_no,account_code,account_name,contact_name,dr_amount,cr_amount',
         system_type:`eq.${sys}`, ref_table:'eq.expenses', ref_id:`eq.${record.id}`, post_status:'eq.posted',
         order:'id.desc',
       });
       const drLine = (orig||[]).find(l => (+l.dr_amount||0) > 0);
-      if (drLine) { eAcc = drLine.account_code; eName = drLine.account_name || record.exp_type || 'مصروف'; origId = drLine.id || null; }
+      if (drLine) {
+        eAcc = drLine.account_code; eName = drLine.account_name || record.exp_type || 'مصروف'; origId = drLine.id || null;
+        // كل أسطر نفس القيد الفعلي (نفس entry_no لسطر المدين المكتشَف) — سطر
+        // دائن واحد لمصروف عادي، أو N سطر لمصروف موزَّع
+        expenseLines = (orig||[]).filter(l => l.entry_no === drLine.entry_no);
+      }
     } catch(e) { console.warn('void expense: فشل جلب القيد الأصلي:', e.message); }
     // ✅ لو مفيش قيد أصلي مُرحَّل نلقاه لهذا السجل (اتحذف مباشرة من اليومية مثلاً)،
     // ممنوع نكمل بحساب افتراضي بصمت — ده كان بيعمل قيد عكسي "يتيم" بلا نظير
@@ -323,14 +334,12 @@ export async function voidTransaction(type, record, force=false) {
     if (!eAcc) {
       throw new Error(`تعذّر إيجاد القيد المحاسبي الأصلي لهذا المصروف (${record.ref_no||record.id}) — على الأغلب اتحذف من اليومية مباشرة قبل الإلغاء. لا يمكن إلغاؤه بأمان بدون معرفة الحساب الأصلي؛ راجعي اليومية يدوياً أولاً أو أعيدي إدخال القيد.`);
     }
-    const dr = _isPartnerPocket(record.paid_by)
-      ? { acc:'2400', name:'حسابات الشركاء', dr:amount, cr:0, contact:record.paid_by.trim() }
-      : { acc:((record.pay_method||'')==='نقد'?'1110':'1120'), name:((record.pay_method||'')==='نقد'?'النقد':'البنك'), dr:amount, cr:0, contact:null };
     reversalDesc  = `عكس مصروف ${record.ref_no||''} — ${record.description||''} — ملف ${record.file_no}`;
-    reversalLines = [
-      dr,
-      { acc: eAcc, name: eName, dr: 0, cr: amount, contact: null },
-    ];
+    reversalLines = expenseLines.map(l => ({
+      acc: l.account_code, name: l.account_name,
+      dr: +l.cr_amount||0, cr: +l.dr_amount||0,
+      contact: l.contact_name || null,
+    }));
 
   } else if (type === 'collection') {
     // الأصلي: Dr (نقد/بنك أو 2400 لو احتفظ بها شريك) / Cr 1200
@@ -1000,17 +1009,26 @@ export async function fileExpenseTarget(sys, fileNo, expType) {
 }
 
 // مصروف ملف: مخزون 1300 (أو 5100 لو الملف مُباع) Dr / نقد Cr — مصروف عام: حساب مصروف Dr / نقد Cr
-export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,isPrimary=true}) {
+// paidBySplit (اختياري): [{partner,amount}] — توزيع بالتساوي على شركاء مختارين
+// يدويًا (js/lifecycle.js computeEqualSplit)، يبني N سطر دائن 2400 بدل السطر
+// الواحد. لو غير موجود/فاضي، السلوك مطابق تمامًا لما قبل إضافة هذا الباراميتر.
+export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,paidBySplit=null,isPrimary=true}) {
   if(!amount||amount<=0) throw new Error(`قيمة مصروف غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
   const target = await fileExpenseTarget(sys, fileNo, expType);
-  // الدائن: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو دفعها من جيبه
-  const credit = _isPartnerPocket(paidBy)
-    ? {acc:'2400', name:'حسابات الشركاء', dr:0, cr:amount, contact:paidBy.trim()}
-    : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null};
-  const tail = _isPartnerPocket(paidBy) ? ` — دفعها ${paidBy.trim()}` : '';
+  const hasSplit = Array.isArray(paidBySplit) && paidBySplit.length > 0;
+  // الدائن: توزيع بالتساوي على شركاء مختارين (N سطر 2400) لو hasSplit، وإلا
+  // الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو دفعها من جيبه بمفرده
+  const creditLines = hasSplit
+    ? paidBySplit.map(p => ({acc:'2400', name:'حسابات الشركاء', dr:0, cr:+p.amount||0, contact:(p.partner||'').trim()}))
+    : [ _isPartnerPocket(paidBy)
+        ? {acc:'2400', name:'حسابات الشركاء', dr:0, cr:amount, contact:paidBy.trim()}
+        : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null} ];
+  const tail = hasSplit
+    ? ` — موزَّع بالتساوي على ${paidBySplit.map(p=>p.partner).join('، ')}`
+    : (_isPartnerPocket(paidBy) ? ` — دفعها ${paidBy.trim()}` : '');
   return await postDoubleEntry({sys,date,fileNo,refTable:'expenses',refId,isPrimary,desc:`${desc} — ملف ${fileNo||'عام'}${tail}`,lines:[
     {acc:target.acc, name:target.name, dr:amount, cr:0, contact:null},
-    credit,
+    ...creditLines,
   ]});
 }
 

@@ -1964,7 +1964,7 @@ export async function _createApprovalJE(type, record, sys) {
   } else if (type === 'payment') {
     await je_payment({ sys, date:record.pay_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, supplierName:record.supplier||'', payerName:record.payer||'', method:record.pay_method||'تحويل بنكي' });
   } else if (type === 'expense') {
-    await je_expense({ sys, date:record.exp_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, desc:record.description||'مصروف', expType:record.exp_type||'أخرى', method:record.pay_method||'تحويل بنكي', paidBy:record.paid_by||null });
+    await je_expense({ sys, date:record.exp_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, desc:record.description||'مصروف', expType:record.exp_type||'أخرى', method:record.pay_method||'تحويل بنكي', paidBy:record.paid_by||null, paidBySplit:record.paid_by_split||null });
   } else if (type === 'payout') {
     await je_payout({ sys, date:record.pay_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, partner:record.partner||'', method:record.pay_method||'تحويل بنكي' });
   } else if (type === 'collection') {
@@ -2086,7 +2086,7 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
         } else if (type === 'payment_edit') {
           await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
         } else if (type === 'expense_edit') {
-          await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'نقد', paidBy:item.paid_by||null });
+          await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'نقد', paidBy:item.paid_by||null, paidBySplit:item.paid_by_split||null });
         } else if (type === 'collection_edit' && item.paid_date) {
           await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
         } else if (type === 'payout_edit') {
@@ -4082,7 +4082,7 @@ export async function fixUnbalancedEntries() {
           const data = await apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           for (const e of (data||[]).filter(isPosted)) {
             if (+e.amount > 0)
-              await je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no,refId:e.id||null, desc:e.description||'مصروف', expType:e.exp_type||'أخرى', method:e.pay_method||'نقد', paidBy:e.paid_by||null });
+              await je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no,refId:e.id||null, desc:e.description||'مصروف', expType:e.exp_type||'أخرى', method:e.pay_method||'نقد', paidBy:e.paid_by||null, paidBySplit:e.paid_by_split||null });
           }
 
         } else if (refTable === 'partner_payouts' && fileNo) {
@@ -4189,7 +4189,7 @@ export async function createMissingJE(idx) {
   const sys = state.system;
   try {
     if (m.table === 'expenses') {
-      await je_expense({ sys, date:r.exp_date||r.expense_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, desc:r.description||'مصروف', expType:r.exp_type||r.category||'أخرى', method:r.pay_method||'نقد', paidBy:r.paid_by||null });
+      await je_expense({ sys, date:r.exp_date||r.expense_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, desc:r.description||'مصروف', expType:r.exp_type||r.category||'أخرى', method:r.pay_method||'نقد', paidBy:r.paid_by||null, paidBySplit:r.paid_by_split||null });
     } else if (m.table === 'payments') {
       await je_payment({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'نقد' });
     } else if (m.table === 'collections') {
@@ -4222,7 +4222,7 @@ export async function createAllMissingJE() {
       const ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${sys}`, ref_table:`eq.${m.table}`, ref_id:`eq.${r.id}`, post_status:'eq.posted', limit:1 });
       if (ex?.length) { ok++; continue; }
       if (m.table === 'expenses') {
-        await je_expense({ sys, date:r.exp_date||r.expense_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, desc:r.description||'مصروف', expType:r.exp_type||r.category||'أخرى', method:r.pay_method||'نقد', paidBy:r.paid_by||null });
+        await je_expense({ sys, date:r.exp_date||r.expense_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, desc:r.description||'مصروف', expType:r.exp_type||r.category||'أخرى', method:r.pay_method||'نقد', paidBy:r.paid_by||null, paidBySplit:r.paid_by_split||null });
       } else if (m.table === 'payments') {
         await je_payment({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'نقد' });
       } else if (m.table === 'collections') {
@@ -4770,7 +4770,7 @@ export async function runMigration() {
     _migLog(`💸 ${(expenses||[]).filter(isPosted).length} مصروف + ${(payouts||[]).filter(isPosted).length} صرف شريك...`);
     for (const e of (expenses||[]).filter(isPosted)) {
       if (!e.amount||!+e.amount) { skipped++; tick(); continue; }
-      await safe(`مصروف ${e.ref_no||e.id}`, () => je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no,refId:e.id||null, desc:e.description||e.category||'مصروف', expType:e.exp_type||e.category||'أخرى', method:e.pay_method||'نقد', paidBy:e.paid_by||null }));
+      await safe(`مصروف ${e.ref_no||e.id}`, () => je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no,refId:e.id||null, desc:e.description||e.category||'مصروف', expType:e.exp_type||e.category||'أخرى', method:e.pay_method||'نقد', paidBy:e.paid_by||null, paidBySplit:e.paid_by_split||null }));
     }
     for (const p of (payouts||[]).filter(isPosted)) {
       if (!p.amount||!+p.amount) { skipped++; tick(); continue; }

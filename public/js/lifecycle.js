@@ -95,8 +95,53 @@ export function resolveDeleteAction(status) {
   return 'reject';
 }
 
+// ╔══════════════════════════════════════════════════════════╗
+// ║  توزيع مصروف بالتساوي بين شركاء مختارين يدويًا             ║
+// ╚══════════════════════════════════════════════════════════╝
+//
+// حسابان نقيان مشتركان بين مودال الإنشاء (modals.js) ومودال التعديل
+// (settings.js) — بلا أي اعتماد على DOM، عشان الاتنين يستخدموا نفس منطق
+// التقريب/المقارنة بالحرف، مش نسختين منفصلتين ممكن يختلفوا بصمت.
+
+/**
+ * تقسيم مبلغ بالتساوي بين مجموعة شركاء مختارين يدويًا. يُستدعى من الصفر
+ * عند أي إنشاء أو تعديل (مبلغ أو قائمة شركاء) — النتيجة تُخزَّن مجمَّدة في
+ * expenses.paid_by_split، لا يُعاد استخدام حصص قديمة أبدًا.
+ *
+ * ✅ الحساب بالكامل في نطاق أعداد صحيحة (فلس = جزء من ألف من الدينار) لتفادي
+ * انجراف التقريب التراكمي لفاصلة عائمة. آخر شريك في الترتيب المُمرَّر يمتص
+ * الباقي (قد يزيد فلسًا أو اتنين عن نصيب الباقين) لضمان أن مجموع الحصص =
+ * المبلغ الأصلي بالضبط — قيد غير متوازن بفارق تقريب غير مقبول محاسبيًا.
+ */
+export function computeEqualSplit(amount, partnerNames) {
+  const names = (partnerNames || []).filter(Boolean);
+  if (!names.length) throw new Error('لازم تحديد شريك واحد على الأقل للتوزيع المتساوي');
+  const totalFils = Math.round((+amount || 0) * 1000);
+  const shareFils  = Math.floor(totalFils / names.length);
+  return names.map((partner, idx) => {
+    const fils = (idx === names.length - 1)
+      ? totalFils - shareFils * (names.length - 1)
+      : shareFils;
+    return { partner, amount: fils / 1000 };
+  });
+}
+
+/**
+ * مقارنة محتوى (لا مرجعية) بين قائمتَي أسماء شركاء — تتجاهل الترتيب والتكرار.
+ * ✅ جافاسكريبت ليس فيه مقارنة Set مباشرة (`a === b` مرجعية دائمًا)؛ هذه
+ * تُطبَّع الاتنين (إزالة تكرار + ترتيب أبجدي) قبل مقارنة كل عنصر بعنصره.
+ * تُستخدم في routingChanged (settings.js) لتقرير "هل تغيّرت مجموعة الشركاء
+ * الموزَّع عليهم مصروف؟" — عضوية/عدد، لا ترتيب الاختيار في الواجهة.
+ */
+export function samePartnerSet(a, b) {
+  const A = [...new Set((a || []).filter(Boolean))].sort();
+  const B = [...new Set((b || []).filter(Boolean))].sort();
+  if (A.length !== B.length) return false;
+  return A.every((v, i) => v === B[i]);
+}
+
 // ════════════════════════════════════════
 // WINDOW BRIDGE — تعريض الرمز للسكريبتات الكلاسيكية (نفس نمط باقي الملفات —
 // لا imports حقيقية بين ملفات js/*.js في هذا المشروع، الاعتماد على globals)
 // ════════════════════════════════════════
-Object.assign(window, { wasAlreadyPosted, statusAfterEdit, resolveDeleteAction });
+Object.assign(window, { wasAlreadyPosted, statusAfterEdit, resolveDeleteAction, computeEqualSplit, samePartnerSet });
