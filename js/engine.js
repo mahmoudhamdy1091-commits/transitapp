@@ -864,7 +864,11 @@ export async function auditAllFilesCOGS(sys) {
 // شراء: مخزون Dr / مورد Cr
 export async function je_purchase({sys,date,amount,fileNo,supplier,refId}) {
   if(!amount||amount<=0) throw new Error(`قيمة شراء غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد السند`);
-  await postDoubleEntry({sys,date,fileNo,refTable:'purchase_orders',refId,desc:`شراء — ملف ${fileNo} — ${supplier}`,lines:[
+  // ✅ Track B — return ناقصة كانت هنا (اكتُشف حيًّا 2026-07-30 أثناء بناء
+  // Track A Phase 1 Step B) — بعكس je_payment/je_expense/je_collection الشقيقة،
+  // كلهم بيرجّعوا {entryNo,ids}. تأكدنا: كل الـ5 مواقع استدعاء حقيقية لا تلتقط
+  // القيمة المرجعة، فالإضافة دي إضافية بحتة بلا أي تأثير سلوكي حالي
+  return await postDoubleEntry({sys,date,fileNo,refTable:'purchase_orders',refId,desc:`شراء — ملف ${fileNo} — ${supplier}`,lines:[
     {acc:'1300', name:getAccountName('1300'),  dr:amount, cr:0,      contact:null     },
     {acc:'2100', name:`ذمم الموردين`,           dr:0,      cr:amount, contact:supplier },
   ]});
@@ -881,7 +885,10 @@ export async function je_sale({sys,date,amount,cost,fileNo,customer,invNo}) {
     lines.push({acc:'5100', name:'تكلفة المخزون المباع', dr:cost, cr:0,    contact:null});
     lines.push({acc:'1300', name:'المخزون — سيارات',     dr:0,    cr:cost, contact:null});
   }
-  await postDoubleEntry({sys,date,fileNo,refTable:'sales',desc:`بيع فاتورة ${invNo} — ${customer} — ملف ${fileNo}`,lines});
+  // ✅ Track B — نفس علة je_purchase/je_payout (return ناقصة). الموقع الوحيد
+  // الحقيقي (operations.js:4754، داخل safe() من أداة إصلاح جماعي/migration
+  // قديمة) لا يلتقط القيمة المرجعة، فالإضافة دي إضافية بحتة
+  return await postDoubleEntry({sys,date,fileNo,refTable:'sales',desc:`بيع فاتورة ${invNo} — ${customer} — ملف ${fileNo}`,lines});
 }
 
 // تحصيل: نقد Dr / عميل Cr
@@ -1012,7 +1019,9 @@ export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
   if(!amount||amount<=0) throw new Error(`قيمة صرف شريك غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد الصرف`);
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
-  await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',refId,desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
+  // ✅ Track B — نفس علة je_purchase/je_sale (return ناقصة). تأكدنا: كل الـ8
+  // مواقع استدعاء حقيقية لا تلتقط القيمة المرجعة، فالإضافة دي إضافية بحتة
+  return await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',refId,desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
     {acc:'2400',  name:`حسابات الشركاء`, dr:amount, cr:0,     contact:partner },
     {acc:cashAcc, name:cashNm,           dr:0,      cr:amount, contact:null    },
   ]});
