@@ -33,13 +33,13 @@
 // "lifecycle.js / ... جدول الحقيقة الكامل" أسفل) — يقفل آخر فجوة تقليد.
 //
 // ── التغطية ──
-// 4 أنواع (payments, expenses, collections, partner_payouts) × 6 سيناريوهات =
-// 24 حالة. sales وpurchase_orders غير مغطاة في هذه النسخة الأولى:
-//   - sales: post_sale_je (RPC) يعتمد على متوسط COGS عبر باقي شاحنات الملف —
-//     يحتاج fixture أكبر (سند شراء + عدة شاحنات)، هيُضاف كامتداد منفصل.
-//   - purchase_orders: submitEditFileFull حاليًا معطوبة فعليًا (راجع الذاكرة أعلاه) —
-//     تسجيل "المتوقع" كاختبار الآن يعني تقليد سلوك خاطئ؛ الأصح إضافة تغطيتها مع
-//     تنفيذ إصلاحها في Phase 1 نفسه (سيستخدم نفس هذا الهيكل).
+// payments/expenses/collections/partner_payouts × 6 سيناريوهات = 24 حالة، +
+// purchase_orders × 3 سيناريوهات (S1-S3 بس — إضافة Phase 1 Step B، تغطي بالظبط
+// العلة اللي submitEditFileFull كانت بتقع فيها). المجموع 27 + فحص lifecycle.js.
+// sales غير مغطاة بعد: post_sale_je (RPC) يعتمد على متوسط COGS عبر باقي شاحنات
+// الملف — يحتاج fixture أكبر (سند شراء + عدة شاحنات)، هيُضاف كامتداد منفصل.
+// purchase_orders S4-S6 (رفض/إلغاء) غير مغطاة: voidPurchaseOrder آلية منفصلة
+// تمامًا عن voidTransaction (Track C، مش جزء من Phase 1).
 
 const { loadApp } = require('./_headless-app-env.js');
 
@@ -80,30 +80,42 @@ function apiDelete(table, params) {
 
 const SYS = 'BOX';
 const FILE_NO = 'ZZTEST-TRACKA-' + Date.now();
+// ✅ سيناريوهات purchase_orders (Step B) كل واحد لازم file_no مستقل خاص بيه
+// (السند = سجل الملف نفسه، مش ممكن نكرر نفس FILE_NO فوق) — بتتسجل هنا عشان
+// التنظيف يغطّي قيودها كمان، مش بس FILE_NO الأساسي
+const extraFileNos = [];
 
 function registerCleanup(table, id) { cleanupOps.push({ table, id }); }
+function registerExtraFileNo(fn) { extraFileNos.push(fn); }
 
 async function runCleanup() {
   console.log('\n── تنظيف بيانات ZZTEST (بـref_id/id فقط، بدون ref_table) ──');
-  // 1. كل قيود journal_entries المرتبطة بأي id تم تسجيله كـref_id، أو بـFILE_NO
-  const jeByFile = await apiGetAll('journal_entries', {
-    select: 'id', system_type: `eq.${SYS}`, file_no: `eq.${FILE_NO}`,
-  }).catch(() => []);
-  for (const je of (jeByFile || [])) {
-    await apiDelete('journal_entries', { id: `eq.${je.id}` }).catch(() => {});
+  // 1. كل قيود journal_entries المرتبطة بـFILE_NO الأساسي + أي file_no فرعي (purchase_orders)
+  const allFileNos = [FILE_NO, ...extraFileNos];
+  for (const fn of allFileNos) {
+    const jeByFile = await apiGetAll('journal_entries', {
+      select: 'id', system_type: `eq.${SYS}`, file_no: `eq.${fn}`,
+    }).catch(() => []);
+    for (const je of (jeByFile || [])) {
+      await apiDelete('journal_entries', { id: `eq.${je.id}` }).catch(() => {});
+    }
   }
   // 2. السجلات التشغيلية نفسها (بالعكس، احتياطًا لأي ترتيب اعتمادية)
   for (const op of cleanupOps.reverse()) {
     await apiDelete(op.table, { id: `eq.${op.id}` }).catch(() => {});
   }
-  // 3. تحقق نهائي: مفيش أي قيد باقٍ بهذا file_no
-  const leftover = await apiGetAll('journal_entries', {
-    select: 'id', system_type: `eq.${SYS}`, file_no: `eq.${FILE_NO}`,
-  }).catch(() => []);
-  if (leftover?.length) {
-    console.log(`⚠️ تحذير: ${leftover.length} قيد لسه موجود بعد التنظيف (file_no=${FILE_NO}) — راجع يدويًا`);
+  // 3. تحقق نهائي: مفيش أي قيد باقٍ بأي file_no تجريبي
+  let leftoverTotal = 0;
+  for (const fn of allFileNos) {
+    const leftover = await apiGetAll('journal_entries', {
+      select: 'id', system_type: `eq.${SYS}`, file_no: `eq.${fn}`,
+    }).catch(() => []);
+    leftoverTotal += (leftover || []).length;
+  }
+  if (leftoverTotal) {
+    console.log(`⚠️ تحذير: ${leftoverTotal} قيد لسه موجود بعد التنظيف عبر ${allFileNos.length} file_no تجريبي — راجع يدويًا`);
   } else {
-    console.log('✓ تأكدنا: صفر قيود متبقية لهذا الـfile_no التجريبي');
+    console.log(`✓ تأكدنا: صفر قيود متبقية عبر كل الـ${allFileNos.length} file_no التجريبية`);
   }
 }
 
@@ -383,6 +395,113 @@ async function s6_voidRequestReject(cfg, app) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// PURCHASE_ORDERS (Step B) — نفس منطق S1/S2/S3 فوق، لكن السند هو سجل الملف
+// نفسه (file_no مستقل لكل سيناريو، مش مشترك مع FILE_NO الأساسي). يغطي بالظبط
+// العلة اللي submitEditFileFull (js/modals.js) كانت بتقع فيها قبل Step B:
+// استدعاء updateJEInPlace بلا شرط حتى لو السند لسه draft. S4-S6 (رفض/إلغاء)
+// غير مغطاة هنا — voidPurchaseOrder آلية منفصلة تمامًا عن voidTransaction
+// (Track C، مش جزء من هذا الإصلاح).
+// ════════════════════════════════════════════════════════════════════════
+
+async function poS1_draftEditStaysDraft(app) {
+  const poFileNo = zid('PO-S1');
+  registerExtraFileNo(poFileNo);
+  const row = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: poFileNo, supplier: 'ZZTEST-SUPPLIER', po_date: today(),
+    total_purchase: 1000, post_status: 'draft', notes: 'ZZTEST regression PO',
+  });
+  const created = row[0];
+  registerCleanup('purchase_orders', created.id);
+
+  const wasPosted = app.lifecycle.wasAlreadyPosted(created.post_status);
+  assert(wasPosted === false, 'precondition: سند draft لازم wasPosted=false');
+  // الإصلاح الأساسي (Step B): بلا استدعاء updateJEInPlace خالص هنا
+  await apiPatch('purchase_orders', { id: `eq.${created.id}` }, {
+    total_purchase: 1500, post_status: app.lifecycle.statusAfterEdit(created.post_status),
+  });
+
+  const after = (await apiGetAll('purchase_orders', { select: '*', id: `eq.${created.id}` }))[0];
+  assert(after.post_status === 'draft', `المتوقع يفضل draft، طلع ${after.post_status}`);
+  const jeCount = await apiGetAll('journal_entries', {
+    select: 'id', system_type: `eq.${SYS}`, ref_table: `eq.purchase_orders`, ref_id: `eq.${created.id}`,
+  });
+  assert((jeCount || []).length === 0, `المتوقع صفر قيود، طلع ${jeCount.length}`);
+}
+
+async function poS2_postedEditPromotes(app) {
+  const poFileNo = zid('PO-S2');
+  registerExtraFileNo(poFileNo);
+  const row = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: poFileNo, supplier: 'ZZTEST-SUPPLIER', po_date: today(),
+    total_purchase: 2000, post_status: 'posted', notes: 'ZZTEST regression PO',
+  });
+  const created = row[0];
+  registerCleanup('purchase_orders', created.id);
+  await app.engine.je_purchase({
+    sys: SYS, date: created.po_date, amount: +created.total_purchase, fileNo: poFileNo,
+    supplier: created.supplier, refId: created.id,
+  });
+  const jePrecheck = await apiGetAll('journal_entries', {
+    select: 'id', system_type: `eq.${SYS}`, ref_table: `eq.purchase_orders`, ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  assert((jePrecheck || []).length > 0, 'فشل إنشاء القيد الأولي (je_purchase) — لا سطور posted');
+
+  const wasPosted = app.lifecycle.wasAlreadyPosted(created.post_status);
+  assert(wasPosted === true, 'precondition: سند posted لازم wasPosted=true');
+  await apiPatch('purchase_orders', { id: `eq.${created.id}` }, {
+    total_purchase: 2500, post_status: app.lifecycle.statusAfterEdit(created.post_status),
+  });
+  await app.engine.updateJEInPlace({
+    sys: SYS, fileNo: poFileNo, refTable: 'purchase_orders', refId: created.id,
+    oldAmount: 2000, newAmount: 2500,
+  });
+
+  const after = (await apiGetAll('purchase_orders', { select: '*', id: `eq.${created.id}` }))[0];
+  assert(after.post_status === 'pending_edit', `المتوقع pending_edit، طلع ${after.post_status}`);
+  const jeLines = await apiGetAll('journal_entries', {
+    select: 'dr_amount,cr_amount', system_type: `eq.${SYS}`,
+    ref_table: `eq.purchase_orders`, ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  const activeAmt = Math.max(...jeLines.map(l => Math.max(+l.dr_amount || 0, +l.cr_amount || 0)));
+  assert(Math.abs(activeAmt - 2500) < 0.01, `المتوقع القيد الفعلي = 2500، طلع ${activeAmt}`);
+  return created.id;
+}
+
+async function poS3_pendingEditApprove(app) {
+  const poFileNo = zid('PO-S3');
+  registerExtraFileNo(poFileNo);
+  const row = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: poFileNo, supplier: 'ZZTEST-SUPPLIER', po_date: today(),
+    total_purchase: 3000, post_status: 'posted', notes: 'ZZTEST regression PO',
+  });
+  const created = row[0];
+  registerCleanup('purchase_orders', created.id);
+  await app.engine.je_purchase({
+    sys: SYS, date: created.po_date, amount: +created.total_purchase, fileNo: poFileNo,
+    supplier: created.supplier, refId: created.id,
+  });
+  await apiPatch('purchase_orders', { id: `eq.${created.id}` }, {
+    total_purchase: 3500, post_status: 'pending_edit',
+  });
+  await app.engine.updateJEInPlace({
+    sys: SYS, fileNo: poFileNo, refTable: 'purchase_orders', refId: created.id, oldAmount: 3000, newAmount: 3500,
+  });
+
+  const preApproval = (await apiGetAll('purchase_orders', { select: '*', id: `eq.${created.id}` }))[0];
+  const res = await app.operations._processEditApproval('purchase_edit', created.id, preApproval);
+  assert(res.ok, `_processEditApproval فشلت: ${res.message}`);
+
+  const after = (await apiGetAll('purchase_orders', { select: '*', id: `eq.${created.id}` }))[0];
+  assert(after.post_status === 'posted', `المتوقع posted، طلع ${after.post_status}`);
+  const maxAmts = await apiGetAll('journal_entries', {
+    select: 'dr_amount,cr_amount', system_type: `eq.${SYS}`,
+    ref_table: `eq.purchase_orders`, ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  const activeAmt = Math.max(...maxAmts.map(l => Math.max(+l.dr_amount || 0, +l.cr_amount || 0)));
+  assert(Math.abs(activeAmt - 3500) < 0.01, `المتوقع القيد النهائي = 3500 (لا تكرار)، طلع ${activeAmt}`);
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // MAIN
 // ════════════════════════════════════════════════════════════════════════
 (async () => {
@@ -436,6 +555,13 @@ async function s6_voidRequestReject(cfg, app) {
       await scenario(`${cfg.label} / S5 posted→طلب إلغاء→موافقة يبقى voided+قيد عكسي متوازن`, () => s5_voidRequestApprove(cfg, app));
       await scenario(`${cfg.label} / S6 posted→طلب إلغاء→رفض يرجع posted بلا قيد يتيم`, () => s6_voidRequestReject(cfg, app));
     }
+
+    // ✅ purchase_orders (Track A Phase 1 Step B) — يغطي فعليًا العلة اللي
+    // submitEditFileFull كانت بتقع فيها (updateJEInPlace بلا شرط) قبل الإصلاح
+    console.log(`\n── purchase_orders (Step B) ──`);
+    await scenario('purchase_orders / S1 draft→edit يفضل draft بلا قيد', () => poS1_draftEditStaysDraft(app));
+    await scenario('purchase_orders / S2 posted→edit يترقّى pending_edit + قيد محدَّث فعليًا', () => poS2_postedEditPromotes(app));
+    await scenario('purchase_orders / S3 pending_edit→موافقة يبقى posted بلا تكرار قيد', () => poS3_pendingEditApprove(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);

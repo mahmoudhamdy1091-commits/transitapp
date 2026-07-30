@@ -15,8 +15,9 @@
 // لو تغيّرت بنية الملف بحيث `(function init() {` لم تعد موجودة، الاستيراد يفشل
 // برسالة صريحة بدل صمت — حدّث marker أسفل عند الحاجة.
 //
-// باقي الملفات (core/permissions/periods/utils/operations) بلا أي كود تهيئة DOM
-// خطير عند نهايتها (تحقّقنا فعليًا 2026-07-29) فتُستورد كاملة بلا أي تعديل.
+// باقي الملفات (core/permissions/periods/utils/lifecycle/transactions/operations)
+// بلا أي كود تهيئة DOM خطير عند نهايتها (تحقّقنا فعليًا 2026-07-29) فتُستورد
+// كاملة بلا أي تعديل.
 
 const fs = require('fs');
 const os = require('os');
@@ -88,6 +89,11 @@ async function loadApp() {
   const utils        = await import(u('/js/utils.js'));
   const lifecycle    = await import(u('/js/lifecycle.js'));
   const engine       = await loadStrippedEngine();
+  // ✅ transactions.js: je_purchase (engine.js) بتستخدم getAccountName (المُصدَّرة
+  // من هنا كـglobal) لاسم حساب 1300 — لازم تُحمَّل قبل استدعاء je_purchase.
+  // تحقّقنا (2026-07-29): بلا أي كود تهيئة مقترن بـDOM عند نهايتها (Object.assign
+  // bridge بس)، فتُستورد كاملة بلا تعديل زي operations.js بالضبط.
+  const transactions = await import(u('/js/transactions.js'));
   const operations   = await import(u('/js/operations.js'));
 
   core.state.system = 'BOX';
@@ -95,7 +101,7 @@ async function loadApp() {
   // ✅ token يفضل null → headers() (core.js) يقع تلقائيًا على anon key — نفس
   // سلوك تطبيق حقيقي بلا جلسة، وتحقّقنا 2026-07-29 إن الـRLS تسمح بالكتابة بيه
 
-  return { core, permissions, periods, utils, lifecycle, engine, operations, state: core.state };
+  return { core, permissions, periods, utils, lifecycle, engine, transactions, operations, state: core.state };
 }
 
 module.exports = { loadApp };
