@@ -979,7 +979,7 @@ export async function _loadPaymentModalData(fn, sys) {
       const allPartners = await getContactsByType('partner');
       rawPartners = (allPartners||[]).map(p=>p.name);
     }
-    const payerList = rawPartners.includes(TREASURY_PARTNER) ? rawPartners : [TREASURY_PARTNER, ...rawPartners];
+    const payerList = rawPartners.some(p => TREASURY_ALIASES.has(p)) ? rawPartners : [TREASURY_PARTNER, ...rawPartners];
     el('pay-payer').innerHTML = payerList.map(p=>`<option value="${p}">${p}</option>`).join('');
     // ✅ TM: "صندوق الترانزيت" هو خزينة الملف الفعلية هنا — يُفضَّل كافتراضي لو موجود ضمن شركاء
     // هذا الملف، بدل "الصندوق" العام (اللي أصلاً مش موجود كشريك في TM)
@@ -1014,7 +1014,10 @@ export async function openExpenseModal() {
         select: 'partner', system_type: `eq.${state.system}`, file_no: `eq.${fn}`
       });
       const raw = (partners||[]).map(p => p.partner);
-      const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+      // ✅ نتحقق من وجود أي اسم خزينة (TREASURY_ALIASES) لا "الصندوق" الحرفي بس —
+      // TM مسجّلة باسم "صندوق الترانزيت" فعليًا كشريك حقيقي في partners_master؛
+      // كانت المقارنة القديمة تفشل معه فتحقن "الصندوق" العام كخيار وهمي ثالث
+      const list = raw.some(p => TREASURY_ALIASES.has(p)) ? raw : [TREASURY_PARTNER, ...raw];
       paidByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
       // ✅ TM: "صندوق الترانزيت" هو خزينة الملف الفعلية هنا — افتراضي أولى من "الصندوق" العام
       paidByEl.value = raw.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
@@ -1869,7 +1872,10 @@ export async function openCollectionModal() {
     // populate receivedBy if file known at open time
     if (recByEl) {
       const raw = (partnersRes||[]).map(p => p.partner);
-      const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+      // ✅ نتحقق من وجود أي اسم خزينة (TREASURY_ALIASES) لا "الصندوق" الحرفي بس —
+      // TM مسجّلة باسم "صندوق الترانزيت" فعليًا كشريك حقيقي في partners_master؛
+      // كانت المقارنة القديمة تفشل معه فتحقن "الصندوق" العام كخيار وهمي ثالث
+      const list = raw.some(p => TREASURY_ALIASES.has(p)) ? raw : [TREASURY_PARTNER, ...raw];
       recByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
       // ✅ TM: "صندوق الترانزيت" هو خزينة الملف الفعلية هنا — افتراضي أولى من "الصندوق" العام
       recByEl.value = raw.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
@@ -2011,7 +2017,10 @@ export function onCollectionInvChange() {
       const rb = el('col-receivedBy');
       if (rb) {
         const raw = (partners||[]).map(p => p.partner);
-        const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
+        // ✅ نتحقق من وجود أي اسم خزينة (TREASURY_ALIASES) لا "الصندوق" الحرفي بس —
+      // TM مسجّلة باسم "صندوق الترانزيت" فعليًا كشريك حقيقي في partners_master؛
+      // كانت المقارنة القديمة تفشل معه فتحقن "الصندوق" العام كخيار وهمي ثالث
+      const list = raw.some(p => TREASURY_ALIASES.has(p)) ? raw : [TREASURY_PARTNER, ...raw];
         rb.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
         // ✅ TM: "صندوق الترانزيت" هو خزينة الملف الفعلية هنا — افتراضي أولى من "الصندوق" العام
         rb.value = raw.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
