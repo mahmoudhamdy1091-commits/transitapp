@@ -1934,7 +1934,7 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                   <td style="padding:6px 10px">${e.description||'—'}</td>
                   <td style="padding:6px 10px"><span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:10px;font-size:12px">${e.exp_type||e.category||'—'}</span></td>
                   <td style="padding:6px 10px;color:#94a3b8">${(e.exp_date||e.expense_date||'').split('T')[0]||'—'}</td>
-                  <td style="padding:6px 10px"><span style="background:${(!e.paid_by||e.paid_by.trim()===TREASURY_PARTNER)?'#f1f5f9':'#fef3c7'};color:${(!e.paid_by||e.paid_by.trim()===TREASURY_PARTNER)?'#334155':'#92400e'};padding:1px 6px;border-radius:10px;font-size:11px;font-weight:700">${e.paid_by||TREASURY_PARTNER}</span></td>
+                  <td style="padding:6px 10px"><span style="background:${(Array.isArray(e.paid_by_split)&&e.paid_by_split.length)?'#e0f2fe':(!e.paid_by||e.paid_by.trim()===TREASURY_PARTNER)?'#f1f5f9':'#fef3c7'};color:${(Array.isArray(e.paid_by_split)&&e.paid_by_split.length)?'#0369a1':(!e.paid_by||e.paid_by.trim()===TREASURY_PARTNER)?'#334155':'#92400e'};padding:1px 6px;border-radius:10px;font-size:11px;font-weight:700">${(Array.isArray(e.paid_by_split)&&e.paid_by_split.length)?'موزَّع: '+e.paid_by_split.map(p=>p.partner).join('، '):(e.paid_by||TREASURY_PARTNER)}</span></td>
                   <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2(e.amount)}</td>
                   <td style="padding:6px 10px;font-family:monospace;color:#dc2626">${fmt2((+e.amount||0)*d.share)}</td>
                 </tr>`).join('')}

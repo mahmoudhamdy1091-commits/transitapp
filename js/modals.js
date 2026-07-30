@@ -1000,8 +1000,13 @@ export async function openExpenseModal() {
   el('expError').style.display = 'none';
   el('expenseRowsContainer').innerHTML = '';
   addExpenseRow({ fileNo: fn });
+  // ✅ يفتح دايمًا على وضع "شريك واحد/الصندوق" الافتراضي — مفيش حالة موزَّعة
+  // تُحفَظ بين فتحتين مختلفتين للمودال
+  if (el('exp-splitMode')) el('exp-splitMode').checked = false;
+  if (el('exp-splitPartners')) { el('exp-splitPartners').style.display = 'none'; el('exp-splitPartners').innerHTML = ''; }
+  if (el('exp-paidBy')) el('exp-paidBy').style.display = '';
   openModal('expenseModal');
-  // populate paid_by dropdown async (بعد فتح المودال مباشرة)
+  // populate paid_by dropdown + قائمة شركاء التوزيع async (بعد فتح المودال مباشرة)
   const paidByEl = el('exp-paidBy');
   if (paidByEl && fn) {
     try {
@@ -1013,10 +1018,27 @@ export async function openExpenseModal() {
       paidByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
       // ✅ TM: "صندوق الترانزيت" هو خزينة الملف الفعلية هنا — افتراضي أولى من "الصندوق" العام
       paidByEl.value = raw.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
+      // ✅ قائمة التوزيع تستثني الصندوق — لا يُقيَّد على 2400 بتصميم النظام (مصاريفه تُدفع نقدًا مباشرة)
+      const splitWrap = el('exp-splitPartners');
+      if (splitWrap) {
+        const distributable = raw.filter(p => !TREASURY_ALIASES.has(p));
+        splitWrap.innerHTML = distributable.length
+          ? distributable.map(p => `<label style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;font-weight:400;cursor:pointer">
+              <input type="checkbox" class="exp-split-partner" value="${p}"> ${p}
+            </label>`).join('')
+          : `<div style="font-size:12px;color:var(--text3)">لا يوجد شركاء لهذا الملف</div>`;
+      }
     } catch(_) {
       paidByEl.innerHTML = `<option value="${TREASURY_PARTNER}">${TREASURY_PARTNER}</option>`;
+      if (el('exp-splitPartners')) el('exp-splitPartners').innerHTML = '';
     }
   }
+}
+
+export function toggleExpenseSplitMode() {
+  const on = !!el('exp-splitMode')?.checked;
+  if (el('exp-paidBy'))        el('exp-paidBy').style.display        = on ? 'none' : '';
+  if (el('exp-splitPartners')) el('exp-splitPartners').style.display = on ? '' : 'none';
 }
 
 export function addExpenseRow(prefill={}) {
@@ -1086,9 +1108,16 @@ export async function submitExpense() {
   const date    = dateEl?.value   || today();
   const method  = methodEl?.value || 'تحويل بنكي';
   const docRef  = docEl?.value?.trim() || '';
-  const paidBy  = el('exp-paidBy')?.value?.trim() || null;
+  // ✅ وضع التوزيع المتساوي: إعداد واحد يُطبَّق على كل بنود المودال (نفس نمط
+  // paid_by الفردي الحالي — لا اختيار مستقل لكل بند)
+  const splitMode = !!el('exp-splitMode')?.checked;
+  const splitPartners = splitMode
+    ? Array.from(el('exp-splitPartners')?.querySelectorAll('.exp-split-partner:checked') || []).map(c => c.value)
+    : [];
+  const paidBy  = splitMode ? null : (el('exp-paidBy')?.value?.trim() || null);
 
   if (!date) { showFieldErr('expError','يرجى إدخال التاريخ'); return; }
+  if (splitMode && !splitPartners.length) { showFieldErr('expError','يرجى اختيار شريك واحد على الأقل للتوزيع المتساوي'); return; }
 
   const rows = el('expenseRowsContainer')?.querySelectorAll('tr') || [];
   const expenses = [];
@@ -1114,6 +1143,9 @@ export async function submitExpense() {
     for (const exp of expenses) {
       const expFileNo = exp.fileNo || state.currentFileNo || 'GENERAL';
       const refNo = (await genSeqRef('EXP', state.system, expFileNo, 'expenses')) || `EXP-${expFileNo}-${Date.now()}`;
+      // ✅ الحصص تُحسَب من الصفر لكل بند بمبلغه الخاص (بنود المودال قد تختلف
+      // في المبلغ حتى مع نفس مجموعة الشركاء) — لا تُخزَّن نسب، مبالغ مجمَّدة فقط
+      const paidBySplit = splitMode ? computeEqualSplit(exp.amount, splitPartners) : null;
       const data = {
         system_type: state.system,
         file_no:     expFileNo,
@@ -1129,13 +1161,14 @@ export async function submitExpense() {
         notes:       exp.notes || null,
         ref_no:      refNo,
         paid_by:     paidBy    || null,
+        paid_by_split: paidBySplit,
         post_status: entryStatus()};
       const expIns = await apiPost('expenses', data);
       await logAudit('INSERT','expenses', expFileNo, null, data);
       if (entryStatus()==='posted') {
         const expId = expIns?.[0]?.id || null;
         try {
-          await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,refId:expId,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method,paidBy});
+          await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,refId:expId,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method,paidBy,paidBySplit});
         } catch(jeErr) {
           console.error('je_expense failed:', jeErr.message);
           if (expId) await apiPatch('expenses', { id:`eq.${expId}` }, { post_status:'draft' });
@@ -2328,7 +2361,7 @@ Object.assign(window, {
   updatePartnerSummary, checkShareTotal, _assignPartVins, submitNewFile, _submitNewFileInner,
   voidOrDeleteOldPayment, submitEditFileFull, openPaymentModal, onPayFileSelectorChange,
   _loadPaymentModalData, openExpenseModal, addExpenseRow, updateExpenseTotal,
-  toggleExpenseModalSize, submitExpense, submitPayment, _proceedSubmitPayment, openSaleModal,
+  toggleExpenseModalSize, submitExpense, toggleExpenseSplitMode, submitPayment, _proceedSubmitPayment, openSaleModal,
   onSaleFileChange, loadAvailableVehicles, renderSaleVehiclePicker, filterSaleVehiclesByVin,
   clearSaleVinSearch, onSaleVehicleCheck, saleToggleAll, addSaleVehicleRow,
   onSaleRowVehicleChange, onSaleVehicleChange, updateSaleTotal, addExtraChargeRow,

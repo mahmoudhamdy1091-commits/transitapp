@@ -2077,6 +2077,10 @@
           <select id="exp-paidBy">
             <option value="الصندوق">الصندوق</option>
           </select>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400;font-size:12px;cursor:pointer">
+            <input type="checkbox" id="exp-splitMode" onchange="toggleExpenseSplitMode()"> توزيع متساوٍ بين شركاء
+          </label>
+          <div id="exp-splitPartners" style="display:none;margin-top:6px;max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:6px"></div>
         </div>
       </div>
 
@@ -3252,6 +3256,10 @@
         <div class="field"><label>رقم المستند</label><input type="text" id="ee-doc" placeholder="رقم المستند"></div>
         <div class="field"><label>دُفع بواسطة</label>
           <select id="ee-paidBy"><option value="الصندوق">الصندوق</option></select>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400;font-size:12px;cursor:pointer">
+            <input type="checkbox" id="ee-splitMode" onchange="toggleEditExpenseSplitMode()"> توزيع متساوٍ بين شركاء
+          </label>
+          <div id="ee-splitPartners" style="display:none;margin-top:6px;max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:6px"></div>
         </div>
       </div>
       <div class="field"><label>ملاحظات</label><textarea id="ee-notes" rows="2" placeholder="..."></textarea></div>

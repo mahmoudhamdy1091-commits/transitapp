@@ -783,12 +783,24 @@ export async function loadDealStatement(fn, sys) {
             .filter(py => _singlePartner || py.payer === p.partner)
             .reduce((s,py)=>s+(+py.amount||0),0);
           // مصروفات دفعها هذا الشريك من جيبه
+          // ✅ مصروف موزَّع (paid_by_split): كل شريك ياخد حصته المخزَّنة فقط من
+          // القائمة، مش كل مبلغ المصروف — بدونه كان هيختفي أي مصروف موزَّع من
+          // حساب "مصروفات من جيبه" لكل الشركاء (paid_by نفسه يبقى null للمصروف
+          // الموزَّع، فمقارنته بأي اسم شريك واحد كانت هتفشل دائمًا بصمت). مصروف
+          // عادي (paid_by_split فاضي) يمر بنفس الفلتر القديم بالحرف.
           const expCapital   = (expenses||[])
             .filter(isSettled)
-            .filter(e => TREASURY_ALIASES.has(p.partner)
-              ? (!e.paid_by || TREASURY_ALIASES.has(e.paid_by.trim()))
-              : (e.paid_by && e.paid_by.trim() === p.partner))
-            .reduce((s,e) => s + (+e.amount||0), 0);
+            .reduce((s,e) => {
+              if (Array.isArray(e.paid_by_split) && e.paid_by_split.length) {
+                if (TREASURY_ALIASES.has(p.partner)) return s; // الصندوق لا يدخل توزيع 2400 أصلاً
+                const share = e.paid_by_split.find(x => x.partner === p.partner);
+                return s + (share ? (+share.amount||0) : 0);
+              }
+              const matches = TREASURY_ALIASES.has(p.partner)
+                ? (!e.paid_by || TREASURY_ALIASES.has(e.paid_by.trim()))
+                : (e.paid_by && e.paid_by.trim() === p.partner);
+              return matches ? s + (+e.amount||0) : s;
+            }, 0);
           // حصته في الربح
           const profitShare  = profit * pctShare;
           // ما استرده (كل payouts بغض النظر عن النوع)
@@ -1359,8 +1371,14 @@ export async function openEditExpenseModal(expenseId) {
     el('ee-doc').value    = e.document     || '';
     el('ee-notes').value  = e.notes        || '';
     el('eeError').style.display = 'none';
+    // ✅ يفتح على وضع التوزيع لو السجل نفسه موزَّع فعلاً (paid_by_split)، وإلا
+    // وضع الفرد/الصندوق العادي
+    const hasSplit = Array.isArray(e.paid_by_split) && e.paid_by_split.length > 0;
+    if (el('ee-splitMode'))      el('ee-splitMode').checked = hasSplit;
+    if (el('ee-paidBy'))         el('ee-paidBy').style.display = hasSplit ? 'none' : '';
+    if (el('ee-splitPartners'))  el('ee-splitPartners').style.display = hasSplit ? '' : 'none';
     openModal('editExpenseModal');
-    // populate paid_by dropdown
+    // populate paid_by dropdown + قائمة شركاء التوزيع
     const paidByEl = el('ee-paidBy');
     if (paidByEl && e.file_no) {
       const partners = await apiGetAll('partners_master', {
@@ -1370,8 +1388,25 @@ export async function openEditExpenseModal(expenseId) {
       const list = raw.includes(TREASURY_PARTNER) ? raw : [TREASURY_PARTNER, ...raw];
       paidByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
       paidByEl.value = e.paid_by?.trim() || TREASURY_PARTNER;
+      // ✅ قائمة التوزيع تستثني الصندوق، وتُعلِّم الشركاء المختارين فعلاً في السجل
+      const splitWrap = el('ee-splitPartners');
+      if (splitWrap) {
+        const distributable = raw.filter(p => !TREASURY_ALIASES.has(p));
+        const selectedNames = hasSplit ? e.paid_by_split.map(p => p.partner) : [];
+        splitWrap.innerHTML = distributable.length
+          ? distributable.map(p => `<label style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;font-weight:400;cursor:pointer">
+              <input type="checkbox" class="ee-split-partner" value="${p}" ${selectedNames.includes(p) ? 'checked' : ''}> ${p}
+            </label>`).join('')
+          : `<div style="font-size:12px;color:var(--text3)">لا يوجد شركاء لهذا الملف</div>`;
+      }
     }
   } catch(err) { toast('خطأ: '+err.message,'err'); }
+}
+
+export function toggleEditExpenseSplitMode() {
+  const on = !!el('ee-splitMode')?.checked;
+  if (el('ee-paidBy'))        el('ee-paidBy').style.display        = on ? 'none' : '';
+  if (el('ee-splitPartners')) el('ee-splitPartners').style.display = on ? '' : 'none';
 }
 
 export async function submitEditExpense() {
@@ -1383,27 +1418,46 @@ export async function submitEditExpense() {
   const method = el('ee-method').value;
   const doc    = el('ee-doc').value.trim();
   const notes  = el('ee-notes').value.trim();
-  const paidBy = el('ee-paidBy')?.value?.trim() || null;
+  const splitMode = !!el('ee-splitMode')?.checked;
+  const splitPartners = splitMode
+    ? Array.from(el('ee-splitPartners')?.querySelectorAll('.ee-split-partner:checked') || []).map(c => c.value)
+    : [];
+  const paidBy = splitMode ? null : (el('ee-paidBy')?.value?.trim() || null);
   if (!desc || !amount || !date) { showFieldErr('eeError','يرجى ملء الحقول المطلوبة'); return; }
+  if (splitMode && !splitPartners.length) { showFieldErr('eeError','يرجى اختيار شريك واحد على الأقل للتوزيع المتساوي'); return; }
   try {
     const oldData = await apiGetAll('expenses', { select:'*', id:`eq.${id}` });
     const old = oldData?.[0];
     if (!old) { showFieldErr('eeError','لم يُعثر على السجل'); return; }
+
+    // ✅ الحصص الجديدة (لو وضع التوزيع مفعّل) تُحسَب من الصفر دائمًا بالمبلغ
+    // الجديد — لا يُعاد استخدام حصص قديمة أبدًا
+    const paidBySplit = splitMode ? computeEqualSplit(amount, splitPartners) : null;
 
     if (wasAlreadyPosted(old.post_status)) {
       // ── تعديل مباشر في السجل + القيد الأصلي + إرسال للموافقة ──
       // ✅ Track A / Phase 1 — قرار موحَّد عبر js/lifecycle.js
       const oldAmount = +old.amount;
 
-      const oldPaidByNorm = old.paid_by?.trim() || TREASURY_PARTNER;
-      const newPaidByNorm = paidBy || TREASURY_PARTNER;
-      const routingChanged = oldPaidByNorm !== newPaidByNorm;
+      // ✅ مجموعة الشركاء القديمة/الجديدة تشمل حالة التوزيع (paid_by_split) وحالة
+      // الفرد/الصندوق (paid_by) معًا — مقارنة محتوى (samePartnerSet)، لا نص واحد
+      const oldPartnerSet = (Array.isArray(old.paid_by_split) && old.paid_by_split.length)
+        ? old.paid_by_split.map(p => p.partner)
+        : [old.paid_by?.trim() || TREASURY_PARTNER];
+      const newPartnerSet = splitMode ? splitPartners : [paidBy || TREASURY_PARTNER];
+      const amountChanged = Math.abs(oldAmount - amount) > 0.001;
+      // ✅ أي تغيّر في المبلغ الإجمالي أو مجموعة الشركاء (عضوية/عدد) يوجب عكس+
+      // إعادة ترحيل كامل، لا يمر أبدًا عبر updateJEInPlace: مطابقتها تقارن كل
+      // سطر بالمبلغ الكامل القديم، وسطور 2400 الموزَّعة تحمل حصة (جزء من المبلغ)
+      // لا المبلغ كله — كانت هتفضل بقيمتها القديمة بصمت لو مر تغيّر المبلغ من هنا
+      const routingChanged = amountChanged || !samePartnerSet(oldPartnerSet, newPartnerSet);
 
       // 1. تحديث السجل
       await apiPatch('expenses', { id:`eq.${id}` }, {
         description:desc, exp_type:type||old.exp_type, amount, exp_date:date,
         pay_method:method, document:doc||null, notes:notes||null,
         paid_by: paidBy || null,
+        paid_by_split: paidBySplit,
         post_status: 'pending_edit',
       });
 
@@ -1418,14 +1472,14 @@ export async function submitEditExpense() {
         // 2b. إنشاء قيد جديد بالتوجيه الجديد — isPrimary:false لحد ما نتأكد
         // إن العكس فوق نجح فعلاً، بعدين نسلّم الـslot صراحة تحت
         const newJE = await je_expense({ sys:state.system, date, amount, fileNo:old.file_no, refId:id,
-          desc, expType:type||old.exp_type||'أخرى', method, paidBy: paidBy||null, isPrimary:false });
+          desc, expType:type||old.exp_type||'أخرى', method, paidBy: paidBy||null, paidBySplit, isPrimary:false });
         if (newJE?.ids?.length) {
           await _handoffPrimaryLine({ sys: state.system, oldIds: (oldJELines||[]).map(l=>l.id), newIds: newJE.ids });
         }
         // 2c. إعادة status إلى pending_edit (voidTransaction يضع 'voided' على السجل لكننا نريد void للقيود فقط)
         await apiPatch('expenses', { id:`eq.${id}` }, { post_status: 'pending_edit' });
       } else {
-        // 2c. تحديث المبلغ والتاريخ في مكانهم
+        // 2c. تحديث التاريخ فقط في مكانه (مبلغ ومجموعة شركاء بلا تغيير هنا فعلاً)
         await updateJEInPlace({
           sys: state.system, fileNo: old.file_no,
           refTable: 'expenses', refId: id,
@@ -1439,7 +1493,7 @@ export async function submitEditExpense() {
       markSaving('editExpenseModal'); closeModal('editExpenseModal');
       toast('⚠️ تم تعديل المصروف والقيد — في انتظار الموافقة', 'warn');
     } else {
-      await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null, paid_by:paidBy||null });
+      await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null, paid_by:paidBy||null, paid_by_split:paidBySplit });
       markSaving('editExpenseModal'); closeModal('editExpenseModal');
       toast('✅ تم تعديل المصروف','ok');
     }
@@ -1699,6 +1753,6 @@ Object.assign(window, {
   acGetContacts, acClearCache, acPreload, acSearch, acSelect, acSelectNew, acEditContact,
   acDeleteContact, acBlur, acKey, ensureContact, populateContactSelect, openEditPaymentModal,
   requestPostedEdit, submitEditPayment, deletePaymentEntry, deletePaymentFromModal,
-  deleteExpenseEntry, deleteCollectionEntry, openEditExpenseModal, submitEditExpense,
+  deleteExpenseEntry, deleteCollectionEntry, openEditExpenseModal, submitEditExpense, toggleEditExpenseSplitMode,
   openEditCollectionModal, submitEditCollection, markCollectionPaid, submitMarkPaid,
 });
