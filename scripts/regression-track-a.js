@@ -40,6 +40,13 @@
 // الملف — يحتاج fixture أكبر (سند شراء + عدة شاحنات)، هيُضاف كامتداد منفصل.
 // purchase_orders S4-S6 (رفض/إلغاء) غير مغطاة: voidPurchaseOrder آلية منفصلة
 // تمامًا عن voidTransaction (Track C، مش جزء من Phase 1).
+//
+// ✅ توزيع مصروف بالتساوي بين شركاء مختارين يدويًا (paid_by_split، expenses فقط)
+// — 12 سيناريو إضافي (ES1-ES12): إنشاء موزَّع (قسمة متساوية/كسر أصلي)، موافقة
+// draft موزَّع، 4 انتقالات فرد↔موزَّع عبر routingChanged، تعديل تاريخ فقط،
+// إلغاء موزَّع (2 و3 شركاء)، انحدار على إلغاء مصروف فردي غير-صندوق بعد إعادة
+// كتابة voidTransaction، وتجميع computePartnerSettlement. راجع التعليق التوثيقي
+// أعلى قسم "EXPENSES — توزيع مصروف بالتساوي" لتفاصيل التصميم.
 
 const { loadApp } = require('./_headless-app-env.js');
 
@@ -647,6 +654,382 @@ async function p2_rejectPendingEdit(cfg, app) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// EXPENSES — توزيع مصروف بالتساوي بين شركاء مختارين يدويًا (paid_by_split)
+// ════════════════════════════════════════════════════════════════════════
+// يغطي: إنشاء موزَّع (قسمة متساوية/كسر أصلي)، موافقة draft موزَّع، الانتقالات
+// الأربعة بين فرد↔موزَّع عبر routingChanged، تعديل تاريخ فقط (بلا عكس فعلي على
+// القيمة)، إلغاء موزَّع (2 و3 شركاء)، إلغاء مصروف فردي غير-صندوق (انحدار على
+// إعادة كتابة voidTransaction)، وتجميع computePartnerSettlement بعد كل هذا —
+// كله عبر postDoubleEntry/je_expense/voidTransaction/updateJEInPlace/
+// _createApprovalJE/computePartnerSettlement/computeEqualSplit/samePartnerSet
+// الحقيقية بلا تعديل.
+//
+// ✅ simulateEditExpense تقلّد قلب submitEditExpense (settings.js) حرفيًا —
+// الدالة الحقيقية DOM-مقترنة (el('ee-...').value)، غير قابلة للاستدعاء هنا
+// مباشرة، تمامًا زي بقية "قرارات الحفظ" الموثَّقة أعلى الملف. لكن routingChanged
+// نفسها محسوبة هنا عبر samePartnerSet الحقيقية من app.lifecycle (لا تقليد)،
+// فالتحقق من "هل قرار المسار صح؟" حقيقي 100%، والتحقق من "هل نتيجة القيد
+// النهائية صحيحة؟" (المُختبَر أسفل) مستقل تمامًا عن أي افتراض بخصوص الآلية.
+
+const SPLIT_PARTNERS = ['ZZTEST-SPLIT-A', 'ZZTEST-SPLIT-B', 'ZZTEST-SPLIT-C'];
+
+async function setupSplitPartnersFixture() {
+  for (const name of SPLIT_PARTNERS) {
+    const row = await apiPost('partners_master', {
+      system_type: SYS, file_no: FILE_NO, partner: name, share_percent: 100 / SPLIT_PARTNERS.length,
+    });
+    registerCleanup('partners_master', row[0].id);
+  }
+}
+
+function partnerSetOf(paidBy, paidBySplit) {
+  return (Array.isArray(paidBySplit) && paidBySplit.length)
+    ? paidBySplit.map(p => p.partner)
+    : [paidBy || 'الصندوق'];
+}
+
+// ✅ نفس الأسطر بالحرف من fetchActiveExpenseEntryLines أسفل fetchExpenseJELines:
+// أي مصروف اتعدَّل قبل كده (routingChanged=true) بيسيب أكتر من entry_no posted
+// لنفس ref_id (القديم المُستبدَل + عكسه + الجديد) — لازم نضيّق على أحدث entry_no
+// فعّال فقط (نفس منطق engine.js's voidTransaction المُعاد كتابته بالحرف)
+async function fetchActiveExpenseEntryLines(id) {
+  const lines = await apiGetAll('journal_entries', {
+    select: 'id,entry_no,account_code,account_name,contact_name,dr_amount,cr_amount,entry_date',
+    system_type: `eq.${SYS}`, ref_table: 'eq.expenses', ref_id: `eq.${id}`, post_status: 'eq.posted',
+    order: 'id.desc',
+  });
+  const drLine = (lines || []).find(l => (+l.dr_amount || 0) > 0);
+  if (!drLine) return [];
+  return (lines || []).filter(l => l.entry_no === drLine.entry_no);
+}
+
+// ✅ يقلّد قلب submitEditExpense (settings.js:1377) — راجع التعليق فوق القسم كامل
+async function simulateEditExpense(app, old, newFields) {
+  const { amount, date, paidBy = null, paidBySplit = null } = newFields;
+  const oldAmount = +old.amount;
+  const oldPartnerSet = partnerSetOf(old.paid_by, old.paid_by_split);
+  const newPartnerSet = partnerSetOf(paidBy, paidBySplit);
+  const amountChanged = Math.abs(oldAmount - amount) > 0.001;
+  const routingChanged = amountChanged || !app.lifecycle.samePartnerSet(oldPartnerSet, newPartnerSet);
+
+  await apiPatch('expenses', { id: `eq.${old.id}` }, {
+    amount, exp_date: date, paid_by: paidBy || null, paid_by_split: paidBySplit,
+    post_status: 'pending_edit',
+  });
+
+  if (routingChanged) {
+    const oldJELines = await apiGetAll('journal_entries', {
+      select: 'id', system_type: `eq.${SYS}`, ref_table: 'eq.expenses', ref_id: `eq.${old.id}`, post_status: 'eq.posted',
+    });
+    await app.engine.voidTransaction('expense', old, true);
+    const newJE = await app.engine.je_expense({
+      sys: SYS, date, amount, fileNo: old.file_no, refId: old.id,
+      desc: old.description, expType: old.exp_type, method: old.pay_method,
+      paidBy: paidBy || null, paidBySplit, isPrimary: false,
+    });
+    if (newJE?.ids?.length) {
+      await app.engine._handoffPrimaryLine({ sys: SYS, oldIds: (oldJELines || []).map(l => l.id), newIds: newJE.ids });
+    }
+    await apiPatch('expenses', { id: `eq.${old.id}` }, { post_status: 'pending_edit' });
+  } else {
+    await app.engine.updateJEInPlace({
+      sys: SYS, fileNo: old.file_no, refTable: 'expenses', refId: old.id,
+      oldAmount, newAmount: amount, newDate: date,
+    });
+  }
+  return routingChanged;
+}
+
+async function postSplitExpense(app, { amount, desc, paidBy = null, paidBySplit = null, postStatus = 'posted', fileNo = FILE_NO }) {
+  const row = await apiPost('expenses', {
+    system_type: SYS, file_no: fileNo, post_status: postStatus,
+    exp_id: zid('EXP'), ref_no: zid('EXP'), pay_id: zid('EXP'),
+    description: desc, exp_type: 'أخرى', pay_method: 'تحويل بنكي',
+    exp_date: today(), amount, paid_by: paidBy, paid_by_split: paidBySplit, notes: 'ZZTEST regression split',
+  });
+  const created = row[0];
+  registerCleanup('expenses', created.id);
+  if (postStatus === 'posted') {
+    await app.engine.je_expense({
+      sys: SYS, date: created.exp_date, amount, fileNo, refId: created.id,
+      desc: created.description, expType: created.exp_type, method: created.pay_method,
+      paidBy, paidBySplit,
+    });
+  }
+  return created;
+}
+
+// ES1 — إنشاء مصروف موزَّع على شريكين، مبلغ يقبل القسمة بالتساوي
+async function es1_createSplitEven(app) {
+  const amount = 100;
+  const members = SPLIT_PARTNERS.slice(0, 2);
+  const split = app.lifecycle.computeEqualSplit(amount, members);
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST split expense even', paidBySplit: split });
+
+  const lines = await fetchActiveExpenseEntryLines(created.id);
+  const creditLines = lines.filter(l => (+l.cr_amount || 0) > 0);
+  assert(creditLines.length === 2, `المتوقع سطرين دائنين (2 شركاء)، طلع ${creditLines.length}`);
+  for (const l of creditLines) {
+    assert(l.account_code === '2400', `المتوقع حساب 2400 لكل سطر دائن، طلع ${l.account_code}`);
+    assert(Math.abs((+l.cr_amount) - 50) < 0.001, `المتوقع حصة 50 لكل شريك، طلع ${l.cr_amount}`);
+  }
+  const names = creditLines.map(l => l.contact_name).sort();
+  assert(JSON.stringify(names) === JSON.stringify([...members].sort()), `أسماء الشركاء على السطور غير مطابقة: ${names}`);
+  const drSum = lines.reduce((s, l) => s + (+l.dr_amount || 0), 0);
+  const crSum = lines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(drSum - crSum) < 0.01, `القيد غير متوازن: dr=${drSum} cr=${crSum}`);
+}
+
+// ES2 — 3 شركاء، مبلغ فيه كسر أصلي (100.001) — الأخير يمتص الباقي بالضبط،
+// بلا انجراف تقريب تراكمي (نقطة راجعها المستخدم صراحة)
+async function es2_createSplitRemainder(app) {
+  const amount = 100.001;
+  const split = app.lifecycle.computeEqualSplit(amount, SPLIT_PARTNERS);
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST split expense remainder', paidBySplit: split });
+
+  const lines = await fetchActiveExpenseEntryLines(created.id);
+  const creditLines = lines.filter(l => (+l.cr_amount || 0) > 0);
+  assert(creditLines.length === 3, `المتوقع 3 سطور دائنة، طلع ${creditLines.length}`);
+  const crSum = creditLines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(crSum - amount) < 0.0005, `مجموع الحصص لازم يساوي ${amount} بالضبط، طلع ${crSum}`);
+  const drSum = lines.reduce((s, l) => s + (+l.dr_amount || 0), 0);
+  assert(Math.abs(drSum - crSum) < 0.01, `القيد غير متوازن: dr=${drSum} cr=${crSum}`);
+}
+
+// ES3 — draft موزَّع → موافقة عبر _createApprovalJE الحقيقية (operations.js) →
+// نفس التوزيع posted — يغطي فعليًا forwarding paidBySplit في operations.js:1967
+async function es3_draftSplitApprove(app) {
+  const amount = 90;
+  const split = app.lifecycle.computeEqualSplit(amount, SPLIT_PARTNERS);
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST split draft approve', paidBySplit: split, postStatus: 'draft' });
+
+  await app.operations._createApprovalJE('expense', created, SYS);
+  await apiPatch('expenses', { id: `eq.${created.id}` }, { post_status: 'posted' });
+
+  const lines = await fetchActiveExpenseEntryLines(created.id);
+  const creditLines = lines.filter(l => (+l.cr_amount || 0) > 0);
+  assert(creditLines.length === 3, `المتوقع 3 سطور دائنة بعد الموافقة، طلع ${creditLines.length}`);
+  const crSum = creditLines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(crSum - amount) < 0.01, `المجموع بعد الموافقة لازم = ${amount}، طلع ${crSum}`);
+}
+
+// ES4 — تعديل: فرد (شريك غير-صندوق) → موزَّع، لمصروف posted بالفعل
+async function es4_editSingleToSplit(app) {
+  const amount = 120;
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST edit single to split', paidBy: SPLIT_PARTNERS[0] });
+
+  const newSplit = app.lifecycle.computeEqualSplit(amount, SPLIT_PARTNERS.slice(0, 2));
+  const routingChanged = await simulateEditExpense(app, created, { amount, date: created.exp_date, paidBy: null, paidBySplit: newSplit });
+  assert(routingChanged === true, 'المتوقع routingChanged=true (فرد→موزَّع)');
+
+  const activeLines = await fetchActiveExpenseEntryLines(created.id);
+  const creditLines = activeLines.filter(l => (+l.cr_amount || 0) > 0);
+  assert(creditLines.length === 2, `المتوقع سطرين دائنين بعد التحويل لموزَّع، طلع ${creditLines.length}`);
+  const crSum = creditLines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(crSum - amount) < 0.01, `مجموع الحصص لازم = ${amount}، طلع ${crSum}`);
+
+  const reversalLines = await apiGetAll('journal_entries', {
+    select: 'id', system_type: `eq.${SYS}`, ref_table: 'eq.reversal', ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  assert((reversalLines || []).length >= 2, `المتوقع عكس القيد الفردي القديم (سطرين على الأقل)، طلع ${reversalLines.length}`);
+}
+
+// ES5 — تعديل: موزَّع → فرد، عكس اتجاه ES4
+async function es5_editSplitToSingle(app) {
+  const amount = 140;
+  const oldSplit = app.lifecycle.computeEqualSplit(amount, SPLIT_PARTNERS.slice(0, 2));
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST edit split to single', paidBySplit: oldSplit });
+
+  const routingChanged = await simulateEditExpense(app, created, { amount, date: created.exp_date, paidBy: SPLIT_PARTNERS[0], paidBySplit: null });
+  assert(routingChanged === true, 'المتوقع routingChanged=true (موزَّع→فرد)');
+
+  const activeLines = await fetchActiveExpenseEntryLines(created.id);
+  const creditLines = activeLines.filter(l => (+l.cr_amount || 0) > 0);
+  assert(creditLines.length === 1, `المتوقع سطر دائن واحد بعد الرجوع لفرد، طلع ${creditLines.length}`);
+  assert(creditLines[0].contact_name === SPLIT_PARTNERS[0], `المتوقع الشريك ${SPLIT_PARTNERS[0]}، طلع ${creditLines[0].contact_name}`);
+  assert(Math.abs((+creditLines[0].cr_amount) - amount) < 0.01, `المتوقع كامل المبلغ ${amount} على الشريك الواحد، طلع ${creditLines[0].cr_amount}`);
+}
+
+// ES6 — تعديل: موزَّع→موزَّع بنفس مجموعة الشركاء، مبلغ إجمالي مختلف — لازم
+// يُكتشف amountChanged ويمر عبر عكس+إعادة ترحيل، لا updateJEInPlace (نقطة
+// اكتشاف الجرد: مطابقة updateJEInPlace بالمبلغ الكامل كانت هتفشل هنا بصمت)
+async function es6_editSplitSameMembersAmountChanged(app) {
+  const oldAmount = 90;
+  const members = SPLIT_PARTNERS; // الثلاثة
+  const oldSplit = app.lifecycle.computeEqualSplit(oldAmount, members);
+  const created = await postSplitExpense(app, { amount: oldAmount, desc: 'ZZTEST edit split same-members amount-changed', paidBySplit: oldSplit });
+
+  const newAmount = 180;
+  const newSplit = app.lifecycle.computeEqualSplit(newAmount, members);
+  const routingChanged = await simulateEditExpense(app, created, { amount: newAmount, date: created.exp_date, paidBy: null, paidBySplit: newSplit });
+  assert(routingChanged === true, 'المتوقع routingChanged=true (نفس الشركاء، مبلغ مختلف — amountChanged يوجب عكس+إعادة ترحيل)');
+
+  const activeLines = await fetchActiveExpenseEntryLines(created.id);
+  const creditLines = activeLines.filter(l => (+l.cr_amount || 0) > 0);
+  assert(creditLines.length === 3, `المتوقع 3 سطور دائنة، طلع ${creditLines.length}`);
+  const crSum = creditLines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(crSum - newAmount) < 0.01, `المتوقع مجموع الحصص = ${newAmount} (المبلغ الجديد بالكامل، لا القديم)، طلع ${crSum}`);
+  // ✅ التحقق الحرج: كل حصة = newAmount/3 لا oldAmount/3 — يثبت إن الحصص اتحسبت
+  // من جديد فعليًا، لا تركت بقيمتها القديمة بصمت (بالظبط العلة اللي كانت
+  // ستحصل لو مرّت هذه الحالة عبر updateJEInPlace القديمة)
+  for (const l of creditLines) {
+    assert(Math.abs((+l.cr_amount) - (newAmount / 3)) < 0.01, `المتوقع حصة ${newAmount / 3} لكل شريك، طلع ${l.cr_amount}`);
+  }
+}
+
+// ES7 — تعديل: موزَّع→موزَّع بمجموعة شركاء مختلفة، نفس المبلغ الإجمالي
+async function es7_editSplitDifferentMembersSameAmount(app) {
+  const amount = 90;
+  const oldMembers = SPLIT_PARTNERS.slice(0, 2); // A,B
+  const newMembers = [SPLIT_PARTNERS[0], SPLIT_PARTNERS[2]]; // A,C — B خرج
+  const oldSplit = app.lifecycle.computeEqualSplit(amount, oldMembers);
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST edit split different-members', paidBySplit: oldSplit });
+
+  const newSplit = app.lifecycle.computeEqualSplit(amount, newMembers);
+  const routingChanged = await simulateEditExpense(app, created, { amount, date: created.exp_date, paidBy: null, paidBySplit: newSplit });
+  assert(routingChanged === true, 'المتوقع routingChanged=true (نفس المبلغ، مجموعة شركاء مختلفة)');
+
+  const activeLines = await fetchActiveExpenseEntryLines(created.id);
+  const creditLines = activeLines.filter(l => (+l.cr_amount || 0) > 0);
+  const names = creditLines.map(l => l.contact_name).sort();
+  assert(JSON.stringify(names) === JSON.stringify([...newMembers].sort()), `المتوقع الشركاء الجدد ${newMembers}، طلع ${names}`);
+  assert(!names.includes(SPLIT_PARTNERS[1]), 'الشريك اللي خرج (B) ما لازمش يظهر على القيد الجديد');
+}
+
+// ES8 — تعديل تاريخ فقط لمصروف موزَّع (بلا تغيير مبلغ/مجموعة شركاء) —
+// routingChanged لازم false، الحصص تفضل كما هي بلا تغيير قيمة
+async function es8_editSplitDateOnly(app) {
+  const amount = 60;
+  const members = SPLIT_PARTNERS.slice(0, 2);
+  const split = app.lifecycle.computeEqualSplit(amount, members);
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST edit split date-only', paidBySplit: split });
+
+  const newDate = '2020-01-01';
+  const routingChanged = await simulateEditExpense(app, created, { amount, date: newDate, paidBy: null, paidBySplit: split });
+  assert(routingChanged === false, 'المتوقع routingChanged=false (تاريخ فقط، بلا تغيير مبلغ/شركاء) — يمر عبر updateJEInPlace');
+
+  const activeLines = await fetchActiveExpenseEntryLines(created.id);
+  const creditLines = activeLines.filter(l => (+l.cr_amount || 0) > 0);
+  assert(creditLines.length === 2, `المتوقع سطرين دائنين بلا تغيير (تاريخ فقط)، طلع ${creditLines.length}`);
+  for (const l of creditLines) {
+    assert(Math.abs((+l.cr_amount) - (amount / 2)) < 0.01, `المتوقع الحصص تفضل ${amount / 2} بلا تغيير، طلع ${l.cr_amount}`);
+  }
+  assert(activeLines.every(l => l.entry_date === newDate), `المتوقع تاريخ القيد الفعّال = ${newDate} على كل الأسطر`);
+}
+
+// ES9 — إلغاء (voidTransaction) مصروف موزَّع مُرحَّل على شريكين
+async function es9_voidSplitTwoPartners(app) {
+  const amount = 130;
+  const members = SPLIT_PARTNERS.slice(0, 2);
+  const split = app.lifecycle.computeEqualSplit(amount, members);
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST void split 2partners', paidBySplit: split });
+
+  await app.engine.voidTransaction('expense', created, true);
+
+  const after = (await apiGetAll('expenses', { select: '*', id: `eq.${created.id}` }))[0];
+  assert(after.post_status === 'voided', `المتوقع voided، طلع ${after.post_status}`);
+
+  const reversalLines = await apiGetAll('journal_entries', {
+    select: 'account_code,contact_name,dr_amount,cr_amount', system_type: `eq.${SYS}`,
+    ref_table: 'eq.reversal', ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  assert((reversalLines || []).length === 3, `المتوقع 3 أسطر عكسية (1 مدين أصلي + 2 دائن أصليين)، طلع ${reversalLines.length}`);
+  const drSum = reversalLines.reduce((s, l) => s + (+l.dr_amount || 0), 0);
+  const crSum = reversalLines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(drSum - crSum) < 0.01, `القيد العكسي غير متوازن: dr=${drSum} cr=${crSum}`);
+  assert(Math.abs(drSum - amount) < 0.01, `المتوقع مجموع العكس = ${amount}، طلع ${drSum}`);
+  const partnerReversalLines = reversalLines.filter(l => l.account_code === '2400');
+  assert(partnerReversalLines.length === 2, `المتوقع سطرين 2400 معكوسين (كانوا دائنين، بقوا مدينين)، طلع ${partnerReversalLines.length}`);
+  for (const l of partnerReversalLines) {
+    assert(Math.abs((+l.dr_amount) - (amount / 2)) < 0.01, `المتوقع مدين=${amount / 2} في سطر العكس لكل شريك، طلع ${l.dr_amount}`);
+  }
+}
+
+// ES10 — إلغاء مصروف موزَّع على 3 شركاء، مبلغ غير قابل للقسمة بالتساوي
+async function es10_voidSplitThreePartnersUneven(app) {
+  const amount = 133;
+  const split = app.lifecycle.computeEqualSplit(amount, SPLIT_PARTNERS);
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST void split 3partners uneven', paidBySplit: split });
+
+  await app.engine.voidTransaction('expense', created, true);
+
+  const after = (await apiGetAll('expenses', { select: '*', id: `eq.${created.id}` }))[0];
+  assert(after.post_status === 'voided', `المتوقع voided، طلع ${after.post_status}`);
+
+  const reversalLines = await apiGetAll('journal_entries', {
+    select: 'account_code,dr_amount,cr_amount', system_type: `eq.${SYS}`,
+    ref_table: 'eq.reversal', ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  assert((reversalLines || []).length === 4, `المتوقع 4 أسطر عكسية (1 مدين + 3 دائن أصليين)، طلع ${reversalLines.length}`);
+  const drSum = reversalLines.reduce((s, l) => s + (+l.dr_amount || 0), 0);
+  const crSum = reversalLines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(drSum - crSum) < 0.01, `القيد العكسي غير متوازن: dr=${drSum} cr=${crSum}`);
+  assert(Math.abs(drSum - amount) < 0.01, `المتوقع مجموع العكس = ${amount} بالضبط رغم عدم القابلية للقسمة المتساوية، طلع ${drSum}`);
+}
+
+// ES11 — انحدار: إلغاء مصروف فردي (شريك واحد غير-صندوق، غير موزَّع) بعد إعادة
+// كتابة voidTransaction — يثبت إن السلوك القديم (سطر دائن واحد) لسه صحيح
+async function es11_voidSingleNonTreasuryRegression(app) {
+  const amount = 210;
+  const partner = SPLIT_PARTNERS[0];
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST void single non-treasury regression', paidBy: partner });
+
+  await app.engine.voidTransaction('expense', created, true);
+
+  const after = (await apiGetAll('expenses', { select: '*', id: `eq.${created.id}` }))[0];
+  assert(after.post_status === 'voided', `المتوقع voided، طلع ${after.post_status}`);
+  const reversalLines = await apiGetAll('journal_entries', {
+    select: 'account_code,contact_name,dr_amount,cr_amount', system_type: `eq.${SYS}`,
+    ref_table: 'eq.reversal', ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  assert((reversalLines || []).length === 2, `المتوقع سطرين عكسيين (مصروف فردي غير موزَّع)، طلع ${reversalLines.length}`);
+  const partnerLine = reversalLines.find(l => l.account_code === '2400');
+  assert(!!partnerLine, 'المتوقع سطر 2400 معكوس للشريك الفردي');
+  assert(partnerLine.contact_name === partner, `المتوقع الشريك ${partner}، طلع ${partnerLine.contact_name}`);
+  assert(Math.abs((+partnerLine.dr_amount) - amount) < 0.01, `المتوقع مدين=${amount} كامل على الشريك الواحد`);
+}
+
+// ES12 — computePartnerSettlement بعد مصروف موزَّع: كل شريك مختار ياخد حصته
+// تلقائيًا بلا أي تعديل كود (core.js تُجمِّع بـcontact_name)، والشريك غير
+// المختار في نفس الملف لا يتأثر بهذا المصروف بالذات.
+// ✅ file_no مستقل خاص بهذا السيناريو (نفس نمط purchase_orders Step B فوق) —
+// FILE_NO المشترك بقية السيناريوهات (ES4/ES5/ES6/ES7/ES9/ES10/ES11) بتستخدم
+// نفس أسماء SPLIT_PARTNERS فعليًا على 2400 لنفس الملف، فقياس computePartnerSettlement
+// على FILE_NO المشترك كان بيجمع مساهمات كل السيناريوهات الأخرى مع بعضها (اكتُشف
+// حيًّا: أول محاولة رجّعت 1137.666 بدل 75 — علة في تصميم الاختبار نفسه، لا في
+// الكود الإنتاجي؛ الإصلاح عزل الملف، لا تغيير computePartnerSettlement)
+async function es12_computePartnerSettlementAfterSplit(app) {
+  const es12FileNo = zid('ES12');
+  registerExtraFileNo(es12FileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: es12FileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 1, post_status: 'draft', notes: 'ZZTEST regression ES12 fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+  for (const name of SPLIT_PARTNERS) {
+    const pRow = await apiPost('partners_master', {
+      system_type: SYS, file_no: es12FileNo, partner: name, share_percent: 100 / SPLIT_PARTNERS.length,
+    });
+    registerCleanup('partners_master', pRow[0].id);
+  }
+
+  const amount = 150;
+  const members = SPLIT_PARTNERS.slice(0, 2); // A,B — C لا يُختار
+  const split = app.lifecycle.computeEqualSplit(amount, members);
+  await postSplitExpense(app, { amount, desc: 'ZZTEST settlement after split', paidBySplit: split, fileNo: es12FileNo });
+
+  const settlement = await app.core.computePartnerSettlement(es12FileNo, SYS);
+  const a = settlement.partners.find(p => p.name === SPLIT_PARTNERS[0]);
+  const b = settlement.partners.find(p => p.name === SPLIT_PARTNERS[1]);
+  const c = settlement.partners.find(p => p.name === SPLIT_PARTNERS[2]);
+  assert(a && b && c, 'لازم تلاقي الشركاء الثلاثة في التسوية (partners_master fixture)');
+  assert(Math.abs(a.expPaid - (amount / 2)) < 0.01, `المتوقع مصروفات A من جيبه = ${amount / 2}، طلع ${a.expPaid}`);
+  assert(Math.abs(b.expPaid - (amount / 2)) < 0.01, `المتوقع مصروفات B من جيبه = ${amount / 2}، طلع ${b.expPaid}`);
+  // ✅ ملف معزول تمامًا، فC هنا لازم يساوي صفر بالضبط (لا مجرد "لا يساوي حصة التوزيع")
+  assert(Math.abs(c.expPaid - 0) < 0.01, `الشريك C لازم لا يتأثر بمصروف لم يُختَر له فيه (ملف معزول)، طلع ${c.expPaid}`);
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // MAIN
 // ════════════════════════════════════════════════════════════════════════
 (async () => {
@@ -721,6 +1104,24 @@ async function p2_rejectPendingEdit(cfg, app) {
     await scenario('collections / P2 حالة حافة — draft بلا paid_date → حذف حقيقي', () => p2_collectionsNoPaidDate(app, 'draft'));
     await scenario('collections / P2 حالة حافة — posted بلا paid_date → حذف حقيقي', () => p2_collectionsNoPaidDate(app, 'posted'));
     setEntryStatus(app, 'draft'); // إعادة الوضع الافتراضي بعد خلوص السويت
+
+    // ✅ توزيع مصروف بالتساوي بين شركاء مختارين يدويًا (paid_by_split) —
+    // partners_master fixture مطلوب لـES12 (computePartnerSettlement)، ومُفيد
+    // أيضًا كمصدر أسماء واقعي لباقي السيناريوهات
+    console.log(`\n── expenses: توزيع مصروف بالتساوي (paid_by_split) ──`);
+    await setupSplitPartnersFixture();
+    await scenario('expenses / ES1 إنشاء موزَّع على شريكين (قسمة متساوية)', () => es1_createSplitEven(app));
+    await scenario('expenses / ES2 إنشاء موزَّع على 3 شركاء (كسر أصلي، الأخير يمتص الباقي)', () => es2_createSplitRemainder(app));
+    await scenario('expenses / ES3 draft موزَّع → موافقة (_createApprovalJE) يحافظ على التوزيع', () => es3_draftSplitApprove(app));
+    await scenario('expenses / ES4 تعديل فرد→موزَّع (posted)', () => es4_editSingleToSplit(app));
+    await scenario('expenses / ES5 تعديل موزَّع→فرد (posted)', () => es5_editSplitToSingle(app));
+    await scenario('expenses / ES6 تعديل موزَّع→موزَّع نفس الشركاء مبلغ مختلف (يوجب عكس+إعادة ترحيل)', () => es6_editSplitSameMembersAmountChanged(app));
+    await scenario('expenses / ES7 تعديل موزَّع→موزَّع مجموعة شركاء مختلفة نفس المبلغ', () => es7_editSplitDifferentMembersSameAmount(app));
+    await scenario('expenses / ES8 تعديل تاريخ فقط لمصروف موزَّع (بلا تغيير حصص)', () => es8_editSplitDateOnly(app));
+    await scenario('expenses / ES9 إلغاء موزَّع على شريكين', () => es9_voidSplitTwoPartners(app));
+    await scenario('expenses / ES10 إلغاء موزَّع على 3 شركاء (مبلغ غير قابل للقسمة المتساوية)', () => es10_voidSplitThreePartnersUneven(app));
+    await scenario('expenses / ES11 انحدار: إلغاء مصروف فردي غير-صندوق (voidTransaction المُعاد كتابتها)', () => es11_voidSingleNonTreasuryRegression(app));
+    await scenario('expenses / ES12 computePartnerSettlement بعد موزَّع — كل شريك يأخذ حصته تلقائيًا', () => es12_computePartnerSettlementAfterSplit(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
