@@ -825,12 +825,16 @@ export async function deletePayoutEntry(payoutId, fileNo, silent=false) {
     const p = data?.[0];
     if (!p) { if (!silent) toast('لم يُعثر على السجل','err'); return; }
 
+    // ✅ Track A / Phase 2 — قرار موحَّد عبر js/lifecycle.js (كانت هذه الدالة
+    // المرجع الصحيح أصلًا اللي resolveDeleteAction اتصمَّمت على مثالها — استبدال
+    // ميكانيكي، بلا تغيير سلوك)
+    const payoutAction = resolveDeleteAction(p.post_status);
+
     if (silent) {
       // تعديل من modal — Void القديم بدل Hard Delete
-      if (p.post_status === 'posted') {
+      if (payoutAction === 'void') {
         await voidTransaction('payout', p);
-      } else if (p.post_status === 'draft') {
-        // draft فقط: مسح مباشر مقبول
+      } else if (payoutAction === 'delete') {
         await apiDelete('partner_payouts', { id:`eq.${payoutId}` });
       } else {
         toast(`⚠️ لا يمكن حذف سجل بحالة "${p.post_status}"`, 'err');
@@ -840,7 +844,7 @@ export async function deletePayoutEntry(payoutId, fileNo, silent=false) {
       return;
     }
 
-    if (p.post_status === 'posted') {
+    if (payoutAction === 'void') {
       // مرحّل: إلغاء بقيد عكسي
       showConfirm(
         `🔄 إلغاء صرف شريك — ${p.partner||''}`,
@@ -853,7 +857,7 @@ export async function deletePayoutEntry(payoutId, fileNo, silent=false) {
           } catch(e) { toast('خطأ: '+e.message,'err'); }
         }
       );
-    } else if (p.post_status === 'draft') {
+    } else if (payoutAction === 'delete') {
       // draft: مسح نهائي مقبول (لم يُرحَّل بعد)
       showConfirm('مسح صرف شريك', 'هل تريد مسح هذا الصرف؟ (لم يُرحَّل — لا يوجد قيد)', async () => {
         try {

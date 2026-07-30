@@ -1186,6 +1186,30 @@ export async function deletePaymentEntry(paymentId, fileNo) {
     if (!p) { toast('لم يُعثر على الدفعة','err'); return; }
     if (p.post_status === 'voided') { toast('⚠️ هذه الدفعة مُلغاة مسبقاً','warn'); return; }
 
+    // ✅ Track A / Phase 2 — قرار موحَّد عبر js/lifecycle.js (كان بلا أي فرع
+    // هنا، فدفعة draft كانت تدخل voidTransaction مباشرة — راجع lifecycle.js)
+    const paymentAction = resolveDeleteAction(p.post_status);
+    if (paymentAction === 'reject') {
+      toast(`⚠️ لا يمكن حذف/إلغاء دفعة بحالة "${p.post_status}"`, 'err');
+      return;
+    }
+    if (paymentAction === 'delete') {
+      showConfirm(
+        `🗑 حذف دفعة — ${p.ref_no||'#'+paymentId}`,
+        `لم تُرحَّل بعد (لا يوجد قيد محاسبي لها) — سيتم حذفها نهائيًا.\n\nهل تريد الحذف؟`,
+        async () => {
+          try {
+            await apiDelete('payments', { id:`eq.${paymentId}` });
+            await logAudit('DELETE','payments', fileNo||p.file_no, p, null, `حذف دفعة draft ${p.ref_no||paymentId}`);
+            toast('✅ تم الحذف','ok');
+            if (state.currentTab === 2) loadPaymentsTab(state.currentFileNo||fileNo, state.system);
+            if (state.currentTab === 0) loadSummaryTab(state.currentFileNo||fileNo, state.system);
+          } catch(e) { toast('خطأ: '+e.message,'err'); }
+        }
+      );
+      return;
+    }
+
     const details = `رقم الدفعة: ${p.ref_no||'—'}\nالدافع: ${p.payer||'—'}\nالمبلغ: ${fmt(p.amount)}\nالتاريخ: ${p.pay_date||'—'}`;
     showConfirm(
       `🔄 إلغاء دفعة — ${p.ref_no||'#'+paymentId}`,
@@ -1220,6 +1244,29 @@ export async function deleteExpenseEntry(expenseId, fileNo) {
     if (!e) { toast('لم يُعثر على المصروف','err'); return; }
     if (e.post_status === 'voided') { toast('⚠️ هذا المصروف مُلغى مسبقاً','warn'); return; }
 
+    // ✅ Track A / Phase 2 — قرار موحَّد عبر js/lifecycle.js (نفس علة payments)
+    const expenseAction = resolveDeleteAction(e.post_status);
+    if (expenseAction === 'reject') {
+      toast(`⚠️ لا يمكن حذف/إلغاء مصروف بحالة "${e.post_status}"`, 'err');
+      return;
+    }
+    if (expenseAction === 'delete') {
+      showConfirm(
+        `🗑 حذف مصروف — ${e.ref_no||'#'+expenseId}`,
+        `لم يُرحَّل بعد (لا يوجد قيد محاسبي له) — سيتم حذفه نهائيًا.\n\nهل تريد الحذف؟`,
+        async () => {
+          try {
+            await apiDelete('expenses', { id:`eq.${expenseId}` });
+            await logAudit('DELETE','expenses', fileNo||e.file_no, e, null, `حذف مصروف draft ${e.ref_no||expenseId}`);
+            toast('✅ تم الحذف','ok');
+            if (state.currentTab === 3) loadExpensesTab(state.currentFileNo||fileNo, state.system);
+            if (state.currentTab === 0) loadSummaryTab(state.currentFileNo||fileNo, state.system);
+          } catch(e2) { toast('خطأ: '+e2.message,'err'); }
+        }
+      );
+      return;
+    }
+
     const details = `رقم المصروف: ${e.ref_no||'—'}\nالبيان: ${e.description||'—'}\nالمبلغ: ${fmt(e.amount)}\nالتاريخ: ${e.exp_date||'—'}`;
     showConfirm(
       `🔄 إلغاء مصروف — ${e.ref_no||'#'+expenseId}`,
@@ -1245,17 +1292,34 @@ export async function deleteCollectionEntry(collectionId, fileNo) {
     const c = data?.[0];
     if (!c) { toast('لم يُعثر على التحصيل','err'); return; }
     if (c.post_status === 'voided') { toast('⚠️ هذا التحصيل مُلغى مسبقاً','warn'); return; }
-    if (!c.paid_date) {
-      // تحصيل لم يُدفع بعد — مش عنده قيد محاسبي → نلغيه مباشرة
+
+    // ✅ Track A / Phase 2 — قرار موحَّد عبر js/lifecycle.js، مع نقاء إضافي خاص
+    // بالتحصيلات فوق القرار العام: تحصيل posted بلا paid_date ما عندوش قيد
+    // فعلي بعد (قيده يتولّد وقت الدفع الحقيقي، مش وقت الاعتماد؛ نفس القاعدة في
+    // submitEditCollection) — فلو القرار العام 'void' بس مفيش paid_date، نحوّله
+    // 'delete'. كان الفرع القديم بيعمل PATCH→voided (السجل يفضل موجود) بدل حذف
+    // حقيقي — قرار سياسة اتحسم 2026-07-30: توحيد كامل لحذف حقيقي زي الباقي
+    let collectionAction = resolveDeleteAction(c.post_status);
+    if (collectionAction === 'void' && !c.paid_date) collectionAction = 'delete';
+
+    if (collectionAction === 'reject') {
+      toast(`⚠️ لا يمكن حذف/إلغاء تحصيل بحالة "${c.post_status}"`, 'err');
+      return;
+    }
+    if (collectionAction === 'delete') {
+      // ✅ رسالة تفرّق لغويًا بين السببين المختلفين لعدم وجود قيد (draft لسه ما
+      // اعتمدش، أو posted بس مستحق لم يُدفع بعد) — بدل صياغة عامة واحدة
+      const reasonText = c.post_status === 'draft'
+        ? 'لم يُرحَّل بعد'
+        : 'مُعتمَد لكن بلا قيد محاسبي (مستحق، لم يُدفع بعد)';
       showConfirm(
-        `🗑 إلغاء تحصيل منتظر — ${c.ref_no||'#'+collectionId}`,
-        `هذا التحصيل لم يُدفع بعد (مستحق)، إلغاؤه لن يؤثر على القيود.\n\nهل تريد إلغاءه؟`,
+        `🗑 حذف تحصيل — ${c.ref_no||'#'+collectionId}`,
+        `${reasonText} — سيتم حذفه نهائيًا.\n\nهل تريد الحذف؟`,
         async () => {
           try {
-            await apiPatch('collections', { id:`eq.${collectionId}` }, { post_status:'voided', notes:`${c.notes||''} | مُلغى ${today()}` });
-            await logAudit('VOID','collections', fileNo||c.file_no, c, null, `إلغاء تحصيل منتظر ${c.ref_no}`);
-            invalidateCache();
-            toast(`✅ تم إلغاء التحصيل ${c.ref_no||''}`, 'ok');
+            await apiDelete('collections', { id:`eq.${collectionId}` });
+            await logAudit('DELETE','collections', fileNo||c.file_no, c, null, `حذف تحصيل ${c.ref_no||collectionId}`);
+            toast('✅ تم الحذف','ok');
             if (state.currentTab === 5) loadCollectionsTab(state.currentFileNo||fileNo, state.system);
             if (state.currentTab === 0) loadSummaryTab(state.currentFileNo||fileNo, state.system);
           } catch(err) { toast('خطأ: '+err.message, 'err'); }
@@ -1263,7 +1327,7 @@ export async function deleteCollectionEntry(collectionId, fileNo) {
       );
       return;
     }
-    // تحصيل مدفوع — عنده قيد → نعكسه
+    // تحصيل مدفوع فعليًا — عنده قيد → نعكسه
     const details = `رقم التحصيل: ${c.ref_no||'—'}\nالعميل: ${c.customer||'—'}\nالمبلغ: ${fmt(c.amount)}\nتاريخ الدفع: ${c.paid_date}`;
     showConfirm(
       `🔄 إلغاء تحصيل مدفوع — ${c.ref_no||'#'+collectionId}`,
