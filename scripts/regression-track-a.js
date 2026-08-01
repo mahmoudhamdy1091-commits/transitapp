@@ -1167,6 +1167,110 @@ async function et5_settlementAfterMixedSplit(app) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// PRIMARY-LINE HANDOFF FIX — عكس (reversal) مزدوج عند "لمسة تانية"
+// ════════════════════════════════════════════════════════════════════════
+// اكتُشف حيًّا 2026-07-30 (TM-004، 23 سجل متأثر + BOX-141): تعديل ثانٍ متتالٍ
+// (updateJEInPlace مرتين) أو إلغاء بعد تعديل (updateJEInPlace ثم voidTransaction)
+// على نفس السجل كان بيصطدم بالقيد الفريد uq_je_ref_primary_posted — لأن عكس
+// التعديل الأول (ref_table='reversal') بيفضل is_primary_line=true بلا تنزيل،
+// و_handoffPrimaryLine (updateJEInPlace) بتغطي بس سطور الكيان الأصلي، مش سطور
+// العكس. الإصلاح مركزي جوه postDoubleEntry نفسها (يحمي كل الـ7 مواقع اللي
+// بتنشئ عكس تلقائيًا) — السيناريوهين هنا يثبتوا الحماية فعليًا لحالتين مختلفتين
+// (تعديل→تعديل، تعديل→إلغاء)، مش بافتراض التعميم من مكان الإصلاح.
+
+async function p3_editThenEdit(cfg, app) {
+  const row = await apiPost(cfg.table, {
+    system_type: SYS, file_no: FILE_NO, post_status: 'posted', ...cfg.baseFields(910),
+  });
+  const created = row[0];
+  registerCleanup(cfg.table, created.id);
+  await cfg.postJE(created);
+
+  await app.engine.updateJEInPlace({
+    sys: SYS, fileNo: FILE_NO, refTable: cfg.table, refId: created.id, oldAmount: 910, newAmount: 920,
+  });
+  // ✅ التعديل الثاني — ده بالضبط اللي كان بيصطدم بـ409 حيًّا قبل الإصلاح
+  await app.engine.updateJEInPlace({
+    sys: SYS, fileNo: FILE_NO, refTable: cfg.table, refId: created.id, oldAmount: 920, newAmount: 930,
+  });
+
+  const activeReversals = await apiGetAll('journal_entries', {
+    select: 'id', system_type: `eq.${SYS}`, ref_table: `eq.reversal`, ref_id: `eq.${created.id}`,
+    is_primary_line: 'eq.true', post_status: 'eq.posted',
+  });
+  assert(activeReversals.length === 1, `المتوقع صف عكس نشط واحد بس بعد تعديلين متتاليين، طلع ${activeReversals.length}`);
+
+  const activeMain = await apiGetAll('journal_entries', {
+    select: 'dr_amount,cr_amount', system_type: `eq.${SYS}`, ref_table: `eq.${cfg.table}`, ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  const activeAmt = Math.max(...activeMain.map(l => Math.max(+l.dr_amount || 0, +l.cr_amount || 0)));
+  assert(Math.abs(activeAmt - 930) < 0.01, `المتوقع القيمة النهائية = 930، طلع ${activeAmt}`);
+}
+
+async function p3_editThenVoid(cfg, app) {
+  const row = await apiPost(cfg.table, {
+    system_type: SYS, file_no: FILE_NO, post_status: 'posted', ...cfg.baseFields(940),
+  });
+  const created = row[0];
+  registerCleanup(cfg.table, created.id);
+  await cfg.postJE(created);
+
+  await app.engine.updateJEInPlace({
+    sys: SYS, fileNo: FILE_NO, refTable: cfg.table, refId: created.id, oldAmount: 940, newAmount: 950,
+  });
+
+  const preVoid = (await apiGetAll(cfg.table, { select: '*', id: `eq.${created.id}` }))[0];
+  // ✅ force=true — تنفيذ فوري بلا مرور بمسار "طلب مراجعة"، نفس ما بيحصل عند
+  // الموافقة من قائمة الاعتماد (_processReversalApproval)
+  await app.engine.voidTransaction(cfg.srcType, preVoid, true);
+
+  const after = (await apiGetAll(cfg.table, { select: '*', id: `eq.${created.id}` }))[0];
+  assert(after.post_status === 'voided', `المتوقع voided، طلع ${after.post_status}`);
+
+  const activeReversals = await apiGetAll('journal_entries', {
+    select: 'id', system_type: `eq.${SYS}`, ref_table: `eq.reversal`, ref_id: `eq.${created.id}`,
+    is_primary_line: 'eq.true', post_status: 'eq.posted',
+  });
+  assert(activeReversals.length === 1, `المتوقع صف عكس نشط واحد بس بعد تعديل ثم إلغاء، طلع ${activeReversals.length}`);
+}
+
+// نفس سيناريو p3_editThenEdit لكن لـpurchase_orders — الحالة الحقيقية اللي
+// ظهرت في البيانات الحية (BOX-141، وTM-004's purchase_orders تحديدًا)
+async function p3po_editThenEdit(app) {
+  const poFileNo = zid('PO-P3');
+  registerExtraFileNo(poFileNo);
+  const row = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: poFileNo, supplier: 'ZZTEST-SUPPLIER', po_date: today(),
+    total_purchase: 5000, post_status: 'posted', notes: 'ZZTEST regression P3',
+  });
+  const created = row[0];
+  registerCleanup('purchase_orders', created.id);
+  await app.engine.je_purchase({
+    sys: SYS, date: created.po_date, amount: +created.total_purchase, fileNo: poFileNo,
+    supplier: created.supplier, refId: created.id,
+  });
+
+  await app.engine.updateJEInPlace({
+    sys: SYS, fileNo: poFileNo, refTable: 'purchase_orders', refId: created.id, oldAmount: 5000, newAmount: 5100,
+  });
+  await app.engine.updateJEInPlace({
+    sys: SYS, fileNo: poFileNo, refTable: 'purchase_orders', refId: created.id, oldAmount: 5100, newAmount: 5200,
+  });
+
+  const activeReversals = await apiGetAll('journal_entries', {
+    select: 'id', system_type: `eq.${SYS}`, ref_table: `eq.reversal`, ref_id: `eq.${created.id}`,
+    is_primary_line: 'eq.true', post_status: 'eq.posted',
+  });
+  assert(activeReversals.length === 1, `المتوقع صف عكس نشط واحد بس (purchase_orders)، طلع ${activeReversals.length}`);
+
+  const activeMain = await apiGetAll('journal_entries', {
+    select: 'dr_amount,cr_amount', system_type: `eq.${SYS}`, ref_table: `eq.purchase_orders`, ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  const activeAmt = Math.max(...activeMain.map(l => Math.max(+l.dr_amount || 0, +l.cr_amount || 0)));
+  assert(Math.abs(activeAmt - 5200) < 0.01, `المتوقع القيمة النهائية = 5200، طلع ${activeAmt}`);
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // MAIN
 // ════════════════════════════════════════════════════════════════════════
 (async () => {
@@ -1241,6 +1345,14 @@ async function et5_settlementAfterMixedSplit(app) {
     await scenario('collections / P2 حالة حافة — draft بلا paid_date → حذف حقيقي', () => p2_collectionsNoPaidDate(app, 'draft'));
     await scenario('collections / P2 حالة حافة — posted بلا paid_date → حذف حقيقي', () => p2_collectionsNoPaidDate(app, 'posted'));
     setEntryStatus(app, 'draft'); // إعادة الوضع الافتراضي بعد خلوص السويت
+
+    // ✅ إصلاح ازدواج is_primary_line على قيود العكس (اكتُشف حيًّا 2026-07-30، TM-004)
+    console.log(`\n── إصلاح ازدواج reversal is_primary_line (postDoubleEntry) ──`);
+    for (const cfg of configs) {
+      await scenario(`${cfg.label} / P3 تعديل ثم تعديل — عكس واحد نشط بس`, () => p3_editThenEdit(cfg, app));
+      await scenario(`${cfg.label} / P3 تعديل ثم إلغاء — عكس واحد نشط بس`, () => p3_editThenVoid(cfg, app));
+    }
+    await scenario('purchase_orders / P3 تعديل ثم تعديل — عكس واحد نشط بس', () => p3po_editThenEdit(app));
 
     // ✅ توزيع مصروف بالتساوي بين شركاء مختارين يدويًا (paid_by_split) —
     // partners_master fixture مطلوب لـES12 (computePartnerSettlement)، ومُفيد

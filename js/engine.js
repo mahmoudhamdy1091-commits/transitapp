@@ -617,6 +617,37 @@ export async function postDoubleEntry({sys, date, fileNo, refTable, refId, desc,
     } catch(e) { console.warn('postDoubleEntry: فشل التحقق من القيد الأصلي للربط', reversesId, e.message); }
   }
 
+  // ✅ إصلاح ازدواج is_primary_line على قيود العكس (ref_table='reversal') —
+  // اكتُشف حيًّا 2026-07-30 على TM-004: تعديل ثانٍ (أو إلغاء بعد تعديل) على نفس
+  // السجل بيحاول يسجّل عكس جديد بـis_primary_line=true بينما عكس أول تعديل
+  // سابق لسه حامل نفس العلم — يصطدم بالقيد الفريد uq_je_ref_primary_posted.
+  // _handoffPrimaryLine (تُستدعى من updateJEInPlace) بتغطي بس سطور الكيان
+  // الأصلي (ref_table الحقيقي)، مش سطور العكس نفسها — فجوة منفصلة تمامًا.
+  // ✅ مركزية هنا (مش تكرارها في كل مكان بينادي postDoubleEntry بـrefTable=
+  // 'reversal' — updateJEInPlace/voidTransaction/voidPurchaseOrder/
+  // reverseManualJE/voidSaleInvoice/deleteSaleInvoice/deleteOpex، 7 مواقع) —
+  // نفس مبدأ Track A: نقطة إنفاذ واحدة تحمي كل المستدعين الحاليين والمستقبليين.
+  // ✅ refId == null (voidSaleInvoice/deleteSaleInvoice/reverseManualJE أحيانًا)
+  // — بلا فحص عمدًا: Postgres بيعامل NULL كغير متساوٍ مع NULL في القيد الفريد
+  // (NULLS DISTINCT، الافتراضي)، فمفيش تصادم فعلي بين صفوف NULL مع بعض أصلًا.
+  if (refTable === 'reversal' && isPrimary && refId != null) {
+    try {
+      const filter = {
+        select: 'id', system_type: `eq.${sys}`, ref_table: 'eq.reversal',
+        ref_id: `eq.${refId}`, is_primary_line: 'eq.true', post_status: 'eq.posted',
+      };
+      if (fileNo) filter.file_no = `eq.${fileNo}`;
+      const priorPrimary = await apiGetAll('journal_entries', filter);
+      if (priorPrimary?.length) {
+        const demoteRes = await fetch(`${SB_URL}/rest/v1/journal_entries?id=in.(${priorPrimary.map(r => r.id).join(',')})`, {
+          method: 'PATCH', headers: { ...headers(), 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ is_primary_line: false }),
+        });
+        if (!demoteRes.ok) console.warn('postDoubleEntry: فشل تنزيل is_primary_line عن عكس سابق نشط', await demoteRes.text().catch(() => ''));
+      }
+    } catch(e) { console.warn('postDoubleEntry: فشل فحص عكس سابق نشط لتنزيله', e.message); }
+  }
+
   const no      = await _jeNo(sys);
   const now     = new Date().toISOString();
   const inserts = lines.map((l, idx) => ({
