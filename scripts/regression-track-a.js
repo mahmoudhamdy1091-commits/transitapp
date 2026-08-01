@@ -47,6 +47,12 @@
 // إلغاء موزَّع (2 و3 شركاء)، انحدار على إلغاء مصروف فردي غير-صندوق بعد إعادة
 // كتابة voidTransaction، وتجميع computePartnerSettlement. راجع التعليق التوثيقي
 // أعلى قسم "EXPENSES — توزيع مصروف بالتساوي" لتفاصيل التصميم.
+//
+// ✅ دعم الصندوق/صندوق الترانزيت داخل التوزيع المتساوي — 5 سيناريوهات إضافية
+// (ET1-ET5): إنشاء صندوق+شريك (زوجي وكسر أصلي)، تعديل (الصندوق ينضم لمجموعة
+// موزَّعة قائمة)، إلغاء موزَّع مختلط الحسابات (1110/1120 + 2400 معًا)، وتجميع
+// computePartnerSettlement على ملف معزول. راجع قسم "EXPENSES — دعم الصندوق..."
+// لتفاصيل التصميم (كل عنصر في paidBySplit يُفحص بـ_isPartnerPocket مستقلاً).
 
 const { loadApp } = require('./_headless-app-env.js');
 
@@ -1030,6 +1036,137 @@ async function es12_computePartnerSettlementAfterSplit(app) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// EXPENSES — دعم الصندوق/صندوق الترانزيت داخل توزيع مصروف متساوٍ
+// ════════════════════════════════════════════════════════════════════════
+// ✅ TREASURY_NAME هنا هو "الصندوق" الحرفي (نظام BOX، نفس SYS المستخدَم في كل
+// هذا الملف) — _isPartnerPocket بتتحقق من TREASURY_ALIASES، فنفس المنطق يعمم
+// على "صندوق الترانزيت" (TM) بلا أي فرق، مفيش داعي لتكرار كل سيناريو بنظامين.
+const TREASURY_NAME = 'الصندوق';
+
+// ET1 — إنشاء موزَّع على الصندوق + شريك بشري واحد، قسمة متساوية زوجية
+async function et1_createSplitTreasuryPlusPartner(app) {
+  const amount = 100;
+  const members = [TREASURY_NAME, SPLIT_PARTNERS[0]];
+  const split = app.lifecycle.computeEqualSplit(amount, members);
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST split treasury+partner', paidBySplit: split });
+
+  const lines = await fetchActiveExpenseEntryLines(created.id);
+  const creditLines = lines.filter(l => (+l.cr_amount || 0) > 0);
+  assert(creditLines.length === 2, `المتوقع سطرين دائنين، طلع ${creditLines.length}`);
+  const treasuryLine = creditLines.find(l => l.account_code === '1110' || l.account_code === '1120');
+  const partnerLine  = creditLines.find(l => l.account_code === '2400');
+  assert(!!treasuryLine, 'المتوقع سطر دائن للصندوق على 1110/1120، لا 2400');
+  assert(treasuryLine.contact_name === null, 'المتوقع contact_name=null لسطر الصندوق (ليس شريكًا خارجيًا)');
+  assert(!!partnerLine, 'المتوقع سطر دائن للشريك البشري على 2400');
+  assert(partnerLine.contact_name === SPLIT_PARTNERS[0], `المتوقع contact_name=${SPLIT_PARTNERS[0]}، طلع ${partnerLine.contact_name}`);
+  assert(Math.abs((+treasuryLine.cr_amount) - 50) < 0.01, `المتوقع حصة الصندوق = 50، طلع ${treasuryLine.cr_amount}`);
+  assert(Math.abs((+partnerLine.cr_amount) - 50) < 0.01, `المتوقع حصة الشريك = 50، طلع ${partnerLine.cr_amount}`);
+  const drSum = lines.reduce((s, l) => s + (+l.dr_amount || 0), 0);
+  const crSum = lines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(drSum - crSum) < 0.01, `القيد غير متوازن: dr=${drSum} cr=${crSum}`);
+}
+
+// ET2 — الصندوق + شريكين بشريين، مبلغ غير قابل للقسمة المتساوية (كسر أصلي)
+async function et2_createSplitTreasuryPlusTwoPartnersUneven(app) {
+  const amount = 100.001;
+  const members = [TREASURY_NAME, SPLIT_PARTNERS[0], SPLIT_PARTNERS[1]];
+  const split = app.lifecycle.computeEqualSplit(amount, members);
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST split treasury+2partners uneven', paidBySplit: split });
+
+  const lines = await fetchActiveExpenseEntryLines(created.id);
+  const creditLines = lines.filter(l => (+l.cr_amount || 0) > 0);
+  assert(creditLines.length === 3, `المتوقع 3 سطور دائنة، طلع ${creditLines.length}`);
+  const treasuryLines = creditLines.filter(l => l.account_code === '1110' || l.account_code === '1120');
+  const partnerLines  = creditLines.filter(l => l.account_code === '2400');
+  assert(treasuryLines.length === 1, `المتوقع سطر صندوق واحد بالضبط، طلع ${treasuryLines.length}`);
+  assert(partnerLines.length === 2, `المتوقع سطري شركاء بشريين، طلع ${partnerLines.length}`);
+  const crSum = creditLines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(crSum - amount) < 0.0005, `مجموع الحصص لازم يساوي ${amount} بالضبط، طلع ${crSum}`);
+  const drSum = lines.reduce((s, l) => s + (+l.dr_amount || 0), 0);
+  assert(Math.abs(drSum - crSum) < 0.01, `القيد غير متوازن: dr=${drSum} cr=${crSum}`);
+}
+
+// ET3 — تعديل: موزَّع على شريك بشري بس → موزَّع على الصندوق+نفس الشريك (الصندوق
+// يدخل مجموعة موزَّعة قائمة) — لازم يُكتشف كتغيّر مجموعة، عكس+إعادة ترحيل
+async function et3_editAddTreasuryToSplit(app) {
+  const amount = 120;
+  const oldMembers = [SPLIT_PARTNERS[0], SPLIT_PARTNERS[1]];
+  const oldSplit = app.lifecycle.computeEqualSplit(amount, oldMembers);
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST edit add treasury to split', paidBySplit: oldSplit });
+
+  const newMembers = [TREASURY_NAME, SPLIT_PARTNERS[0], SPLIT_PARTNERS[1]];
+  const newSplit = app.lifecycle.computeEqualSplit(amount, newMembers);
+  const routingChanged = await simulateEditExpense(app, created, { amount, date: created.exp_date, paidBy: null, paidBySplit: newSplit });
+  assert(routingChanged === true, 'المتوقع routingChanged=true (الصندوق انضم لمجموعة التوزيع)');
+
+  const activeLines = await fetchActiveExpenseEntryLines(created.id);
+  const creditLines = activeLines.filter(l => (+l.cr_amount || 0) > 0);
+  assert(creditLines.length === 3, `المتوقع 3 سطور دائنة بعد الإضافة، طلع ${creditLines.length}`);
+  const treasuryLines = creditLines.filter(l => l.account_code === '1110' || l.account_code === '1120');
+  assert(treasuryLines.length === 1, `المتوقع سطر صندوق واحد ظهر حديثًا، طلع ${treasuryLines.length}`);
+  const crSum = creditLines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(crSum - amount) < 0.01, `مجموع الحصص لازم = ${amount}، طلع ${crSum}`);
+}
+
+// ET4 — إلغاء (voidTransaction) مصروف موزَّع مختلط (صندوق + شريك بشري)
+async function et4_voidMixedSplit(app) {
+  const amount = 140;
+  const members = [TREASURY_NAME, SPLIT_PARTNERS[0]];
+  const split = app.lifecycle.computeEqualSplit(amount, members);
+  const created = await postSplitExpense(app, { amount, desc: 'ZZTEST void treasury+partner split', paidBySplit: split });
+
+  await app.engine.voidTransaction('expense', created, true);
+
+  const after = (await apiGetAll('expenses', { select: '*', id: `eq.${created.id}` }))[0];
+  assert(after.post_status === 'voided', `المتوقع voided، طلع ${after.post_status}`);
+  const reversalLines = await apiGetAll('journal_entries', {
+    select: 'account_code,contact_name,dr_amount,cr_amount', system_type: `eq.${SYS}`,
+    ref_table: 'eq.reversal', ref_id: `eq.${created.id}`, post_status: 'eq.posted',
+  });
+  assert((reversalLines || []).length === 3, `المتوقع 3 أسطر عكسية (1 مدين + صندوق + شريك)، طلع ${reversalLines.length}`);
+  const drSum = reversalLines.reduce((s, l) => s + (+l.dr_amount || 0), 0);
+  const crSum = reversalLines.reduce((s, l) => s + (+l.cr_amount || 0), 0);
+  assert(Math.abs(drSum - crSum) < 0.01, `القيد العكسي غير متوازن: dr=${drSum} cr=${crSum}`);
+  assert(Math.abs(drSum - amount) < 0.01, `المتوقع مجموع العكس = ${amount}، طلع ${drSum}`);
+  const treasuryRev = reversalLines.find(l => l.account_code === '1110' || l.account_code === '1120');
+  const partnerRev  = reversalLines.find(l => l.account_code === '2400');
+  assert(!!treasuryRev && !!partnerRev, 'المتوقع عكس سطري الصندوق والشريك معًا');
+  assert(Math.abs((+treasuryRev.dr_amount) - amount/2) < 0.01, `المتوقع مدين=${amount/2} في عكس سطر الصندوق`);
+  assert(Math.abs((+partnerRev.dr_amount) - amount/2) < 0.01, `المتوقع مدين=${amount/2} في عكس سطر الشريك`);
+}
+
+// ET5 — computePartnerSettlement بعد موزَّع مختلط: الصندوق يظهر بمساهمته
+// بالمتبقي (fullCost−nonTreasurySum)، الشريك البشري بحصته المباشرة من 2400 —
+// file_no معزول (نفس درس ES12) لضمان قياس نظيف
+async function et5_settlementAfterMixedSplit(app) {
+  const et5FileNo = zid('ET5');
+  registerExtraFileNo(et5FileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: et5FileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 1, post_status: 'draft', notes: 'ZZTEST regression ET5 fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+  for (const name of [TREASURY_NAME, SPLIT_PARTNERS[0]]) {
+    const pRow = await apiPost('partners_master', { system_type: SYS, file_no: et5FileNo, partner: name, share_percent: 50 });
+    registerCleanup('partners_master', pRow[0].id);
+  }
+
+  const amount = 200;
+  const members = [TREASURY_NAME, SPLIT_PARTNERS[0]];
+  const split = app.lifecycle.computeEqualSplit(amount, members);
+  await postSplitExpense(app, { amount, desc: 'ZZTEST settlement mixed split', paidBySplit: split, fileNo: et5FileNo });
+
+  const settlement = await app.core.computePartnerSettlement(et5FileNo, SYS);
+  const treasury = settlement.partners.find(p => p.name === TREASURY_NAME);
+  const partner  = settlement.partners.find(p => p.name === SPLIT_PARTNERS[0]);
+  assert(treasury && partner, 'لازم تلاقي الصندوق والشريك في التسوية');
+  assert(treasury.isTreasury === true, 'المتوقع isTreasury=true للصندوق');
+  assert(Math.abs(treasury.actualContribution - (amount / 2)) < 0.01, `المتوقع مساهمة الصندوق (بالمتبقي) = ${amount / 2}، طلع ${treasury.actualContribution}`);
+  assert(Math.abs(partner.expPaid - (amount / 2)) < 0.01, `المتوقع مصروفات الشريك من جيبه = ${amount / 2}، طلع ${partner.expPaid}`);
+  assert(Math.abs(settlement.totalExpenseAmount - amount) < 0.01, `المتوقع totalExpenseAmount = ${amount} رغم اختلاط الحسابات، طلع ${settlement.totalExpenseAmount}`);
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // MAIN
 // ════════════════════════════════════════════════════════════════════════
 (async () => {
@@ -1122,6 +1259,13 @@ async function es12_computePartnerSettlementAfterSplit(app) {
     await scenario('expenses / ES10 إلغاء موزَّع على 3 شركاء (مبلغ غير قابل للقسمة المتساوية)', () => es10_voidSplitThreePartnersUneven(app));
     await scenario('expenses / ES11 انحدار: إلغاء مصروف فردي غير-صندوق (voidTransaction المُعاد كتابتها)', () => es11_voidSingleNonTreasuryRegression(app));
     await scenario('expenses / ES12 computePartnerSettlement بعد موزَّع — كل شريك يأخذ حصته تلقائيًا', () => es12_computePartnerSettlementAfterSplit(app));
+
+    // ✅ دعم الصندوق/صندوق الترانزيت داخل توزيع مصروف متساوٍ (طلب لاحق، بعد ES1-ES12)
+    await scenario('expenses / ET1 توزيع صندوق+شريك بشري (قسمة زوجية)', () => et1_createSplitTreasuryPlusPartner(app));
+    await scenario('expenses / ET2 توزيع صندوق+شريكين بشريين (كسر أصلي)', () => et2_createSplitTreasuryPlusTwoPartnersUneven(app));
+    await scenario('expenses / ET3 تعديل: الصندوق ينضم لمجموعة موزَّعة قائمة', () => et3_editAddTreasuryToSplit(app));
+    await scenario('expenses / ET4 إلغاء موزَّع مختلط (صندوق+شريك)', () => et4_voidMixedSplit(app));
+    await scenario('expenses / ET5 computePartnerSettlement بعد موزَّع مختلط', () => et5_settlementAfterMixedSplit(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
