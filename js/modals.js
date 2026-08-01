@@ -1024,9 +1024,10 @@ export async function openExpenseModal() {
       // ✅ قائمة التوزيع تستثني الصندوق — لا يُقيَّد على 2400 بتصميم النظام (مصاريفه تُدفع نقدًا مباشرة)
       const splitWrap = el('exp-splitPartners');
       if (splitWrap) {
-        const distributable = raw.filter(p => !TREASURY_ALIASES.has(p));
-        splitWrap.innerHTML = distributable.length
-          ? distributable.map(p => `<label style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;font-weight:400;cursor:pointer">
+        // ✅ الصندوق/صندوق الترانزيت يظهر كخيار عادي — je_expense بتوجّه حصته
+        // لـ1110/1120 تلقائيًا (لا 2400) حسب _isPartnerPocket لكل عنصر مستقلاً
+        splitWrap.innerHTML = raw.length
+          ? raw.map(p => `<label style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;font-weight:400;cursor:pointer">
               <input type="checkbox" class="exp-split-partner" value="${p}"> ${p}
             </label>`).join('')
           : `<div style="font-size:12px;color:var(--text3)">لا يوجد شركاء لهذا الملف</div>`;
