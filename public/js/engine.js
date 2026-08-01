@@ -1016,10 +1016,15 @@ export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,meth
   if(!amount||amount<=0) throw new Error(`قيمة مصروف غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
   const target = await fileExpenseTarget(sys, fileNo, expType);
   const hasSplit = Array.isArray(paidBySplit) && paidBySplit.length > 0;
-  // الدائن: توزيع بالتساوي على شركاء مختارين (N سطر 2400) لو hasSplit، وإلا
-  // الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو دفعها من جيبه بمفرده
+  // الدائن: توزيع بالتساوي على شركاء مختارين (N سطر) لو hasSplit، وإلا الخزينة
+  // (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو دفعها من جيبه بمفرده.
+  // ✅ داخل التوزيع نفسه، كل عنصر يُفحص بـ_isPartnerPocket مستقلاً — لو الصندوق/
+  // صندوق الترانزيت مُختار ضمن مجموعة التوزيع، حصته تروح 1110/1120 زي الدفع
+  // الفردي العادي بالظبط (فلوس الشركة نفسها، مش دَين شخصي)، لا 2400 مطلقًا
   const creditLines = hasSplit
-    ? paidBySplit.map(p => ({acc:'2400', name:'حسابات الشركاء', dr:0, cr:+p.amount||0, contact:(p.partner||'').trim()}))
+    ? paidBySplit.map(p => _isPartnerPocket(p.partner)
+        ? {acc:'2400', name:'حسابات الشركاء', dr:0, cr:+p.amount||0, contact:(p.partner||'').trim()}
+        : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:+p.amount||0, contact:null})
     : [ _isPartnerPocket(paidBy)
         ? {acc:'2400', name:'حسابات الشركاء', dr:0, cr:amount, contact:paidBy.trim()}
         : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null} ];
