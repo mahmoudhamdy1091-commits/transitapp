@@ -1437,6 +1437,167 @@ async function p3po_editThenEdit(app) {
 // ════════════════════════════════════════════════════════════════════════
 // MAIN
 // ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════
+// PARTNER-SETTLEMENT REVERSAL NETTING FIX — computePartnerSettlement's
+// crByRef/drByRef كانت بتتجاهل أي ref_table='reversal' بالكامل ('reversal'
+// مش مفتاح موجود في crByRef/drByRef، فالشرط `!== undefined` كان بيرفضها من
+// الأساس، حتى من المجموع الخام) — أي دفعة/مصروف/تحصيل/صرف شريك اتعدّل أو
+// اتلغى أكتر من مرة كان بيفضل يحسب النسخة القديمة المُستبدَلة للأبد جنب
+// الجديدة. اكتُشف حيًّا على TM-004 (وكيل الشحن: مصروف اتعدّل 3 مرات بنفس
+// المبلغ، fairShareDiff ظهر 2,316.5 غلط). راجع
+// project_is_primary_line_double_reversal_tm004 في الذاكرة للتفاصيل الكاملة.
+//
+// كل سيناريو على file_no + اسم شريك معزولين تمامًا (نفس درس EA*/ES12) لقياس
+// نظيف عبر computePartnerSettlement مباشرة. لا نستخدم cfg.postJE من
+// buildEntityConfigs هنا عمدًا — هي مربوطة بـFILE_NO المشترك (hardcoded)،
+// غير مناسبة للعزل المطلوب لقياس تسوية شريك بمعزل عن باقي حركات السويت على
+// نفس الملف؛ بدلها نستدعي je_payment/je_expense/je_collection/je_payout
+// الحقيقية مباشرة بـfileNo معزول، بنفس أسلوب postSplitExpense فوق بالحرف.
+
+async function psFixtureFile(app, prefix, partnerName) {
+  const fileNo = zid(prefix);
+  registerExtraFileNo(fileNo);
+  // ✅ expenses/payments/collections/partner_payouts/partners_master كلها بها
+  // FK على file_no → purchase_orders(file_no) — نفس ملاحظة eaFixtureFile فوق
+  const poRow = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 1, post_status: 'draft', notes: 'ZZTEST regression settlement fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+  const pRow = await apiPost('partners_master', { system_type: SYS, file_no: fileNo, partner: partnerName, share_percent: 100 });
+  registerCleanup('partners_master', pRow[0].id);
+  return fileNo;
+}
+
+const PS_TYPES = {
+  payments: {
+    table: 'payments', srcType: 'payment', settlementField: 'capitalPaid',
+    createRow: (fileNo, amount, partnerName) => ({
+      system_type: SYS, file_no: fileNo, post_status: 'posted',
+      pay_id: zid('PMT'), ref_no: zid('PMT'), payer: partnerName, pay_method: 'تحويل بنكي',
+      pay_date: today(), amount, notes: 'ZZTEST regression settlement',
+    }),
+    postJE: (app, row, fileNo, partnerName) => app.engine.je_payment({
+      sys: SYS, date: row.pay_date, amount: +row.amount, fileNo, refId: row.id,
+      supplierName: 'ZZTEST-SUPPLIER', payerName: partnerName, method: row.pay_method,
+    }),
+  },
+  expenses: {
+    table: 'expenses', srcType: 'expense', settlementField: 'expPaid',
+    createRow: (fileNo, amount, partnerName) => ({
+      system_type: SYS, file_no: fileNo, post_status: 'posted',
+      exp_id: zid('EXP'), ref_no: zid('EXP'), pay_id: zid('EXP'),
+      description: 'ZZTEST regression settlement expense', exp_type: 'أخرى', pay_method: 'تحويل بنكي',
+      exp_date: today(), amount, paid_by: partnerName, notes: 'ZZTEST regression settlement',
+    }),
+    postJE: (app, row, fileNo, partnerName) => app.engine.je_expense({
+      sys: SYS, date: row.exp_date, amount: +row.amount, fileNo, refId: row.id,
+      desc: row.description, expType: row.exp_type, method: row.pay_method, paidBy: partnerName,
+    }),
+  },
+  collections: {
+    table: 'collections', srcType: 'collection', settlementField: 'collectionsHeld',
+    createRow: (fileNo, amount, partnerName) => ({
+      system_type: SYS, file_no: fileNo, post_status: 'posted',
+      pay_id: zid('COL'), ref_no: zid('COL'),
+      customer: 'ZZTEST-CUSTOMER', inv_no: zid('INV'), pay_method: 'تحويل بنكي',
+      due_date: today(), paid_date: today(), amount, received_by: partnerName, notes: 'ZZTEST regression settlement',
+    }),
+    postJE: (app, row, fileNo, partnerName) => app.engine.je_collection({
+      sys: SYS, date: row.paid_date, amount: +row.amount, fileNo, refId: row.id,
+      customer: row.customer, invNo: row.inv_no, method: row.pay_method, receivedBy: partnerName,
+    }),
+  },
+  partner_payouts: {
+    table: 'partner_payouts', srcType: 'payout', settlementField: 'withdrawnViaPayout',
+    createRow: (fileNo, amount, partnerName) => ({
+      system_type: SYS, file_no: fileNo, post_status: 'posted',
+      pay_id: zid('POU'),
+      partner: partnerName, payout_type: 'ربح', pay_method: 'تحويل بنكي',
+      pay_date: today(), amount, notes: 'ZZTEST regression settlement',
+    }),
+    postJE: (app, row, fileNo, partnerName) => app.engine.je_payout({
+      sys: SYS, date: row.pay_date, amount: +row.amount, fileNo, refId: row.id,
+      partner: partnerName, method: row.pay_method,
+    }),
+  },
+};
+
+async function psSettlementValue(app, fileNo, partnerName, typeKey) {
+  const settlement = await app.core.computePartnerSettlement(fileNo, SYS);
+  const p = settlement.partners.find(x => x.name === partnerName.trim());
+  assert(p, `[${typeKey}] لازم نلاقي الشريك ${partnerName} في نتيجة التسوية`);
+  return p[PS_TYPES[typeKey].settlementField];
+}
+
+// PS-EDIT-ONCE — تعديل مرة واحدة (100→150) — لازم القيمة الجديدة بس تُحسب
+async function ps_editOnce(typeKey, app) {
+  const t = PS_TYPES[typeKey];
+  const partnerName = zid('PS1-' + typeKey);
+  const fileNo = await psFixtureFile(app, 'PS1-' + typeKey, partnerName);
+  const row = (await apiPost(t.table, t.createRow(fileNo, 100, partnerName)))[0];
+  registerCleanup(t.table, row.id);
+  await t.postJE(app, row, fileNo, partnerName);
+
+  await app.engine.updateJEInPlace({ sys: SYS, fileNo, refTable: t.table, refId: row.id, oldAmount: 100, newAmount: 150 });
+
+  const val = await psSettlementValue(app, fileNo, partnerName, typeKey);
+  assert(Math.abs(val - 150) < 0.01, `[${typeKey}] المتوقع ${t.settlementField}=150 بعد تعديل مرة، طلع ${val}`);
+}
+
+// PS-EDIT-TWICE — تعديل مرتين متتاليتين (100→70→100) — يحاكي سلسلة TM-004
+async function ps_editTwice(typeKey, app) {
+  const t = PS_TYPES[typeKey];
+  const partnerName = zid('PS2-' + typeKey);
+  const fileNo = await psFixtureFile(app, 'PS2-' + typeKey, partnerName);
+  const row = (await apiPost(t.table, t.createRow(fileNo, 100, partnerName)))[0];
+  registerCleanup(t.table, row.id);
+  await t.postJE(app, row, fileNo, partnerName);
+
+  await app.engine.updateJEInPlace({ sys: SYS, fileNo, refTable: t.table, refId: row.id, oldAmount: 100, newAmount: 70 });
+  await app.engine.updateJEInPlace({ sys: SYS, fileNo, refTable: t.table, refId: row.id, oldAmount: 70, newAmount: 100 });
+
+  const val = await psSettlementValue(app, fileNo, partnerName, typeKey);
+  assert(Math.abs(val - 100) < 0.01, `[${typeKey}] المتوقع ${t.settlementField}=100 بعد تعديلين متتاليين، طلع ${val}`);
+}
+
+// PS-VOID — إلغاء (voidTransaction) — لازم يرجع صفر بالضبط
+async function ps_void(typeKey, app) {
+  const t = PS_TYPES[typeKey];
+  const partnerName = zid('PS3-' + typeKey);
+  const fileNo = await psFixtureFile(app, 'PS3-' + typeKey, partnerName);
+  const row = (await apiPost(t.table, t.createRow(fileNo, 100, partnerName)))[0];
+  registerCleanup(t.table, row.id);
+  await t.postJE(app, row, fileNo, partnerName);
+
+  const before = await psSettlementValue(app, fileNo, partnerName, typeKey);
+  assert(Math.abs(before - 100) < 0.01, `[${typeKey}] precondition قبل الإلغاء لازم =100، طلع ${before}`);
+
+  await app.engine.voidTransaction(t.srcType, row, true);
+
+  const after = await psSettlementValue(app, fileNo, partnerName, typeKey);
+  assert(Math.abs(after - 0) < 0.01, `[${typeKey}] المتوقع ${t.settlementField}=0 بعد الإلغاء، طلع ${after}`);
+}
+
+// PS4 — نفس حالة "وكيل الشحن" الحقيقية بالضبط: مصروف اتعدّل 3 مرات متتالية
+// بنفس المبلغ بالظبط (1150→1150→1150) — قبل الإصلاح كان يظهر 3,450 (الثلاث
+// نسخ مجموعة) بدل 1,150 (النسخة النشطة الوحيدة فقط)
+async function ps4_expenseThreeEditsSameAmount(app) {
+  const t = PS_TYPES.expenses;
+  const partnerName = zid('PS4-expenses');
+  const fileNo = await psFixtureFile(app, 'PS4-expenses', partnerName);
+  const row = (await apiPost(t.table, t.createRow(fileNo, 1150, partnerName)))[0];
+  registerCleanup(t.table, row.id);
+  await t.postJE(app, row, fileNo, partnerName);
+
+  await app.engine.updateJEInPlace({ sys: SYS, fileNo, refTable: t.table, refId: row.id, oldAmount: 1150, newAmount: 1150 });
+  await app.engine.updateJEInPlace({ sys: SYS, fileNo, refTable: t.table, refId: row.id, oldAmount: 1150, newAmount: 1150 });
+  await app.engine.updateJEInPlace({ sys: SYS, fileNo, refTable: t.table, refId: row.id, oldAmount: 1150, newAmount: 1150 });
+
+  const val = await psSettlementValue(app, fileNo, partnerName, 'expenses');
+  assert(Math.abs(val - 1150) < 0.01, `[وكيل الشحن سيناريو حقيقي] المتوقع expPaid=1150 رغم 3 تعديلات متتالية بنفس المبلغ، طلع ${val}`);
+}
+
 (async () => {
   console.log('Track A — Phase 0 Regression Suite');
   console.log('file_no تجريبي:', FILE_NO, '| نظام:', SYS);
@@ -1550,6 +1711,16 @@ async function p3po_editThenEdit(app) {
     await scenario('expenses / EA4 expenseAmount يرجع صفر بعد الإلغاء (void)', () => ea4_expenseAmountVoided(app));
     await scenario('expenses / EA5 انحدار: expenseAmount لمصروف غير مُعدَّل يفضل صحيح', () => ea5_expenseAmountUnaffectedRegression(app));
     await scenario('expenses / EA6 حساب الترسملة يفضل ثابت عبر تعديلات توجيه متتالية بعد البيع', () => ea6_targetAccountPreservedAcrossSaleStatusChange(app));
+
+    // ✅ إصلاح ازدواج crByRef/drByRef في computePartnerSettlement (اكتُشف حيًّا
+    // على TM-004 2026-08-02 — وكيل الشحن/بيد سامر) — عبر الأربعة أنواع كلها
+    console.log(`\n── computePartnerSettlement: إصلاح ازدواج crByRef/drByRef عند لمسة تانية ──`);
+    for (const typeKey of Object.keys(PS_TYPES)) {
+      await scenario(`partner-settlement / ${typeKey} PS1 تعديل مرة`, () => ps_editOnce(typeKey, app));
+      await scenario(`partner-settlement / ${typeKey} PS2 تعديل مرتين متتاليتين`, () => ps_editTwice(typeKey, app));
+      await scenario(`partner-settlement / ${typeKey} PS3 إلغاء (voidTransaction)`, () => ps_void(typeKey, app));
+    }
+    await scenario('partner-settlement / PS4 مصروف بنفس حالة وكيل الشحن الحقيقية — 3 تعديلات متتالية بنفس المبلغ', () => ps4_expenseThreeEditsSameAmount(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
