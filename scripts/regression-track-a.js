@@ -724,14 +724,19 @@ async function simulateEditExpense(app, old, newFields) {
   });
 
   if (routingChanged) {
+    // ✅ order:'id.desc' + account_code/dr_amount — يقلّد settings.js:1471-1479
+    // الحقيقية بالحرف بعد إصلاح ازدواج حساب الترسملة (targetOverride)
     const oldJELines = await apiGetAll('journal_entries', {
-      select: 'id', system_type: `eq.${SYS}`, ref_table: 'eq.expenses', ref_id: `eq.${old.id}`, post_status: 'eq.posted',
+      select: 'id,account_code,account_name,dr_amount', system_type: `eq.${SYS}`,
+      ref_table: 'eq.expenses', ref_id: `eq.${old.id}`, post_status: 'eq.posted', order: 'id.desc',
     });
+    const oldDebitLine = (oldJELines || []).find(l => (+l.dr_amount || 0) > 0);
     await app.engine.voidTransaction('expense', old, true);
     const newJE = await app.engine.je_expense({
       sys: SYS, date, amount, fileNo: old.file_no, refId: old.id,
       desc: old.description, expType: old.exp_type, method: old.pay_method,
       paidBy: paidBy || null, paidBySplit, isPrimary: false,
+      targetOverride: oldDebitLine ? { acc: oldDebitLine.account_code, name: oldDebitLine.account_name } : null,
     });
     if (newJE?.ids?.length) {
       await app.engine._handoffPrimaryLine({ sys: SYS, oldIds: (oldJELines || []).map(l => l.id), newIds: newJE.ids });
@@ -1264,6 +1269,67 @@ async function ea5_expenseAmountUnaffectedRegression(app) {
   assert(Math.abs(settlement.totalExpenseAmount - 250) < 0.01, `المتوقع totalExpenseAmount=250 (بلا أي تعديل)، طلع ${settlement.totalExpenseAmount}`);
 }
 
+// EA6 — حساب الترسملة (1300/5100) لازم يفضل ثابت عبر تعديلات "مين دفع"
+// المتتالية حتى لو حالة البيع اتغيّرت بينهم — الباج الحقيقي المُكتشَف حيًّا
+// على TM-004 (وكيل الشحن، 2026-08-02): fileExpenseTarget كانت تُعاد اشتقاقها
+// من حالة البيع *الحالية* وقت كل إعادة ترحيل (routingChanged)، فمصروف اتقيّد
+// قبل البيع على 1300 كان بينتقل لـ5100 بعد أول تعديل توجيه بعد البيع —
+// ازدواج حقيقي في COGS (نفس المبلغ محسوب مرتين: جوّه قيد البيع المجمَّد،
+// وكقيد مباشر جديد). يتحقق كمان من نقطة الترتيب المستقلة اللي راجعها
+// المستخدم: تعديلان متتاليان لازم ياخدوا حساب القيد الحالي النشط في كل
+// مرة (order:'id.desc')، لا أي قيد قديم من التاريخ (لا اعتماد على
+// reversed_by، best-effort وممكن يفشل بصمت — راجع postDoubleEntry).
+async function ea6_targetAccountPreservedAcrossSaleStatusChange(app) {
+  const fileNo = zid('EA6');
+  registerExtraFileNo(fileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 1000, post_status: 'draft', notes: 'ZZTEST regression EA6 fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+  const vin = zid('VIN-EA6');
+  const vehRow = await apiPost('vehicles', { system_type: SYS, file_no: fileNo, vin, purchase_price: 1000 });
+  registerCleanup('vehicles', vehRow[0].id);
+  for (const name of [SPLIT_PARTNERS[0], SPLIT_PARTNERS[1]]) {
+    const pRow = await apiPost('partners_master', { system_type: SYS, file_no: fileNo, partner: name, share_percent: 50 });
+    registerCleanup('partners_master', pRow[0].id);
+  }
+
+  // 1. مصروف يُرحَّل قبل البيع — لازم 1300 (المخزون)
+  const created = await postSplitExpense(app, { amount: 100, desc: 'ZZTEST EA6 pre-sale expense', paidBy: SPLIT_PARTNERS[0], fileNo });
+  let lines = await fetchActiveExpenseEntryLines(created.id);
+  let debitLine = lines.find(l => (+l.dr_amount || 0) > 0);
+  assert(debitLine.account_code === '1300', `precondition: قبل البيع لازم 1300، طلع ${debitLine.account_code}`);
+
+  // 2. السيارة بتتباع — سطر sales مباشر يكفي (fileExpenseTarget بتفحص
+  // vehicles/sales بس، مش محتاجة قيد post_sale_je الفعلي لهذا الاختبار)
+  const saleRow = await apiPost('sales', {
+    system_type: SYS, file_no: fileNo, vin, customer: 'ZZTEST-CUSTOMER',
+    inv_no: zid('INV'), sale_price: 1500, sale_date: today(), post_status: 'posted',
+  });
+  registerCleanup('sales', saleRow[0].id);
+
+  // 3. تعديل توجيه (routingChanged) بعد البيع — لازم يحافظ على 1300 الأصلي،
+  // لا يتحول لـ5100 رغم إن الملف بقى "مُباع بالكامل" الآن
+  await simulateEditExpense(app, created, { amount: 100, date: created.exp_date, paidBy: SPLIT_PARTNERS[1], paidBySplit: null });
+  lines = await fetchActiveExpenseEntryLines(created.id);
+  debitLine = lines.find(l => (+l.dr_amount || 0) > 0);
+  assert(debitLine.account_code === '1300', `المتوقع الحفاظ على 1300 بعد أول تعديل توجيه بعد البيع، طلع ${debitLine.account_code}`);
+
+  // 4. تعديل توجيه ثانٍ متتالٍ — يتأكد إن الحساب مُشتَق من القيد النشط
+  // الحالي (نتيجة الخطوة 3)، لا القيد الأصلي القديم من الخطوة 1
+  const updatedAfterFirst = (await apiGetAll('expenses', { select: '*', id: `eq.${created.id}` }))[0];
+  await simulateEditExpense(app, updatedAfterFirst, { amount: 100, date: created.exp_date, paidBy: SPLIT_PARTNERS[0], paidBySplit: null });
+  lines = await fetchActiveExpenseEntryLines(created.id);
+  debitLine = lines.find(l => (+l.dr_amount || 0) > 0);
+  assert(debitLine.account_code === '1300', `المتوقع الحفاظ على 1300 بعد تعديل توجيه ثانٍ متتالٍ، طلع ${debitLine.account_code}`);
+
+  // 5. تحقق نهائي: expenseAmount (إصلاح النهارده الأول) لسه صحيح رغم كل
+  // هذه التعديلات المتتالية — 100 بس، لا مضاعف
+  const settlement = await app.core.computePartnerSettlement(fileNo, SYS);
+  assert(Math.abs(settlement.totalExpenseAmount - 100) < 0.01, `المتوقع totalExpenseAmount=100 رغم تعديلين متتاليين، طلع ${settlement.totalExpenseAmount}`);
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // PRIMARY-LINE HANDOFF FIX — عكس (reversal) مزدوج عند "لمسة تانية"
 // ════════════════════════════════════════════════════════════════════════
@@ -1483,6 +1549,7 @@ async function p3po_editThenEdit(app) {
     await scenario('expenses / EA3 expenseAmount لمصروف موزَّع مُعدَّل', () => ea3_expenseAmountSplitEdited(app));
     await scenario('expenses / EA4 expenseAmount يرجع صفر بعد الإلغاء (void)', () => ea4_expenseAmountVoided(app));
     await scenario('expenses / EA5 انحدار: expenseAmount لمصروف غير مُعدَّل يفضل صحيح', () => ea5_expenseAmountUnaffectedRegression(app));
+    await scenario('expenses / EA6 حساب الترسملة يفضل ثابت عبر تعديلات توجيه متتالية بعد البيع', () => ea6_targetAccountPreservedAcrossSaleStatusChange(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
