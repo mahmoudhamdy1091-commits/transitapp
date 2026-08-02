@@ -376,7 +376,7 @@ export async function fetchJEForPeriod(sys, from, to) {
     `&entry_date=gte.${encodeURIComponent(from)}` +
     `&entry_date=lte.${encodeURIComponent(toEOD)}` +
     `&post_status=eq.posted` +
-    `&select=id,entry_no,account_code,account_name,dr_amount,cr_amount,ref_table,file_no` +
+    `&select=id,entry_no,ref_id,account_code,account_name,dr_amount,cr_amount,ref_table,file_no` +
     `&limit=49999`;
 
   const fetchOne = async (url) => {
@@ -430,6 +430,20 @@ export function computeFinancials(jeRows) {
     if (r.account_code === '2100' && r.entry_no) purchaseEntryNos.add(r.entry_no);
   });
 
+  // ✅ نفس مبدأ purchaseEntryNos فوق، لنفس السبب — أي ref_id ظهر ولو مرة بـ
+  // ref_table='expenses' يخصّ مصروفًا حقيقيًا؛ يُستخدم تحت لتمييز قيود عكس
+  // المصاريف (ref_table='reversal' بنفس ref_id) عن عكس أنواع تانية (دفعات/
+  // تحصيلات/صرف شركاء) بتستخدم نفس حسابات الدفع بالضبط (1110/1120/2400)
+  // (باج مُكتشَف 2026-08-02 — راجع project_expenseamount_double_count_bug
+  // في الذاكرة: مصروف اتعدّل قبل كده كان بيتضاعف في totExpenseAmount لأن
+  // الجديد المُصحَّح بيترحّل بنفس ref_table='expenses' القديم، وكانت الصيغة
+  // بتجمع الطرف الدائن فقط بلا أي صافي أو استبعاد للقديم المُستبدَل)
+  const expenseRefIds = new Set();
+  (jeRows || []).forEach(r => {
+    if (r.ref_table === 'expenses' && r.ref_id != null) expenseRefIds.add(r.ref_id);
+  });
+  const EXPENSE_CREDIT_ACCS = new Set(['1110', '1120', '2400']);
+
   (jeRows || []).forEach(r => {
     const acc = r.account_code || '';
     const dr  = +r.dr_amount  || 0;
@@ -463,12 +477,19 @@ export function computeFinancials(jeRows) {
       totDealExp += dr;
       if (fn) { ensure(fn); byFile[fn].dealExp += dr; }
     }
-    // ✅ إجمالي مبلغ مصاريف الصفقة الحقيقي — الطرف الدائن لأي سطر مصروف،
-    // ثابت بغض النظر عن حساب الترسملة (1300/5100/6xxx). توضيحي فقط، لا يدخل
-    // في حساب الربح (مُحتسب بالفعل ضمن totCOGS عبر calcCOGS عند البيع)
-    if (ref === 'expenses') {
-      totExpenseAmount += cr;
-      if (fn) { ensure(fn); byFile[fn].expenseAmount += cr; }
+    // ✅ إجمالي مبلغ مصاريف الصفقة الحقيقي — صافٍ (cr-dr) على حسابات الدفع فقط
+    // (1110/1120/2400 — الطرف الدائن الوحيد الذي يبنيه je_expense دائمًا، فردي
+    // أو موزَّع)، لا أي سطر بـref_table='expenses' كما كان. يشمل قيود عكس
+    // المصاريف (ref_table='reversal' بنفس ref_id ضمن expenseRefIds) فتُطرح
+    // تلقائيًا أي نسخة قديمة استُبدلت — بدل جمع القديم والجديد معًا بالغلط.
+    // ثابت بغض النظر عن حساب الترسملة (1300/5100/6xxx للطرف المدين). توضيحي
+    // فقط، لا يدخل في حساب الربح (مُحتسب بالفعل ضمن totCOGS عبر calcCOGS عند البيع)
+    const isExpenseCreditLine = EXPENSE_CREDIT_ACCS.has(acc) && (
+      ref === 'expenses' || (ref === 'reversal' && r.ref_id != null && expenseRefIds.has(r.ref_id))
+    );
+    if (isExpenseCreditLine) {
+      totExpenseAmount += (cr - dr);
+      if (fn) { ensure(fn); byFile[fn].expenseAmount += (cr - dr); }
     }
     // 6xxx مدين + ref=operating_expenses = مصاريف تشغيلية
     if (acc.startsWith('6') && dr > 0 && ref === 'operating_expenses') {
@@ -503,7 +524,7 @@ export async function computePartnerSettlement(fileNo, sys) {
   const [partnersRaw, jeAll] = await Promise.all([
     apiGetAll('partners_master', { select:'partner,share_percent', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
     apiGetAll('journal_entries', {
-      select:'account_code,contact_name,dr_amount,cr_amount,ref_table,entry_date,description,entry_no,file_no',
+      select:'account_code,contact_name,dr_amount,cr_amount,ref_table,ref_id,entry_date,description,entry_no,file_no',
       system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:`eq.posted`,
       order:'entry_date.asc,id.asc',
     }),
