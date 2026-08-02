@@ -543,6 +543,28 @@ export async function computePartnerSettlement(fileNo, sys) {
   // 2400، وje_collection/je_payout (الشريك بياخد/يمسك فلوس) يدينون 2400 —
   // فلازم نتابع الطرفين حسب ref_table لا الدائن بس، وإلا التحصيلات الممسوكة
   // (دائمًا مدين) تفضل صفر وهميًا رغم وجودها فعليًا في القيود
+  // ✅ نفس مبدأ expenseRefIds في computeFinancials، ونفس السبب — أي ref_id ظهر
+  // ولو مرة بـref_table معيّن (payments/expenses/collections/partner_payouts)
+  // يخص حركة شريك حقيقية من هذا النوع؛ يُستخدم تحت لربط قيود عكسها
+  // (ref_table='reversal' بنفس ref_id) بنفس الـbucket بدل تجاهلها بالكامل.
+  // (باج مُكتشَف 2026-08-02 على TM-004 — راجع
+  // project_is_primary_line_double_reversal_tm004 في الذاكرة: مصروف/دفعة
+  // اتعدّلت أكتر من مرة كانت بتفضل النسخة القديمة محسوبة جنب الجديدة للأبد،
+  // لأن crByRef/drByRef كانت بتجمع خام حسب ref_table الحرفي بلا أي خصم
+  // لقيود العكس أصلاً — 'reversal' مش مفتاح موجود في crByRef/drByRef فكانت
+  // بتتجاهل تمامًا، حتى من المجموع الخام)
+  const paymentRefIds = new Set();
+  const expenseRefIds = new Set();
+  const collectionRefIds = new Set();
+  const payoutRefIds = new Set();
+  (jeAll||[]).forEach(r => {
+    if (r.ref_id == null) return;
+    if (r.ref_table === 'payments') paymentRefIds.add(r.ref_id);
+    else if (r.ref_table === 'expenses') expenseRefIds.add(r.ref_id);
+    else if (r.ref_table === 'collections') collectionRefIds.add(r.ref_id);
+    else if (r.ref_table === 'partner_payouts') payoutRefIds.add(r.ref_id);
+  });
+
   const je2400 = (jeAll||[]).filter(r => r.account_code === '2400');
   const byContact = {};
   je2400.forEach(r => {
@@ -556,8 +578,20 @@ export async function computePartnerSettlement(fileNo, sys) {
     const cr = +r.cr_amount||0, dr = +r.dr_amount||0;
     byContact[name].cr += cr;
     byContact[name].dr += dr;
-    if (byContact[name].crByRef[r.ref_table] !== undefined) byContact[name].crByRef[r.ref_table] += cr;
-    if (byContact[name].drByRef[r.ref_table] !== undefined) byContact[name].drByRef[r.ref_table] += dr;
+    const ref = r.ref_table, refId = r.ref_id;
+    // ✅ صافٍ (cr-dr)/(dr-cr) بدل جمع الدائن/المدين الخام — بلا أي فرق سلوك
+    // على القيود العادية (طرف واحد بس دايمًا صفر فيها)، لكن يسمح بخصم قيد
+    // العكس (لو وقع على نفس bucket عبر مطابقة ref_id تحت) بدل تجاهله
+    if (ref === 'payments') byContact[name].crByRef.payments += (cr - dr);
+    else if (ref === 'expenses') byContact[name].crByRef.expenses += (cr - dr);
+    else if (ref === 'collections') byContact[name].drByRef.collections += (dr - cr);
+    else if (ref === 'partner_payouts') byContact[name].drByRef.partner_payouts += (dr - cr);
+    else if (ref === 'reversal' && refId != null) {
+      if (paymentRefIds.has(refId)) byContact[name].crByRef.payments += (cr - dr);
+      else if (expenseRefIds.has(refId)) byContact[name].crByRef.expenses += (cr - dr);
+      else if (collectionRefIds.has(refId)) byContact[name].drByRef.collections += (dr - cr);
+      else if (payoutRefIds.has(refId)) byContact[name].drByRef.partner_payouts += (dr - cr);
+    }
     byContact[name].movements.push({ date:r.entry_date, desc:r.description, ref:r.entry_no, dr, cr, refTable:r.ref_table });
   });
 
