@@ -1167,6 +1167,104 @@ async function et5_settlementAfterMixedSplit(app) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// EXPENSES — إصلاح ازدواج expenseAmount (مصروف مُعدَّل يُحسب مرتين)
+// ════════════════════════════════════════════════════════════════════════
+// اكتُشف حيًّا 2026-08-02 على TM-004 الحقيقي (21 ref_id مكرّر، تضخيم 5,949 —
+// fullCost=19,297 بدل 13,348 الصحيح). السبب: computeFinancials's expenseAmount
+// كانت تجمع الطرف الدائن لأي سطر ref_table='expenses' بلا أي صافٍ أو استبعاد
+// للنسخة القديمة المُستبدَلة عند التعديل (بعكس totPurchase/totSales/totCOGS
+// اللي بتستخدم (dr-cr) صافٍ أصلاً). الإصلاح: صافٍ (cr-dr) على حسابات الدفع
+// الحصرية للمصاريف (1110/1120/2400) فقط، شامل قيود عكس المصاريف (ref_table=
+// 'reversal' بنفس ref_id) — راجع core.js's computeFinancials للتفاصيل الكاملة
+// وproject_expenseamount_double_count_bug في الذاكرة.
+//
+// كل سيناريو على file_no معزول تمامًا (نفس درس ES12) لقياس نظيف عبر
+// computePartnerSettlement. يغطي: تعديل مرة، تعديل مرتين متتاليتين (يحاكي
+// سلسلة TM-004 الحقيقية 15→7.5→15 بالضبط)، مصروف موزَّع مُعدَّل، إلغاء
+// (voidTransaction — نقطة راجعها المستخدم صراحة، غير مغطاة في الفحص اليدوي
+// الأولي)، ومصروف عادي غير مُعدَّل (انحدار — لازم يفضل صحيح زي الأول).
+
+async function eaFixtureFile(app, prefix) {
+  const fileNo = zid(prefix);
+  registerExtraFileNo(fileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 1, post_status: 'draft', notes: 'ZZTEST regression expenseAmount fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+  const pRow = await apiPost('partners_master', { system_type: SYS, file_no: fileNo, partner: SPLIT_PARTNERS[0], share_percent: 100 });
+  registerCleanup('partners_master', pRow[0].id);
+  return fileNo;
+}
+
+// EA1 — مصروف فردي (غير موزَّع) مُعدَّل مرة واحدة (مبلغ) — expenseAmount لازم
+// يُحسب بالمبلغ الجديد بس، لا القديم+الجديد معًا
+async function ea1_expenseAmountEditedOnce(app) {
+  const fileNo = await eaFixtureFile(app, 'EA1');
+  const created = await postSplitExpense(app, { amount: 100, desc: 'ZZTEST EA1 edited once', paidBy: SPLIT_PARTNERS[0], fileNo });
+
+  const newAmount = 150;
+  await simulateEditExpense(app, created, { amount: newAmount, date: created.exp_date, paidBy: SPLIT_PARTNERS[0], paidBySplit: null });
+
+  const settlement = await app.core.computePartnerSettlement(fileNo, SYS);
+  assert(Math.abs(settlement.totalExpenseAmount - newAmount) < 0.01, `المتوقع totalExpenseAmount=${newAmount} (المبلغ الجديد بس)، طلع ${settlement.totalExpenseAmount}`);
+}
+
+// EA2 — مصروف مُعدَّل مرتين متتاليتين (100→70→100) — يحاكي سلسلة TM-004
+// الحقيقية بالضبط (15→7.5→15) — لازم يُحسب بآخر مبلغ فقط رغم 3 قيود متتالية
+async function ea2_expenseAmountEditedTwice(app) {
+  const fileNo = await eaFixtureFile(app, 'EA2');
+  const created = await postSplitExpense(app, { amount: 100, desc: 'ZZTEST EA2 edited twice', paidBy: SPLIT_PARTNERS[0], fileNo });
+
+  await simulateEditExpense(app, created, { amount: 70, date: created.exp_date, paidBy: SPLIT_PARTNERS[0], paidBySplit: null });
+  const afterFirst = (await apiGetAll('expenses', { select: '*', id: `eq.${created.id}` }))[0];
+  await simulateEditExpense(app, afterFirst, { amount: 100, date: created.exp_date, paidBy: SPLIT_PARTNERS[0], paidBySplit: null });
+
+  const settlement = await app.core.computePartnerSettlement(fileNo, SYS);
+  assert(Math.abs(settlement.totalExpenseAmount - 100) < 0.01, `المتوقع totalExpenseAmount=100 (آخر قيمة بعد تعديلين متتاليين)، طلع ${settlement.totalExpenseAmount}`);
+}
+
+// EA3 — مصروف موزَّع مُعدَّل (مبلغ) — يتأكد إن الصافي يعمل مع N سطر دائن
+async function ea3_expenseAmountSplitEdited(app) {
+  const fileNo = await eaFixtureFile(app, 'EA3');
+  const members = SPLIT_PARTNERS.slice(0, 2);
+  const oldSplit = app.lifecycle.computeEqualSplit(100, members);
+  const created = await postSplitExpense(app, { amount: 100, desc: 'ZZTEST EA3 split edited', paidBySplit: oldSplit, fileNo });
+
+  const newAmount = 180;
+  const newSplit = app.lifecycle.computeEqualSplit(newAmount, members);
+  await simulateEditExpense(app, created, { amount: newAmount, date: created.exp_date, paidBy: null, paidBySplit: newSplit });
+
+  const settlement = await app.core.computePartnerSettlement(fileNo, SYS);
+  assert(Math.abs(settlement.totalExpenseAmount - newAmount) < 0.01, `المتوقع totalExpenseAmount=${newAmount} لمصروف موزَّع مُعدَّل، طلع ${settlement.totalExpenseAmount}`);
+}
+
+// EA4 — إلغاء (voidTransaction) مصروف — expenseAmount لازم يرجع صفر بالضبط
+// (نقطة أضافها المستخدم صراحة — غير مغطاة في التحقق اليدوي الأولي)
+async function ea4_expenseAmountVoided(app) {
+  const fileNo = await eaFixtureFile(app, 'EA4');
+  const created = await postSplitExpense(app, { amount: 100, desc: 'ZZTEST EA4 voided', paidBy: SPLIT_PARTNERS[0], fileNo });
+
+  const before = await app.core.computePartnerSettlement(fileNo, SYS);
+  assert(Math.abs(before.totalExpenseAmount - 100) < 0.01, `precondition: قبل الإلغاء لازم = 100، طلع ${before.totalExpenseAmount}`);
+
+  const row = (await apiGetAll('expenses', { select: '*', id: `eq.${created.id}` }))[0];
+  await app.engine.voidTransaction('expense', row, true);
+
+  const after = await app.core.computePartnerSettlement(fileNo, SYS);
+  assert(Math.abs(after.totalExpenseAmount - 0) < 0.01, `المتوقع totalExpenseAmount=0 بعد الإلغاء، طلع ${after.totalExpenseAmount}`);
+}
+
+// EA5 — انحدار: مصروف عادي غير مُعدَّل خالص — لازم يفضل صحيح زي الأول
+async function ea5_expenseAmountUnaffectedRegression(app) {
+  const fileNo = await eaFixtureFile(app, 'EA5');
+  await postSplitExpense(app, { amount: 250, desc: 'ZZTEST EA5 unedited baseline', paidBy: SPLIT_PARTNERS[0], fileNo });
+
+  const settlement = await app.core.computePartnerSettlement(fileNo, SYS);
+  assert(Math.abs(settlement.totalExpenseAmount - 250) < 0.01, `المتوقع totalExpenseAmount=250 (بلا أي تعديل)، طلع ${settlement.totalExpenseAmount}`);
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // PRIMARY-LINE HANDOFF FIX — عكس (reversal) مزدوج عند "لمسة تانية"
 // ════════════════════════════════════════════════════════════════════════
 // اكتُشف حيًّا 2026-07-30 (TM-004، 23 سجل متأثر + BOX-141): تعديل ثانٍ متتالٍ
@@ -1378,6 +1476,13 @@ async function p3po_editThenEdit(app) {
     await scenario('expenses / ET3 تعديل: الصندوق ينضم لمجموعة موزَّعة قائمة', () => et3_editAddTreasuryToSplit(app));
     await scenario('expenses / ET4 إلغاء موزَّع مختلط (صندوق+شريك)', () => et4_voidMixedSplit(app));
     await scenario('expenses / ET5 computePartnerSettlement بعد موزَّع مختلط', () => et5_settlementAfterMixedSplit(app));
+
+    // ✅ إصلاح ازدواج expenseAmount (طلب لاحق بعد اكتشاف TM-004 حي 2026-08-02)
+    await scenario('expenses / EA1 expenseAmount بعد تعديل مرة (لا يُحسب القديم+الجديد)', () => ea1_expenseAmountEditedOnce(app));
+    await scenario('expenses / EA2 expenseAmount بعد تعديلين متتاليين (يحاكي TM-004: 15→7.5→15)', () => ea2_expenseAmountEditedTwice(app));
+    await scenario('expenses / EA3 expenseAmount لمصروف موزَّع مُعدَّل', () => ea3_expenseAmountSplitEdited(app));
+    await scenario('expenses / EA4 expenseAmount يرجع صفر بعد الإلغاء (void)', () => ea4_expenseAmountVoided(app));
+    await scenario('expenses / EA5 انحدار: expenseAmount لمصروف غير مُعدَّل يفضل صحيح', () => ea5_expenseAmountUnaffectedRegression(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
