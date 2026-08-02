@@ -1043,9 +1043,16 @@ export async function fileExpenseTarget(sys, fileNo, expType) {
 // paidBySplit (اختياري): [{partner,amount}] — توزيع بالتساوي على شركاء مختارين
 // يدويًا (js/lifecycle.js computeEqualSplit)، يبني N سطر دائن 2400 بدل السطر
 // الواحد. لو غير موجود/فاضي، السلوك مطابق تمامًا لما قبل إضافة هذا الباراميتر.
-export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,paidBySplit=null,isPrimary=true}) {
+// targetOverride (اختياري): {acc,name} يتجاوز fileExpenseTarget بالكامل — للمستدعي
+// اللي بيعيد ترحيل مصروف *موجود بالفعل* (submitEditExpense's routingChanged) لا
+// ينشئ واحدًا جديدًا؛ fileExpenseTarget بتشتق 1300/5100 من حالة البيع *الحالية*
+// وقت الاستدعاء، فلو اتغيّرت حالة البيع (اتباعت السيارة) بين الترحيل الأصلي وأي
+// تعديل لاحق على "مين دفع"، إعادة الاشتقاق كانت بتنقل المبلغ لحساب مختلف عن
+// الأصلي — ازدواج حقيقي في COGS (المبلغ مُحتسَب أصلاً جوّه قيد البيع المجمَّد،
+// ويُحسب تاني كقيد مباشر جديد). اكتُشف حيًّا 2026-08-02 على TM-004 (وكيل الشحن).
+export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,paidBySplit=null,isPrimary=true,targetOverride=null}) {
   if(!amount||amount<=0) throw new Error(`قيمة مصروف غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
-  const target = await fileExpenseTarget(sys, fileNo, expType);
+  const target = targetOverride || await fileExpenseTarget(sys, fileNo, expType);
   const hasSplit = Array.isArray(paidBySplit) && paidBySplit.length > 0;
   // الدائن: توزيع بالتساوي على شركاء مختارين (N سطر) لو hasSplit، وإلا الخزينة
   // (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو دفعها من جيبه بمفرده.

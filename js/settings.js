@@ -1466,17 +1466,28 @@ export async function submitEditExpense() {
       });
 
       if (routingChanged) {
-        // ✅ id سطور القيد القديم (كل ما هو posted لهذا ref_id) — قبل العكس،
-        // عشان نسلّم is_primary_line بعدين (uq_je_ref_primary_posted، Tier 0 بند 4)
+        // ✅ كل أسطر القيد القديم (كل ما هو posted لهذا ref_id)، مرتّبة بحيث
+        // أحدث سطر (id الأكبر) يظهر أولاً — نفس أسلوب voidTransaction/
+        // fetchActiveExpenseEntryLines المُختبَر أصلاً: لو هذا المصروف اتعدّل
+        // أكثر من مرة تاريخيًا، الاستعلام هيرجّع أسطر من أكتر من entry_no قديم
+        // مُستبدَل كمان، لا الفعّال بس — order:'id.desc' بيضمن .find() تحت
+        // يمسك أحدث سطر مدين فعلي، لا أي سطر قديم بترتيب غير مضمون من الـAPI
         const oldJELines = await apiGetAll('journal_entries', {
-          select:'id', system_type:`eq.${state.system}`, ref_table:'eq.expenses', ref_id:`eq.${id}`, post_status:'eq.posted',
+          select:'id,account_code,account_name,dr_amount', system_type:`eq.${state.system}`,
+          ref_table:'eq.expenses', ref_id:`eq.${id}`, post_status:'eq.posted', order:'id.desc',
         });
+        // ✅ حساب الترسملة الفعلي للقيد الحالي النشط (1300 قبل البيع أو 5100
+        // بعده) — يُمرَّر لـje_expense تحت كـtargetOverride بدل تركها تعيد
+        // اشتقاقه من حالة البيع *الحالية*، واللي ممكن تكون اتغيّرت من وقت
+        // الترحيل الأصلي (راجع تعليق targetOverride في engine.js)
+        const oldDebitLine = (oldJELines||[]).find(l => (+l.dr_amount||0) > 0);
         // 2a. عكس القيد القديم بناءً على بيانات السجل القديم (قبل التعديل)
         await voidTransaction('expense', old, true);
         // 2b. إنشاء قيد جديد بالتوجيه الجديد — isPrimary:false لحد ما نتأكد
         // إن العكس فوق نجح فعلاً، بعدين نسلّم الـslot صراحة تحت
         const newJE = await je_expense({ sys:state.system, date, amount, fileNo:old.file_no, refId:id,
-          desc, expType:type||old.exp_type||'أخرى', method, paidBy: paidBy||null, paidBySplit, isPrimary:false });
+          desc, expType:type||old.exp_type||'أخرى', method, paidBy: paidBy||null, paidBySplit, isPrimary:false,
+          targetOverride: oldDebitLine ? { acc: oldDebitLine.account_code, name: oldDebitLine.account_name } : null });
         if (newJE?.ids?.length) {
           await _handoffPrimaryLine({ sys: state.system, oldIds: (oldJELines||[]).map(l=>l.id), newIds: newJE.ids });
         }
