@@ -227,7 +227,7 @@ export async function submitOpex() {
       return;
     }
     await logAudit('INSERT','operating_expenses', null, null, payload);
-    markSaving('opexModal'); closeModal('opexModal');
+    markSaving('opexModal'); await closeModal('opexModal');
     invalidateCache();
     toast('✅ تم تسجيل المصروف التشغيلي وقيده','ok');
     await loadOpex();
@@ -275,7 +275,7 @@ export async function submitEditOpex() {
 
     // ✅ سجّل تعديل المصروف التشغيلي (كان غير مسجَّل — فجوة تتبّع)
     await logAudit('EDIT', 'operating_expenses', old?.file_no || null, old || null, { exp_type:finalType, description:desc, amount, exp_date:date, pay_method:method }, `تعديل مصروف تشغيلي ${old?.ref_no||id}`);
-    markSaving('opexModal'); closeModal('opexModal');
+    markSaving('opexModal'); await closeModal('opexModal');
     toast('✅ تم تعديل المصروف التشغيلي وقيده','ok');
     await loadOpex();
   } catch(e) { showFieldErr('opexError','خطأ: '+e.message); }
@@ -1287,21 +1287,21 @@ export async function openFullFileFromDetail() {
   if (!approvalState.currentItem) return;
   const { item } = approvalState.currentItem;
   if (!item._file) return;
-  closeModal('approvalDetailModal');
+  await closeModal('approvalDetailModal');
   await openViewer(item._file);
 }
 
 export async function approveFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id } = approvalState.currentItem;
-  closeModal('approvalDetailModal');
+  await closeModal('approvalDetailModal');
   await approveItem(type, id);
 }
 
 export async function cancelFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id, item } = approvalState.currentItem;
-  closeModal('approvalDetailModal');
+  await closeModal('approvalDetailModal');
   showConfirm('إلغاء العملية', 'سيتم وضع العملية كـ "ملغية" مع إمكانية الإرجاع لاحقاً.', async () => {
     try {
       const cfg = APPROVAL_CONFIG[type];
@@ -1316,7 +1316,7 @@ export async function cancelFromDetail() {
 export async function rejectFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id } = approvalState.currentItem;
-  closeModal('approvalDetailModal');
+  await closeModal('approvalDetailModal');
   await rejectItem(type, id);
 }
 
@@ -1582,7 +1582,7 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
           await updateApprovalBadge();
           submitBtn.onclick  = () => submitSale();
           submitBtn._editMode= false;
-          closeModal('saleModal');
+          markSaving('saleModal'); await closeModal('saleModal');
           toast(wasPosted ? '⚠️ تم تعديل الفاتورة والقيد — في انتظار الموافقة' : '✏️ تم حفظ تعديل الفاتورة (لا تزال بانتظار الاعتماد الأول)', 'warn');
           invalidateCache();
           if (typeof loadSalesTab === 'function') await loadSalesTab(fileNo, sys);
@@ -1603,7 +1603,7 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
 export async function editFromDetail() {
   if (!approvalState.currentItem) return;
   const { type, id, item } = approvalState.currentItem;
-  closeModal('approvalDetailModal');
+  await closeModal('approvalDetailModal');
   // فتح الأمر مع إمكانية التعديل — نفس المودال سواء كان طلب إدخال أول مرة (purchase)
   // أو طلب تعديل على سجل قائم بالفعل (purchase_edit) — الفرق بينهم بس post_status
   const baseType = type.replace(/_edit$/, '');
@@ -2616,6 +2616,10 @@ export function openGeneralWithdrawModal() {
 }
 
 export async function submitGeneralWithdraw() {
+  // ✅ مسح رسالة خطأ سابقة أولاً — راجع نفس الإصلاح في submitPayment (modals.js)
+  const errEl = el('gwError');
+  if (errEl) errEl.style.display = 'none';
+
   const partner = partnerAccountState.partner;
   const amount  = parseFloat(el('gw-amount').value);
   const date    = el('gw-date').value;
@@ -2627,7 +2631,7 @@ export async function submitGeneralWithdraw() {
 
   const balance = partnerAccountState.balance || 0;
   if (amount > balance + 0.001) {
-    const go = confirm(`⚠️ المبلغ (${fmt(amount)}) أكبر من الرصيد المتاح (${fmt(balance)}).\nهل تريد المتابعة؟`);
+    const go = await confirmAsync('⚠️ تجاوز الرصيد المتاح', `المبلغ (${fmt(amount)}) أكبر من الرصيد المتاح (${fmt(balance)}).\nهل تريد المتابعة؟`, true);
     if (!go) return;
   }
 
@@ -2640,7 +2644,7 @@ export async function submitGeneralWithdraw() {
       document:doc||null, notes:notes||null
     });
     await logAudit('INSERT','partner_accounts', null, null, {partner, amount, date});
-    markSaving('generalWithdrawModal'); closeModal('generalWithdrawModal');
+    markSaving('generalWithdrawModal'); await closeModal('generalWithdrawModal');
     toast(`✅ تم تسجيل السحب العام — ${fmt(amount)}`,'ok');
     await loadPartnerAccountLedger();
   } catch(e) { showFieldErr('gwError','خطأ: '+e.message); }
@@ -2684,7 +2688,7 @@ export async function submitDealNote() {
       new_value:   date || today(), // نحفظ التاريخ المحدد هنا
       user_email:  state.user?.email || 'unknown',
     });
-    closeModal('dealNoteModal');
+    markSaving('dealNoteModal'); await closeModal('dealNoteModal');
     toast('✅ تم حفظ الملاحظة', 'ok');
     await loadDealNotes();
   } catch(e) {
@@ -3478,7 +3482,7 @@ export async function saveReviewSignoff() {
   if (!allChecked) { toast('يرجى إكمال كل بنود القائمة أولاً','err'); return; }
   const failCount = reviewState.checkResults.filter(c=>c.status==='fail').length;
   if (failCount>0) {
-    const go = confirm(`⚠️ يوجد ${failCount} فحص فاشل.\nهل تريد المتابعة بالإغلاق رغم ذلك؟\n\nيُنصح بتصحيح المشاكل أولاً.`);
+    const go = await confirmAsync('⚠️ فحوصات فاشلة', `يوجد ${failCount} فحص فاشل.\nهل تريد المتابعة بالإغلاق رغم ذلك؟\n\nيُنصح بتصحيح المشاكل أولاً.`, true);
     if (!go) return;
   }
   const btn = el('review-save-btn');
@@ -4236,7 +4240,7 @@ export async function createAllMissingJE() {
   }
   invalidateCache();
   toast(`✅ تم إنشاء ${ok} قيد${fail?` · ${fail} فشل`:''}`, fail?'warn':'ok');
-  closeModal('missingJEModal');
+  await closeModal('missingJEModal');
   await checkMissingEntries(); // إعادة فحص لتأكيد عدم بقاء يتامى
 }
 
@@ -4479,7 +4483,7 @@ export async function submitJE() {
     }
 
     await logAudit(entryNo?'UPDATE':'INSERT','journal_entries', fileNo, oldLinesSnapshot, { entry_no:no, desc, totalDr, totalCr });
-    closeModal('jeModal');
+    markSaving('jeModal'); await closeModal('jeModal');
     toast(`✅ تم ${entryNo?'تعديل':'حفظ'} القيد ${no}`, 'ok');
     await loadJEManager();
   } catch(e) {
@@ -4897,6 +4901,14 @@ export function renderWhAll() {
   renderWhTable(list, soldVins);
 }
 
+// ✅ closeModal بقت async (بتنتظر تأكيد المستخدم لو المودال "متسخ" — manageWarehousesModal
+// فيها input#new-wh-name حقيقي) — سلسلة onclick مباشرة زي closeModal(x);loadWarehouses()
+// في نص HTML مش بتنتظرها، فكانت هتخلي loadWarehouses يتنفّذ قبل ما المستخدم يرد
+export async function closeManageWarehousesModal() {
+  await closeModal('manageWarehousesModal');
+  await loadWarehouses();
+}
+
 export async function loadWarehouses() {
   const sys = state.system;
   try {
@@ -5197,7 +5209,7 @@ export async function submitStockTransfer() {
     }
 
     toast(`✅ تم تحويل ${_stSelectedVins.size} سيارة إلى ${location}`,'ok');
-    closeModal('stockTransferModal');
+    markSaving('stockTransferModal'); await closeModal('stockTransferModal');
     await loadWarehouses();
     // تحديث تبويب السيارات لو مفتوح
     if (state.currentFileNo === fileNo && state.currentTab === 1) loadVehiclesTab(fileNo, state.system);
@@ -5207,10 +5219,10 @@ export async function submitStockTransfer() {
   }
 }
 
-export function viewTransferNote(id) {
+export async function viewTransferNote(id) {
   const t = (whState.allTransfers||[]).find(x => String(x.id) === String(id));
   if (!t || !t.notes) return;
-  alert(`📝 ملاحظة تحويل ${t.vin||''} إلى مخزن "${t.location_name||''}"\n\n${t.notes}`);
+  await confirmAsync(`📝 ملاحظة تحويل ${t.vin||''} إلى مخزن "${t.location_name||''}"`, t.notes, false);
 }
 
 export async function deleteTransfer(id, vin) {
@@ -5910,7 +5922,7 @@ Object.assign(window, {
   onJEAccInput, onJEAccChange, updateJETotals, submitJE, deleteJEEntry,
   openMigrationModal, _migLog, _migProgress, runMigration, showWarehouses,
   filterWhByLocation, filterWhByStatus, filterWhSearch, filterWhTransfers, renderWhAll,
-  loadWarehouses, renderWhKpis, renderWhCards, renderWhTable, openManageWarehousesModal,
+  loadWarehouses, closeManageWarehousesModal, renderWhKpis, renderWhCards, renderWhTable, openManageWarehousesModal,
   refreshWhList, refreshWhSelect, addWarehouse, deleteWarehouse, openNewTransferModal,
   loadVehiclesForTransfer, toggleVinSelect, selectAllVehicles, updateSelectedCount, submitStockTransfer,
   deleteTransfer, viewTransferNote, exportWhCard, loadVehiclesTab, showContactStatement, loadContactStatement,

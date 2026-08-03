@@ -1796,9 +1796,9 @@
   <div class="modal" style="max-width:420px;text-align:center;padding:32px 28px">
     <div style="font-size:48px;margin-bottom:12px">⚠️</div>
     <div style="font-size:17px;font-weight:900;color:var(--text);margin-bottom:8px" id="confirmDeleteTitle">تأكيد الحذف</div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:24px;line-height:1.6" id="confirmDeleteMsg"></div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:24px;line-height:1.6;white-space:pre-line" id="confirmDeleteMsg"></div>
     <div style="display:flex;gap:10px;justify-content:center">
-      <button class="btn btn-secondary" onclick="closeModal('confirmDeleteModal')" style="min-width:100px">إلغاء</button>
+      <button class="btn btn-secondary" id="confirmDeleteCancelBtn" onclick="closeModal('confirmDeleteModal')" style="min-width:100px">إلغاء</button>
       <button class="btn btn-danger" id="confirmDeleteOkBtn" style="min-width:120px">🗑 حذف نهائي</button>
     </div>
   </div>
@@ -3528,7 +3528,7 @@
       <div id="whManageError" class="alert alert-err" style="display:none;margin-top:8px"></div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-primary" onclick="closeModal('manageWarehousesModal');loadWarehouses()">✅ حفظ وإغلاق</button>
+      <button class="btn btn-primary" onclick="closeManageWarehousesModal()">✅ حفظ وإغلاق</button>
     </div>
   </div>
 </div>

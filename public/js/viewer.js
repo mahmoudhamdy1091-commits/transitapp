@@ -39,7 +39,7 @@ export async function submitAddVehicle() {
     const vCount = (await apiGetAll('vehicles', { select:'id', system_type:`eq.${state.system}`, file_no:`eq.${fn}` })).length;
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` }, { vehicle_count: vCount });
     await logAudit('INSERT','vehicles',fn,null,data);
-    markSaving('addVehicleModal'); closeModal('addVehicleModal');
+    markSaving('addVehicleModal'); await closeModal('addVehicleModal');
     invalidateCache();
     toast('✅ تم إضافة السيارة','ok');
     loadVehiclesTab(fn, state.system);
@@ -368,7 +368,7 @@ export async function submitQuickSale() {
       console.error('quick sale collection create error:', colErr.message);
       toast(`⚠️ تم حفظ البيع لكن فشل إنشاء سطر التحصيل المستحق: ${colErr.message}`,'warn');
     }
-    markSaving('quickSaleModal'); closeModal('quickSaleModal');
+    markSaving('quickSaleModal'); await closeModal('quickSaleModal');
     toast('✅ تم تسجيل البيع بنجاح','ok');
     invalidateCache();
     loadJournal();
@@ -427,7 +427,7 @@ export async function submitQuickCollection() {
         toast(`⚠️ تم حفظ التحصيل بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
       }
     }
-    markSaving('quickCollectionModal'); closeModal('quickCollectionModal');
+    markSaving('quickCollectionModal'); await closeModal('quickCollectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     invalidateCache();
     loadJournal();
@@ -467,7 +467,7 @@ export async function submitQuickExpense() {
         toast(`⚠️ تم حفظ المصروف بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
       }
     }
-    markSaving('quickExpenseModal'); closeModal('quickExpenseModal');
+    markSaving('quickExpenseModal'); await closeModal('quickExpenseModal');
     toast('✅ تم تسجيل المصروف بنجاح','ok');
     invalidateCache();
     loadJournal();
@@ -518,6 +518,10 @@ export async function loadPaymentPOCard(fileNo) {
 }
 
 export async function submitQuickPayment() {
+  // ✅ مسح رسالة خطأ سابقة أولاً — راجع نفس الإصلاح في submitPayment (modals.js)
+  const errEl = el('qsPayError');
+  if (errEl) errEl.style.display = 'none';
+
   const fileNo = el('qp-fileNo').value;
   const payer  = (el('qp-payer').value || '').trim();
   const amount = parseFloat(el('qp-amount').value);
@@ -534,7 +538,7 @@ export async function submitQuickPayment() {
   const remainingText = el('qp-card-remaining')?.textContent?.replace(/,/g,'');
   const remaining = parseFloat(remainingText) || 0;
   if (remaining > 0 && amount > remaining + 0.001) {
-    const proceed = confirm(`⚠️ قيمة الدفعة (${fmt(amount)}) أكبر من الباقي للمورد (${fmt(remaining)}).\n\nهل تريد المتابعة؟`);
+    const proceed = await confirmAsync('⚠️ تجاوز الباقي المستحق', `قيمة الدفعة (${fmt(amount)}) أكبر من الباقي للمورد (${fmt(remaining)}).\n\nهل تريد المتابعة؟`, true);
     if (!proceed) return;
   }
 
@@ -556,7 +560,7 @@ export async function submitQuickPayment() {
         toast(`⚠️ تم حفظ الدفعة بدون ترحيل قيدها — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
       }
     }
-    markSaving('quickPaymentModal'); closeModal('quickPaymentModal');
+    markSaving('quickPaymentModal'); await closeModal('quickPaymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
     loadJournal();
     if (state.currentTab === 2 && state.currentFileNo === fileNo) loadPaymentsTab(fileNo, state.system);
@@ -608,7 +612,7 @@ export async function submitQuickPayout() {
         toast(`⚠️ تم حفظ ${type} بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
       }
     }
-    markSaving('quickPayoutModal'); closeModal('quickPayoutModal');
+    markSaving('quickPayoutModal'); await closeModal('quickPayoutModal');
     invalidateCache();
     toast('✅ تم تسجيل الصرف بنجاح','ok');
     loadJournal();

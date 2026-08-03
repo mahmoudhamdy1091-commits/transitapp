@@ -298,12 +298,34 @@ export function headers(extra = {}) {
 // مرة واحدة بهيدرز محدَّثة (تُبنى من جديد داخلياً — لا تُمرَّر جاهزة من
 // الخارج — كي لا يُعاد إرسال التوكن القديم المنتهي في محاولة إعادة الإرسال).
 // ════════════════════════════════════════
+// ✅ تصنيف مركزي لأخطاء الشبكة — "Failed to fetch"/"NetworkError" بيحصل لما
+// المتصفح يفشل حتى في إتمام الطلب (انقطاع، مهلة، إلخ) — ده مختلف جوهريًا عن
+// رد الخادم بخطأ (يعني الخادم استلم ونفّذ، ورد برفض واضح). في حالة انقطاع
+// الشبكة، مش قادرين نعرف هل الطلب وصل للخادم فعلاً واتنفّذ ولا لأ — أي رسالة
+// "فشلت العملية" هنا مضلِّلة، ممكن تكون نجحت فعلاً. راجع project_ui_restructure
+// في الذاكرة — نفس الأعراض المُبلَّغة (Failed to fetch بعد نجاح فعلي)
+function _isNetworkLevelError(e) {
+  return e instanceof TypeError && /fetch|network/i.test(e.message || '');
+}
+const NETWORK_UNCERTAIN_MSG = '⚠️ انقطع الاتصال بالخادم أثناء العملية — قد تكون نجحت فعلاً رغم ظهور هذا الخطأ. تأكد من القائمة قبل إعادة المحاولة، حتى لا يتكرر البند';
+
 export async function apiFetch(url, { headers: extraHeaders = {}, ...rest } = {}) {
-  let res = await fetch(url, { ...rest, headers: headers(extraHeaders) });
+  let res;
+  try {
+    res = await fetch(url, { ...rest, headers: headers(extraHeaders) });
+  } catch (e) {
+    if (_isNetworkLevelError(e)) throw new Error(NETWORK_UNCERTAIN_MSG);
+    throw e;
+  }
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (!ok) throw new Error('انتهت الجلسة، يرجى تسجيل الدخول مجدداً');
-    res = await fetch(url, { ...rest, headers: headers(extraHeaders) });
+    try {
+      res = await fetch(url, { ...rest, headers: headers(extraHeaders) });
+    } catch (e) {
+      if (_isNetworkLevelError(e)) throw new Error(NETWORK_UNCERTAIN_MSG);
+      throw e;
+    }
   }
   return res;
 }
@@ -642,6 +664,23 @@ export async function computePartnerSettlement(fileNo, sys) {
   return { fullCost, totalPurchase, totalExpenseAmount, totalSales: fin.sales, profit, hasJEData, partners };
 }
 
+// ✅ تصنيف مركزي لأخطاء "قيد فريد" (unique constraint) — مُعمَّم لأي اسم قيد،
+// مش بس uniq_expense_active/uniq_payment_active الأصليين. قيد فريد يعني الصف
+// اللي إنت بتحاول تكتبه (أو نسخة مطابقة منه) موجود بالفعل — غالبًا لأن محاولة
+// سابقة نجحت فعلاً (تكرار ضغط، أو إعادة محاولة بعد انقطاع شبكي كان الطلب
+// الأول فيها وصل ونجح). نفس مبدأ الاستثناء الأصلي، بس بلا الاقتصار على اسمين
+// بعينهم — أي قيد فريد تاني (زي uq_je_ref_primary_posted) كان قبل كده بيظهر
+// كنص الخطأ الخام من postgres بلا أي تفسير. راجع project_ui_restructure في الذاكرة
+function _classifyUniqueViolation(msg) {
+  const m = String(msg || '');
+  const match = m.match(/duplicate key value violates unique constraint "([^"]+)"/);
+  if (!match) return null;
+  if (/^uniq_(expense|payment)_active$/.test(match[1])) {
+    return '⚠️ يوجد بالفعل بند بنفس المبلغ والوصف/الدافع والتاريخ لهذا الملف — تأكد إن هذا ليس تكراراً قبل المتابعة';
+  }
+  return `⚠️ يبدو إن هذه العملية اتسجّلت بالفعل من قبل (قيد فريد: ${match[1]}) — تأكد من القائمة قبل إعادة المحاولة، حتى لا يتكرر البند`;
+}
+
 export async function apiPost(table, data) {
   const body = JSON.stringify(data);
   const res = await apiFetch(`${SB_URL}/rest/v1/${table}`, {
@@ -652,9 +691,8 @@ export async function apiPost(table, data) {
   const resBody = await res.json();
   if (!res.ok) {
     const msg = resBody.message || resBody.error || res.statusText || '';
-    if (/duplicate key value violates unique constraint "uniq_(expense|payment)_active"/.test(msg)) {
-      throw new Error('⚠️ يوجد بالفعل بند بنفس المبلغ والوصف/الدافع والتاريخ لهذا الملف — تأكد إن هذا ليس تكراراً قبل المتابعة');
-    }
+    const classified = _classifyUniqueViolation(msg);
+    if (classified) throw new Error(classified);
     throw new Error(msg);
   }
   return resBody;
@@ -670,7 +708,12 @@ export async function apiPatch(table, matchParams, data) {
     body
   });
   const resBody = await res.json();
-  if (!res.ok) throw new Error(resBody.message || resBody.error || res.statusText);
+  if (!res.ok) {
+    const msg = resBody.message || resBody.error || res.statusText || '';
+    const classified = _classifyUniqueViolation(msg);
+    if (classified) throw new Error(classified);
+    throw new Error(msg);
+  }
   return resBody;
 }
 

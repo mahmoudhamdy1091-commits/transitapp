@@ -1113,7 +1113,7 @@ export async function requestPostedEdit({ table, old, editFields, summary, audit
   });
   await logAudit('EDIT_REQUEST', table, old.file_no, old, editFields, auditLabel);
   await updateApprovalBadge();
-  markSaving(modalId); closeModal(modalId);
+  markSaving(modalId); await closeModal(modalId);
   toast('📋 تم إرسال التعديل للمراجعة — في انتظار الموافقة', 'ok');
 }
 
@@ -1174,12 +1174,12 @@ export async function submitEditPayment() {
 
       await logAudit('EDIT', 'payments', old.file_no, old, {payer,amount,method,date,doc}, `تعديل دفعة ${old.ref_no||id}`);
       await updateApprovalBadge();
-      markSaving('editPaymentModal'); closeModal('editPaymentModal');
+      markSaving('editPaymentModal'); await closeModal('editPaymentModal');
       toast('⚠️ تم تعديل الدفعة والقيد — في انتظار الموافقة', 'warn');
     } else {
       // ── السجل draft: تعديل مباشر ──
       await apiPatch('payments', { id:`eq.${id}` }, { payer, amount, pay_method:method, pay_date:date, document:doc||null, notes:notes||null });
-      markSaving('editPaymentModal'); closeModal('editPaymentModal');
+      markSaving('editPaymentModal'); await closeModal('editPaymentModal');
       toast('✅ تم تعديل الدفعة', 'ok');
     }
     invalidateCache();
@@ -1238,11 +1238,15 @@ export async function deletePaymentEntry(paymentId, fileNo) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
-export function deletePaymentFromModal() {
+export async function deletePaymentFromModal() {
   const id     = el('ep-id').value;
   const fileNo = state.currentFileNo;
   if (!id) return;
-  closeModal('editPaymentModal');
+  // ✅ await صراحةً — editPaymentModal فيها حقول قابلة للتعديل، لو "متسخة"
+  // closeModal هتنتظر تأكيد المستخدم أولاً قبل ما نبدأ تدفّق حذف منفصل تمامًا
+  // (deletePaymentEntry بتفتح تأكيد خاص بيها على نفس المودال المشترك
+  // confirmDeleteModal — تشغيلهم في نفس الوقت كان ممكن يتصادموا)
+  await closeModal('editPaymentModal');
   deletePaymentEntry(id, fileNo);
 }
 
@@ -1505,11 +1509,11 @@ export async function submitEditExpense() {
 
       await logAudit('EDIT', 'expenses', old.file_no, old, {desc,type,amount,date,method,doc}, `تعديل مصروف ${old.ref_no||id}`);
       await updateApprovalBadge();
-      markSaving('editExpenseModal'); closeModal('editExpenseModal');
+      markSaving('editExpenseModal'); await closeModal('editExpenseModal');
       toast('⚠️ تم تعديل المصروف والقيد — في انتظار الموافقة', 'warn');
     } else {
       await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null, paid_by:paidBy||null, paid_by_split:paidBySplit });
-      markSaving('editExpenseModal'); closeModal('editExpenseModal');
+      markSaving('editExpenseModal'); await closeModal('editExpenseModal');
       toast('✅ تم تعديل المصروف','ok');
     }
     invalidateCache();
@@ -1617,7 +1621,7 @@ export async function submitEditCollection() {
 
       await logAudit('EDIT', 'collections', old.file_no, old, {amount,method,due,paid}, `تعديل تحصيل ${old.ref_no||id}`);
       await updateApprovalBadge();
-      markSaving('editCollectionModal'); closeModal('editCollectionModal');
+      markSaving('editCollectionModal'); await closeModal('editCollectionModal');
       toast('⚠️ تم تعديل التحصيل والقيد — في انتظار الموافقة', 'warn');
       invalidateCache();
       if (state.currentTab === 5) loadCollectionsTab(state.currentFileNo, state.system);
@@ -1654,7 +1658,7 @@ export async function submitEditCollection() {
     }
 
     markSaving('editCollectionModal');
-    closeModal('editCollectionModal');
+    await closeModal('editCollectionModal');
     toast('✅ تم تعديل التحصيل', 'ok');
     invalidateCache();
     if (state.currentTab === 5) loadCollectionsTab(state.currentFileNo, state.system);
@@ -1756,7 +1760,7 @@ export async function submitMarkPaid() {
     }
 
     markSaving('markPaidModal');
-    closeModal('markPaidModal');
+    await closeModal('markPaidModal');
     invalidateCache();
     toast(`✅ تم تسجيل دفع ${c.ref_no||''} — ${fmt(c.amount)}`, 'ok');
     if (state.currentTab === 5) loadCollectionsTab(state.currentFileNo || c.file_no, state.system);
