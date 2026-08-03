@@ -713,7 +713,7 @@ export async function loadDealStatement(fn, sys) {
       ...(sales||[]).filter(isSettled).map(s=>({ date:s.sale_date, type:'بيع', icon:'🤝', color:'var(--green)',
         party:s.customer||'—', debit:+s.sale_price, credit:0, _pl:true, _voided:false, _grp:2,
         desc:`بيع ${s.model||s.vin||'سيارة'} — ${s.customer||'—'}`,
-        extra:`${s.vin?'شاصي: '+s.vin:''}${s.invoice_no?' · '+s.invoice_no:''}` })),
+        extra:`${s.vin?'شاصي: '+s.vin:''}${s.inv_no?' · '+s.inv_no:''}` })),
       ...(sales||[]).filter(r=>r.post_status==='draft').map(s=>({ date:s.sale_date, type:'بيع (معلق)', icon:'⏳', color:'var(--accent)',
         party:s.customer||'—', debit:+s.sale_price, credit:0, _pl:false, _draft:true, _grp:2,
         desc:`بيع ${s.model||s.vin||'سيارة'} — ${s.customer||'—'}`, extra:'في انتظار الموافقة' })),
