@@ -1675,6 +1675,124 @@ async function ds1_dealStatementSaleInvNoDisplayed(app) {
   assert(saleEntry.extra && saleEntry.extra.includes(invNo), `المتوقع extra يحتوي رقم الفاتورة "${invNo}"، طلع "${saleEntry.extra}"`);
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// UI MESSAGING REDESIGN — closeModal async dirty-check + تصنيف أخطاء مركزي
+// ════════════════════════════════════════════════════════════════════════
+// راجع project_ui_restructure_needed_warnings_approvals في الذاكرة. closeModal
+// بقت async (تستخدم confirmAsync الجديدة بدل confirm() الأصلية المتزامنة) —
+// السيناريوهات هنا بتختبر فرعي القرار الحقيقيين جوه closeModal نفسها، بلا
+// تقليد. _modalDirty خاص بالوحدة (module-private) — __setModalDirtyForTest
+// (اختبار فقط، utils.js) بتحضّر حالة "متسخ" مباشرة بدل محاكاة حدث input/change
+// كامل (غير متاح في بيئة الاختبار headless — addEventListener بتاع الـstub
+// no-op، راجع تعليق __setModalDirtyForTest نفسه لتفاصيل السبب. نفس القيد
+// بيمنع اختبار مسار "المستخدم ضغط إلغاء" آليًا — showConfirm نفسها مُستبدَلة
+// بـstub تلقائي التأكيد لكل السويت (installConfirmStub)، وزرار الإلغاء مش
+// قابل للوصول من بره confirmAsync أصلاً؛ ده قرار تصميم واعٍ للسويت كله (كل
+// تأكيد "بيتأكَّد" تلقائيًا)، مش فجوة في هذا الاختبار تحديدًا).
+
+// UM1 — closeModal(dirty=true, بلا markSaving): لازم يستدعي showConfirm فعليًا
+// (عبر confirmAsync) وينتظر رده — مع الـstub تلقائي التأكيد الافتراضي، لازم
+// يرجع وينظّف بلا "تعليق" (نفس البلاغ الأصلي: كانت النافذة بتفضل معلَّقة في
+// أي سياق آلي بلا ضغطة زر حقيقية — لازم دلوقتي await يشتغل وينتهي طبيعي)
+async function um1_closeModalDirtyAwaitsAndProceeds(app) {
+  const id = 'ZZTEST-UM1-' + Date.now();
+  app.utils.__setModalDirtyForTest(id, true);
+  let showConfirmCalled = false;
+  const original = globalThis.showConfirm;
+  globalThis.showConfirm = (title, msg, onConfirm) => { showConfirmCalled = true; return original(title, msg, onConfirm); };
+  try {
+    await app.utils.closeModal(id); // لازم يكمل بلا throw وبلا تعليق
+  } finally {
+    globalThis.showConfirm = original;
+  }
+  assert(showConfirmCalled, 'closeModal لمودال متسخ بلا markSaving لازم يستدعي showConfirm فعليًا');
+}
+
+// UM2 — closeModal(dirty=true, markSaving مُسجَّل قبلها): لازم يتخطى فحص الـ
+// dirty بالكامل، showConfirm ما ينادوش خالص — هذا بالظبط الفرع اللي بيحمي كل
+// الـ~30 موقع markSaving+closeModal في المشروع من نفس مشكلة "التعليق"، حتى
+// بعد ما بقت async
+async function um2_closeModalMarkSavingSkipsDirtyCheck(app) {
+  const id = 'ZZTEST-UM2-' + Date.now();
+  app.utils.__setModalDirtyForTest(id, true);
+  app.utils.markSaving(id);
+  let showConfirmCalled = false;
+  const original = globalThis.showConfirm;
+  globalThis.showConfirm = () => { showConfirmCalled = true; throw new Error('لا يجب استدعاء showConfirm هنا — markSaving لازم يتخطى الفحص بالكامل'); };
+  try {
+    await app.utils.closeModal(id); // لازم يكمل فورًا بلا استدعاء showConfirm
+  } finally {
+    globalThis.showConfirm = original;
+  }
+  assert(!showConfirmCalled, 'closeModal بعد markSaving لازم يتخطى فحص الـdirty بالكامل، بلا أي استدعاء لـshowConfirm');
+}
+
+// UM3 — closeModal(dirty=false): نفس UM2 — بلا markSaving أصلاً، بس الحالة
+// الافتراضية (مش متسخة) لازم برضه تتخطى showConfirm تمامًا
+async function um3_closeModalNotDirtySkipsConfirm(app) {
+  const id = 'ZZTEST-UM3-' + Date.now();
+  app.utils.__setModalDirtyForTest(id, false);
+  let showConfirmCalled = false;
+  const original = globalThis.showConfirm;
+  globalThis.showConfirm = () => { showConfirmCalled = true; throw new Error('لا يجب استدعاء showConfirm هنا — المودال مش متسخ أصلاً'); };
+  try {
+    await app.utils.closeModal(id);
+  } finally {
+    globalThis.showConfirm = original;
+  }
+  assert(!showConfirmCalled, 'closeModal لمودال غير متسخ لازم يتخطى showConfirm بالكامل');
+}
+
+// UM4 — تعميم تصنيف "قيد فريد" (core.js): قيد فريد حقيقي موجود بالفعل في
+// القاعدة (uq_je_ref_primary_posted — نفس القيد من إصلاح is_primary_line
+// السابق)، مش uniq_expense_active/uniq_payment_active الأصليين — يتأكد إن
+// apiPost بترجع رسالة عربية مفهومة برضه ("قيد فريد: uq_je_ref_primary_posted")
+// بدل نص postgres الخام، بلا الاقتصار على الاسمين الأصليين بس
+async function um4_uniqueConstraintGeneralizedToAnyName(app) {
+  const fileNo = zid('UM4');
+  registerExtraFileNo(fileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 100, post_status: 'draft', notes: 'ZZTEST regression UM4 fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+  const refId = zid('UM4-REF');
+
+  const baseLine = {
+    system_type: SYS, entry_no: zid('JE-UM4'), entry_date: today(),
+    account_code: '1300', account_name: 'ZZTEST', dr_amount: 100, cr_amount: 0,
+    description: 'ZZTEST UM4', ref_table: 'reversal', ref_id: refId, file_no: fileNo,
+    post_status: 'posted', posted_at: new Date().toISOString(), is_primary_line: true,
+  };
+  const firstRow = await apiPost('journal_entries', baseLine);
+  registerCleanup('journal_entries', firstRow[0].id);
+
+  let threw = null;
+  try {
+    await apiPost('journal_entries', { ...baseLine, entry_no: zid('JE-UM4-DUP') });
+  } catch (e) { threw = e; }
+  assert(threw, 'المتوقع apiPost يفشل بقيد فريد (uq_je_ref_primary_posted) للسطر الثاني بنفس (system_type, file_no, ref_id, ref_table, is_primary_line=true, posted)');
+  assert(/قيد فريد: uq_je_ref_primary_posted/.test(threw.message), `المتوقع رسالة مصنَّفة تحتوي "قيد فريد: uq_je_ref_primary_posted"، طلعت: "${threw.message}"`);
+}
+
+// UM5 — تصنيف خطأ الشبكة (apiFetch/core.js): محاكاة "Failed to fetch" فعلية
+// (TypeError حقيقي، نفس نوع الخطأ اللي المتصفح بيرميه لما الطلب ما يوصلش
+// للخادم خالص) عبر استبدال مؤقت لـglobal.fetch — يتأكد إن الرسالة النهائية
+// توضّح إن العملية "غالبًا نجحت" بدل نص "Failed to fetch" المضلِّل الخام
+async function um5_networkErrorClassified(app) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+  let threw = null;
+  try {
+    await apiGetAll('purchase_orders', { select: 'id', limit: 1 });
+  } catch (e) { threw = e; } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert(threw, 'المتوقع apiGetAll يفشل لما fetch نفسها بترمي TypeError');
+  assert(/قد تكون نجحت فعلاً/.test(threw.message), `المتوقع رسالة مصنَّفة تحتوي "قد تكون نجحت فعلاً"، طلعت: "${threw.message}"`);
+  assert(!/Failed to fetch/.test(threw.message), `المتوقع عدم ظهور نص "Failed to fetch" الخام في الرسالة النهائية، طلعت: "${threw.message}"`);
+}
+
 (async () => {
   console.log('Track A — Phase 0 Regression Suite');
   console.log('file_no تجريبي:', FILE_NO, '| نظام:', SYS);
@@ -1806,6 +1924,14 @@ async function ds1_dealStatementSaleInvNoDisplayed(app) {
     // ✅ إصلاح عمود inv_no في كشف حساب الملف (settings.js:716)
     console.log(`\n── كشف حساب الملف (Tab 7): إصلاح عمود inv_no ──`);
     await scenario('deal-statement / DS1 رقم الفاتورة يظهر في extra صف البيع (نظام TM)', () => ds1_dealStatementSaleInvNoDisplayed(app));
+
+    // ✅ إعادة هيكلة نظام الرسائل التحذيرية (خيار A) — closeModal async + تصنيف أخطاء مركزي
+    console.log(`\n── إعادة هيكلة الرسائل التحذيرية: closeModal async + تصنيف الأخطاء ──`);
+    await scenario('ui-messaging / UM1 closeModal(dirty, بلا markSaving) يستدعي showConfirm وينتظره بلا تعليق', () => um1_closeModalDirtyAwaitsAndProceeds(app));
+    await scenario('ui-messaging / UM2 closeModal(dirty + markSaving) يتخطى فحص الـdirty بالكامل', () => um2_closeModalMarkSavingSkipsDirtyCheck(app));
+    await scenario('ui-messaging / UM3 closeModal(غير متسخ) يتخطى showConfirm بالكامل', () => um3_closeModalNotDirtySkipsConfirm(app));
+    await scenario('ui-messaging / UM4 تعميم تصنيف قيد فريد لأي اسم (uq_je_ref_primary_posted)', () => um4_uniqueConstraintGeneralizedToAnyName(app));
+    await scenario('ui-messaging / UM5 تصنيف خطأ الشبكة (Failed to fetch) لرسالة "غالبًا نجحت"', () => um5_networkErrorClassified(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
