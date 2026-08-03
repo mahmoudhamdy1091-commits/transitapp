@@ -1637,6 +1637,44 @@ async function qs1_quickSaleInvNoRecordedCorrectly(app) {
   assert(fetched.inv_no === invNo, `المتوقع sales.inv_no="${invNo}"، طلع "${fetched.inv_no}"`);
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// DEAL STATEMENT inv_no FIX (settings.js:716)
+// ════════════════════════════════════════════════════════════════════════
+// اكتُشف عرضًا أثناء التحقق من إصلاح viewer.js: نفس الاسم الغلط (invoice_no
+// بدل inv_no) في extra نص صف البيع بكشف حساب الملف (Tab 7) — يؤثر على
+// العرض المباشر + تصدير Excel + طباعة PDF (الثلاثة بيقروا نفس entries[].extra،
+// راجع project_quicksale_invoice_no_column_bug في الذاكرة للتفاصيل الكاملة).
+// loadDealStatement نفسها مش DOM-مقترنة من ناحية القراءة (fn/sys parameters
+// عاديين، بتكتب لـwrap.innerHTML بس) — تُستدعى هنا حقيقية مباشرة، بلا تقليد.
+// ✅ نظام TM عمدًا (بدل SYS='BOX' المشترك) — طلب صريح من المستخدم.
+
+async function ds1_dealStatementSaleInvNoDisplayed(app) {
+  const DS_SYS = 'TM';
+  const fileNo = zid('DS1');
+  registerExtraFileNo(fileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: DS_SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 1000, post_status: 'draft', notes: 'ZZTEST regression deal-statement fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+  const vin = zid('VIN-DS1');
+  const vehRow = await apiPost('vehicles', { system_type: DS_SYS, file_no: fileNo, vin, purchase_price: 1000 });
+  registerCleanup('vehicles', vehRow[0].id);
+  const invNo = zid('INV-DS1');
+  const saleRow = await apiPost('sales', {
+    system_type: DS_SYS, file_no: fileNo, vin, customer: 'ZZTEST-CUSTOMER',
+    inv_no: invNo, sale_price: 1500, sale_date: today(), notes: null, post_status: 'posted',
+  });
+  registerCleanup('sales', saleRow[0].id);
+
+  await app.settings.loadDealStatement(fileNo, DS_SYS);
+  const data = globalThis._dealStatementData;
+  assert(data && data.fn === fileNo, 'لازم loadDealStatement تحدّث window._dealStatementData لنفس الملف');
+  const saleEntry = (data.entries || []).find(e => e.type === 'بيع');
+  assert(saleEntry, 'لازم نلاقي صف البيع في entries');
+  assert(saleEntry.extra && saleEntry.extra.includes(invNo), `المتوقع extra يحتوي رقم الفاتورة "${invNo}"، طلع "${saleEntry.extra}"`);
+}
+
 (async () => {
   console.log('Track A — Phase 0 Regression Suite');
   console.log('file_no تجريبي:', FILE_NO, '| نظام:', SYS);
@@ -1764,6 +1802,10 @@ async function qs1_quickSaleInvNoRecordedCorrectly(app) {
     // ✅ إصلاح عمود inv_no في البيع السريع (viewer.js:335)
     console.log(`\n── quick-sale: إصلاح عمود inv_no ──`);
     await scenario('quick-sale / QS1 sales.inv_no يتسجّل صح والإدراج لا يفشل', () => qs1_quickSaleInvNoRecordedCorrectly(app));
+
+    // ✅ إصلاح عمود inv_no في كشف حساب الملف (settings.js:716)
+    console.log(`\n── كشف حساب الملف (Tab 7): إصلاح عمود inv_no ──`);
+    await scenario('deal-statement / DS1 رقم الفاتورة يظهر في extra صف البيع (نظام TM)', () => ds1_dealStatementSaleInvNoDisplayed(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
