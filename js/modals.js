@@ -601,7 +601,7 @@ export async function _submitNewFileInner() {
     // 5. Audit + تسجيل جهة الاتصال تلقائياً
     await logAudit('INSERT','purchase_orders', fileNo, null, poData);
     if (supplier) await ensureContact(supplier, 'supplier');
-    markSaving('newFileModal'); closeModal('newFileModal');
+    markSaving('newFileModal'); await closeModal('newFileModal');
     toast(`✅ تم إنشاء الملف ${fileNo} — ${vehicles.length} سيارة`, 'ok');
     invalidateCache();
     await loadDashboard();
@@ -880,7 +880,7 @@ export async function submitEditFileFull() {
       `تعديل سند الشراء ${oldFileNo}`);
     await updateApprovalBadge();
 
-    markSaving('newFileModal'); closeModal('newFileModal');
+    markSaving('newFileModal'); await closeModal('newFileModal');
     toast(wasPosted
       ? `⚠️ تم تعديل الصفقة ${newFileNo} والقيد — في انتظار الموافقة`
       : `✏️ تم حفظ تعديل الصفقة ${newFileNo} (لا تزال بانتظار الاعتماد الأول)`, 'warn');
@@ -1180,7 +1180,7 @@ export async function submitExpense() {
         }
       }
     }
-    markSaving('expenseModal'); closeModal('expenseModal');
+    markSaving('expenseModal'); await closeModal('expenseModal');
     invalidateCache();
     toast(`✅ تم تسجيل ${expenses.length} مصروف`,'ok');
     if (state.currentFileNo) {
@@ -1194,6 +1194,13 @@ export async function submitExpense() {
 
 // Payment
 export async function submitPayment() {
+  // ✅ مسح رسالة خطأ سابقة أولاً — محاولة سابقة فاشلة (مثلاً "يرجى ملء الحقول
+  // المطلوبة") كانت بتفضل ظاهرة بصمت حتى بعد ما التحقق ينجح في محاولة تانية،
+  // فتظهر كأثر جانبي مضلِّل بلا أي علاقة بالسبب الحقيقي (مثلاً تحذير تجاوز
+  // الباقي المستحق تحت). راجع project_ui_restructure في الذاكرة
+  const errEl = el('payError');
+  if (errEl) errEl.style.display = 'none';
+
   const fn     = state.currentFileNo || el('pay-file-selector')?.value || el('pay-payer')?.dataset?.fileNo || null;
   const payer  = (el('pay-payer').value || '').trim();
   const amount = parseFloat(el('pay-amount').value);
@@ -1216,12 +1223,11 @@ export async function submitPayment() {
     const warningMsg   = exceedTotal
       ? `قيمة الدفعة (${fmt(amount)}) تتجاوز إجمالي الصفقة (${fmt(totalPO)}).\nهل تريد المتابعة رغم ذلك؟`
       : `قيمة الدفعة (${fmt(amount)}) أكبر من الباقي للمورد (${fmt(remaining)}).\nهل تريد المتابعة؟`;
-    const okBtn = document.getElementById('confirmDeleteOkBtn');
-    confirmAction(warningTitle, warningMsg, async () => {
-      await _proceedSubmitPayment();
-    }, true);
-    if (okBtn) { okBtn.textContent = '⚠️ نعم، متابعة'; okBtn.style.background = 'var(--accent)'; }
-    return;
+    // ✅ confirmAsync بدل confirmAction — البلاغ الأصلي: confirmAction (callback
+    // بلا await) كان بيفتح المودال ويرجع فورًا؛ في أي سياق تنفيذ آلي/غير تفاعلي
+    // (مفيش ضغطة زر حقيقية) كانت النافذة بتفضل معلَّقة للأبد بلا أي نتيجة
+    const proceed = await confirmAsync(warningTitle, warningMsg, true, '⚠️ نعم، متابعة');
+    if (!proceed) return;
   }
   await _proceedSubmitPayment();
 }
@@ -1266,7 +1272,7 @@ export async function _proceedSubmitPayment() {
     // الدافع شريكاً، مما تسبب في سجلات وهمية متكررة (تم تنظيفها يدوياً عبر cleanup.js).
     // التسجيل الآن خطوة يدوية واعية يقوم بها المستخدم من شاشة "صرف شريك".
 
-    markSaving('paymentModal'); closeModal('paymentModal');
+    markSaving('paymentModal'); await closeModal('paymentModal');
     toast('✅ تم تسجيل الدفعة بنجاح','ok');
     if (state.currentTab === 2) loadPaymentsTab(fn, state.system);
     if (state.currentTab === 0) loadSummaryTab(fn, state.system);
@@ -1741,7 +1747,7 @@ export async function submitSale() {
     await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fn}` },
       { status: allSold ? 'CLOSED' : 'IN PROGRESS' });
 
-    closeModal('saleModal');
+    markSaving('saleModal'); await closeModal('saleModal');
     invalidateCache();
 
     // ── تحصيل واحد للفاتورة كلها (شامل المصاريف الإضافية) ──
@@ -2116,7 +2122,7 @@ export async function submitCollection() {
         toast(`⚠️ تم حفظ التحصيل بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
       }
     }
-    markSaving('collectionModal'); closeModal('collectionModal');
+    markSaving('collectionModal'); await closeModal('collectionModal');
     toast('✅ تم تسجيل التحصيل بنجاح','ok');
     invalidateCache();
     if (state.currentTab === 5) loadCollectionsTab(fn, state.system);
@@ -2355,7 +2361,7 @@ export async function submitPayout() {
         toast(`⚠️ تم حفظ ${type} بدون ترحيل قيده — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
       }
     }
-    markSaving('payoutModal'); closeModal('payoutModal');
+    markSaving('payoutModal'); await closeModal('payoutModal');
     toast(`✅ تم تسجيل ${type} للشريك ${partner}`,'ok');
     invalidateCache();
     if (state.currentTab === 6) loadPayoutsTab(fn, state.system);

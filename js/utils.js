@@ -168,9 +168,10 @@ export function openModal(id) {
   }, 200);
 }
 
-export function closeModal(id) {
+export async function closeModal(id) {
   if (_modalDirty.get(id) && !_modalSaving.has(id)) {
-    if (!confirm('⚠️ توجد بيانات غير محفوظة\nهل تريد الخروج بدون حفظ؟\n\nاضغط "إلغاء" للبقاء والحفظ.')) return;
+    const ok = await confirmAsync('⚠️ بيانات غير محفوظة', 'توجد بيانات غير محفوظة — هل تريد الخروج بدون حفظ؟', true);
+    if (!ok) return;
   }
   const overlay = document.getElementById(id);
   if (overlay && overlay._dirtyHandler) {
@@ -185,6 +186,13 @@ export function closeModal(id) {
 }
 
 export function markSaving(id) { _modalSaving.add(id); }
+
+// ✅ اختبار فقط — _modalDirty خاص بهذه الوحدة (module-private)، ما فيش طريقة
+// تانية لضبطه من سويت الانحدار headless (addEventListener الحقيقي بتاع تتبّع
+// الـdirty مش قابل للتفعيل في بيئة الاختبار — راجع scripts/_headless-app-env.js).
+// بتُختبَر هنا نفس فرع القرار الحقيقي جوه closeModal، بس التحضير المسبق لحالة
+// "dirty" بيتم مباشرة بدل محاكاة حدث input/change كامل عبر DOM حقيقي غير متاح.
+export function __setModalDirtyForTest(id, val) { _modalDirty.set(id, val); }
 
 // ════════════════════════════════════════
 // SUBMIT GUARD — منع تنفيذ نفس الأمر مرتين عند ضغط الزر أكثر من مرة
@@ -370,6 +378,32 @@ export function confirmAction(title, msg, onConfirm, danger = true) {
   }
 }
 
+// ════════════════════════════════════════
+// CONFIRM (async) — نسخة Promise من confirmAction، لاستبدال confirm()/alert()
+// الأصلية المتزامنة (بديل حقيقي — بلا حجب لخيط التنفيذ، وقابل للاختبار الآلي
+// بعكس confirm() الأصلية). تُبنى فوق showConfirm نفسها بلا أي تعديل عليها —
+// الـ45 نداء الحالي لـshowConfirm/confirmAction يفضلوا يشتغلوا بالضبط زي ما هما.
+// ✅ زرار "إلغاء" في confirmDeleteModal (index.html) ما بيبعتش أي إشارة "اتلغى"
+// حاليًا (بيقفل المودال بس) — بنلف عليه هنا مؤقتًا لكل نداء (نفس أسلوب
+// showConfirm نفسها مع زرار التأكيد: onclick يُعاد كتابته من جديد في كل نداء،
+// بلا أي آلية طابور — نداءان متتاليان بلا انتظار الأول ممكن يتضاربوا، بس ده
+// نفس القيد الموجود أصلاً في showConfirm، مش قيد جديد)
+export function confirmAsync(title, msg, danger = true, okLabel = null) {
+  return new Promise(resolve => {
+    if (typeof showConfirm !== 'function') { resolve(false); return; }
+    showConfirm(title, msg, () => resolve(true));
+    const okBtn = document.getElementById('confirmDeleteOkBtn');
+    if (okBtn) {
+      okBtn.textContent = okLabel || (danger ? '⚠️ تأكيد' : '✅ تأكيد');
+      okBtn.style.background = danger ? 'var(--red)' : 'var(--green)';
+    }
+    const cancelBtn = document.getElementById('confirmDeleteCancelBtn');
+    if (cancelBtn) {
+      cancelBtn.onclick = () => { closeModal('confirmDeleteModal'); resolve(false); };
+    }
+  });
+}
+
 export function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -386,6 +420,6 @@ Object.assign(window, {
   exportBtns, _runExport, _shareCSV, showDashboard, toggleNav, navActive, setMobNav,
   showView, hideAllViews, openModal, closeModal, markSaving, guardSubmit, el,
   fmt, fmtDate, fmtTime, today, statusClass, emptyHTML, errHTML, showFieldErr,
-  showErr, toast, animateCount, setLoading, switchView, confirmAction, loadScript,
+  showErr, toast, animateCount, setLoading, switchView, confirmAction, confirmAsync, loadScript,
   TIC_LOGO_URI,
 });

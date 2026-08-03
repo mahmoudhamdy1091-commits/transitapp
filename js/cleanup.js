@@ -83,7 +83,7 @@ export async function _cleanupDeleteDraft(tbl, id, btn) {
       toast(`⛔ السجل بحالة "${record.post_status}" — الحذف الفعلي ممنوع لسجلات مرحّلة (posted/voided) لأنها مرتبطة بقيود محاسبية`,'err');
       return;
     }
-    if (!confirm(`⚠️ حذف نهائي (لا رجعة) للسجل #${id} من ${tbl}:\n\n${fmtRow(record)}\n\nمتابعة؟`)) return;
+    if (!await confirmAsync('⚠️ حذف نهائي (لا رجعة)', `حذف نهائي (لا رجعة) للسجل #${id} من ${tbl}:\n\n${fmtRow(record)}\n\nمتابعة؟`, true)) return;
 
     btn.disabled = true; btn.textContent = '...جارٍ الحذف';
     const res = await fetch(`${SB_URL}/rest/v1/${tbl}?id=eq.${id}`, { method:'DELETE', headers: headers() });
@@ -162,7 +162,7 @@ export async function _cleanupVoidExpense(id, btn) {
     const record = rows?.[0];
     if (!record) { toast('السجل غير موجود','err'); return; }
     if (record.post_status === 'voided') { toast('مُلغى بالفعل','warn'); return; }
-    if (!confirm(`⚠️ سيُسجَّل قيد عكسي فوراً (تنفيذ مباشر يتجاوز قائمة المراجعة) ويُعلَّم هذا المصروف كـ"ملغى" (لن يُحذف):\n\n${fmtRow(record)}\n\nمتابعة؟`)) return;
+    if (!await confirmAsync('⚠️ عكس فوري (تجاوز قائمة المراجعة)', `سيُسجَّل قيد عكسي فوراً (تنفيذ مباشر يتجاوز قائمة المراجعة) ويُعلَّم هذا المصروف كـ"ملغى" (لن يُحذف):\n\n${fmtRow(record)}\n\nمتابعة؟`, true)) return;
 
     btn.disabled = true; btn.textContent = '...جارٍ التنفيذ';
     if (record.post_status === 'posted') {
@@ -319,7 +319,7 @@ export async function openDataCleanupTool() {
 export async function _cleanupVoidRecord(tbl, id, btn) {
   const typeMap = { payments:'payment', expenses:'expense', collections:'collection', partner_payouts:'payout' };
   const type = typeMap[tbl];
-  if (!confirm(`⚠️ سيتم عكس السجل #${id} من ${tbl} بقيد محاسبي عكسي (لن يُحذف). متابعة؟`)) return;
+  if (!await confirmAsync('⚠️ عكس سجل', `سيتم عكس السجل #${id} من ${tbl} بقيد محاسبي عكسي (لن يُحذف). متابعة؟`, true)) return;
   try {
     btn.disabled = true; btn.textContent = '...جارٍ التنفيذ';
     const rows = await apiGetAll(tbl, { select:'*', id:`eq.${id}` });
@@ -336,7 +336,7 @@ export async function _cleanupVoidRecord(tbl, id, btn) {
 }
 
 export async function _cleanupApproveVoid(tbl, id, btn) {
-  if (!confirm(`⚠️ سيتم تنفيذ طلب الإلغاء المعلّق للسجل #${id} في ${tbl} الآن (قيد عكسي + post_status=voided). متابعة؟`)) return;
+  if (!await confirmAsync('⚠️ تنفيذ إلغاء معلّق', `سيتم تنفيذ طلب الإلغاء المعلّق للسجل #${id} في ${tbl} الآن (قيد عكسي + post_status=voided). متابعة؟`, true)) return;
   const typeMap = { payments:'payment', expenses:'expense', collections:'collection', partner_payouts:'payout' };
   try {
     btn.disabled = true; btn.textContent = '...جارٍ التنفيذ';
@@ -354,7 +354,7 @@ export async function _cleanupApproveVoid(tbl, id, btn) {
 }
 
 export async function _cleanupRejectVoid(tbl, id, btn) {
-  if (!confirm(`سيتم رفض طلب الإلغاء وإعادة السجل #${id} إلى الحالة "posted" بدون أي قيد. متابعة؟`)) return;
+  if (!await confirmAsync('رفض طلب الإلغاء', `سيتم رفض طلب الإلغاء وإعادة السجل #${id} إلى الحالة "posted" بدون أي قيد. متابعة؟`, false)) return;
   try {
     btn.disabled = true; btn.textContent = '...جارٍ التنفيذ';
     const rows = await apiGetAll(tbl, { select:'*', id:`eq.${id}` });

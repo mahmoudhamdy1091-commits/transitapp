@@ -206,7 +206,7 @@ export function _renderOverlay(fragment, title) {
   const o = document.getElementById('printOverlay');
   const b = document.getElementById('printOverlayBody');
   const t = document.getElementById('printOverlayTitle');
-  if (!o || !b) { alert('\u064A\u0631\u062C\u0649 \u0627\u0644\u0633\u0645\u0627\u062D \u0628\u0627\u0644\u0646\u0648\u0627\u0641\u0630 \u0627\u0644\u0645\u0646\u0628\u062B\u0642\u0629 \u0644\u0625\u062A\u0645\u0627\u0645 \u0627\u0644\u0637\u0628\u0627\u0639\u0629'); return; }
+  if (!o || !b) { toast('\u064A\u0631\u062C\u0649 \u0627\u0644\u0633\u0645\u0627\u062D \u0628\u0627\u0644\u0646\u0648\u0627\u0641\u0630 \u0627\u0644\u0645\u0646\u0628\u062B\u0642\u0629 \u0644\u0625\u062A\u0645\u0627\u0645 \u0627\u0644\u0637\u0628\u0627\u0639\u0629', 'err'); return; }
   if (t) t.textContent = title || '\u0645\u0639\u0627\u064A\u0646\u0629 \u0627\u0644\u0637\u0628\u0627\u0639\u0629';
   b.innerHTML = '<style>.print-root{all:initial;font-family:\'Cairo\',Arial,sans-serif;direction:rtl}' + PRINT_CSS + '</style><div class="print-root"><div class="print-page">' + fragment + '</div></div>';
   o.style.display = 'block';

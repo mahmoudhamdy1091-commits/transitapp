@@ -798,7 +798,7 @@ export async function confirmDeleteDealFromModal() {
       btn.disabled = true; btn.textContent = '⏳ جاري الحذف...';
       try {
         await deleteDealCompletely(fn, { onSuccess: async () => {
-          closeModal('newFileModal');
+          markSaving('newFileModal'); await closeModal('newFileModal');
           state.currentFileNo = null;
           await loadDashboard(); showDashboard();
         }});
@@ -812,7 +812,7 @@ export async function confirmDeleteVehicle() {
   showConfirm('حذف السيارة', 'هل تريد حذف هذه السيارة نهائياً من الصفقة؟', async () => {
     try {
       await apiDelete('vehicles', { id:`eq.${getEditVehicleId()}` });
-      closeModal('editVehicleModal');
+      markSaving('editVehicleModal'); await closeModal('editVehicleModal');
       toast('✅ تم حذف السيارة','ok');
       if (state.currentFileNo) await loadViewerTab(state.currentTab);
     } catch(e) { toast('خطأ: '+e.message,'err'); }

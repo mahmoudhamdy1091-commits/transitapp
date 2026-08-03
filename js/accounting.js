@@ -530,6 +530,14 @@ export async function renderLedgerTable() {
 }
 
 // ══ تفاصيل القيد + المرفقات ══
+// ✅ closeModal بقت async (بتنتظر تأكيد المستخدم لو المودال "متسخ") — سلسلة
+// onclick مباشرة زي closeModal(x);openViewer(y) في نص HTML مش بتنتظرها، فكانت
+// هتخلي openViewer يتنفّذ قبل ما المستخدم يرد على تحذير "بيانات غير محفوظة"
+export async function closeJeDetailAndOpenViewer(fileNo) {
+  await closeModal('jeDetailModal');
+  openViewer(fileNo);
+}
+
 export async function openJEDetail(entryNo) {
   if(!entryNo) return;
   el('je-detail-title').textContent=`قيد رقم: ${entryNo}`;
@@ -558,7 +566,7 @@ export async function openJEDetail(entryNo) {
       </div>
       <div style="background:var(--card2);border-radius:var(--radius-sm);padding:8px 12px;font-size:12px;margin-bottom:8px">
         <strong>البيان:</strong> ${first.description||'—'}
-        ${first.file_no?`&nbsp;·&nbsp;<span style="color:var(--accent);cursor:pointer" onclick="closeModal('jeDetailModal');openViewer('${first.file_no}')">📂 ${first.file_no}</span>`:''}
+        ${first.file_no?`&nbsp;·&nbsp;<span style="color:var(--accent);cursor:pointer" onclick="closeJeDetailAndOpenViewer('${first.file_no}')">📂 ${first.file_no}</span>`:''}
       </div>`;
     const lineRows=lines.map(l=>`<tr>
       <td class="mono" style="color:var(--accent)">${l.account_code||'—'}</td>
@@ -756,7 +764,7 @@ export async function submitAccount() {
     const payload={system_type:state.system,account_code:code,account_name:name,account_type:type,parent_code:parent||null,is_active:true};
     if(id) await apiPatch('chart_of_accounts',{id:`eq.${id}`},payload);
     else   await apiPost('chart_of_accounts',payload);
-    closeModal('accountModal');toast(`✅ تم ${id?'تعديل':'إضافة'} الحساب ${code}`,'ok');
+    markSaving('accountModal'); await closeModal('accountModal');toast(`✅ تم ${id?'تعديل':'إضافة'} الحساب ${code}`,'ok');
     loadChartOfAccountsView();
   } catch(e){showFieldErr('accError','خطأ: '+e.message);}
 }
@@ -838,7 +846,7 @@ export async function submitContact() {
       await apiPost('contacts', data);
     }
     Object.keys(_acCache).forEach(k => { if(k.startsWith(state.system)) delete _acCache[k]; });
-    markSaving('contactModal'); closeModal('contactModal');
+    markSaving('contactModal'); await closeModal('contactModal');
     toast('✅ تم حفظ جهة الاتصال','ok');
     await loadContacts();
   } catch(e) { showFieldErr('cmError','خطأ: '+e.message); }
@@ -907,7 +915,7 @@ export async function submitEditVehicle() {
   };
   try {
     await apiPatch('vehicles', { id:`eq.${_editVehicleId}` }, data);
-    markSaving('editVehicleModal'); closeModal('editVehicleModal');
+    markSaving('editVehicleModal'); await closeModal('editVehicleModal');
     toast('✅ تم تعديل بيانات السيارة','ok');
     loadVehiclesTab(state.currentFileNo, state.system);
   } catch(e) { showFieldErr('evError','خطأ: '+e.message); }
@@ -1328,7 +1336,7 @@ export async function postDraftEntry(id, type, fileNo) {
 }
 
 export async function deleteDraftEntry(id) {
-  if (!confirm('حذف المسودة؟')) return;
+  if (!await confirmAsync('حذف المسودة', 'حذف المسودة؟', true)) return;
   await apiDelete('journal_entries', { id:`eq.${id}` });
   toast('تم الحذف','ok');
   loadJournal();
@@ -2995,7 +3003,7 @@ Object.assign(window, {
   _getPeriodDates, _setPeriodBtns, showTrialBalance, setTrialPeriod, loadTrialBalance,
   _computeOpeningBalances, filterTrial, renderTrialBalance, setLedgerPeriod, showAccountLedger,
   filterLedgerByContact, printAccountStatement, exportLedgerExcel, renderLedgerTable,
-  openJEDetail, renderJEAttachments, addJEAttachment, deleteJEAttachment, showChartOfAccounts,
+  openJEDetail, closeJeDetailAndOpenViewer, renderJEAttachments, addJEAttachment, deleteJEAttachment, showChartOfAccounts,
   loadChartOfAccountsView, seedDefaultAccounts, openNewAccountModal, openEditAccountModal,
   submitAccount, deleteAccount, exportTrialCSV, exportLedgerCSV, getAccountType, downloadCSV,
   openContactModal, submitContact, deleteContact, getEditVehicleId, openEditVehicleModal,

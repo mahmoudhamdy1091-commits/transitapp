@@ -799,7 +799,7 @@ export function openJournalEntryDetail(entryNo) {
 
 export async function openFullFileFromJEDetail() {
   if (!_jedCurrentFileNo) return;
-  closeModal('jeQuickDetailModal');
+  await closeModal('jeQuickDetailModal');
   await openViewer(_jedCurrentFileNo);
 }
 

@@ -1594,7 +1594,7 @@ export async function openEditPayoutModal(payoutId) {
 
         await logAudit('EDIT','partner_payouts', p.file_no, p, {newPartner,newAmount,newType}, `تعديل صرف شريك ${p.ref_no||payoutId}`);
         await updateApprovalBadge();
-        closeModal('payoutModal');
+        markSaving('payoutModal'); await closeModal('payoutModal');
         toast(wasPosted ? '⚠️ تم تعديل الصرف والقيد — في انتظار الموافقة' : '✏️ تم حفظ تعديل الصرف (لا يزال بانتظار الاعتماد الأول)', 'warn');
         invalidateCache();
         loadPartnersTab(state.currentFileNo, state.system);
