@@ -332,7 +332,7 @@ export async function submitQuickSale() {
   }
   try {
     const data = { system_type:state.system, file_no:fileNo, vin, customer,
-      invoice_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:entryStatus()};
+      inv_no:invNo||null, sale_price:price, sale_date:date, notes:notes||null , post_status:entryStatus()};
     const qsIns = await apiPost('sales', data);
     await logAudit('INSERT','sales',fileNo,null,data);
     if (entryStatus()==='posted') {
