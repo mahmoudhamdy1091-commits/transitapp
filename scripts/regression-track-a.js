@@ -1598,6 +1598,45 @@ async function ps4_expenseThreeEditsSameAmount(app) {
   assert(Math.abs(val - 1150) < 0.01, `[وكيل الشحن سيناريو حقيقي] المتوقع expPaid=1150 رغم 3 تعديلات متتالية بنفس المبلغ، طلع ${val}`);
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// QUICK-SALE inv_no COLUMN FIX (viewer.js:335)
+// ════════════════════════════════════════════════════════════════════════
+// اكتُشف حيًّا: submitQuickSale (js/viewer.js) كانت بتدرج في جدول sales
+// بعمود invoice_no — العمود الحقيقي inv_no (خطأ فعلي من القاعدة: "Could not
+// find the 'invoice_no' column of 'sales' in the schema cache"). الإصلاح:
+// سطر واحد (invoice_no → inv_no). submitQuickSale نفسها DOM-مقترنة (بتقرا
+// el('qs-...').value مباشرة) — بلا استدعاء مباشر ممكن هنا (نفس قيد "قرار
+// الحفظ" الموثَّق أعلى الملف)، فالاختبار بيكرر بنية القيد بالحرف من نفس
+// السطر المُصلَح (system_type/file_no/vin/customer/inv_no/sale_price/
+// sale_date/notes/post_status)، ويستخدم apiPost الحقيقية على القاعدة
+// الفعلية — فأي رجوع لاسم العمود الغلط هيفشل هنا بنفس الخطأ الحي بالضبط.
+
+async function qs1_quickSaleInvNoRecordedCorrectly(app) {
+  const fileNo = zid('QS1');
+  registerExtraFileNo(fileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 1000, post_status: 'draft', notes: 'ZZTEST regression quick-sale fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+  const vin = zid('VIN-QS1');
+  const vehRow = await apiPost('vehicles', { system_type: SYS, file_no: fileNo, vin, purchase_price: 1000 });
+  registerCleanup('vehicles', vehRow[0].id);
+
+  const invNo = zid('INV-QS1');
+  // ✅ نفس بنية القيد بالحرف من viewer.js:333-335 (submitQuickSale) بعد الإصلاح
+  const data = {
+    system_type: SYS, file_no: fileNo, vin, customer: 'ZZTEST-CUSTOMER',
+    inv_no: invNo, sale_price: 1500, sale_date: today(), notes: null, post_status: 'draft',
+  };
+  const saleRow = await apiPost('sales', data);
+  registerCleanup('sales', saleRow[0].id);
+
+  const fetched = (await apiGetAll('sales', { select: 'id,inv_no', id: `eq.${saleRow[0].id}` }))[0];
+  assert(fetched, 'لازم نلاقي سطر البيع المُدرَج');
+  assert(fetched.inv_no === invNo, `المتوقع sales.inv_no="${invNo}"، طلع "${fetched.inv_no}"`);
+}
+
 (async () => {
   console.log('Track A — Phase 0 Regression Suite');
   console.log('file_no تجريبي:', FILE_NO, '| نظام:', SYS);
@@ -1721,6 +1760,10 @@ async function ps4_expenseThreeEditsSameAmount(app) {
       await scenario(`partner-settlement / ${typeKey} PS3 إلغاء (voidTransaction)`, () => ps_void(typeKey, app));
     }
     await scenario('partner-settlement / PS4 مصروف بنفس حالة وكيل الشحن الحقيقية — 3 تعديلات متتالية بنفس المبلغ', () => ps4_expenseThreeEditsSameAmount(app));
+
+    // ✅ إصلاح عمود inv_no في البيع السريع (viewer.js:335)
+    console.log(`\n── quick-sale: إصلاح عمود inv_no ──`);
+    await scenario('quick-sale / QS1 sales.inv_no يتسجّل صح والإدراج لا يفشل', () => qs1_quickSaleInvNoRecordedCorrectly(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
