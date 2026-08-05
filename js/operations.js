@@ -1219,7 +1219,9 @@ export function renderApprovalList() {
         ${isReversal
           ? `<button class="btn btn-sm reject-btn" onclick="event.stopPropagation();confirmAction('استرداد العملية','سيتم إلغاء طلب الإلغاء وإعادة العملية لحالتها السابقة',()=>rejectItem('${r._type}','${r.id}'),false)"
               style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);padding:4px 10px;font-weight:700">↩ استرداد</button>`
-          : `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxApproval(this)" data-type="${r._type}" data-id="${r.id}" title="المزيد">⋮</button>`
+          : `<button class="btn btn-sm reject-btn" onclick="event.stopPropagation();rejectItem('${r._type}','${r.id}')"
+              style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);padding:4px 10px;font-weight:700">✗ رفض</button>
+             <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxApproval(this)" data-type="${r._type}" data-id="${r.id}" title="المزيد (تعديل/إلغاء)">⋮</button>`
         }
       </div>
     </div>`;
@@ -2178,13 +2180,28 @@ export async function _processReversalApproval(id, preloadedItem=null) {
 export async function approveAll() {
   const items = approvalState.filtered;
   if (!items.length) return;
-  showConfirm(`موافقة على الكل`, `هل تريد الموافقة على ${items.length} عملية دفعة واحدة؟`, async () => {
-    const sys = state.system;
-    let okCount = 0, failCount = 0;
-    const resultLines = [];
+  // ✅ confirmAsync بدل showConfirm الخام — approveAll بقت async حقيقية
+  // (تنتظر رد المستخدم فعليًا)، عشان guardSubmit(this, approveAll) في الزرار
+  // يقدر يعطّل الزرار طول مدة العملية الكاملة (تأكيد + حلقة المعالجة)، مش
+  // يرجع فورًا. راجع project_ui_restructure... — نفس نمط UX البند 1 المتفَق عليه
+  const proceed = await confirmAsync('موافقة على الكل', `هل تريد الموافقة على ${items.length} عملية دفعة واحدة؟`, false);
+  if (!proceed) return;
+
+  const sys = state.system;
+  let okCount = 0, failCount = 0;
+  const resultLines = [];
+  const total = items.length;
+  const btn = el('approve-all-btn');
+  const originalLabel = btn ? btn.textContent : null;
+  const updateProgress = (processed) => { if (btn) btn.textContent = `⏳ جاري المعالجة... (${processed}/${total})`; };
+
+  try {
     // ✅ ترتيب آمن ضد الانقطاع/السباق: لكل عملية → أنشئ القيد (لو غير موجود) → ثم رحّل السجل.
     //    السجل لا يصير "posted" قبل وجود قيده؛ فلو انقطعت العملية يبقى draft ويعود لقائمة الاعتمادات.
+    let processed = 0;
     for (const r of items) {
+      updateProgress(processed);
+      processed++;
       // ── طلبات التعديل: نفس نواة approveItem بالضبط، لا تجاهل صامت ──
       if (EDIT_TYPES[r._type]) {
         const res = await _processEditApproval(r._type, r.id);
@@ -2234,7 +2251,9 @@ export async function approveAll() {
       );
     }
     await loadApprovalQueue();
-  });
+  } finally {
+    if (btn && originalLabel != null) btn.textContent = originalLabel;
+  }
 }
 
 // تحديث badge في الـ sidebar عند تحميل أي صفحة

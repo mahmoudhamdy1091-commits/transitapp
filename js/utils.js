@@ -366,41 +366,35 @@ export function switchView(showId, title, sub='') {
 // CONFIRM DIALOG — تأكيد الإجراء
 // ════════════════════════════════════════
 export function confirmAction(title, msg, onConfirm, danger = true) {
-  // استخدم الـ modal الموجود
+  // استخدم الـ modal الموجود — showConfirm بقت فيها طابور حقيقي (reports.js)،
+  // فتلوين الزرار لازم يحصل لحظة العرض الفعلي (beforeShow) مش وقت النداء —
+  // وإلا لو النداء ده اتحط في الطابور كان هيلوّن زرار مودال تاني لسه معروض
   if (typeof showConfirm === 'function') {
-    showConfirm(title, msg, onConfirm);
-    // غيّر لون الزرار حسب خطورة العملية
-    const btn = document.getElementById('confirmDeleteOkBtn');
-    if (btn) {
-      btn.textContent = danger ? '⚠️ تأكيد' : '✅ تأكيد';
-      btn.style.background = danger ? 'var(--red)' : 'var(--green)';
-    }
+    showConfirm(title, msg, onConfirm, null, (okBtn) => {
+      if (okBtn) {
+        okBtn.textContent = danger ? '⚠️ تأكيد' : '✅ تأكيد';
+        okBtn.style.background = danger ? 'var(--red)' : 'var(--green)';
+      }
+    });
   }
 }
 
 // ════════════════════════════════════════
 // CONFIRM (async) — نسخة Promise من confirmAction، لاستبدال confirm()/alert()
 // الأصلية المتزامنة (بديل حقيقي — بلا حجب لخيط التنفيذ، وقابل للاختبار الآلي
-// بعكس confirm() الأصلية). تُبنى فوق showConfirm نفسها بلا أي تعديل عليها —
-// الـ45 نداء الحالي لـshowConfirm/confirmAction يفضلوا يشتغلوا بالضبط زي ما هما.
-// ✅ زرار "إلغاء" في confirmDeleteModal (index.html) ما بيبعتش أي إشارة "اتلغى"
-// حاليًا (بيقفل المودال بس) — بنلف عليه هنا مؤقتًا لكل نداء (نفس أسلوب
-// showConfirm نفسها مع زرار التأكيد: onclick يُعاد كتابته من جديد في كل نداء،
-// بلا أي آلية طابور — نداءان متتاليان بلا انتظار الأول ممكن يتضاربوا، بس ده
-// نفس القيد الموجود أصلاً في showConfirm، مش قيد جديد)
+// بعكس confirm() الأصلية). تُبنى فوق showConfirm نفسها بلا أي تعديل على
+// توقيعها الخارجي — الـ45 نداء الحالي لـshowConfirm/confirmAction يفضلوا
+// يشتغلوا بالضبط زي ما هما. ✅ إشارة "اتلغى" ونداءات الطابور بقيا مُدارين
+// مركزيًا جوه showConfirm نفسها (reports.js، onCancel/beforeShow) — مش هنا
 export function confirmAsync(title, msg, danger = true, okLabel = null) {
   return new Promise(resolve => {
     if (typeof showConfirm !== 'function') { resolve(false); return; }
-    showConfirm(title, msg, () => resolve(true));
-    const okBtn = document.getElementById('confirmDeleteOkBtn');
-    if (okBtn) {
-      okBtn.textContent = okLabel || (danger ? '⚠️ تأكيد' : '✅ تأكيد');
-      okBtn.style.background = danger ? 'var(--red)' : 'var(--green)';
-    }
-    const cancelBtn = document.getElementById('confirmDeleteCancelBtn');
-    if (cancelBtn) {
-      cancelBtn.onclick = () => { closeModal('confirmDeleteModal'); resolve(false); };
-    }
+    showConfirm(title, msg, () => resolve(true), () => resolve(false), (okBtn) => {
+      if (okBtn) {
+        okBtn.textContent = okLabel || (danger ? '⚠️ تأكيد' : '✅ تأكيد');
+        okBtn.style.background = danger ? 'var(--red)' : 'var(--green)';
+      }
+    });
   });
 }
 

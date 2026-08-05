@@ -741,22 +741,36 @@ document.addEventListener('DOMContentLoaded', () => {
 // ════════════════════════════════════════
 // FEATURE 1 — CONFIRM DELETE MODAL
 // ════════════════════════════════════════
-export function showConfirm(title, msg, onConfirm) {
-  el('confirmDeleteTitle').textContent = title;
-  el('confirmDeleteMsg').textContent = msg;
-  const btn = el('confirmDeleteOkBtn');
-  btn.onclick = async () => { closeModal('confirmDeleteModal'); await onConfirm(); };
-  openModal('confirmDeleteModal');
+let _confirmQueueTail = Promise.resolve();
+
+function _runConfirm(title, msg, isHtml, onConfirm, onCancel, beforeShow) {
+  return new Promise(resolveTurn => {
+    el('confirmDeleteTitle').textContent = title;
+    if (isHtml) el('confirmDeleteMsg').innerHTML = msg;
+    else el('confirmDeleteMsg').textContent = msg;
+    const okBtn = el('confirmDeleteOkBtn');
+    const cancelBtn = el('confirmDeleteCancelBtn');
+    okBtn.onclick = async () => { await closeModal('confirmDeleteModal'); await onConfirm(); resolveTurn(); };
+    if (cancelBtn) {
+      cancelBtn.onclick = async () => { await closeModal('confirmDeleteModal'); if (onCancel) await onCancel(); resolveTurn(); };
+    }
+    if (typeof beforeShow === 'function') beforeShow(okBtn, cancelBtn);
+    openModal('confirmDeleteModal');
+  });
+}
+
+export function showConfirm(title, msg, onConfirm, onCancel, beforeShow) {
+  _confirmQueueTail = _confirmQueueTail
+    .then(() => _runConfirm(title, msg, false, onConfirm, onCancel, beforeShow))
+    .catch(() => {});
 }
 
 // ✅ Audit fix: نسخة منفصلة تستخدم innerHTML لعرض محتوى HTML (جداول/قوائم)
 // يجب أن يكون كل محتوى HTML الممرَّر مُعقَّماً مسبقاً بـ esc() قبل الاستدعاء
-export function showConfirmHtml(title, htmlMsg, onConfirm) {
-  el('confirmDeleteTitle').textContent = title;   // العنوان دائماً textContent
-  el('confirmDeleteMsg').innerHTML = htmlMsg;      // المحتوى HTML مُعقَّم مسبقاً من المُستدعي
-  const btn = el('confirmDeleteOkBtn');
-  btn.onclick = async () => { closeModal('confirmDeleteModal'); await onConfirm(); };
-  openModal('confirmDeleteModal');
+export function showConfirmHtml(title, htmlMsg, onConfirm, onCancel, beforeShow) {
+  _confirmQueueTail = _confirmQueueTail
+    .then(() => _runConfirm(title, htmlMsg, true, onConfirm, onCancel, beforeShow))
+    .catch(() => {});
 }
 
 // Override browser confirm() for delete operations

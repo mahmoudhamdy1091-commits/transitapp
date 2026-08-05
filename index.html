@@ -1059,7 +1059,7 @@
           </div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-secondary btn-sm" onclick="loadApprovalQueue()">🔄 تحديث</button>
-            <button class="btn btn-primary btn-sm" onclick="approveAll()" id="approve-all-btn" style="display:none">✅ موافقة على الكل</button>
+            <button class="btn btn-primary btn-sm" onclick="guardSubmit(this, approveAll)" id="approve-all-btn" style="display:none">✅ موافقة على الكل</button>
           </div>
         </div>
 
@@ -1072,7 +1072,7 @@
           <button class="btn btn-sm approval-filter-btn" id="af-collection" onclick="filterApproval('collection')">💰 تحصيلات <span id="af-count-collection" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
           <button class="btn btn-sm approval-filter-btn" id="af-payment"   onclick="filterApproval('payment')">💳 دفعات مورد <span id="af-count-payment" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
           <button class="btn btn-sm approval-filter-btn" id="af-payout"    onclick="filterApproval('payout')">👥 صرف شركاء <span id="af-count-payout" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn" id="af-reversal"  onclick="filterApproval('reversal')" style="border-color:#f97316;color:#f97316">🔄 إلغاءات <span id="af-count-reversal" style="background:rgba(249,115,22,.15);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn" id="af-reversal"  onclick="filterApproval('reversal')">🔄 إلغاءات <span id="af-count-reversal" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
         </div>
 
         <!-- القائمة -->
