@@ -28,9 +28,22 @@ const ROOT = 'C:/Users/hamdy/Documents/tarnsit app/transitapp';
 function stubEl() {
   return {
     value: '', checked: false, style: {}, textContent: '', innerHTML: '',
+    onclick: null,
     addEventListener() {}, querySelector() { return null; }, querySelectorAll() { return []; },
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
   };
+}
+
+// ✅ getElementById بترجّع نفس العنصر دايمًا لنفس الـid (Map ثابتة) — بعكس
+// stubEl() المباشرة (كائن جديد كل نداء). ضروري لأي اختبار محتاج يتحقق من
+// حالة مشتركة عبر أكتر من نداء لنفس العنصر (زي طابور showConfirm الجديد —
+// reports.js — اللي بيكتب على confirmDeleteOkBtn/CancelBtn من استدعاءين
+// مختلفين ويحتاج يفضلوا نفس العنصر). أقرب لسلوك DOM حقيقي، مفيش أي كود حالي
+// كان معتمد على عنصر جديد كل نداء (تحقّقنا — سويت الانحدار كامله بلا تغيير سلوك)
+const _elCache = new Map();
+function stableEl(id) {
+  if (!_elCache.has(id)) _elCache.set(id, stubEl());
+  return _elCache.get(id);
 }
 
 // ✅ مخزن حقيقي في الذاكرة (مش no-op) — Phase 2 محتاجة تتحكّم فعليًا في
@@ -51,7 +64,7 @@ function installPolyfills() {
   globalThis.localStorage   = makeStorageStub();
   globalThis.sessionStorage = makeStorageStub();
   globalThis.document = {
-    getElementById: stubEl,
+    getElementById: stableEl,
     querySelector: () => null,
     querySelectorAll: () => [],
     createElement: () => stubEl(),
@@ -120,8 +133,11 @@ async function loadPatchedReports() {
   // (اكتُشف حيًّا 2026-07-29). \n\} (قوس إغلاق وحيد في بداية سطر) موثوق بما إن
   // القوس الداخلي الوحيد جوه الجسم (btn.onclick = async () => {...};) على نفس
   // السطر مع كود تاني، مش وحيد على سطره.
-  const reSC  = /export function showConfirm\(title, msg, onConfirm\) \{[\s\S]*?\n\}/;
-  const reSCH = /export function showConfirmHtml\(title, htmlMsg, onConfirm\) \{[\s\S]*?\n\}/;
+  // ✅ التوقيع اتغيّر (onCancel/beforeShow جداد — طابور showConfirm الحقيقي،
+  // راجع project_ui_restructure_needed_warnings_approvals) — الـregex هنا
+  // لازم يتابع نفس التوقيع بالظبط، وإلا loadApp() كله بيفشل (الفحص الصريح تحت)
+  const reSC  = /export function showConfirm\(title, msg, onConfirm, onCancel, beforeShow\) \{[\s\S]*?\n\}/;
+  const reSCH = /export function showConfirmHtml\(title, htmlMsg, onConfirm, onCancel, beforeShow\) \{[\s\S]*?\n\}/;
   if (!reSC.test(src) || !reSCH.test(src)) {
     throw new Error(
       'headless-app-env: توقيع showConfirm/showConfirmHtml في js/reports.js تغيّر عن ' +
@@ -130,8 +146,8 @@ async function loadPatchedReports() {
     );
   }
   const patched = src
-    .replace(reSC,  `export function showConfirm(title, msg, onConfirm) { globalThis.__autoConfirm(onConfirm); }`)
-    .replace(reSCH, `export function showConfirmHtml(title, htmlMsg, onConfirm) { globalThis.__autoConfirm(onConfirm); }`);
+    .replace(reSC,  `export function showConfirm(title, msg, onConfirm, onCancel, beforeShow) { globalThis.__autoConfirm(onConfirm); }`)
+    .replace(reSCH, `export function showConfirmHtml(title, htmlMsg, onConfirm, onCancel, beforeShow) { globalThis.__autoConfirm(onConfirm); }`);
   const tmpFile = path.join(os.tmpdir(), `reports-headless-${process.pid}-${Date.now()}.mjs`);
   fs.writeFileSync(tmpFile, patched, 'utf8');
   try {
@@ -169,6 +185,12 @@ async function loadApp() {
   const reports      = await loadPatchedReports();
   const settings     = await import(u('/js/settings.js'));
   const operations   = await import(u('/js/operations.js'));
+  // ✅ search.js: _escHtml (approveAll بتستخدمها لبناء نص نتائج الموافقة
+  // الجماعية) مُصدَّرة من هنا، مش core.js/operations.js. بلا كود تهيئة مقترن
+  // بـDOM عند نهايتها (Object.assign bridge بس، تحقّقنا) — بتُحمَّل بعد
+  // operations.js في index.html الحقيقي كمان، لكن الترتيب هنا مش مهم
+  // (بتُستخدَم وقت التشغيل بس، مش وقت تحميل الموديول)
+  const search       = await import(u('/js/search.js'));
 
   // ✅ إعادة تثبيت — reports.js دهس الـstub بالتعريف الحقيقي في تذييله، راجع
   // تعليق installConfirmStub فوق
@@ -180,7 +202,7 @@ async function loadApp() {
   // سلوك تطبيق حقيقي بلا جلسة، وتحقّقنا 2026-07-29 إن الـRLS تسمح بالكتابة بيه
 
   return {
-    core, permissions, periods, utils, lifecycle, engine, transactions, accounting, reports, settings, operations,
+    core, permissions, periods, utils, lifecycle, engine, transactions, accounting, reports, settings, operations, search,
     state: core.state,
     waitForLastConfirm: () => globalThis.__waitForLastConfirm(),
   };

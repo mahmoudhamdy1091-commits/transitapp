@@ -1872,6 +1872,129 @@ async function ai1_approveItemEmptyCacheStillCreatesJE(app) {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// APPROVAL QUEUE UX ITEMS (بند 4 المؤجَّل سابقًا، اتفَق على تنفيذه اليوم)
+// ════════════════════════════════════════════════════════════════════════
+// راجع project_ui_restructure_needed_warnings_approvals في الذاكرة.
+
+// UM6 — طابور showConfirm الحقيقي (reports.js): نداء تانٍ قبل ما الأول
+// يترد عليه لازم "يستنى دوره" — العنوان المعروض يفضل بتاع الأول لحد ما
+// نرد عليه، وبعدين يتحول لبتاع الثاني تلقائيًا. getElementById بقت ثابتة
+// لكل id (راجع stableEl في _headless-app-env.js) — ضروري هنا تحديدًا عشان
+// نقدر "نضغط" نفس زرار _runConfirm الحقيقي من بره.
+async function um6_showConfirmRealQueue(app) {
+  const original = globalThis.showConfirm;
+  let confirmedA = false, confirmedB = false;
+  // ✅ app.reports.showConfirm هي النسخة المُصحَّحة تلقائية التأكيد (loadPatchedReports —
+  // مطلوبة لباقي الـ99 سيناريو). عشان نختبر الطابور الحقيقي فعليًا، نستورد
+  // js/reports.js خام (بلا تصحيح) مباشرة — نفس أسلوب سكريبت التحقيق المستقل
+  // اللي أثبت باج التداخل الأصلي (repro_um4_confirm_overwrite.js)
+  const realReports = await import('file:///C:/Users/hamdy/Documents/tarnsit%20app/transitapp/js/reports.js?um6=' + Date.now());
+  globalThis.showConfirm = realReports.showConfirm;
+  try {
+    globalThis.showConfirm('عنوان أ', 'رسالة أ', () => { confirmedA = true; });
+    globalThis.showConfirm('عنوان ب', 'رسالة ب', () => { confirmedB = true; });
+
+    // ✅ لسه العنوان المعروض لازم يكون "أ" — "ب" في الطابور مستنية
+    await new Promise(r => setTimeout(r, 50));
+    assert(document.getElementById('confirmDeleteTitle').textContent === 'عنوان أ',
+      `المتوقع العنوان المعروض يفضل "عنوان أ" لحد ما نرد عليه، طلع "${document.getElementById('confirmDeleteTitle').textContent}"`);
+    assert(!confirmedB, 'المتوقع onConfirm بتاع "ب" ما يتنفّذش قبل ما "أ" يترد عليه');
+
+    // ✅ نرد على "أ" (نضغط تأكيد) — لازم "ب" يظهر بعدها مباشرة (دوره جه)
+    document.getElementById('confirmDeleteOkBtn').onclick();
+    await new Promise(r => setTimeout(r, 50));
+    assert(confirmedA, 'المتوقع onConfirm بتاع "أ" يتنفّذ بعد الرد عليه');
+    assert(document.getElementById('confirmDeleteTitle').textContent === 'عنوان ب',
+      `المتوقع العنوان يتحول لـ"عنوان ب" بعد رد "أ"، طلع "${document.getElementById('confirmDeleteTitle').textContent}"`);
+
+    // ✅ نرد على "ب" كمان — تنظيف الطابور قبل باقي السويت
+    document.getElementById('confirmDeleteOkBtn').onclick();
+    await new Promise(r => setTimeout(r, 50));
+    assert(confirmedB, 'المتوقع onConfirm بتاع "ب" يتنفّذ بعد الرد عليه');
+  } finally {
+    globalThis.showConfirm = original;
+  }
+}
+
+// UM7 — approveAll لسه شغّالة صح بعد التحويل لـconfirmAsync (بدل showConfirm
+// الخام) — بيانات ZZTEST حقيقية على نظام TM، القيود بتتكوّن صح والسجلات
+// بترحّل، مش بس "الكود بيتنفّذ بلا خطأ"
+async function um7_approveAllStillWorksAfterConfirmAsyncRefactor(app) {
+  const AI_SYS = 'TM';
+  const fileNo = zid('UM7');
+  registerExtraFileNo(fileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: AI_SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 100, post_status: 'draft', notes: 'ZZTEST regression UM7 fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+
+  const exp1 = await apiPost('expenses', {
+    system_type: AI_SYS, file_no: fileNo, exp_id: zid('EXP'), ref_no: zid('EXP'), pay_id: zid('EXP'),
+    description: 'ZZTEST UM7 expense 1', exp_type: 'أخرى', pay_method: 'نقد',
+    exp_date: today(), amount: 40, post_status: 'draft',
+  });
+  registerCleanup('expenses', exp1[0].id);
+  const exp2 = await apiPost('expenses', {
+    system_type: AI_SYS, file_no: fileNo, exp_id: zid('EXP'), ref_no: zid('EXP'), pay_id: zid('EXP'),
+    description: 'ZZTEST UM7 expense 2', exp_type: 'أخرى', pay_method: 'نقد',
+    exp_date: today(), amount: 60, post_status: 'draft',
+  });
+  registerCleanup('expenses', exp2[0].id);
+
+  const prevSys = app.state.system;
+  app.state.system = AI_SYS;
+  try {
+    await app.operations.loadApprovalQueue();
+    app.operations.filterApproval('all');
+    const ourItems = app.transactions.approvalState.filtered.filter(r => r._file === fileNo || r.file_no === fileNo);
+    // ✅ 3 بنود متوقَّعة: poRow نفسه (draft) بيظهر كبند "شراء" في القائمة كمان،
+    // زي أي سند شراء draft — مش بس المصروفين المقصودين
+    assert(ourItems.length === 3, `المتوقع 3 بنود من ملفنا (سند الشراء + مصروفين) في approvalState.filtered، طلع ${ourItems.length}`);
+    app.transactions.approvalState.filtered = ourItems; // نعزل approveAll عن أي بند تاني موجود فعليًا في القائمة الحية
+
+    await app.operations.approveAll(); // بلا وسيط زرار — confirmAsync + الـstub التلقائي يكفوا هنا
+
+    const afterPo = await waitUntilPosted('purchase_orders', poRow[0].id);
+    const after1 = await waitUntilPosted('expenses', exp1[0].id);
+    const after2 = await waitUntilPosted('expenses', exp2[0].id);
+    assert(afterPo?.post_status === 'posted', `المتوقع سند الشراء posted، طلع '${afterPo?.post_status}'`);
+    assert(after1?.post_status === 'posted', `المتوقع exp1 posted، طلع '${after1?.post_status}'`);
+    assert(after2?.post_status === 'posted', `المتوقع exp2 posted، طلع '${after2?.post_status}'`);
+
+    const jePo = await waitUntilJEExists(AI_SYS, 'purchase_orders', poRow[0].id);
+    const je1 = await waitUntilJEExists(AI_SYS, 'expenses', exp1[0].id);
+    const je2 = await waitUntilJEExists(AI_SYS, 'expenses', exp2[0].id);
+    assert(jePo?.length >= 1, 'المتوقع قيد لسند الشراء');
+    assert(je1?.length >= 1, 'المتوقع قيد لـexp1');
+    assert(je2?.length >= 1, 'المتوقع قيد لـexp2');
+  } finally {
+    app.state.system = prevSys;
+  }
+}
+
+// UM8 — renderApprovalList بتعرض زرار "رفض" مباشر (مش مخبّى جوه "⋮") للأنواع
+// العادية (غير طلب إلغاء) — فحص على المُخرَج الفعلي، بلا تقليد لمنطق البناء
+async function um8_renderApprovalListShowsDirectRejectButton(app) {
+  const prevAll = app.transactions.approvalState.all;
+  const prevFiltered = app.transactions.approvalState.filtered;
+  try {
+    app.transactions.approvalState.all = [{
+      id: 'zztest-um8', _type: 'expense', _amount: 100, _date: today(),
+      _desc: 'ZZTEST UM8 row', _file: 'ZZTEST-UM8-FILE', ref_no: 'ZZTEST-REF', created_at: new Date().toISOString(),
+    }];
+    app.operations.filterApproval('all');
+    const html = document.getElementById('approval-list').innerHTML;
+    assert(html.includes('✗ رفض'), 'المتوقع زرار "✗ رفض" ظاهر مباشرة في الصف (مش مخبّى جوه ⋮)');
+    assert(html.includes("rejectItem('expense','zztest-um8')"), 'المتوقع زرار الرفض ينادي rejectItem مباشرة بنفس النوع/id');
+    assert(html.includes('_ctxApproval(this)'), 'المتوقع زرار "⋮" يفضل موجود كمان (لتعديل/إلغاء)');
+  } finally {
+    app.transactions.approvalState.all = prevAll;
+    app.transactions.approvalState.filtered = prevFiltered;
+  }
+}
+
 (async () => {
   console.log('Track A — Phase 0 Regression Suite');
   console.log('file_no تجريبي:', FILE_NO, '| نظام:', SYS);
@@ -2015,6 +2138,12 @@ async function ai1_approveItemEmptyCacheStillCreatesJE(app) {
     // ✅ إصلاح باج "موافقة صامتة بلا قيد محاسبي" (عاجل، اكتُشف حيًّا 2026-08-03، TM-023)
     console.log(`\n── approveItem: إصلاح موافقة صامتة بلا قيد (كاش فاضي) ──`);
     await scenario('approve-item / AI1 approveItem بكاش فاضي لسه بيكوّن القيد صح (نظام TM)', () => ai1_approveItemEmptyCacheStillCreatesJE(app));
+
+    // ✅ بنود UX صفحة الموافقات الأربعة (اتفَق على تنفيذها بعد الإصلاح العاجل)
+    console.log(`\n── صفحة الموافقات: بنود UX الأربعة ──`);
+    await scenario('ui-messaging / UM6 طابور showConfirm الحقيقي — نداء تانٍ ينتظر دوره', () => um6_showConfirmRealQueue(app));
+    await scenario('approve-item / UM7 approveAll لسه شغّالة صح بعد confirmAsync (نظام TM)', () => um7_approveAllStillWorksAfterConfirmAsyncRefactor(app));
+    await scenario('approve-item / UM8 renderApprovalList بتعرض زرار رفض مباشر', () => um8_renderApprovalListShowsDirectRejectButton(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
