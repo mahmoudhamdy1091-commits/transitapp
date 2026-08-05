@@ -1684,10 +1684,33 @@ export async function approveItem(type, id) {
 
     // ② اكمل DB في الخلفية
     (async () => { try {
+    // ✅ إصلاح باج "موافقة صامتة بلا قيد" (اكتُشف حيًّا 2026-08-03، TM-023) —
+    // approvalState.all كانت ممكن تكون فاضية/قديمة (approveItem اتنادت من
+    // غير loadApprovalQueue() قبلها، أو السجل كان اتشال من الكاش بالفعل)،
+    // فـ`if (approvedItem)` القديمة كانت بتتخطى إنشاء القيد بصمت بلا أي خطأ —
+    // والترحيل لـposted كان بيحصل قبلها بلا شرط. الإصلاح: لو مش موجود في
+    // الكاش، اجيبه مباشرة من القاعدة بالـid؛ ولو لسه مالقيناهوش، نوقف
+    // العملية بالكامل *قبل* أي تعديل على post_status — ممنوع الاستمرار بصمت
+    let item = approvedItem;
+    if (!item) {
+      console.warn(`approveItem: ${type}#${id} غير موجود في approvalState.all (كاش قديم/فاضي) — يُجلَب مباشرة من القاعدة`);
+      const rows = await apiGetAll(cfg.table, { select:'*', id:`eq.${id}` });
+      item = rows?.[0] || null;
+    }
+    if (!item) {
+      toast(`⚠️ تعذّرت الموافقة على ${cfg.label} — السجل غير موجود لا في القائمة ولا في القاعدة. أعد تحميل الصفحة وحاول مجدداً`,'err');
+      return; // ✅ توقف كامل هنا — لا ترحيل لـposted، لا قيد
+    }
     // ✅ فاتورة بيع = كل سيارات نفس inv_no دفعة واحدة، لا سطر واحد فقط — موافقة واحدة للفاتورة كاملة
-    const isSaleInvoice = type === 'sale' && approvedItem?.inv_no && approvedItem?.file_no;
+    const isSaleInvoice = type === 'sale' && item.inv_no && item.file_no;
+    // ✅ فاتورة بيع بلا inv_no/file_no — بيانات ناقصة تمنع إنشاء قيدها لاحقاً؛
+    // نفس مبدأ "توقف بدل استمرار صامت" أعلاه، مش بس فحص للـcache
+    if (type === 'sale' && !isSaleInvoice) {
+      toast(`⚠️ تعذّرت الموافقة على ${cfg.label} — بيانات الفاتورة ناقصة (رقم فاتورة/ملف)`,'err');
+      return;
+    }
     const saleInvoiceFilter = isSaleInvoice
-      ? { system_type:`eq.${state.system}`, file_no:`eq.${approvedItem.file_no}`, inv_no:`eq.${approvedItem.inv_no}` }
+      ? { system_type:`eq.${state.system}`, file_no:`eq.${item.file_no}`, inv_no:`eq.${item.inv_no}` }
       : null;
     // ✅ فحص idempotency: لو السجل أُعتمد فعلاً (لم يعد draft) — توقف بدون تكرار القيود
     const patched = isSaleInvoice
@@ -1701,36 +1724,30 @@ export async function approveItem(type, id) {
       toast(`⚠️ فشلت الموافقة على ${cfg.label} — أُعيد لقائمة الاعتمادات`,'warn');
     };
     // ✅ شراء/دفعة/مصروف/صرف شريك — دالة مشتركة مع _ensureApprovalJE (كانت 5 نسخ منفصلة)
+    // item مضمون موجود هنا (توقفنا فوق لو لأ) — القيد بقى يتكوّن دايمًا، مش بشرط قابل للتخطي الصامت
     if (type === 'purchase' || type === 'payment' || type === 'expense' || type === 'payout') {
-      if (approvedItem) {
-        try { await _createApprovalJE(type, approvedItem, state.system); }
-        catch(e) { await revertToDraft(); throw e; }
-      }
+      try { await _createApprovalJE(type, item, state.system); }
+      catch(e) { await revertToDraft(); throw e; }
     }
     if (type === 'sale') {
-      const item = approvedItem;
-      if (item && item.inv_no && item.file_no) {
-        // ✅ قفل بـPromise مشترك لمنع تكرار القيد عند موافقات فردية متسارعة على
-        // سيارات متعددة من نفس الفاتورة (نفس النواة المستخدمة في _ensureApprovalJE)
-        try {
-          await _ensureSaleJE(state.system, item.file_no, item.inv_no, item.sale_date, item.customer);
-        } catch(e) { await revertToDraft(); throw e; }
+      // ✅ قفل بـPromise مشترك لمنع تكرار القيد عند موافقات فردية متسارعة على
+      // سيارات متعددة من نفس الفاتورة (نفس النواة المستخدمة في _ensureApprovalJE)
+      try {
+        await _ensureSaleJE(state.system, item.file_no, item.inv_no, item.sale_date, item.customer);
+      } catch(e) { await revertToDraft(); throw e; }
 
-        // ✅ OPTION B: تحصيلات مرتبطة بهذه الفاتورة (مدفوعة فعلاً) — اعتماد تلقائي
-        // بدالة مشتركة مع _ensureApprovalJE (كانت نسختين منفصلتين تفرَّقتا)
-        await _approveLinkedPaidCollections(state.system, item.file_no, item.inv_no, item.customer);
-      }
+      // ✅ OPTION B: تحصيلات مرتبطة بهذه الفاتورة (مدفوعة فعلاً) — اعتماد تلقائي
+      // بدالة مشتركة مع _ensureApprovalJE (كانت نسختين منفصلتين تفرَّقتا)
+      await _approveLinkedPaidCollections(state.system, item.file_no, item.inv_no, item.customer);
     }
     if (type === 'collection') {
       // ✅ القيد يُولَّد فقط إذا كان مدفوعاً فعلاً (paid_date موجود) — دالة مشتركة مع _ensureApprovalJE
       // لو لا يوجد paid_date → التحصيل معلق، يظهر في قائمة "مستحق" ليُسجَّل الدفع لاحقاً، لا قيد الآن
-      if (approvedItem) {
-        try { await _createApprovalJE(type, approvedItem, state.system); }
-        catch(e) { await revertToDraft(); throw e; }
-      }
+      try { await _createApprovalJE(type, item, state.system); }
+      catch(e) { await revertToDraft(); throw e; }
     }
     // ✅ سجّل "من وافق" على المسودة (كان غير مسجَّل — فجوة تتبّع)
-    await logAudit('APPROVE', cfg.table, approvedItem?.file_no || null, approvedItem || null, { approved_at: today() }, `موافقة ${cfg.label} ${approvedItem?.ref_no || approvedItem?.inv_no || id}`);
+    await logAudit('APPROVE', cfg.table, item.file_no || null, item, { approved_at: today() }, `موافقة ${cfg.label} ${item.ref_no || item.inv_no || id}`);
     invalidateCache();
     loadApprovalQueue(); // refresh هادي في الخلفية
     } catch(e) { toast('خطأ في حفظ الموافقة: '+e.message,'err'); } })();
