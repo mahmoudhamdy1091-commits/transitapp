@@ -1793,6 +1793,85 @@ async function um5_networkErrorClassified(app) {
   assert(!/Failed to fetch/.test(threw.message), `المتوقع عدم ظهور نص "Failed to fetch" الخام في الرسالة النهائية، طلعت: "${threw.message}"`);
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// APPROVE ITEM — إصلاح باج "موافقة صامتة بلا قيد محاسبي" (اكتُشف حيًّا
+// 2026-08-03، TM-023)
+// ════════════════════════════════════════════════════════════════════════
+// approveItem كانت بتاخد approvedItem عبر approvalState.all.find(...) —
+// لو الكاش فاضي/قديم (approveItem اتنادت بلا loadApprovalQueue() قبلها)،
+// approvedItem بيبقى undefined، والقيد كان بيتخطى بصمت (if(approvedItem){...})
+// بينما الترحيل لـposted كان بيحصل قبلها بلا شرط أصلاً. الإصلاح: fallback
+// جلب مباشر من القاعدة بالـid، ولو لسه مالقيناهوش نوقف بالكامل قبل أي تعديل.
+// السيناريو هنا بيستدعي approveItem الحقيقية على سجل حقيقي (ZZTEST) بلا أي
+// نداء لـloadApprovalQueue() قبلها — نفس ظرف الباج بالحرف، مش تقليد.
+
+async function waitUntilPosted(table, id, timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const rows = await apiGetAll(table, { select: 'post_status', id: `eq.${id}` });
+    if (rows?.[0]?.post_status === 'posted') return rows[0];
+    await new Promise(r => setTimeout(r, 200));
+  }
+  const rows = await apiGetAll(table, { select: 'post_status', id: `eq.${id}` });
+  return rows?.[0] || null;
+}
+
+// ✅ post_status='posted' بيتحقق قبل إنشاء القيد (الترتيب الأصلي في approveItem
+// نفسها — الباتش يسبق _createApprovalJE) — الانتظار على post_status وحده مش
+// كافٍ هنا، القيد بيتكوّن في خطوة لاحقة (IIFE خلفية غير مُنتظَرة من المستدعي)
+async function waitUntilJEExists(sys, refTable, refId, timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const rows = await apiGetAll('journal_entries', {
+      select: 'id', system_type: `eq.${sys}`, ref_table: `eq.${refTable}`, ref_id: `eq.${refId}`, post_status: 'eq.posted',
+    });
+    if (rows?.length) return rows;
+    await new Promise(r => setTimeout(r, 200));
+  }
+  return apiGetAll('journal_entries', {
+    select: 'id', system_type: `eq.${sys}`, ref_table: `eq.${refTable}`, ref_id: `eq.${refId}`, post_status: 'eq.posted',
+  });
+}
+
+async function ai1_approveItemEmptyCacheStillCreatesJE(app) {
+  // ✅ نظام TM عمدًا (بدل SYS='BOX' المشترك) — نفس نظام الاكتشاف الحي (TM-023)
+  const AI_SYS = 'TM';
+  const fileNo = zid('AI1');
+  registerExtraFileNo(fileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: AI_SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 100, post_status: 'draft', notes: 'ZZTEST regression AI1 fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+
+  const expRow = await apiPost('expenses', {
+    system_type: AI_SYS, file_no: fileNo, exp_id: zid('EXP'), ref_no: zid('EXP'), pay_id: zid('EXP'),
+    description: 'ZZTEST AI1 empty-cache approval', exp_type: 'أخرى', pay_method: 'نقد',
+    exp_date: today(), amount: 150, post_status: 'draft',
+  });
+  registerCleanup('expenses', expRow[0].id);
+
+  const prevSys = app.state.system;
+  app.state.system = AI_SYS;
+  try {
+    // ✅ بلا loadApprovalQueue() عمدًا — approvalState.all تفضل بلا هذا السجل،
+    // نفس ظرف الباج بالحرف. approveItem الحقيقية (بلا تقليد).
+    assert(
+      !app.transactions.approvalState.all.some(r => String(r.id) === String(expRow[0].id)),
+      'شرط مسبق: السجل ما لازمش يكون موجود في approvalState.all (الكاش فاضي/غير محمَّل)'
+    );
+    await app.operations.approveItem('expense', expRow[0].id);
+
+    const after = await waitUntilPosted('expenses', expRow[0].id);
+    assert(after?.post_status === 'posted', `المتوقع post_status='posted' بعد الموافقة (حتى مع كاش فاضي)، طلع '${after?.post_status}'`);
+
+    const je = await waitUntilJEExists(AI_SYS, 'expenses', expRow[0].id);
+    assert(je?.length >= 1, `المتوقع قيد محاسبي واحد على الأقل مرتبط — طلع ${je?.length || 0} (الباج الأصلي: صفر قيد بصمت)`);
+  } finally {
+    app.state.system = prevSys;
+  }
+}
+
 (async () => {
   console.log('Track A — Phase 0 Regression Suite');
   console.log('file_no تجريبي:', FILE_NO, '| نظام:', SYS);
@@ -1932,6 +2011,10 @@ async function um5_networkErrorClassified(app) {
     await scenario('ui-messaging / UM3 closeModal(غير متسخ) يتخطى showConfirm بالكامل', () => um3_closeModalNotDirtySkipsConfirm(app));
     await scenario('ui-messaging / UM4 تعميم تصنيف قيد فريد لأي اسم (uq_je_ref_primary_posted)', () => um4_uniqueConstraintGeneralizedToAnyName(app));
     await scenario('ui-messaging / UM5 تصنيف خطأ الشبكة (Failed to fetch) لرسالة "غالبًا نجحت"', () => um5_networkErrorClassified(app));
+
+    // ✅ إصلاح باج "موافقة صامتة بلا قيد محاسبي" (عاجل، اكتُشف حيًّا 2026-08-03، TM-023)
+    console.log(`\n── approveItem: إصلاح موافقة صامتة بلا قيد (كاش فاضي) ──`);
+    await scenario('approve-item / AI1 approveItem بكاش فاضي لسه بيكوّن القيد صح (نظام TM)', () => ai1_approveItemEmptyCacheStillCreatesJE(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
