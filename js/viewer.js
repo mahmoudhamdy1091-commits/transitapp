@@ -95,6 +95,10 @@ export async function openQuickModal(type) {
     payment:    'quickPaymentModal',
     payout:     'quickPayoutModal',
   };
+  // ✅ مفتاح idempotency لهذه المحاولة — يتولّد وقت فتح المودال، لا وقت
+  // الإرسال. راجع js/utils.js newIdemKey
+  const quickModalEl = map[type] && el(map[type]);
+  if (quickModalEl) quickModalEl.dataset.idemKey = newIdemKey();
   // Reset error messages
   ['qsSaleError','qsColError','qsExpError','qsPayError','qsPoError'].forEach(id => {
     const e = el(id); if (e) { e.style.display='none'; e.textContent=''; }
@@ -449,11 +453,21 @@ export async function submitQuickExpense() {
   if (!fileNo || !desc || !amount || !date) {
     showFieldErr('qsExpError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
+
+  // ✅ تحذير ناعم بدل الرفض الصلب القديم (uniq_expense_active) — راجع
+  // sql/add_idempotency_key_expenses_payments.sql وjs/utils.js warnIfSimilarActive
+  const proceedQe = await warnIfSimilarActive('expenses', {
+    select: 'id,post_status', system_type: `eq.${state.system}`, file_no: `eq.${fileNo}`,
+    amount: `eq.${amount}`, description: `eq.${desc}`, exp_date: `eq.${date}`,
+  }, 'مصروف');
+  if (!proceedQe) return;
+
   try {
     const refNo = (await genSeqRef('EXP', state.system, fileNo, 'expenses')) || `EXP-${fileNo}-${Date.now()}`;
+    const idemKey = el('quickExpenseModal')?.dataset.idemKey || newIdemKey();
     const data = { system_type:state.system, file_no:fileNo, description:desc,
       pay_id:refNo, exp_type:type, category:type, amount, pay_method:method, document:doc||null,
-      exp_date: date, expense_date:date, notes:notes||null, ref_no:refNo,
+      exp_date: date, expense_date:date, notes:notes||null, ref_no:refNo, idempotency_key: idemKey,
       post_status:entryStatus() };
     const qeIns = await apiPost('expenses', data);
     await logAudit('INSERT','expenses',fileNo,null,data);
@@ -542,12 +556,21 @@ export async function submitQuickPayment() {
     if (!proceed) return;
   }
 
+  // ✅ تحذير ناعم بدل الرفض الصلب القديم (uniq_payment_active) — راجع
+  // sql/add_idempotency_key_expenses_payments.sql وjs/utils.js warnIfSimilarActive
+  const proceedQp = await warnIfSimilarActive('payments', {
+    select: 'id,post_status', system_type: `eq.${state.system}`, file_no: `eq.${fileNo}`,
+    amount: `eq.${amount}`, payer: `eq.${payer}`, pay_date: `eq.${date}`,
+  }, 'دفعة');
+  if (!proceedQp) return;
+
   try {
     const refNo = (await genSeqRef('PMT', state.system, fileNo, 'payments')) || `PMT-${fileNo}-${Date.now()}`;
     const supplierName = el('qp-card-supplier')?.textContent || '';
+    const idemKey = el('quickPaymentModal')?.dataset.idemKey || newIdemKey();
     const data = { system_type:state.system, file_no:fileNo, payer, amount,
       pay_id:refNo, ref_no:refNo,
-      pay_method:method, document:doc||null, pay_date: date, notes:notes||null,
+      pay_method:method, document:doc||null, pay_date: date, notes:notes||null, idempotency_key: idemKey,
       post_status:entryStatus() };
     const qpIns = await apiPost('payments', data);
     await logAudit('INSERT','payments', fileNo, null, data);

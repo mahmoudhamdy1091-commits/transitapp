@@ -398,6 +398,36 @@ export function confirmAsync(title, msg, danger = true, okLabel = null) {
   });
 }
 
+// ════════════════════════════════════════
+// IDEMPOTENCY KEY — بديل uniq_expense_active/uniq_payment_active
+// ════════════════════════════════════════
+// المفتاح يُولَّد وقت فتح النموذج/إضافة البند (لا وقت الإرسال) ويُخزَّن في
+// dataset العنصر — إعادة محاولة إرسال نفس النموذج (بعد خطأ شبكي غامض) تبعت
+// بنفس المفتاح، فالسيرفر يرفض التكرار الفعلي عبر فهرس فريد جزئي على العمود.
+// فتح/إضافة جديدة = مفتاح جديد = محاولة مختلفة فعلاً. راجع
+// sql/add_idempotency_key_expenses_payments.sql وproject_uniq_expense_payment_idempotency في الذاكرة
+export function newIdemKey() {
+  return crypto.randomUUID();
+}
+
+// فحص تشابه "ناعم" بديل عن القيد الصلب القديم — بيسأل المستخدم بدل ما يرفض
+// تلقائيًا. matchParams بصيغة apiGetAll (system_type/file_no/amount/تاريخ/...eq.).
+// فشل الفحص نفسه (شبكة، إلخ) لا يمنع الإدخال — التحذير تحسين تجربة، مش حارس أمان
+export async function warnIfSimilarActive(table, matchParams, label) {
+  try {
+    const rows = await apiGetAll(table, matchParams);
+    const active = (rows || []).filter(r => r.post_status !== 'voided' && r.post_status !== 'cancelled');
+    if (active.length) {
+      return await confirmAsync(
+        '⚠️ بند مشابه موجود بالفعل',
+        `يوجد ${label} بنفس المبلغ والوصف/الدافع والتاريخ لهذا الملف بالفعل — هل تريد المتابعة رغم ذلك؟`,
+        true, '⚠️ نعم، متابعة'
+      );
+    }
+    return true;
+  } catch (_) { return true; }
+}
+
 export function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -415,5 +445,6 @@ Object.assign(window, {
   showView, hideAllViews, openModal, closeModal, markSaving, guardSubmit, el,
   fmt, fmtDate, fmtTime, today, statusClass, emptyHTML, errHTML, showFieldErr,
   showErr, toast, animateCount, setLoading, switchView, confirmAction, confirmAsync, loadScript,
+  newIdemKey, warnIfSimilarActive,
   TIC_LOGO_URI,
 });
