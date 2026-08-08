@@ -576,13 +576,22 @@ export async function _submitNewFileInner() {
       // If partner paid something, record as payment
       if (p.paid > 0) {
         const pmtId = `PMT-${fileNo}-P${partners.indexOf(p)+1}`;
+        const payDate = p.payDate || poDate || null;
+        // ✅ تحذير ناعم بدل الرفض الصلب القديم (uniq_payment_active) — راجع
+        // sql/add_idempotency_key_expenses_payments.sql وjs/utils.js warnIfSimilarActive
+        const proceedPmt = await warnIfSimilarActive('payments', {
+          select: 'id,post_status', system_type: `eq.${state.system}`, file_no: `eq.${fileNo}`,
+          amount: `eq.${p.paid}`, payer: `eq.${p.name}`, pay_date: `eq.${payDate}`,
+        }, 'دفعة');
+        if (!proceedPmt) continue;
         const pmtIns = await apiPost('payments', {
           system_type: state.system, file_no: fileNo,
           pay_id: pmtId, ref_no: pmtId,
           po_no: poNo||null, payer: p.name,
           amount: p.paid, pay_method: p.method||'تحويل بنكي',
-          document: p.doc||null, pay_date: p.payDate||poDate||null,
+          document: p.doc||null, pay_date: payDate,
           notes: `حصة ${p.share}% — دفع مقدماً`,
+          idempotency_key: newIdemKey(),
           post_status: entryStatus(),
         });
         // Ledger: partner paid (credit partner account)
@@ -809,13 +818,21 @@ export async function submitEditFileFull() {
       } else if (p.paid > 0) {
         // دفعة جديدة (شريك جديد، أو شريك بدون دفعة سابقة)
         const newPmtId = `PMT-${newFileNo}-P${pIndex}`;
-        await apiPost('payments', {
+        const newPayDate = p.payDate || poDate || null;
+        // ✅ تحذير ناعم بدل الرفض الصلب القديم (uniq_payment_active) — راجع
+        // sql/add_idempotency_key_expenses_payments.sql وjs/utils.js warnIfSimilarActive
+        const proceedNewPmt = await warnIfSimilarActive('payments', {
+          select: 'id,post_status', system_type: `eq.${state.system}`, file_no: `eq.${newFileNo}`,
+          amount: `eq.${p.paid}`, payer: `eq.${p.name}`, pay_date: `eq.${newPayDate}`,
+        }, 'دفعة');
+        if (proceedNewPmt) await apiPost('payments', {
           system_type:state.system, file_no:newFileNo,
           pay_id: newPmtId, ref_no: newPmtId,
           po_no:poNo||null, payer:p.name,
           amount:p.paid, pay_method:p.method||'تحويل بنكي',
-          document:p.doc||null, pay_date:p.payDate||poDate||null,
+          document:p.doc||null, pay_date:newPayDate,
           notes:`حصة ${p.share}%`,
+          idempotency_key: newIdemKey(),
           // الصفقة كانت مُرحَّلة → الدفعة الجديدة تنتظر الموافقة (سيتم إنشاء قيدها عند الموافقة)
           post_status: _originalPOPostStatus==='posted' ? 'pending_edit' : entryStatus(),
         });
@@ -943,6 +960,11 @@ export async function openPaymentModal() {
     if(el('pay-card-remaining')) el('pay-card-remaining').textContent = '—';
   }
 
+  // ✅ مفتاح idempotency لهذه المحاولة — يتولّد وقت فتح المودال، لا وقت
+  // الإرسال. راجع js/utils.js newIdemKey
+  const payModalEl = el('paymentModal');
+  if (payModalEl) payModalEl.dataset.idemKey = newIdemKey();
+
   openModal('paymentModal');
 }
 
@@ -1054,6 +1076,10 @@ export function addExpenseRow(prefill={}) {
   ).join('');
   const tr = document.createElement('tr');
   tr.style.borderBottom = '1px solid var(--border)';
+  // ✅ مفتاح idempotency خاص بهذا البند — يتولّد وقت إضافة الصف، لا وقت
+  // الإرسال، عشان إعادة محاولة إرسال نفس النموذج تستخدم نفس المفتاح.
+  // راجع js/utils.js newIdemKey و sql/add_idempotency_key_expenses_payments.sql
+  tr.dataset.idemKey = newIdemKey();
   const s = 'width:100%;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:5px 7px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px';
   tr.innerHTML = `
     <td style="padding:4px 3px">
@@ -1132,7 +1158,8 @@ export async function submitExpense() {
     const amount = parseFloat(r.querySelector('[name="er-amount"]')?.value) || 0;
     const doc    = r.querySelector('[name="er-doc"]')?.value.trim()   || docRef || '';
     const notes  = r.querySelector('[name="er-notes"]')?.value.trim() || '';
-    if (amount > 0) expenses.push({ fileNo, desc:desc||'مصروف', type, amount, doc, notes });
+    const idemKey = r.dataset.idemKey || newIdemKey();
+    if (amount > 0) expenses.push({ fileNo, desc:desc||'مصروف', type, amount, doc, notes, idemKey });
   });
 
   if (!expenses.length) { showFieldErr('expError','يرجى إضافة بند واحد على الأقل مع المبلغ'); return; }
@@ -1143,9 +1170,17 @@ export async function submitExpense() {
 
   const btn = document.querySelector('#expenseModal .btn-primary');
   if (btn) { btn.disabled=true; btn.textContent='⏳ جاري الحفظ...'; }
+  let savedCount = 0;
   try {
     for (const exp of expenses) {
       const expFileNo = exp.fileNo || state.currentFileNo || 'GENERAL';
+      // ✅ تحذير ناعم بدل الرفض الصلب القديم (uniq_expense_active) — راجع
+      // sql/add_idempotency_key_expenses_payments.sql وjs/utils.js warnIfSimilarActive
+      const proceed = await warnIfSimilarActive('expenses', {
+        select: 'id,post_status', system_type: `eq.${state.system}`, file_no: `eq.${expFileNo}`,
+        amount: `eq.${exp.amount}`, description: `eq.${exp.desc || 'مصروف'}`, exp_date: `eq.${date}`,
+      }, 'مصروف');
+      if (!proceed) continue;
       const refNo = (await genSeqRef('EXP', state.system, expFileNo, 'expenses')) || `EXP-${expFileNo}-${Date.now()}`;
       // ✅ الحصص تُحسَب من الصفر لكل بند بمبلغه الخاص (بنود المودال قد تختلف
       // في المبلغ حتى مع نفس مجموعة الشركاء) — لا تُخزَّن نسب، مبالغ مجمَّدة فقط
@@ -1166,9 +1201,11 @@ export async function submitExpense() {
         ref_no:      refNo,
         paid_by:     paidBy    || null,
         paid_by_split: paidBySplit,
+        idempotency_key: exp.idemKey,
         post_status: entryStatus()};
       const expIns = await apiPost('expenses', data);
       await logAudit('INSERT','expenses', expFileNo, null, data);
+      savedCount++;
       if (entryStatus()==='posted') {
         const expId = expIns?.[0]?.id || null;
         try {
@@ -1182,7 +1219,8 @@ export async function submitExpense() {
     }
     markSaving('expenseModal'); await closeModal('expenseModal');
     invalidateCache();
-    toast(`✅ تم تسجيل ${expenses.length} مصروف`,'ok');
+    if (savedCount) toast(`✅ تم تسجيل ${savedCount} مصروف`,'ok');
+    else toast('لم يتم تسجيل أي بند','warn');
     if (state.currentFileNo) {
       if (state.currentTab === 3) loadExpensesTab(state.currentFileNo, state.system);
       if (state.currentTab === 0) loadSummaryTab(state.currentFileNo, state.system);
@@ -1243,15 +1281,24 @@ export async function _proceedSubmitPayment() {
   const notes  = el('pay-notes').value.trim();
   if (!fn || !payer || !amount || !date) return;
 
+  // ✅ تحذير ناعم بدل الرفض الصلب القديم (uniq_payment_active) — راجع
+  // sql/add_idempotency_key_expenses_payments.sql وjs/utils.js warnIfSimilarActive
+  const proceed = await warnIfSimilarActive('payments', {
+    select: 'id,post_status', system_type: `eq.${state.system}`, file_no: `eq.${fn}`,
+    amount: `eq.${amount}`, payer: `eq.${payer}`, pay_date: `eq.${date}`,
+  }, 'دفعة');
+  if (!proceed) return;
+
   try {
     const refNo = (await genSeqRef('PMT', state.system, fn, 'payments')) || `PMT-${fn}-${Date.now()}`;
+    const idemKey = el('paymentModal')?.dataset.idemKey || newIdemKey();
     const data = {
       system_type: state.system, file_no: fn,
       pay_id: refNo, ref_no: refNo,
       po_no: state.currentDeal?.po_no || null,
       payer, amount, pay_method: method,
       document: doc||null, pay_date: date,
-      notes: notes||null
+      notes: notes||null, idempotency_key: idemKey
     , post_status:entryStatus()};
     const payIns = await apiPost('payments', data);
     await logAudit('INSERT','payments',fn,null,data);
