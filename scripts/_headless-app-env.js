@@ -29,7 +29,7 @@ function stubEl() {
   return {
     value: '', checked: false, style: {}, textContent: '', innerHTML: '',
     onclick: null,
-    addEventListener() {}, querySelector() { return null; }, querySelectorAll() { return []; },
+    addEventListener() {}, removeEventListener() {}, querySelector() { return null; }, querySelectorAll() { return []; },
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
   };
 }

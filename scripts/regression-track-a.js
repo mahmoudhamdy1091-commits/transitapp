@@ -56,6 +56,18 @@
 
 const { loadApp } = require('./_headless-app-env.js');
 
+// ✅ استثناء/رفض غير مُمسوك في أي مكان (خارج try/catch سيناريو معين — زي
+// onclick غير مُنتظَر داخل _runConfirm) كان بيقتل العملية بصمت بلا أي أثر —
+// اكتُشف حيًّا 2026-08-07 أثناء بناء IDEM2B. حارس صريح هنا بدل عملية تموت
+// فجأة بلا تفسير في منتصف السويت
+process.on('unhandledRejection', (reason) => {
+  console.error('\n💥 UNHANDLED REJECTION (السويت هيكمل، لكن ده لازم يتصلّح):', reason && reason.stack || reason);
+});
+process.on('uncaughtException', (e) => {
+  console.error('\n💥 UNCAUGHT EXCEPTION:', e && e.stack || e);
+  process.exit(1);
+});
+
 const results = []; // {name, ok, error}
 const cleanupOps = []; // [{table, match}] — يُنفَّذ بالعكس في finally
 
@@ -1995,6 +2007,190 @@ async function um8_renderApprovalListShowsDirectRejectButton(app) {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// IDEMPOTENCY KEY — بديل uniq_expense_active/uniq_payment_active
+// ════════════════════════════════════════════════════════════════════════
+// راجع sql/add_idempotency_key_expenses_payments.sql وjs/utils.js
+// (newIdemKey/warnIfSimilarActive). idem3/idem4 يتطلبان العمود idempotency_key
+// فعليًا على القاعدة الحية — بيتفحصا ذاتيًا عبر idemKeyColumnReady() ويُتخطَّيا
+// بوضوح (بلا فشل مصطنع) لو الهجرة SQL لسه ما اتنفذتش.
+
+async function idemKeyColumnReady() {
+  try {
+    await apiGetAll('expenses', { select: 'idempotency_key', limit: 1 });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function idem1_newIdemKeyDistinctUUIDs(app) {
+  const a = app.utils.newIdemKey();
+  const b = app.utils.newIdemKey();
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  assert(uuidRe.test(a), `المتوقع newIdemKey() يرجع UUID صالح، طلع '${a}'`);
+  assert(uuidRe.test(b), `المتوقع newIdemKey() يرجع UUID صالح، طلع '${b}'`);
+  assert(a !== b, 'المتوقع مفتاحين مختلفين لنداءين منفصلين');
+}
+
+// idem2a — لا تشابه نشط → true فورًا بلا أي عرض تأكيد؛ صف مشابه لكن voided → يُتجاهَل
+async function idem2a_warnIfSimilarActiveNoMatchAndVoidedIgnored(app) {
+  const fileNo = zid('IDEM2A');
+  registerExtraFileNo(fileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 100, post_status: 'draft', notes: 'ZZTEST IDEM2A fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+  const dateStr = today();
+
+  // لا صفوف مطابقة إطلاقًا → true بلا أي نداء showConfirm
+  const originalSC1 = globalThis.showConfirm;
+  let confirmCalled1 = false;
+  globalThis.showConfirm = (...args) => { confirmCalled1 = true; return originalSC1(...args); };
+  try {
+    const proceed1 = await app.utils.warnIfSimilarActive('expenses', {
+      select: 'id,post_status', system_type: `eq.${SYS}`, file_no: `eq.${fileNo}`,
+      amount: 'eq.999', description: 'eq.ZZTEST-NOTHING-MATCHES', exp_date: `eq.${dateStr}`,
+    }, 'مصروف');
+    assert(proceed1 === true, 'المتوقع true لما مفيش أي صف مطابق');
+    assert(!confirmCalled1, 'المتوقع showConfirm ما يتناداش خالص لما مفيش تشابه');
+  } finally { globalThis.showConfirm = originalSC1; }
+
+  // صف مطابق تمامًا لكن post_status='voided' → يُعتبر "غير نشط" ويُتجاهَل
+  const voidedRow = await apiPost('expenses', {
+    system_type: SYS, file_no: fileNo, exp_id: zid('EXP'), ref_no: zid('EXP'), pay_id: zid('EXP'),
+    description: 'ZZTEST IDEM2A voided-match', exp_type: 'أخرى', pay_method: 'نقد',
+    exp_date: dateStr, amount: 55, post_status: 'voided',
+  });
+  registerCleanup('expenses', voidedRow[0].id);
+  const originalSC2 = globalThis.showConfirm;
+  let confirmCalled2 = false;
+  globalThis.showConfirm = (...args) => { confirmCalled2 = true; return originalSC2(...args); };
+  try {
+    const proceed2 = await app.utils.warnIfSimilarActive('expenses', {
+      select: 'id,post_status', system_type: `eq.${SYS}`, file_no: `eq.${fileNo}`,
+      amount: 'eq.55', description: 'eq.ZZTEST IDEM2A voided-match', exp_date: `eq.${dateStr}`,
+    }, 'مصروف');
+    assert(proceed2 === true, 'المتوقع true — الصف الوحيد المطابق ملغى (voided)، لا يُحسب تشابهًا نشطًا');
+    assert(!confirmCalled2, 'المتوقع showConfirm ما يتناداش خالص — الصف المطابق الوحيد voided');
+  } finally { globalThis.showConfirm = originalSC2; }
+}
+
+// idem2b — صف مطابق فعلاً نشط: المستخدم يوافق → true، المستخدم يرفض → false
+// (نفس أسلوب UM6: استيراد reports.js الخام مباشرة عشان نتحكم في الرد فعليًا)
+async function idem2b_warnIfSimilarActiveConfirmDeclineRespected(app) {
+  const fileNo = zid('IDEM2B');
+  registerExtraFileNo(fileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 100, post_status: 'draft', notes: 'ZZTEST IDEM2B fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+  const dateStr = today();
+  const activeRow = await apiPost('expenses', {
+    system_type: SYS, file_no: fileNo, exp_id: zid('EXP'), ref_no: zid('EXP'), pay_id: zid('EXP'),
+    description: 'ZZTEST IDEM2B active-match', exp_type: 'أخرى', pay_method: 'نقد',
+    exp_date: dateStr, amount: 88, post_status: 'draft',
+  });
+  registerCleanup('expenses', activeRow[0].id);
+
+  const matchParams = {
+    select: 'id,post_status', system_type: `eq.${SYS}`, file_no: `eq.${fileNo}`,
+    amount: 'eq.88', description: 'eq.ZZTEST IDEM2B active-match', exp_date: `eq.${dateStr}`,
+  };
+
+  // موافقة (auto-confirm الافتراضي بيوافق دائمًا) → true
+  const proceedYes = await app.utils.warnIfSimilarActive('expenses', matchParams, 'مصروف');
+  assert(proceedYes === true, 'المتوقع true — تشابه نشط موجود والمستخدم وافق على المتابعة');
+
+  // رفض — نحتاج showConfirm الخام الحقيقي (الـstub التلقائي دايمًا بيوافق)
+  const realReports = await import('file:///C:/Users/hamdy/Documents/tarnsit%20app/transitapp/js/reports.js?idem2b=' + Date.now());
+  const originalSC = globalThis.showConfirm;
+  globalThis.showConfirm = realReports.showConfirm;
+  try {
+    const p = app.utils.warnIfSimilarActive('expenses', matchParams, 'مصروف');
+    // ✅ warnIfSimilarActive بينتظر apiGetAll (نداء شبكة حقيقي) قبل ما يوصل
+    // لـshowConfirm أصلاً — بعكس UM6 (نداء showConfirm مباشر بلا شبكة قبله)،
+    // فيه سباق حقيقي هنا. نستنى فعليًا لحد ما زرار الإلغاء يتربط بمعالج حقيقي
+    // (لا timeout ثابت قصير — كان بيفشل أحيانًا حسب زمن استجابة الشبكة)
+    const cancelBtn = document.getElementById('confirmDeleteCancelBtn');
+    assert(cancelBtn, 'المتوقع زرار الإلغاء موجود في DOM');
+    // ✅ فحص "onclick بقت function" وحده غير كافٍ — cancelBtn عنصر مُخزَّن ثابت
+    // (stableEl) بيتشارك عبر كل السويت؛ لو سيناريو سابق حقيقي (UM6) خلّى
+    // onclick بالفعل function من نداء قديم، الفحص كان بينجح فورًا ويدوس زرار
+    // "باقي" مش زرار *هذه* المحاولة — فـp الحقيقية تفضل معلَّقة للأبد (اكتُشف
+    // حيًّا 2026-08-07: السويت كان بيهنج بصمت هنا بالظبط لما IDEM2B بيجي بعد
+    // UM6). الفحص الصحيح: العنوان المعروض فعليًا لازم يبقى عنوان *هذه* المحاولة
+    const titleEl = document.getElementById('confirmDeleteTitle');
+    const expectedTitle = '⚠️ بند مشابه موجود بالفعل';
+    const start = Date.now();
+    while (titleEl?.textContent !== expectedTitle && Date.now() - start < 8000) {
+      await new Promise(r => setTimeout(r, 20));
+    }
+    assert(titleEl?.textContent === expectedTitle, `المتوقع عنوان التأكيد الفعلي "${expectedTitle}" خلال 8 ثوانٍ، طلع "${titleEl?.textContent}"`);
+    assert(typeof cancelBtn.onclick === 'function', 'المتوقع زرار الإلغاء مربوط بمعالج فعلي بعد ظهور العنوان الصحيح');
+    cancelBtn.onclick();
+    const proceedNo = await p;
+    assert(proceedNo === false, 'المتوقع false — تشابه نشط موجود والمستخدم رفض المتابعة');
+  } finally { globalThis.showConfirm = originalSC; }
+}
+
+// idem3 — نفس مفتاح idempotency مرتين → الإدراج الثاني يُرفَض (فهرس فريد جزئي حقيقي)
+async function idem3_duplicateIdempotencyKeyRejected(app) {
+  const fileNo = zid('IDEM3');
+  registerExtraFileNo(fileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 100, post_status: 'draft', notes: 'ZZTEST IDEM3 fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+
+  const key = app.utils.newIdemKey();
+  const row1 = await apiPost('expenses', {
+    system_type: SYS, file_no: fileNo, exp_id: zid('EXP'), ref_no: zid('EXP'), pay_id: zid('EXP'),
+    description: 'ZZTEST IDEM3 attempt 1', exp_type: 'أخرى', pay_method: 'نقد',
+    exp_date: today(), amount: 33, post_status: 'draft', idempotency_key: key,
+  });
+  registerCleanup('expenses', row1[0].id);
+
+  let rejected = false;
+  try {
+    await apiPost('expenses', {
+      system_type: SYS, file_no: fileNo, exp_id: zid('EXP'), ref_no: zid('EXP'), pay_id: zid('EXP'),
+      description: 'ZZTEST IDEM3 attempt 2 (retry)', exp_type: 'أخرى', pay_method: 'نقد',
+      exp_date: today(), amount: 33, post_status: 'draft', idempotency_key: key,
+    });
+  } catch (e) {
+    rejected = true;
+  }
+  assert(rejected, 'المتوقع الإدراج الثاني بنفس idempotency_key يُرفَض (فهرس فريد جزئي)');
+}
+
+// idem4 — نفس الحقول التجارية (مبلغ+وصف+تاريخ+ملف)، مفتاحين مختلفين → الإدراجان
+// ينجحان (القيد الصلب القديم uniq_expense_active اتشال فعلاً)
+async function idem4_similarBusinessFieldsNoLongerBlocked(app) {
+  const fileNo = zid('IDEM4');
+  registerExtraFileNo(fileNo);
+  const poRow = await apiPost('purchase_orders', {
+    system_type: SYS, file_no: fileNo, supplier: 'ZZTEST-SUPPLIER',
+    total_purchase: 100, post_status: 'draft', notes: 'ZZTEST IDEM4 fixture',
+  });
+  registerCleanup('purchase_orders', poRow[0].id);
+
+  const dateStr = today();
+  const shared = {
+    system_type: SYS, file_no: fileNo, description: 'ZZTEST IDEM4 legit-duplicate',
+    exp_type: 'أخرى', pay_method: 'نقد', exp_date: dateStr, amount: 21, post_status: 'draft',
+  };
+  const row1 = await apiPost('expenses', { ...shared, exp_id: zid('EXP'), ref_no: zid('EXP'), pay_id: zid('EXP'), idempotency_key: app.utils.newIdemKey() });
+  registerCleanup('expenses', row1[0].id);
+  const row2 = await apiPost('expenses', { ...shared, exp_id: zid('EXP'), ref_no: zid('EXP'), pay_id: zid('EXP'), idempotency_key: app.utils.newIdemKey() });
+  registerCleanup('expenses', row2[0].id);
+
+  assert(row1[0].id !== row2[0].id, 'المتوقع صفين منفصلين فعليًا — نفس الحقول التجارية، مفتاحين مختلفين');
+}
+
 (async () => {
   console.log('Track A — Phase 0 Regression Suite');
   console.log('file_no تجريبي:', FILE_NO, '| نظام:', SYS);
@@ -2144,6 +2340,19 @@ async function um8_renderApprovalListShowsDirectRejectButton(app) {
     await scenario('ui-messaging / UM6 طابور showConfirm الحقيقي — نداء تانٍ ينتظر دوره', () => um6_showConfirmRealQueue(app));
     await scenario('approve-item / UM7 approveAll لسه شغّالة صح بعد confirmAsync (نظام TM)', () => um7_approveAllStillWorksAfterConfirmAsyncRefactor(app));
     await scenario('approve-item / UM8 renderApprovalList بتعرض زرار رفض مباشر', () => um8_renderApprovalListShowsDirectRejectButton(app));
+
+    // ✅ idempotency_key — بديل uniq_expense_active/uniq_payment_active (طلب لاحق 2026-08-07)
+    console.log(`\n── idempotency_key: بديل uniq_expense_active/uniq_payment_active ──`);
+    await scenario('idempotency / IDEM1 newIdemKey يرجع UUID صالح ومختلف كل نداء', () => idem1_newIdemKeyDistinctUUIDs(app));
+    await scenario('idempotency / IDEM2A warnIfSimilarActive: لا تشابه/صف voided → true بلا عرض', () => idem2a_warnIfSimilarActiveNoMatchAndVoidedIgnored(app));
+    await scenario('idempotency / IDEM2B warnIfSimilarActive: تشابه نشط — موافقة/رفض المستخدم يُحترَم', () => idem2b_warnIfSimilarActiveConfirmDeclineRespected(app));
+    if (await idemKeyColumnReady()) {
+      await scenario('idempotency / IDEM3 نفس المفتاح مرتين → الإدراج الثاني يُرفَض', () => idem3_duplicateIdempotencyKeyRejected(app));
+      await scenario('idempotency / IDEM4 نفس الحقول التجارية، مفتاحين مختلفين → الإدراجان ينجحان', () => idem4_similarBusinessFieldsNoLongerBlocked(app));
+    } else {
+      console.log('⏭️  IDEM3/IDEM4 اتخطّيا — عمود idempotency_key لسه مش موجود على القاعدة الحية.');
+      console.log('   نفّذ sql/add_idempotency_key_expenses_payments.sql ثم أعد تشغيل السويت.');
+    }
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
