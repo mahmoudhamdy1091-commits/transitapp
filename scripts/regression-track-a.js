@@ -144,6 +144,39 @@ async function runCleanup() {
   }
 }
 
+// ✅ اكتُشف حيًّا 2026-08-08: runCleanup() فوق بتنظّف بس بيانات *هذه* التشغيلة
+// (عبر cleanupOps/extraFileNos المُسجَّلة أثناءها) — أي تشغيلة سابقة اتقطعت
+// بكرش/هنج في النص (حصل فعليًا مرات كتير أثناء بناء IDEM2B) بتسيب بياناتها
+// بلا تنظيف خالص، للأبد، لحد ما حد يلاحظ يدويًا. اتراكم كذا آلاف صف عبر BOX
+// وTM كنتيجة (راجع sql/cleanup_zztest_regression_leftovers_2026-08-08.sql
+// للتنظيف التاريخي لمرة واحدة، نُفِّذ يدويًا من المستخدم).
+//
+// الحل البنيوي: sweep استباقي بيشتغل في *بداية* أي تشغيلة جديدة للسويت، قبل
+// أي سيناريو، بيمسح أي بقايا ZZTEST-* من أي تشغيلة سابقة (مش بس تشغيلتنا
+// الحالية) — عبر DELETE واحد جماعي لكل جدول (WHERE file_no LIKE 'ZZTEST-%')
+// بدل حذف صف-صف (أسرع بكتير مع الحجوم الكبيرة دي). نفس ترتيب الاعتمادية
+// المستخدَم في ملف الـSQL: journal_entries/audit_log أولاً (بلا مرجعية عكسية)،
+// بعدين الجداول التفصيلية، بعدين sales/vehicles/partners_master، وأخيرًا
+// purchase_orders (الأب اللي باقي الجداول عندها FK على file_no بتاعه).
+async function sweepZZTestLeftovers() {
+  const tables = [
+    'journal_entries', 'audit_log', 'expenses', 'payments', 'collections',
+    'partner_payouts', 'sales', 'vehicles', 'partners_master', 'purchase_orders',
+  ];
+  console.log('\n── sweep استباقي: تنظيف بقايا ZZTEST من تشغيلات سابقة اتقطعت ──');
+  for (const t of tables) {
+    try {
+      const res = await apiDelete(t, { file_no: 'like.ZZTEST-*' });
+      if (res && typeof res.ok === 'boolean' && !res.ok) {
+        console.log(`  ⚠️ ${t}: فشل الحذف الجماعي (HTTP ${res.status})`);
+      }
+    } catch (e) {
+      console.log(`  ⚠️ ${t}: خطأ أثناء الحذف الجماعي — ${e.message}`);
+    }
+  }
+  console.log('  ✓ اكتمل sweep البداية');
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // ENTITY CONFIGS
 // ════════════════════════════════════════════════════════════════════════
@@ -2199,6 +2232,7 @@ async function idem4_similarBusinessFieldsNoLongerBlocked(app) {
 
   try {
     app = await loadApp();
+    await sweepZZTestLeftovers();
 
     // ✅ Track A / Phase 1 — js/lifecycle.js دلوقتي مصدر الحقيقة الوحيد لقرار
     // "تعديل سجل مُعتمَد". بما إنه DOM-مستقل بطبيعته (دالتان صرفتان، بلا أي
