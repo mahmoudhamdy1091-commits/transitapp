@@ -18,7 +18,24 @@
 @media(max-width:640px){
 
   /* ── Layout ── */
-  .sidebar{ display:none !important; }
+  /* ✅ .sidebar كانت مخفية تمامًا هنا (display:none) — مفيش أي بديل، فمبدّل
+     BOX/TM (.sys-switcher) وكل عناصر التنقل داخلها كانت غير قابلة للوصول
+     خالص على الموبايل. الآن تتحول لدرج منزلق (fixed + transform) بدل الاختفاء
+     — نفس المحتوى الأصلي، يظهر بزرار .mobile-menu-btn (index.html top-bar)
+     ويقفل بالستارة (#sidebarBackdrop) أو بالضغط على أي بند تنقل فعلي
+     (toggleMobileSidebar/closeMobileSidebar — js/utils.js، الإغلاق التلقائي
+     بعد التنقل مربوط في js/engine.js init()) */
+  .sidebar{
+    display:flex !important;
+    position:fixed;
+    top:0; bottom:0; right:-320px;
+    width:80vw; max-width:300px; min-width:unset;
+    z-index:10050;
+    transition:right .25s ease;
+    box-shadow:-8px 0 24px rgba(0,0,0,.3);
+  }
+  .sidebar.mobile-open{ right:0; }
+  .sidebar-backdrop.show{ display:block !important; }
   .main-area{ width:100%; }
 
   /* Top-bar: صفّين على الموبايل */
@@ -30,8 +47,15 @@
     gap:6px;
     align-items:center;
   }
-  /* الصف الأول: العنوان + الأزرار */
-  .top-bar > div:first-child{ order:1; flex:1; min-width:0; }
+  /* الصف الأول: زرار القائمة + العنوان + الأزرار */
+  .mobile-menu-btn{
+    display:flex; align-items:center; justify-content:center;
+    order:0; flex-shrink:0;
+    width:34px; height:34px; min-width:34px;
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius-sm);
+    color:var(--text); font-size:16px; cursor:pointer;
+  }
+  .top-bar-title-wrap{ order:1; flex:1; min-width:0; }
   .top-bar-title{ font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .top-bar-sub{ font-size:11px; }
   .top-bar-actions{ order:2; gap:5px; flex-shrink:0; }

@@ -103,6 +103,23 @@ export function setMobNav(btn) {
   if (btn) btn.classList.add('active');
 }
 
+// ✅ درج القائمة الجانبية على الموبايل (≤640px، mobile.css) — .sidebar كانت
+// مخفية بالكامل هناك بلا أي بديل، فمبدّل BOX/TM وكل التنقل داخلها كانا غير
+// قابلين للوصول خالص على الموبايل. الإغلاق التلقائي بعد الضغط على بند تنقل
+// فعلي مربوط في js/engine.js init() (event delegation على .sidebar)
+export function toggleMobileSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebar) return;
+  const opening = !sidebar.classList.contains('mobile-open');
+  sidebar.classList.toggle('mobile-open', opening);
+  el('sidebarBackdrop')?.classList.toggle('show', opening);
+}
+
+export function closeMobileSidebar() {
+  document.querySelector('.sidebar')?.classList.remove('mobile-open');
+  el('sidebarBackdrop')?.classList.remove('show');
+}
+
 export function showView(viewId) {
   const map = {
     'dashboardView': () => showDashboard(),
@@ -442,6 +459,7 @@ export function loadScript(src) {
 // ── window bridge: تعريض الدوال للاستخدام من classic scripts وسمات onclick ──
 Object.assign(window, {
   exportBtns, _runExport, _shareCSV, showDashboard, toggleNav, navActive, setMobNav,
+  toggleMobileSidebar, closeMobileSidebar,
   showView, hideAllViews, openModal, closeModal, markSaving, guardSubmit, el,
   fmt, fmtDate, fmtTime, today, statusClass, emptyHTML, errHTML, showFieldErr,
   showErr, toast, animateCount, setLoading, switchView, confirmAction, confirmAsync, loadScript,

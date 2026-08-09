@@ -1356,6 +1356,17 @@ engineHooks.onVoidComplete = () => window.loadApprovalQueue?.();
   // Set today as default dates
   const dateInputs = document.querySelectorAll('input[type="date"]');
   dateInputs.forEach(inp => { if (!inp.value) inp.value = today(); });
+
+  // ✅ إغلاق تلقائي لدرج القائمة الجانبية على الموبايل بعد أي تنقل فعلي (بند
+  // تنقل أو مبدّل BOX/TM) — بلا لمس الأربعين+ onclick الفردية للبنود، عبر
+  // تفويض حدث واحد على .sidebar نفسها. .nav-section-title (فتح/قفل قسم) لا
+  // يُغلق الدرج عمدًا — مش تنقل فعلي، مجرد توسيع/طي قائمة
+  const sidebarEl = document.querySelector('.sidebar');
+  if (sidebarEl) {
+    sidebarEl.addEventListener('click', (e) => {
+      if (e.target.closest('.nav-item, .sys-btn')) closeMobileSidebar();
+    });
+  }
 })();
 
 // ════════════════════════════════════════

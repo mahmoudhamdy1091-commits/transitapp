@@ -98,6 +98,11 @@
 <div id="appScreen">
 <div class="app-layout">
 
+  <!-- ✅ ستارة القائمة الجانبية على الموبايل (≤640px) — .sidebar بتتحول لدرج
+       منزلق بدل الاختفاء التام (كانت مخفية بالكامل بلا أي بديل، مفيش طريقة
+       توصل بيها لمبدّل BOX/TM ولا لباقي عناصر التنقل على الموبايل خالص) -->
+  <div id="sidebarBackdrop" class="sidebar-backdrop" onclick="closeMobileSidebar()" style="display:none"></div>
+
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-header">
@@ -274,7 +279,8 @@
   <!-- MAIN -->
   <div class="main-area">
     <div class="top-bar">
-      <div>
+      <button class="mobile-menu-btn" onclick="toggleMobileSidebar()" aria-label="القائمة">☰</button>
+      <div class="top-bar-title-wrap">
         <div class="top-bar-title" id="topBarTitle">لوحة التحكم</div>
         <div class="top-bar-sub" id="topBarSub">نظام BOX</div>
       </div>
