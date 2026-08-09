@@ -124,6 +124,15 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);direc
   position:relative;
   z-index:10;
 }
+
+/* ✅ زرار فتح القائمة كدرج منزلق — يظهر فقط على الموبايل (mobile.css ≤640px).
+   على الديسكتوب .sidebar نفسها ظاهرة دايمًا، مفيش داعي له */
+.mobile-menu-btn{ display:none; }
+.sidebar-backdrop{
+  position:fixed; inset:0;
+  background:rgba(0,0,0,.5);
+  z-index:10040;
+}
 .sidebar-header{
   padding:16px;
   border-bottom:1px solid var(--border);
