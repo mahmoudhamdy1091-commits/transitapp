@@ -2224,6 +2224,46 @@ async function idem4_similarBusinessFieldsNoLongerBlocked(app) {
   assert(row1[0].id !== row2[0].id, 'المتوقع صفين منفصلين فعليًا — نفس الحقول التجارية، مفتاحين مختلفين');
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// PERIOD-BOUNDARY REVERSAL EXCLUSION (اكتُشف حيًّا 2026-08-09 — TM-004/BOX-141)
+// ════════════════════════════════════════════════════════════════════════
+// fetchJEForPeriod بتفلتر بالتاريخ فقط — لو قيد أصلي (مثلاً شراء مكرر قديم)
+// بره نطاق الفترة لكن عكسه (تصحيح حديث) جواها، كان القيد بيدخل المجموع سالبًا
+// بلا أي رقم موجب يقابله. computeFinancials دلوقتي بتستبعد أي سطر ref_table=
+// 'reversal' لو reverses بتاعه (id القيد الأصلي الحقيقي) مش موجود ضمن نفس
+// jeRows المُمرَّرة — اختبارات صرفة على مصفوفات JE مُصطنعة (بلا أي كتابة حية،
+// بتستدعي computeFinancials الحقيقية مباشرة) عشان تثبت المنطق بدقة بلا حاجة
+// لتوقيت/تواريخ قيود فعلية معقّدة
+
+async function pk1_computeFinancialsExcludesOutOfWindowReversal(app) {
+  const jeRows = [
+    // عكس "بره النطاق" — reverses بيشاور على id مش موجود في نفس المصفوفة
+    { id: 9001, entry_no: 'JE-PK-TEST-1', account_code: '1300', dr_amount: 0, cr_amount: 1000, ref_table: 'reversal', reverses: 8888, file_no: 'ZZTEST-PK1' },
+    { id: 9002, entry_no: 'JE-PK-TEST-1', account_code: '2100', dr_amount: 1000, cr_amount: 0, ref_table: 'reversal', reverses: 8888, file_no: 'ZZTEST-PK1' },
+    // شراء حقيقي "جوه النطاق" — مفروض يفضل زي ما هو، غير متأثر بالاستبعاد
+    { id: 9003, entry_no: 'JE-PK-TEST-2', account_code: '1300', dr_amount: 500, cr_amount: 0, ref_table: 'purchase_orders', reverses: null, file_no: 'ZZTEST-PK1' },
+    { id: 9004, entry_no: 'JE-PK-TEST-2', account_code: '2100', dr_amount: 0, cr_amount: 500, ref_table: 'purchase_orders', reverses: null, file_no: 'ZZTEST-PK1' },
+  ];
+  const fin = app.core.computeFinancials(jeRows);
+  assert(fin.byFile['ZZTEST-PK1']?.purchase === 500,
+    `المتوقع استبعاد قيد العكس (بره النطاق) بالكامل فيفضل بس الشراء الحقيقي 500، طلع ${fin.byFile['ZZTEST-PK1']?.purchase}`);
+  assert(fin.totPurchase === 500, `المتوقع totPurchase=500 بعد الاستبعاد، طلع ${fin.totPurchase}`);
+}
+
+async function pk2_computeFinancialsKeepsInWindowReversal(app) {
+  const jeRows = [
+    // الأصل موجود ضمن نفس jeRows (id=7001)
+    { id: 7001, entry_no: 'JE-PK-TEST-3', account_code: '1300', dr_amount: 800, cr_amount: 0, ref_table: 'purchase_orders', reverses: null, file_no: 'ZZTEST-PK2' },
+    { id: 7002, entry_no: 'JE-PK-TEST-3', account_code: '2100', dr_amount: 0, cr_amount: 800, ref_table: 'purchase_orders', reverses: null, file_no: 'ZZTEST-PK2' },
+    // عكسه — برضه ضمن نفس jeRows، reverses بيشاور فعليًا على 7001 (موجود)
+    { id: 7003, entry_no: 'JE-PK-TEST-4', account_code: '1300', dr_amount: 0, cr_amount: 800, ref_table: 'reversal', reverses: 7001, file_no: 'ZZTEST-PK2' },
+    { id: 7004, entry_no: 'JE-PK-TEST-4', account_code: '2100', dr_amount: 800, cr_amount: 0, ref_table: 'reversal', reverses: 7001, file_no: 'ZZTEST-PK2' },
+  ];
+  const fin = app.core.computeFinancials(jeRows);
+  assert(fin.byFile['ZZTEST-PK2']?.purchase === 0,
+    `المتوقع صافي 0 — الشراء وعكسه كلاهما جوه النطاق فيتنطّان طبيعيًا، طلع ${fin.byFile['ZZTEST-PK2']?.purchase}`);
+}
+
 (async () => {
   console.log('Track A — Phase 0 Regression Suite');
   console.log('file_no تجريبي:', FILE_NO, '| نظام:', SYS);
@@ -2387,6 +2427,12 @@ async function idem4_similarBusinessFieldsNoLongerBlocked(app) {
       console.log('⏭️  IDEM3/IDEM4 اتخطّيا — عمود idempotency_key لسه مش موجود على القاعدة الحية.');
       console.log('   نفّذ sql/add_idempotency_key_expenses_payments.sql ثم أعد تشغيل السويت.');
     }
+
+    // ✅ استبعاد قيود عكس أصلها بره نطاق الفترة (اكتُشف حيًّا 2026-08-09 — كارت
+    // المشتريات TM: -18,764/-7,107 بلا أي سبب منطقي، راجع project_dashboard_purchase_kpi
+    console.log(`\n── computeFinancials: استبعاد قيود عكس أصلها بره نطاق الفترة ──`);
+    await scenario('period-boundary / PK1 عكس بره النطاق يُستبعد بالكامل', () => pk1_computeFinancialsExcludesOutOfWindowReversal(app));
+    await scenario('period-boundary / PK2 عكس جوه النطاق يفضل يُحسب طبيعيًا', () => pk2_computeFinancialsKeepsInWindowReversal(app));
   } catch (e) {
     console.error('\n💥 خطأ غير متوقَّع أوقف السويت:', e);
     console.error(e.stack);
