@@ -398,7 +398,7 @@ export async function fetchJEForPeriod(sys, from, to) {
     `&entry_date=gte.${encodeURIComponent(from)}` +
     `&entry_date=lte.${encodeURIComponent(toEOD)}` +
     `&post_status=eq.posted` +
-    `&select=id,entry_no,ref_id,account_code,account_name,dr_amount,cr_amount,ref_table,file_no` +
+    `&select=id,entry_no,ref_id,account_code,account_name,dr_amount,cr_amount,ref_table,file_no,reverses` +
     `&limit=49999`;
 
   const fetchOne = async (url) => {
@@ -466,7 +466,23 @@ export function computeFinancials(jeRows) {
   });
   const EXPENSE_CREDIT_ACCS = new Set(['1110', '1120', '2400']);
 
+  // ✅ استبعاد قيود عكس أصلها بره نطاق الفترة المطلوبة (اكتُشف حيًّا 2026-08-09،
+  // TM-004/BOX-141: -18,764/-7,107 في كارت المشتريات لآخر 30 يوم) — fetchJEForPeriod
+  // بتفلتر بالتاريخ فقط، فلو القيد الأصلي (مثلاً شراء مكرر من 2024) بره الفترة
+  // لكن عكسه (تصحيح تاريخي حديث) جوّاها، كان بيدخل في المجموع سالبًا بلا أي
+  // رقم موجب يقابله من نفس الفترة. reverses بيحمل id القيد الأصلي الحقيقي (نفس
+  // الآلية المستخدمة في journal reverses display) — لو مش موجود ضمن jeRows
+  // نفسها، يبقى الأصل أكيد بره الفترة، فنستبعد سطر العكس بالكامل من كل الإجماليات
+  // (مش بس المشتريات — نفس أثر الحد الفاصل ممكن يحصل في أي حساب).
+  // ⚠️ حد معروف: قيود عكس أقدم من 2026-07-27 (قبل إصلاح journal reverses display)
+  // ممكن يكون reverses=null فيها حتى لو بتعكس أصل بره الفترة فعليًا — الاستبعاد
+  // ده معتمد كليًا على وجود قيمة حقيقية في reverses، فمش هيمسك هذه الحالات القديمة.
+  // لا يمسّ ref_table='correction' (totCorrections تحت) — حالة مختلفة تمامًا،
+  // مفيش "أصل" قابل للربط أصلاً، والحل الصحيح ليها شريط الإفصاح في قائمة الدخل
+  const fetchedIds = new Set((jeRows || []).map(r => r.id));
+
   (jeRows || []).forEach(r => {
+    if (r.ref_table === 'reversal' && r.reverses != null && !fetchedIds.has(r.reverses)) return;
     const acc = r.account_code || '';
     const dr  = +r.dr_amount  || 0;
     const cr  = +r.cr_amount  || 0;
