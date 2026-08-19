@@ -1,0 +1,14 @@
+{
+  "name": "Transit International Company — For Transport Goods",
+  "short_name": "TIC Fleet",
+  "start_url": "/fleet/",
+  "scope": "/fleet/",
+  "display": "standalone",
+  "lang": "ar",
+  "dir": "rtl",
+  "background_color": "#F9F8F6",
+  "theme_color": "#1A7F4E",
+  "icons": [
+    { "src": "/fleet/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

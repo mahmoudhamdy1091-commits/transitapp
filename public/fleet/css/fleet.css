@@ -1,0 +1,78 @@
+/* ── fleet.css — مكوّنات fleet فوق متغيرات styles.css الأصلية ──
+   لا إعادة تعريف لأي --var هنا؛ الملف ده بيستخدم القيم المستوردة
+   عبر <link rel="stylesheet" href="/styles.css"> في index.html فقط. */
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: 'Cairo', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  direction: rtl;
+  font-size: 15px;
+}
+
+.fleet-shell { display: flex; flex-direction: column; min-height: 100vh; }
+
+.fleet-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.fleet-header .brand { font-weight: 700; font-size: 16px; color: var(--text); }
+.fleet-header .brand small { display: block; font-size: 11px; color: var(--text3); font-weight: 400; }
+
+.fleet-main { flex: 1; padding: 16px; max-width: 1100px; width: 100%; margin: 0 auto; }
+
+.fleet-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; margin-bottom: 12px;
+}
+
+/* حقول النماذج داخل openFormModal (fleet-ui.js) */
+#fleetFormModalBody label {
+  display: block; font-size: 12px; color: var(--text2); font-weight: 700; margin-bottom: 10px;
+}
+.fleet-input {
+  display: block; width: 100%; margin-top: 4px; padding: 9px 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  font-family: Cairo, sans-serif; font-size: 13px; box-sizing: border-box;
+}
+textarea.fleet-input { min-height: 60px; resize: vertical; }
+
+.fleet-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.fleet-nav a {
+  padding: 8px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--card2); color: var(--text2); font-size: 13px; text-decoration: none; font-weight: 700;
+}
+.fleet-nav a.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+.fleet-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--card2); color: var(--text); font-family: Cairo, sans-serif; font-size: 13px;
+  cursor: pointer;
+}
+.fleet-btn.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.fleet-btn.danger  { background: var(--red-dim); border-color: var(--red); color: var(--red); font-weight: 700; }
+.fleet-btn.success { background: var(--green-dim); border-color: var(--green); color: var(--green); font-weight: 700; }
+
+.fleet-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fleet-table th, .fleet-table td { padding: 10px; text-align: right; border-bottom: 1px solid var(--border); }
+.fleet-table th { color: var(--text2); font-weight: 700; background: var(--card2); }
+
+.fleet-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.fleet-badge.ok    { background: var(--green-dim); color: var(--green); }
+.fleet-badge.warn  { background: var(--accent-dim); color: var(--accent); }
+.fleet-badge.err   { background: var(--red-dim); color: var(--red); }
+
+.fleet-loading { text-align: center; padding: 40px; color: var(--text3); }
+
+/* Mobile-first: بطاقات بدل جداول عريضة على الشاشات الصغيرة (§3 بند 5) */
+@media (max-width: 640px) {
+  .fleet-main { padding: 10px; }
+  .fleet-table thead { display: none; }
+  .fleet-table, .fleet-table tbody, .fleet-table tr, .fleet-table td { display: block; width: 100%; }
+  .fleet-table tr { margin-bottom: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px; }
+  .fleet-table td { border-bottom: none; display: flex; justify-content: space-between; }
+  .fleet-table td::before { content: attr(data-label); color: var(--text3); font-weight: 700; }
+}

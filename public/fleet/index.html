@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>الترانزيت الدولي لنقل البضائع</title>
+  <link rel="manifest" href="/fleet/manifest.json">
+  <meta name="theme-color" content="#44403C">
+  <!-- قراءة فقط لملف الألوان الأصلي — نفس القيم بالحرف، بدون نسخ (§3 بند 15) -->
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/fleet/css/fleet.css">
+</head>
+<body>
+  <!-- فحص جلسة فوري قبل أي رسم — لو مفيش توكن، رجوع مباشر للوجين الرئيسي.
+       هذا سكريبت كلاسيكي (مش module) عمدًا: لازم يشتغل فورًا synchronous
+       قبل أي رسم محتوى، بدل ما ينتظر دور الـmodule (deferred بطبيعته). -->
+  <script>
+    if (!localStorage.getItem('tm_token') || !localStorage.getItem('tm_user')) {
+      window.location.href = '/';
+    }
+  </script>
+
+  <div class="fleet-shell" id="fleetShell" style="display:none">
+    <header class="fleet-header">
+      <div style="display:flex;align-items:center;gap:10px">
+        <img src="/fleet/icon.svg" alt="TIC" style="width:40px;height:40px;border-radius:10px;flex-shrink:0">
+        <div class="brand">
+          الترانزيت الدولي لنقل البضائع
+          <small>Transit International Company — For Transport Goods</small>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="fleetUserEmail" style="font-size:12px;color:var(--text3)"></span>
+        <button class="fleet-btn" id="fleetSwitchCompanyBtn" type="button">🏠 الصفحة الرئيسية</button>
+      </div>
+    </header>
+    <main class="fleet-main">
+      <nav class="fleet-nav" id="fleetNav">
+        <a href="#dashboard" data-route="dashboard">الداشبورد</a>
+        <a href="#vehicles" data-route="vehicles">السيارات</a>
+        <a href="#drivers" data-route="drivers">السائقين</a>
+      </nav>
+      <!-- هدف الراوتر الوحيد — النافيجيشن فوقه ثابت، مبيتمسحش مع أي تنقل -->
+      <div id="fleetMain">
+        <div class="fleet-loading">جاري التحميل...</div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    import { state, hasSession } from '/fleet/js/fleet-core.js';
+    import { registerRoute, initRouter } from '/fleet/js/fleet-router.js';
+    import { renderVehiclesList, renderVehicleDetail } from '/fleet/js/fleet-vehicles.js';
+    import { renderDriversList, renderDriverDetail } from '/fleet/js/fleet-drivers.js';
+    import { issueBillFlow } from '/fleet/js/fleet-bills.js';
+
+    if (!hasSession()) {
+      window.location.href = '/';
+    } else {
+      document.getElementById('fleetShell').style.display = 'flex';
+      document.getElementById('fleetUserEmail').textContent = state.user?.email || '';
+      // العلامة دي بتخلّي initApp في الصفحة الرئيسية توّدي مباشرة لشاشة
+      // "اختر الشركة" بدل ما تمرّ بمسار الداشبورد العادي أولًا (نفس مفتاح
+      // FLEET_HOME_FLAG في js/transactions.js — لازم يتصلحوا مع بعض).
+      document.getElementById('fleetSwitchCompanyBtn').onclick = () => {
+        sessionStorage.setItem('tm_show_picker', '1');
+        window.location.href = '/';
+      };
+
+      // داشبورد مؤقت — هيتستبدل بالكامل في مرحلة الأرصدة/التنبيهات (المرحلة 6).
+      // الزرار ده بس عشان مصروفات الشركة العمومية (vehicle_id=null) محتاجة
+      // مكان تتسجل منه، ومفيش لسه شاشة داشبورد حقيقية تستضيفه بشكل نهائي.
+      registerRoute('dashboard', async (params, main) => {
+        main.innerHTML = `
+          <div class="fleet-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div>
+                <div style="font-weight:700;margin-bottom:6px">الداشبورد</div>
+                <div style="color:var(--text3);font-size:13px">لوحة الإيراد/المصروف/صافي الربح والتنبيهات هتتفعّل في المرحلة الجاية.</div>
+              </div>
+              <button id="newGeneralBillBtn" class="fleet-btn primary" type="button">+ مصروف عمومي</button>
+            </div>
+          </div>`;
+        main.querySelector('#newGeneralBillBtn').onclick = () => issueBillFlow(null);
+      });
+      registerRoute('vehicles', renderVehiclesList);
+      registerRoute('vehicle', renderVehicleDetail);
+      registerRoute('drivers', renderDriversList);
+      registerRoute('driver', renderDriverDetail);
+
+      function _updateActiveNav() {
+        const current = location.hash.slice(1).split('?')[0] || 'dashboard';
+        document.querySelectorAll('#fleetNav a').forEach(a => a.classList.toggle('active', a.dataset.route === current));
+      }
+      window.addEventListener('hashchange', _updateActiveNav);
+
+      initRouter('dashboard');
+      _updateActiveNav();
+    }
+  </script>
+</body>
+</html>
