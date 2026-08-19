@@ -277,10 +277,20 @@ export function isTokenValid(token, bufferMs = 5 * 60 * 1000) {
 // ════════════════════════════════════════
 // API HELPERS
 // ════════════════════════════════════════
+// ✅ Accept-Profile/Content-Profile صريحين على كل طلب — تحصين دائم مش مرتبط
+// بـfleet بالذات: PostgREST بيحدد الـschema الافتراضي لأي طلب من غير هيدر
+// صراحة بناءً على ترتيب داخلي في "Exposed schemas" مش مضمون ولا ظاهر في
+// الواجهة، وده سبب فعليًا outage حي كامل يوم 2026-08-18 (كل شاشات BOX/TM
+// طلعت "الجدول مش موجود" لأن الطلبات بلا هيدر راحت لـgraphql_public بدل
+// public لحظة إضافة fleet لقائمة الـExposed schemas). صحّة كل طلب هنا بقت
+// معتمدة على هيدر صريح، مش على افتراض PostgREST الضمني — بغض النظر عن عدد
+// الـschemas المُفعَّلة مستقبلًا.
 export function headers(extra = {}) {
   const h = {
     'apikey': SB_KEY,
     'Content-Type': 'application/json',
+    'Accept-Profile': 'public',
+    'Content-Profile': 'public',
     ...extra
   };
   if (state.token) {
