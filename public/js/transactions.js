@@ -603,7 +603,155 @@ export async function checkAppVersion() {
   } catch(e) { /* فشل شبكة عابر — تجاهل، هيتفحص تاني بعد 10 دقايق */ }
 }
 
+// ── Fleet: اختيار/تبديل شركة — نقطة اللمس المشتركة الوحيدة مع نظام Fleet ──
+// المطابقة هنا (substring عبر .includes) بتتطابق عمدًا مع is_fleet_user() في
+// sql/fleet_schema.sql (systems like '%FLEET%') — لو اتصلحت هناك لمطابقة دقيقة
+// (tech debt مسجَّلة هناك)، لازم تتصلح هنا في نفس اللحظة، مش تفضل نسخة قديمة.
+// صفر تأثير على أي مستخدم مالوش 'FLEET' في systems — بيرجع فورًا من غير أي تغيير.
+
+// مفتاح sessionStorage اللي بيطلبه زرار "الصفحة الرئيسية" في هيدر Fleet قبل
+// ما يتنقل لـ'/' — علشان initApp تعرف إنه المستخدم طالب شاشة الاختيار
+// بنفسه، مش داخل عادي، فتوديه ليها مباشرة بدل أي توجيه تلقائي.
+const FLEET_HOME_FLAG = 'tm_show_picker';
+
+let _fleetSystemsCache = null; // null = لسه ما اتفحصش، string = آخر قيمة systems معروفة
+
+async function checkFleetCompanySwitch(forcePicker = false) {
+  const gate = document.getElementById('fleetGateOverlay');
+  try {
+    const email = state.user?.email;
+    if (!email) { gate?.remove(); return; }
+    const rows = await apiGet('user_roles', { select: 'systems', email: `eq.${email}` });
+    const systemsStr = (rows || []).map(r => r.systems || '').join(',');
+    _fleetSystemsCache = systemsStr;
+
+    const hasFleet = systemsStr.includes('FLEET');
+    // تصحيح (كان اتشال بالغلط قبل كده على أساس إنه كود ميت): 'TM' قيمة حقيقية
+    // مُستخدَمة فعليًا في بيانات حية — تأكيد حي على حساب mahmoud.hamdy1091@gmail.com
+    // (systems: "BOX,TM"). فحص .includes('TRANSIT') وحده مش كافٍ، لازم الاتنين
+    // سوا — القيمتان حقيقيتان في بيانات المستخدمين الحاليين، مش الأصلي/البديل.
+    const hasOtherSystem = systemsStr.includes('BOX') || systemsStr.includes('TRANSIT') || systemsStr.includes('TM');
+    const isMultiCompany = hasFleet && hasOtherSystem;
+
+    _renderHomeButton(isMultiCompany); // زرار "الصفحة الرئيسية" — يظهر بس لصاحب صلاحية فعلية
+
+    if (forcePicker && isMultiCompany) {
+      // المستخدم دوس "الصفحة الرئيسية" بنفسه من Fleet — يوديه لشاشة الاختيار
+      // مباشرة، من غير أي توجيه تلقائي (حتى لو كان أصلاً هيتوجّه لمكان تاني)
+      _showCompanyPickerOverlay();
+      gate?.remove();
+      return;
+    }
+
+    if (!hasFleet) { gate?.remove(); return; } // ✅ الحالة الشائعة: مستخدم BOX/TM عادي، صفر تغيير
+
+    if (!hasOtherSystem) {
+      // مصرح له بـFLEET فقط → توجيه تلقائي مباشر (§3 بند 3 من البرومبت المعتمد)
+      // الحاجز يفضل موجود عمدًا لحد ما التنقل يحصل فعليًا — صفر وميض
+      window.location.href = '/fleet/';
+      return;
+    }
+    _showCompanyPickerOverlay();
+    gate?.remove(); // الأوفرلاي نفسه معتم بالكامل، فمفيش وميض لحظة الاستبدال
+  } catch (e) {
+    console.warn('checkFleetCompanySwitch:', e.message);
+    // فشل الفحص لا يجوز أبدًا أن يترك المستخدم عالق على شاشة "جاري التحقق" فاضية
+    gate?.remove();
+  }
+}
+
+// زرار "🏠 الصفحة الرئيسية" — نفس الاسم والشكل المستخدم في هيدر Fleet، يظهر
+// بس لمستخدم عنده صلاحية فعلية على أكتر من شركة. حُقن بالـJS بالكامل، بدون
+// أي تعديل على index.html (نفس مبدأ الأوفرلاي والحاجز).
+export function _renderHomeButton(show) {
+  document.getElementById('fleetHomeBtn')?.remove();
+  if (!show) return;
+  const footer = document.querySelector('.sidebar-footer');
+  if (!footer) return;
+  const btn = document.createElement('button');
+  btn.id = 'fleetHomeBtn';
+  btn.type = 'button';
+  btn.title = 'الصفحة الرئيسية';
+  btn.style.cssText = 'display:flex;width:100%;margin-bottom:8px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:8px;padding:8px 12px;color:var(--accent);font-family:Cairo,sans-serif;font-size:12px;font-weight:700;cursor:pointer;align-items:center;justify-content:center;gap:6px';
+  btn.innerHTML = '🏠 الصفحة الرئيسية';
+  btn.onclick = () => _showCompanyPickerOverlay();
+  footer.insertBefore(btn, footer.firstChild);
+}
+
+// شركتان شقيقتان متساويتان تحت نفس الاسم "Transit International Company" —
+// لا علاقة أم/فرعية بينهما، مجرد وسم مختلف (FOR IMPORT EXPORT / FOR TRANSPORT
+// GOODS). الهوية البصرية معتمدة نهائيًا (راجع sql/fleet_schema.sql وملف
+// البرومبت المعتمد لتفاصيل القرار).
+export function _showCompanyPickerOverlay() {
+  if (document.getElementById('companyPickerOverlay')) return;
+  const el = document.createElement('div');
+  el.id = 'companyPickerOverlay';
+  // خلفية معتمة بالكامل عمدًا (مش شفافة) — لازم صفر رقم مالي من أي شركة يبان
+  // وراها قبل ما المستخدم يختار، حتى لو الداشبورد خلص تحميله فعليًا تحتها.
+  el.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:99999;display:flex;align-items:center;justify-content:center';
+
+  const ticLogoSvg = `<img src="/icon-192.png" alt="TIC" style="width:100px;height:100px;border-radius:22px;flex-shrink:0">`;
+  const fleetLogoSvg = `<img src="/fleet/icon.svg" alt="TIC" style="width:100px;height:100px;border-radius:22px;flex-shrink:0">`;
+
+  el.innerHTML = `
+    <style>
+      #companyPickerOverlay .cp-card {
+        display:flex; flex-direction:column; align-items:center; gap:10px;
+        width:280px; padding:32px 22px; border-radius:var(--radius);
+        border:3px solid transparent; background:var(--card); cursor:pointer;
+        font-family:Cairo,sans-serif; text-align:center; transition:border-color .15s;
+      }
+      #companyPickerOverlay .cp-card:hover, #companyPickerOverlay .cp-card:focus-visible {
+        outline:none;
+      }
+      #companyPickerOverlay #cpBoxBtn:hover, #companyPickerOverlay #cpBoxBtn:focus-visible { border-color:#1C1917; }
+      #companyPickerOverlay #cpFleetBtn:hover, #companyPickerOverlay #cpFleetBtn:focus-visible { border-color:#1A7F4E; }
+      #companyPickerOverlay .cp-name-en { font-size:17px; font-weight:700; color:var(--text); margin-top:8px; }
+      #companyPickerOverlay .cp-tag { font-size:12px; font-weight:700; letter-spacing:1px; }
+      #companyPickerOverlay .cp-name-ar { font-size:15px; color:var(--text2); margin-top:4px; }
+    </style>
+    <div style="background:var(--card);border-radius:var(--radius);padding:44px;max-width:720px;width:94%;text-align:center;font-family:Cairo,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+      <div style="font-weight:700;font-size:24px;margin-bottom:30px;color:var(--text)">اختر الشركة</div>
+      <div style="display:flex;gap:20px;justify-content:center;flex-wrap:wrap">
+        <button id="cpBoxBtn" type="button" class="cp-card">
+          ${ticLogoSvg}
+          <div class="cp-name-en">Transit International Company</div>
+          <div class="cp-tag" style="color:#1C1917">FOR IMPORT EXPORT</div>
+          <div class="cp-name-ar">الترانزيت الدولي للاستيراد والتصدير</div>
+        </button>
+        <button id="cpFleetBtn" type="button" class="cp-card">
+          ${fleetLogoSvg}
+          <div class="cp-name-en">Transit International Company</div>
+          <div class="cp-tag" style="color:#1A7F4E">FOR TRANSPORT GOODS</div>
+          <div class="cp-name-ar">الترانزيت الدولي لنقل البضائع</div>
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  document.getElementById('cpBoxBtn').onclick = () => el.remove();
+  document.getElementById('cpFleetBtn').onclick = () => { window.location.href = '/fleet/'; };
+}
+
 export async function initApp() {
+  // حاجز عرض فوري (إصلاح حي 2026-08-19): تأكيد حي من المستخدم إن الأوفرلاي
+  // المعتم وحده مش كافٍ — عند الريفرش، داشبورد BOX كان بيبان فعليًا (مش بس
+  // مستخبي وراه) قبل ما فحص FLEET يخلص، لأن جلب بيانات الداشبورد بيبدأ فورًا
+  // تحت وبشكل مستقل تمامًا عن checkFleetCompanySwitch. الحاجز ده بيتحط بشكل
+  // متزامن (Synchronous) هنا قبل أي حاجة تانية — قبل حتى ما نعرف هل المستخدم
+  // محتاج اختيار شركة ولا لأ — عشان نضمن إنه يظهر قبل أي محتوى مالي بأي شكل،
+  // بغض النظر عن توقيت الشبكة. checkFleetCompanySwitch() هي المسؤولة عن
+  // شيله في كل المسارات (مستخدم عادي / توجيه FLEET / شاشة الاختيار / فشل الفحص).
+  const _fleetGate = document.createElement('div');
+  _fleetGate.id = 'fleetGateOverlay';
+  _fleetGate.style.cssText = 'position:fixed;inset:0;background:var(--bg,#F9F8F6);z-index:999999;display:flex;align-items:center;justify-content:center;font-family:Cairo,sans-serif;color:var(--text2,#57534E);font-size:14px';
+  _fleetGate.textContent = 'جاري التحقق...';
+  document.body.appendChild(_fleetGate);
+
+  // المستخدم دوس "🏠 الصفحة الرئيسية" من هيدر Fleet؟ العلامة دي بتتقرأ مرة
+  // واحدة وتتشال فورًا (one-shot) — أي ريفرش عادي بعد كده يرجع للسلوك الطبيعي.
+  const _forcePicker = sessionStorage.getItem(FLEET_HOME_FLAG) === '1';
+  if (_forcePicker) sessionStorage.removeItem(FLEET_HOME_FLAG);
+
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appScreen').style.display = 'block';
 
@@ -678,6 +826,7 @@ export async function initApp() {
   // تحميل الصلاحية من DB أولاً ثم تطبيق القيود
   await loadUserRoleFromDB();
   updateSystemUI();
+  checkFleetCompanySwitch(_forcePicker); // غير مُنتظرة هنا (initApp نفسها)، لكن الحاجز فوق بيمنع أي وميض بغض النظر عن توقيتها
 }
 
 // ════════════════════════════════════════
@@ -798,6 +947,6 @@ Object.assign(window, {
   renderTxTable, renderSalesInvoices, openInvoiceModal, downloadInvoicePDF,
   filterTxTable, exportTxPDF, exportTxExcel, initApp, approvalState,
   loadChartOfAccounts, getAccountName, getAccountTypeCOA, switchSystem,
-  updateSystemUI, dashState, setDashPeriod, checkAppVersion,
+  updateSystemUI, dashState, setDashPeriod, checkAppVersion, _showCompanyPickerOverlay, _renderHomeButton,
 });
 
