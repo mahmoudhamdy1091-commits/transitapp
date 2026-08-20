@@ -7,7 +7,10 @@
 
 // ── مودال نموذج عام (إضافة/تعديل سيارة/سائق/فاتورة...) ──
 // يرجع Promise يتحلّل بالـFormData وقت الـsubmit، أو null لو المستخدم قفل المودال.
-export function openFormModal(title, bodyHtml, { submitLabel = 'حفظ', wide = false } = {}) {
+// onMount(formEl): استدعاء اختياري فورًا بعد إدراج المودال في الصفحة، قبل أي
+// تفاعل من المستخدم — لازم لأي سلوك ديناميكي جوه المودال (autocomplete،
+// إظهار/إخفاء حقول شرطية...) محتاج access مباشر لعناصر الـDOM بتاعته.
+export function openFormModal(title, bodyHtml, { submitLabel = 'حفظ', wide = false, onMount = null } = {}) {
   return new Promise((resolve) => {
     document.getElementById('fleetFormModal')?.remove();
     const overlay = document.createElement('div');
@@ -27,10 +30,12 @@ export function openFormModal(title, bodyHtml, { submitLabel = 'حفظ', wide = 
     const cleanup = (result) => { overlay.remove(); resolve(result); };
     overlay.querySelector('#fleetFormModalCancel').onclick = () => cleanup(null);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(null); });
-    overlay.querySelector('#fleetFormModalForm').addEventListener('submit', (e) => {
+    const formEl = overlay.querySelector('#fleetFormModalForm');
+    formEl.addEventListener('submit', (e) => {
       e.preventDefault();
       cleanup(new FormData(e.target));
     });
+    if (onMount) onMount(formEl);
   });
 }
 

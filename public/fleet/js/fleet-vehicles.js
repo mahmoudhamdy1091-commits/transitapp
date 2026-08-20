@@ -116,7 +116,7 @@ export async function mountVehiclesTable(container, params) {
   container.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">
       <input id="vehicleSearch" placeholder="بحث برقم الملف أو اللوحة أو الشاصي" class="fleet-btn" style="flex:1;min-width:180px;text-align:right;cursor:text">
-      <button id="addVehicleBtn" class="fleet-btn primary" type="button">+ سيارة جديدة</button>
+      <button id="addVehicleBtn" class="fleet-btn primary" type="button">+ ملف جديد</button>
     </div>
     <div class="data-table-wrap" id="vehiclesTableWrap"></div>`;
 
@@ -131,23 +131,125 @@ export async function mountVehiclesTable(container, params) {
     _renderVehiclesTable(filtered, driverByVehicle, revByVehicle, expByVehicle, container);
   };
 
+  // ── "+ ملف جديد" — سيارة + سائق (موجود يُربط، أو جديد يُنشأ) + تعيين،
+  // الثلاثة في نفس عملية الحفظ (زي BOX/TM). ثلاث كتابات REST متتالية غير
+  // ذرّية عمدًا — الكيانات الثلاثة غير مالية (نفس الحد الفاصل المعتمد بالمشروع:
+  // RPC للمستندات المالية فقط)، وفشل جزئي هنا مش خطير (زرار "تعيين سائق"
+  // الموجود أصلًا في ملف السيارة بيكمّل أي خطوة فاتت) — بس لازم يوضَّح
+  // للمستخدم بالظبط إيه اللي اتعمل وإيه اللي محتاج تكملة يدوية، لا فشل صامت.
   container.querySelector('#addVehicleBtn').onclick = async () => {
-    const fd = await openFormModal('سيارة جديدة', `
+    const activeDrivers = await apiGet('fleet_drivers', { select: 'id,full_name,civil_id', status: 'eq.active', order: 'full_name.asc' });
+
+    const fd = await openFormModal('ملف جديد', `
+      <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">بيانات السيارة</div>
       <label>رقم اللوحة *<input name="plate_no" required class="fleet-input"></label>
       <label>رقم الشاصي<input name="chassis_no" class="fleet-input"></label>
       <label>الماركة<input name="make" class="fleet-input"></label>
       <label>الموديل<input name="model" class="fleet-input"></label>
       <label>السنة<input name="year" type="number" class="fleet-input"></label>
       <label>مواصفات<textarea name="specs" class="fleet-input"></textarea></label>
-    `);
+
+      <div style="height:1px;background:var(--border);margin:14px 0"></div>
+
+      <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">السائق (اختياري)</div>
+      <div style="position:relative;margin-bottom:4px">
+        <label>اسم السائق<input name="driver_name" id="driverNameInput" class="fleet-input" autocomplete="off" placeholder="اكتب اسم السائق..."></label>
+        <div id="driverSuggestions" style="display:none;position:absolute;top:100%;right:0;left:0;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);z-index:10;max-height:180px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.15);margin-top:2px"></div>
+      </div>
+      <input type="hidden" name="driver_id" id="selectedDriverId">
+      <div id="selectedDriverBadge" style="display:none;font-size:12px;color:var(--green);margin-bottom:10px">✓ مرتبط بسائق موجود <a href="#" id="clearDriverSelection" style="color:var(--accent);margin-right:6px">(تغيير)</a></div>
+
+      <div id="newDriverFields">
+        <label>رقم مدني<input name="civil_id" class="fleet-input"></label>
+        <label>الهاتف<input name="phone" class="fleet-input"></label>
+        <label>رقم الإقامة<input name="residency_no" class="fleet-input"></label>
+        <label>تاريخ انتهاء الإقامة<input name="residency_expiry" type="date" class="fleet-input"></label>
+      </div>
+      <label>الإيجار الشهري<input name="monthly_rent" type="number" step="0.001" class="fleet-input"></label>
+    `, {
+      onMount: (formEl) => {
+        const input = formEl.querySelector('#driverNameInput');
+        const box = formEl.querySelector('#driverSuggestions');
+        const hiddenId = formEl.querySelector('#selectedDriverId');
+        const newFields = formEl.querySelector('#newDriverFields');
+        const badge = formEl.querySelector('#selectedDriverBadge');
+        const clearLink = formEl.querySelector('#clearDriverSelection');
+
+        function selectDriver(d) {
+          hiddenId.value = d.id;
+          input.value = d.full_name;
+          badge.style.display = 'block';
+          newFields.style.display = 'none';
+          box.style.display = 'none';
+        }
+        function clearSelection() {
+          hiddenId.value = '';
+          badge.style.display = 'none';
+          newFields.style.display = 'block';
+        }
+        input.addEventListener('input', () => {
+          clearSelection();
+          const q = input.value.trim().toLowerCase();
+          if (!q) { box.style.display = 'none'; return; }
+          const matches = activeDrivers.filter(d => d.full_name.toLowerCase().includes(q));
+          if (!matches.length) { box.style.display = 'none'; return; }
+          box.innerHTML = matches.map(d => `<div class="driver-suggestion" data-id="${d.id}" style="padding:8px 12px;cursor:pointer;font-size:13px">${d.full_name}${d.civil_id ? ' — ' + d.civil_id : ''}</div>`).join('');
+          box.style.display = 'block';
+          box.querySelectorAll('.driver-suggestion').forEach(el => {
+            el.onclick = () => selectDriver(matches.find(d => d.id === Number(el.dataset.id)));
+          });
+        });
+        input.addEventListener('blur', () => setTimeout(() => { box.style.display = 'none'; }, 150));
+        clearLink.onclick = (e) => { e.preventDefault(); clearSelection(); input.value = ''; input.focus(); };
+      },
+    });
     if (!fd) return;
-    const { ok } = await guardedCall(() => apiPost('fleet_vehicles', {
+
+    const { ok: vehicleOk, result: vehicleResult } = await guardedCall(() => apiPost('fleet_vehicles', {
       plate_no: fd.get('plate_no'), chassis_no: fd.get('chassis_no') || null,
       make: fd.get('make') || null, model: fd.get('model') || null,
       year: fd.get('year') ? Number(fd.get('year')) : null,
       specs: fd.get('specs') || null, status: 'active',
     }), 'إضافة سيارة');
-    if (ok) { toast('تمت إضافة السيارة', 'ok'); mountVehiclesTable(container, params); }
+    if (!vehicleOk) return;
+    const vehicle = Array.isArray(vehicleResult) ? vehicleResult[0] : vehicleResult;
+
+    const driverName = fd.get('driver_name')?.trim();
+    if (!driverName) {
+      toast(`تم إنشاء الملف ${vehicle.file_no || ''}`, 'ok');
+      mountVehiclesTable(container, params);
+      return;
+    }
+
+    let driverId = fd.get('driver_id') ? Number(fd.get('driver_id')) : null;
+    if (!driverId) {
+      const { ok: driverOk, result: driverResult } = await guardedCall(() => apiPost('fleet_drivers', {
+        full_name: driverName,
+        civil_id: fd.get('civil_id') || null,
+        phone: fd.get('phone') || null,
+        residency_no: fd.get('residency_no') || null,
+        residency_expiry: fd.get('residency_expiry') || null,
+        status: 'active',
+      }), 'إضافة سائق');
+      if (!driverOk) {
+        toast(`تم إنشاء السيارة (${vehicle.file_no}) لكن فشل إنشاء السائق — استخدم زرار "تعيين سائق" من ملف السيارة لإكمال الربط`, 'warn');
+        mountVehiclesTable(container, params);
+        return;
+      }
+      driverId = (Array.isArray(driverResult) ? driverResult[0] : driverResult).id;
+    }
+
+    const { ok: assignOk } = await guardedCall(() => apiPost('fleet_assignments', {
+      vehicle_id: vehicle.id, driver_id: driverId,
+      monthly_rent: fd.get('monthly_rent') ? Number(fd.get('monthly_rent')) : null,
+      start_date: new Date().toISOString().slice(0, 10),
+    }), 'تعيين سائق');
+    if (!assignOk) {
+      toast(`تم إنشاء السيارة (${vehicle.file_no}) والسائق لكن فشل ربط التعيين — استخدم زرار "تعيين سائق" من ملف السيارة لإكمال الربط`, 'warn');
+    } else {
+      toast('تم إنشاء الملف والسائق والتعيين', 'ok');
+    }
+    mountVehiclesTable(container, params);
   };
 }
 
