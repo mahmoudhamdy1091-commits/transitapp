@@ -20,45 +20,109 @@ function _statusBadge(status) {
   return `<span class="fleet-badge ${s.cls}">${s.label}</span>`;
 }
 
+// ── جدول "ملفات" — نفس نمط renderDealsTable (public/js/dashboard.js) بالحرف:
+// إيراد/مصروف/صافي كـpill ملوّن + سهم + نسبة هامش، صف إجمالي أسفل الجدول
+// (Phase 7 Stage 2). إيراد/مصروف تراكميان منذ البداية — بدون فلتر تاريخ هنا
+// عمدًا (فلتر النطاق الزمني حصري جوه ملف السيارة، Stage 3).
+function _renderVehiclesTable(list, driverByVehicle, revByVehicle, expByVehicle, main) {
+  const wrap = main.querySelector('#vehiclesTableWrap');
+  if (!list.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="e-icon">🚚</div><p>لا توجد سيارات</p></div>`;
+    return;
+  }
+
+  const rows = list.map(v => {
+    const rev = revByVehicle[v.id] || 0;
+    const exp = expByVehicle[v.id] || 0;
+    const net = rev - exp;
+    const netColor = net > 0 ? 'var(--green)' : net < 0 ? 'var(--red)' : 'var(--text2)';
+    const netBg    = net > 0 ? 'var(--green-dim)' : net < 0 ? 'var(--red-dim)' : 'transparent';
+    const netArrow = net >= 0 ? '▲' : '▼';
+    const driver = driverByVehicle[v.id];
+
+    return `<tr style="cursor:pointer" data-id="${v.id}">
+      <td>
+        <div class="mono" style="font-weight:700">${v.plate_no || '—'}</div>
+        <div style="font-size:12px;color:var(--text2)">${[v.make, v.model].filter(Boolean).join(' ') || '—'}</div>
+      </td>
+      <td>
+        ${driver ? `<div style="font-weight:600">${driver.full_name}</div><div style="font-size:12px;color:var(--text2)">${driver.civil_id || ''}</div>` : `<span style="color:var(--text3)">لا يوجد سائق</span>`}
+      </td>
+      <td><div class="mono text-blue" style="font-weight:700">${fmtKWD(rev)}</div></td>
+      <td><div class="mono text-red" style="font-weight:700">${fmtKWD(exp)}</div></td>
+      <td>
+        <div style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:8px;background:${netBg}">
+          <span style="font-size:12px">${netArrow}</span>
+          <span class="mono" style="font-weight:900;color:${netColor};font-size:13px">${fmtKWD(Math.abs(net))}</span>
+        </div>
+        ${net !== 0 && rev > 0 ? `<div style="font-size:12px;color:var(--text2);margin-top:2px">هامش ${((net / rev) * 100).toFixed(1)}%</div>` : ''}
+      </td>
+      <td>${_statusBadge(v.status)}</td>
+    </tr>`;
+  }).join('');
+
+  const tRev = list.reduce((s, v) => s + (revByVehicle[v.id] || 0), 0);
+  const tExp = list.reduce((s, v) => s + (expByVehicle[v.id] || 0), 0);
+  const tNet = tRev - tExp;
+  const totalRow = `<tr style="background:var(--card2);font-weight:700;border-top:2px solid var(--border)">
+    <td colspan="2" style="padding:10px 14px;font-size:12px">الإجمالي — ${list.length} سيارة</td>
+    <td class="mono text-blue" style="font-weight:900">${fmtKWD(tRev)}</td>
+    <td class="mono text-red" style="font-weight:900">${fmtKWD(tExp)}</td>
+    <td>
+      <div style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:8px;background:${tNet >= 0 ? 'var(--green-dim)' : 'var(--red-dim)'}">
+        <span>${tNet >= 0 ? '▲' : '▼'}</span>
+        <span class="mono" style="font-weight:900;color:${tNet >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtKWD(Math.abs(tNet))}</span>
+      </div>
+    </td>
+    <td></td>
+  </tr>`;
+
+  wrap.innerHTML = `
+    <table class="data-table">
+      <thead><tr>
+        <th>رقم اللوحة</th>
+        <th>السائق الحالي</th>
+        <th style="color:var(--blue)">الإيراد</th>
+        <th style="color:var(--red)">المصروف</th>
+        <th>الصافي</th>
+        <th>الحالة</th>
+      </tr></thead>
+      <tbody>${rows}${totalRow}</tbody>
+    </table>`;
+
+  wrap.querySelectorAll('tbody tr[data-id]').forEach(tr => {
+    tr.onclick = () => navigate('vehicle', { id: tr.dataset.id });
+  });
+}
+
 export async function renderVehiclesList(params, main) {
-  const vehicles = await apiGet('fleet_vehicles', { select: '*', order: 'created_at.desc' });
+  const [vehicles, openAssignments, invoices, bills] = await Promise.all([
+    apiGet('fleet_vehicles', { select: '*', order: 'created_at.desc' }),
+    apiGet('fleet_assignments', { select: 'vehicle_id,fleet_drivers(full_name,civil_id)', end_date: 'is.null' }),
+    apiGet('v_invoice_balances', { select: 'vehicle_id,amount' }),
+    apiGet('v_bill_balances', { select: 'vehicle_id,amount' }),
+  ]);
+
+  const driverByVehicle = Object.fromEntries(openAssignments.map(a => [a.vehicle_id, a.fleet_drivers]));
+  const revByVehicle = {};
+  invoices.forEach(i => { revByVehicle[i.vehicle_id] = (revByVehicle[i.vehicle_id] || 0) + Number(i.amount); });
+  const expByVehicle = {};
+  bills.forEach(b => { if (b.vehicle_id) expByVehicle[b.vehicle_id] = (expByVehicle[b.vehicle_id] || 0) + Number(b.amount); });
 
   main.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">
       <input id="vehicleSearch" placeholder="بحث برقم اللوحة أو الشاصي" class="fleet-btn" style="flex:1;min-width:180px;text-align:right;cursor:text">
       <button id="addVehicleBtn" class="fleet-btn primary" type="button">+ سيارة جديدة</button>
     </div>
-    <div class="fleet-card" style="padding:0;overflow:auto">
-      <table class="fleet-table" id="vehiclesTable">
-        <thead><tr><th>رقم اللوحة</th><th>رقم الشاصي</th><th>الموديل</th><th>السنة</th><th>الحالة</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>`;
+    <div class="data-table-wrap" id="vehiclesTableWrap"></div>`;
 
-  const tbody = main.querySelector('#vehiclesTable tbody');
-  function renderRows(list) {
-    if (!list.length) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3)">لا توجد سيارات</td></tr>';
-      return;
-    }
-    tbody.innerHTML = list.map(v => `
-      <tr style="cursor:pointer" data-id="${v.id}">
-        <td data-label="رقم اللوحة">${v.plate_no || '—'}</td>
-        <td data-label="رقم الشاصي">${v.chassis_no || '—'}</td>
-        <td data-label="الموديل">${[v.make, v.model].filter(Boolean).join(' ') || '—'}</td>
-        <td data-label="السنة">${v.year || '—'}</td>
-        <td data-label="الحالة">${_statusBadge(v.status)}</td>
-      </tr>`).join('');
-    tbody.querySelectorAll('tr[data-id]').forEach(tr => {
-      tr.onclick = () => navigate('vehicle', { id: tr.dataset.id });
-    });
-  }
-  renderRows(vehicles);
+  _renderVehiclesTable(vehicles, driverByVehicle, revByVehicle, expByVehicle, main);
 
   main.querySelector('#vehicleSearch').oninput = (e) => {
     const q = e.target.value.trim().toLowerCase();
-    renderRows(vehicles.filter(v =>
-      (v.plate_no || '').toLowerCase().includes(q) || (v.chassis_no || '').toLowerCase().includes(q)));
+    const filtered = vehicles.filter(v =>
+      (v.plate_no || '').toLowerCase().includes(q) || (v.chassis_no || '').toLowerCase().includes(q));
+    _renderVehiclesTable(filtered, driverByVehicle, revByVehicle, expByVehicle, main);
   };
 
   main.querySelector('#addVehicleBtn').onclick = async () => {
