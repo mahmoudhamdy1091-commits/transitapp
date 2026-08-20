@@ -119,6 +119,61 @@ export function closeMobileSidebar() {
   document.getElementById('sidebarBackdrop')?.classList.remove('show');
 }
 
+// ── قائمة سياقية "⋮" — إعادة بناء مستقلة لنفس showCtxMenu/closeCtxMenu من
+// js/context-menus.js (نفس التوقيع: items = [{icon,label,danger,action}|'divider']),
+// بدون أي import منه (عزل الكود الكامل). Phase 7 Stage 3 — تاب الملاحظات.
+let _ctxMenuActive = null;
+
+export function closeCtxMenu() {
+  if (_ctxMenuActive) { _ctxMenuActive.remove(); _ctxMenuActive = null; }
+}
+
+export function showCtxMenu(btnEl, items) {
+  closeCtxMenu();
+
+  const menu = document.createElement('div');
+  menu.style.cssText = `
+    position:fixed;z-index:100003;
+    background:var(--card);border:1px solid var(--border);
+    border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);
+    padding:4px 0;min-width:160px;font-family:Cairo,sans-serif;
+  `;
+
+  items.forEach(item => {
+    if (item === 'divider') {
+      const d = document.createElement('div');
+      d.style.cssText = 'height:1px;background:var(--border);margin:3px 0';
+      menu.appendChild(d);
+      return;
+    }
+    const row = document.createElement('div');
+    row.style.cssText = `
+      padding:9px 16px;cursor:pointer;font-size:13px;
+      display:flex;align-items:center;gap:10px;
+      color:${item.danger ? 'var(--red)' : 'var(--text)'};
+    `;
+    row.innerHTML = `<span style="font-size:15px">${item.icon}</span><span>${item.label}</span>`;
+    row.onmouseenter = () => row.style.background = 'var(--card2)';
+    row.onmouseleave = () => row.style.background = '';
+    row.onclick = (e) => { e.stopPropagation(); closeCtxMenu(); item.action(); };
+    menu.appendChild(row);
+  });
+
+  document.body.appendChild(menu);
+  _ctxMenuActive = menu;
+
+  const rect = btnEl.getBoundingClientRect();
+  const mw = 170, mh = items.length * 38 + 8;
+  let top = rect.bottom + 4;
+  let left = rect.right - mw;
+  if (top + mh > window.innerHeight) top = rect.top - mh - 4;
+  if (left < 4) left = 4;
+  menu.style.top = top + 'px';
+  menu.style.left = left + 'px';
+
+  setTimeout(() => document.addEventListener('click', closeCtxMenu, { once: true }), 0);
+}
+
 // ── تصنيف أخطاء مركزي (§10 بند 3) ──
 // يفرّق بين: خطأ شبكة غير مؤكد (العملية ممكن تكون نجحت)، رفض عمل حقيقي من
 // RPC (رسالة عربية واضحة من fleet_settle_invoice/fleet_void_invoice...)،

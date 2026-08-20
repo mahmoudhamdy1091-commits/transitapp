@@ -105,6 +105,18 @@ export async function apiPatch(table, matchParams, data) {
   return res.json();
 }
 
+// حذف حقيقي — مسموح بس لـfleet_vehicle_notes (استثناء متعمّد، §sql/fleet_vehicle_notes.sql).
+// باقي جداول الفليت مالهاش GRANT DELETE أصلًا من القاعدة، فأي محاولة استخدام
+// الدالة دي عليهم هترجع خطأ صريح من PostgREST (RLS/GRANT)، مش فشل صامت.
+export async function apiDelete(table, matchParams) {
+  const qs = Object.entries(matchParams).map(([k, v]) => `${k}=${v}`).join('&');
+  const res = await fleetFetch(`${SB_URL}/rest/v1/${table}?${qs}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.message || res.statusText);
+  }
+}
+
 // كل الكتابات المالية تمر من دوال RPC المركزية في sql/fleet_schema.sql —
 // مفيش أي شاشة بتكتب مباشرة في fleet_journal_entries أو تحسب رصيد بنفسها.
 export async function apiRpc(fn, args = {}) {
