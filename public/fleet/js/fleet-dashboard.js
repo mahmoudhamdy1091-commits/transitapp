@@ -1,13 +1,13 @@
 // ╔══════════════════════════════════════════════════════════╗
-// ║  fleet-dashboard.js — الداشبورد (شبكة أيقونات) + شاشتي     ║
-// ║  الإيرادات/المصروفات (تصفح قراءة فقط عبر كل السيارات)       ║
-// ║  المرحلة 6 — صفر منطق مالي هنا، بس عرض من v_invoice_balances║
-// ║  / v_bill_balances الموجودتين أصلًا (المرحلة 5).            ║
+// ║  fleet-dashboard.js — الداشبورد (كروت إحصائية + جدول السيارات║
+// ║  مباشرة، زي BOX/TM بالحرف) + شاشتي الإيرادات/المصروفات      ║
+// ║  (تصفح قراءة فقط عبر كل السيارات).                          ║
 // ╚══════════════════════════════════════════════════════════╝
 
 import { apiGet, fmtKWD } from './fleet-core.js';
 import { navigate } from './fleet-router.js';
 import { issueBillFlow } from './fleet-bills.js';
+import { mountVehiclesTable } from './fleet-vehicles.js';
 
 function _balanceBadge(paid, amount) {
   paid = Number(paid); amount = Number(amount);
@@ -26,24 +26,6 @@ export async function renderDashboard(params, main) {
   const totalOutstanding = unpaidInvoices.reduce((s, i) => s + Number(i.remaining_amount), 0);
 
   main.innerHTML = `
-    <div class="fleet-launcher-grid">
-      <a href="#vehicles" class="fleet-launcher-item">
-        <span class="fleet-launcher-icon blue">🚚</span>
-        <span>السيارات</span>
-      </a>
-      <a href="#drivers" class="fleet-launcher-item">
-        <span class="fleet-launcher-icon purple">👤</span>
-        <span>السائقين</span>
-      </a>
-      <a href="#revenue" class="fleet-launcher-item">
-        <span class="fleet-launcher-icon green">🧾</span>
-        <span>الإيرادات</span>
-      </a>
-      <a href="#expenses" class="fleet-launcher-item">
-        <span class="fleet-launcher-icon red">💸</span>
-        <span>المصروفات</span>
-      </a>
-    </div>
     <div class="fleet-stats-grid">
       <div class="fleet-card fleet-stat">
         <div class="fleet-stat-label">سيارات نشطة</div>
@@ -57,7 +39,10 @@ export async function renderDashboard(params, main) {
         <div class="fleet-stat-label">إجمالي المتبقي على العملاء</div>
         <div class="fleet-stat-val">${fmtKWD(totalOutstanding)}</div>
       </div>
-    </div>`;
+    </div>
+    <div id="dashboardVehicles"></div>`;
+
+  await mountVehiclesTable(document.getElementById('dashboardVehicles'), params);
 }
 
 // فلتر سيارة/شهر بسيط + قائمة فواتير الإيجار مع سنداتها مجمّعة تحتها، نفس

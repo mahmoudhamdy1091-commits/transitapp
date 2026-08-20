@@ -42,8 +42,8 @@ function _renderVehiclesTable(list, driverByVehicle, revByVehicle, expByVehicle,
 
     return `<tr style="cursor:pointer" data-id="${v.id}">
       <td>
-        <div class="mono" style="font-weight:700">${v.plate_no || '—'}</div>
-        <div style="font-size:12px;color:var(--text2)">${[v.make, v.model].filter(Boolean).join(' ') || '—'}</div>
+        <div class="mono text-amber" style="font-weight:700;font-size:13px">${v.file_no || '—'}</div>
+        <div style="font-size:12px;color:var(--text2)">${[v.plate_no, v.make, v.model].filter(Boolean).join(' — ') || '—'}</div>
       </td>
       <td>
         ${driver ? `<div style="font-weight:600">${driver.full_name}</div><div style="font-size:12px;color:var(--text2)">${driver.civil_id || ''}</div>` : `<span style="color:var(--text3)">لا يوجد سائق</span>`}
@@ -80,7 +80,7 @@ function _renderVehiclesTable(list, driverByVehicle, revByVehicle, expByVehicle,
   wrap.innerHTML = `
     <table class="data-table">
       <thead><tr>
-        <th>رقم اللوحة</th>
+        <th>رقم الملف</th>
         <th>السائق الحالي</th>
         <th style="color:var(--blue)">الإيراد</th>
         <th style="color:var(--red)">المصروف</th>
@@ -95,7 +95,11 @@ function _renderVehiclesTable(list, driverByVehicle, revByVehicle, expByVehicle,
   });
 }
 
-export async function renderVehiclesList(params, main) {
+// نقطة تركيب مشتركة — تُستخدم من راوت "السيارات" نفسه (Stage 2) ومن
+// الداشبورد (Phase 7 — "الداشبورد = جدول السيارات مباشرة"، زي BOX/TM بالحرف
+// حيث جدول الصفقات جوه الداشبورد نفسه، مش شاشة منفصلة). container ممكن
+// يكون main الصفحة كاملة أو div فرعي جوه الداشبورد.
+export async function mountVehiclesTable(container, params) {
   const [vehicles, openAssignments, invoices, bills] = await Promise.all([
     apiGet('fleet_vehicles', { select: '*', order: 'created_at.desc' }),
     apiGet('fleet_assignments', { select: 'vehicle_id,fleet_drivers(full_name,civil_id)', end_date: 'is.null' }),
@@ -109,23 +113,25 @@ export async function renderVehiclesList(params, main) {
   const expByVehicle = {};
   bills.forEach(b => { if (b.vehicle_id) expByVehicle[b.vehicle_id] = (expByVehicle[b.vehicle_id] || 0) + Number(b.amount); });
 
-  main.innerHTML = `
+  container.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">
-      <input id="vehicleSearch" placeholder="بحث برقم اللوحة أو الشاصي" class="fleet-btn" style="flex:1;min-width:180px;text-align:right;cursor:text">
+      <input id="vehicleSearch" placeholder="بحث برقم الملف أو اللوحة أو الشاصي" class="fleet-btn" style="flex:1;min-width:180px;text-align:right;cursor:text">
       <button id="addVehicleBtn" class="fleet-btn primary" type="button">+ سيارة جديدة</button>
     </div>
     <div class="data-table-wrap" id="vehiclesTableWrap"></div>`;
 
-  _renderVehiclesTable(vehicles, driverByVehicle, revByVehicle, expByVehicle, main);
+  _renderVehiclesTable(vehicles, driverByVehicle, revByVehicle, expByVehicle, container);
 
-  main.querySelector('#vehicleSearch').oninput = (e) => {
+  container.querySelector('#vehicleSearch').oninput = (e) => {
     const q = e.target.value.trim().toLowerCase();
     const filtered = vehicles.filter(v =>
-      (v.plate_no || '').toLowerCase().includes(q) || (v.chassis_no || '').toLowerCase().includes(q));
-    _renderVehiclesTable(filtered, driverByVehicle, revByVehicle, expByVehicle, main);
+      (v.file_no || '').toLowerCase().includes(q) ||
+      (v.plate_no || '').toLowerCase().includes(q) ||
+      (v.chassis_no || '').toLowerCase().includes(q));
+    _renderVehiclesTable(filtered, driverByVehicle, revByVehicle, expByVehicle, container);
   };
 
-  main.querySelector('#addVehicleBtn').onclick = async () => {
+  container.querySelector('#addVehicleBtn').onclick = async () => {
     const fd = await openFormModal('سيارة جديدة', `
       <label>رقم اللوحة *<input name="plate_no" required class="fleet-input"></label>
       <label>رقم الشاصي<input name="chassis_no" class="fleet-input"></label>
@@ -141,8 +147,12 @@ export async function renderVehiclesList(params, main) {
       year: fd.get('year') ? Number(fd.get('year')) : null,
       specs: fd.get('specs') || null, status: 'active',
     }), 'إضافة سيارة');
-    if (ok) { toast('تمت إضافة السيارة', 'ok'); renderVehiclesList(params, main); }
+    if (ok) { toast('تمت إضافة السيارة', 'ok'); mountVehiclesTable(container, params); }
   };
+}
+
+export async function renderVehiclesList(params, main) {
+  await mountVehiclesTable(main, params);
 }
 
 const VEHICLE_TABS = [
@@ -202,8 +212,9 @@ export async function renderVehicleDetail(params, main) {
     <div class="viewer-header">
       <button class="vh-back" id="backBtn" type="button">← رجوع</button>
       <div class="vh-info">
-        <div class="vh-file-no">${vehicle.plate_no}</div>
+        <div class="vh-file-no">${vehicle.file_no || vehicle.plate_no}</div>
         <div class="vh-meta">
+          <span class="vh-meta-item"><strong>رقم اللوحة:</strong> ${vehicle.plate_no || '—'}</span>
           <span class="vh-meta-item"><strong>الموديل:</strong> ${[vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(' — ') || '—'}</span>
           <span class="vh-meta-item"><strong>الشاصي:</strong> ${vehicle.chassis_no || '—'}</span>
           <span class="vh-meta-item"><strong>السائق:</strong> ${current?.fleet_drivers?.full_name || 'لا يوجد'}</span>
