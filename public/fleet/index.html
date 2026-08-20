@@ -6,8 +6,11 @@
   <title>الترانزيت الدولي لنقل البضائع</title>
   <link rel="manifest" href="/fleet/manifest.json">
   <meta name="theme-color" content="#44403C">
-  <!-- قراءة فقط لملف الألوان الأصلي — نفس القيم بالحرف، بدون نسخ (§3 بند 15) -->
+  <!-- قراءة فقط لملفات الألوان/الهيكل الأصلية — نفس القيم بالحرف، بدون نسخ
+       (§3 بند 15). mobile.css مطلوب هنا عشان درج القائمة الجانبية على
+       الموبايل (Phase 7) يشتغل — من غيره .sidebar بتفضل نسخة الديسكتوب بس. -->
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/mobile.css">
   <link rel="stylesheet" href="/fleet/css/fleet.css">
 </head>
 <body>
@@ -20,47 +23,101 @@
     }
   </script>
 
-  <div class="fleet-shell" id="fleetShell" style="display:none">
-    <header class="fleet-header">
-      <div style="display:flex;align-items:center;gap:10px">
-        <img src="/fleet/icon.svg" alt="TIC" style="width:40px;height:40px;border-radius:10px;flex-shrink:0">
-        <div class="brand">
-          الترانزيت الدولي لنقل البضائع
-          <small>Transit International Company — For Transport Goods</small>
+  <!-- بنية Phase 7: app-layout/sidebar/main-area/top-bar/content-area —
+       نفس هيكل BOX/TM الحقيقي بالحرف (public/index.html)، كلاسات مُعاد
+       استخدامها من styles.css/mobile.css مباشرة، صفر تعريف جديد هنا. -->
+  <div class="app-layout" id="fleetShell" style="display:none">
+
+    <div id="sidebarBackdrop" class="sidebar-backdrop" onclick="closeMobileSidebar()" style="display:none"></div>
+
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <img src="/fleet/icon.svg" alt="TIC" style="width:36px;height:36px;border-radius:10px;flex-shrink:0">
+          <div>
+            <div class="s-title">الترانزيت الدولي</div>
+            <div class="s-sub">For Transport Goods</div>
+          </div>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <span id="fleetUserEmail" style="font-size:12px;color:var(--text3)"></span>
-        <button class="fleet-btn" id="fleetSwitchCompanyBtn" type="button">🏠 الصفحة الرئيسية</button>
+
+      <div class="sidebar-nav">
+        <div class="nav-section nav-section-fixed">
+          <div class="nav-section-items open">
+            <a class="nav-item" href="#dashboard" data-route="dashboard"><span class="ni-icon">📊</span><span>الداشبورد</span></a>
+            <a class="nav-item" href="#journal" data-route="journal"><span class="ni-icon">📅</span><span>اليومية</span></a>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title open" onclick="toggleNav(this)">
+            <span>🚛 الأسطول</span><span class="ns-arrow">▼</span>
+          </div>
+          <div class="nav-section-items open">
+            <a class="nav-item" href="#vehicles" data-route="vehicles"><span class="ni-icon">🚚</span><span>السيارات</span></a>
+            <a class="nav-item" href="#drivers" data-route="drivers"><span class="ni-icon">👤</span><span>السائقين</span></a>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title open" onclick="toggleNav(this)">
+            <span>💰 الماليات</span><span class="ns-arrow">▼</span>
+          </div>
+          <div class="nav-section-items open">
+            <a class="nav-item" href="#revenue" data-route="revenue"><span class="ni-icon">🧾</span><span>الإيرادات</span></a>
+            <a class="nav-item" href="#expenses" data-route="expenses"><span class="ni-icon">💸</span><span>المصروفات</span></a>
+          </div>
+        </div>
       </div>
-    </header>
-    <main class="fleet-main">
-      <nav class="fleet-nav" id="fleetNav">
-        <a href="#dashboard" data-route="dashboard">الداشبورد</a>
-        <a href="#vehicles" data-route="vehicles">السيارات</a>
-        <a href="#drivers" data-route="drivers">السائقين</a>
-        <a href="#revenue" data-route="revenue">الإيرادات</a>
-        <a href="#expenses" data-route="expenses">المصروفات</a>
-      </nav>
-      <!-- هدف الراوتر الوحيد — النافيجيشن فوقه ثابت، مبيتمسحش مع أي تنقل -->
-      <div id="fleetMain">
+
+      <div class="sidebar-footer">
+        <button class="fleet-btn primary" id="fleetSwitchCompanyBtn" type="button" style="width:100%;margin-bottom:10px;justify-content:center">🏠 الشركة الأخرى</button>
+        <div class="user-info">
+          <div class="user-avatar" id="userAvatar"></div>
+          <div>
+            <div class="user-name" id="fleetUserName"></div>
+            <div class="user-email" id="fleetUserEmail"></div>
+          </div>
+          <button class="btn-logout" id="fleetLogoutBtn" type="button" title="تسجيل الخروج">⏏</button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main-area">
+      <div class="top-bar">
+        <button class="mobile-menu-btn" id="fleetMobileMenuBtn" type="button" aria-label="القائمة">☰</button>
+        <div class="top-bar-title-wrap">
+          <div class="top-bar-title" id="fleetTopBarTitle">الداشبورد</div>
+        </div>
+      </div>
+      <!-- هدف الراوتر الوحيد — الشل حواليه ثابت، مبيتمسحش مع أي تنقل -->
+      <div class="content-area" id="fleetMain">
         <div class="fleet-loading">جاري التحميل...</div>
       </div>
-    </main>
+    </div>
   </div>
 
   <script type="module">
-    import { state, hasSession } from '/fleet/js/fleet-core.js';
+    import { state, fleetLogout } from '/fleet/js/fleet-core.js';
+    import { toggleNav, toggleMobileSidebar, closeMobileSidebar } from '/fleet/js/fleet-ui.js';
     import { registerRoute, initRouter } from '/fleet/js/fleet-router.js';
     import { renderVehiclesList, renderVehicleDetail } from '/fleet/js/fleet-vehicles.js';
     import { renderDriversList, renderDriverDetail } from '/fleet/js/fleet-drivers.js';
     import { renderDashboard, renderRevenueList, renderExpensesList } from '/fleet/js/fleet-dashboard.js';
 
-    if (!hasSession()) {
+    // onclick="toggleNav(this)"/"closeMobileSidebar()" في الـHTML فوق محتاجين
+    // الدوال دي على window — نفس أسلوب js/utils.js (window bridge) بالحرف.
+    window.toggleNav = toggleNav;
+    window.closeMobileSidebar = closeMobileSidebar;
+
+    if (!state.token || !state.user?.email) {
       window.location.href = '/';
     } else {
       document.getElementById('fleetShell').style.display = 'flex';
       document.getElementById('fleetUserEmail').textContent = state.user?.email || '';
+      document.getElementById('fleetUserName').textContent = (state.user?.email || '').split('@')[0];
+      document.getElementById('userAvatar').textContent = (state.user?.email || '?')[0].toUpperCase();
+
       // العلامة دي بتخلّي initApp في الصفحة الرئيسية توّدي مباشرة لشاشة
       // "اختر الشركة" بدل ما تمرّ بمسار الداشبورد العادي أولًا (نفس مفتاح
       // FLEET_HOME_FLAG في js/transactions.js — لازم يتصلحوا مع بعض).
@@ -68,6 +125,8 @@
         sessionStorage.setItem('tm_show_picker', '1');
         window.location.href = '/';
       };
+      document.getElementById('fleetLogoutBtn').onclick = fleetLogout;
+      document.getElementById('fleetMobileMenuBtn').onclick = toggleMobileSidebar;
 
       registerRoute('dashboard', renderDashboard);
       registerRoute('vehicles', renderVehiclesList);
@@ -76,12 +135,28 @@
       registerRoute('driver', renderDriverDetail);
       registerRoute('revenue', renderRevenueList);
       registerRoute('expenses', renderExpensesList);
+      // شاشة اليومية والأوامر السريعة — المرحلة الجاية (Phase 7 Stage 4).
+      registerRoute('journal', async (params, main) => {
+        main.innerHTML = `<div class="fleet-card">شاشة اليومية قيد الإنشاء — المرحلة الجاية.</div>`;
+      });
 
+      const NAV_TITLES = {
+        dashboard: 'الداشبورد', journal: 'اليومية', vehicles: 'السيارات',
+        vehicle: 'ملف السيارة', drivers: 'السائقين', driver: 'ملف السائق',
+        revenue: 'الإيرادات', expenses: 'المصروفات',
+      };
       function _updateActiveNav() {
         const current = location.hash.slice(1).split('?')[0] || 'dashboard';
-        document.querySelectorAll('#fleetNav a').forEach(a => a.classList.toggle('active', a.dataset.route === current));
+        document.querySelectorAll('.sidebar .nav-item[data-route]').forEach(a => a.classList.toggle('active', a.dataset.route === current));
+        document.getElementById('fleetTopBarTitle').textContent = NAV_TITLES[current] || '';
       }
       window.addEventListener('hashchange', _updateActiveNav);
+
+      // إغلاق درج الموبايل تلقائيًا بعد أي تنقل فعلي — نفس تفويض الحدث
+      // على .sidebar في js/engine.js init() بالحرف، بدون استيراده.
+      document.querySelector('.sidebar')?.addEventListener('click', (e) => {
+        if (e.target.closest('.nav-item')) closeMobileSidebar();
+      });
 
       initRouter('dashboard');
       _updateActiveNav();

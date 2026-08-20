@@ -143,3 +143,13 @@ export function fmtKWD(amount) {
 export function hasSession() {
   return !!(state.token && state.user?.email);
 }
+
+// إعادة بناء مستقلة لنفس منطق logout() في js/core.js (بدون import منه) —
+// فليت مالهاش شاشة لوجين خاصة بيها، فالخروج هنا معناه مسح الجلسة والرجوع
+// لصفحة اللوجين الرئيسية مباشرة (مش إخفاء/إظهار شاشات محلية زي الأصل).
+export function fleetLogout() {
+  localStorage.removeItem('tm_token');
+  localStorage.removeItem('tm_refresh');
+  localStorage.removeItem('tm_user');
+  window.location.href = '/';
+}

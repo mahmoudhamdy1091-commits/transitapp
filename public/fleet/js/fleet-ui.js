@@ -96,6 +96,29 @@ export function confirmAsync(title, msg, danger = true, okLabel = null) {
   });
 }
 
+// ── القائمة الجانبية (Phase 7) — إعادة بناء مستقلة لنفس سلوك toggleNav/
+// toggleMobileSidebar/closeMobileSidebar من js/utils.js، بدون أي import منه
+// (مبدأ العزل الكامل المعتمد من أول المشروع — نفس فلسفة باقي fleet-*.js).
+export function toggleNav(titleEl) {
+  const items = titleEl.nextElementSibling;
+  const isOpen = items.classList.contains('open');
+  titleEl.classList.toggle('open', !isOpen);
+  items.classList.toggle('open', !isOpen);
+}
+
+export function toggleMobileSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebar) return;
+  const opening = !sidebar.classList.contains('mobile-open');
+  sidebar.classList.toggle('mobile-open', opening);
+  document.getElementById('sidebarBackdrop')?.classList.toggle('show', opening);
+}
+
+export function closeMobileSidebar() {
+  document.querySelector('.sidebar')?.classList.remove('mobile-open');
+  document.getElementById('sidebarBackdrop')?.classList.remove('show');
+}
+
 // ── تصنيف أخطاء مركزي (§10 بند 3) ──
 // يفرّق بين: خطأ شبكة غير مؤكد (العملية ممكن تكون نجحت)، رفض عمل حقيقي من
 // RPC (رسالة عربية واضحة من fleet_settle_invoice/fleet_void_invoice...)،

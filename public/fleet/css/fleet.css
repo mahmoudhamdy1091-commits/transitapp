@@ -12,17 +12,6 @@ body {
   font-size: 15px;
 }
 
-.fleet-shell { display: flex; flex-direction: column; min-height: 100vh; }
-
-.fleet-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
-}
-.fleet-header .brand { font-weight: 700; font-size: 16px; color: var(--text); }
-.fleet-header .brand small { display: block; font-size: 11px; color: var(--text3); font-weight: 400; }
-
-.fleet-main { flex: 1; padding: 16px; max-width: 1100px; width: 100%; margin: 0 auto; }
-
 .fleet-card {
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 16px; margin-bottom: 12px;
@@ -38,13 +27,6 @@ body {
   font-family: Cairo, sans-serif; font-size: 13px; box-sizing: border-box;
 }
 textarea.fleet-input { min-height: 60px; resize: vertical; }
-
-.fleet-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
-.fleet-nav a {
-  padding: 8px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border);
-  background: var(--card2); color: var(--text2); font-size: 13px; text-decoration: none; font-weight: 700;
-}
-.fleet-nav a.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
 
 .fleet-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -90,9 +72,10 @@ textarea.fleet-input { min-height: 60px; resize: vertical; }
 .fleet-stat-label { font-size: 12px; color: var(--text3); margin-bottom: 6px; }
 .fleet-stat-val { font-size: 22px; font-weight: 700; }
 
-/* Mobile-first: بطاقات بدل جداول عريضة على الشاشات الصغيرة (§3 بند 5) */
+/* Mobile-first: بطاقات بدل جداول عريضة على الشاشات الصغيرة (§3 بند 5) —
+   .fleet-table لسه مستخدَمة في vehicles/drivers، هتتستبدل بـ.data-table
+   في Stage 2 من Phase 7 */
 @media (max-width: 640px) {
-  .fleet-main { padding: 10px; }
   .fleet-table thead { display: none; }
   .fleet-table, .fleet-table tbody, .fleet-table tr, .fleet-table td { display: block; width: 100%; }
   .fleet-table tr { margin-bottom: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px; }
