@@ -104,6 +104,7 @@
     import { renderVehiclesList, renderVehicleDetail } from '/fleet/js/fleet-vehicles.js';
     import { renderDriversList, renderDriverDetail } from '/fleet/js/fleet-drivers.js';
     import { renderDashboard, renderRevenueList, renderExpensesList } from '/fleet/js/fleet-dashboard.js';
+    import { renderJournal } from '/fleet/js/fleet-journal.js';
 
     // onclick="toggleNav(this)"/"closeMobileSidebar()" في الـHTML فوق محتاجين
     // الدوال دي على window — نفس أسلوب js/utils.js (window bridge) بالحرف.
@@ -135,10 +136,7 @@
       registerRoute('driver', renderDriverDetail);
       registerRoute('revenue', renderRevenueList);
       registerRoute('expenses', renderExpensesList);
-      // شاشة اليومية والأوامر السريعة — المرحلة الجاية (Phase 7 Stage 4).
-      registerRoute('journal', async (params, main) => {
-        main.innerHTML = `<div class="fleet-card">شاشة اليومية قيد الإنشاء — المرحلة الجاية.</div>`;
-      });
+      registerRoute('journal', renderJournal);
 
       const NAV_TITLES = {
         dashboard: 'الداشبورد', journal: 'اليومية', vehicles: 'السيارات',
