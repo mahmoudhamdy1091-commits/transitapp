@@ -4,8 +4,9 @@
 // ║  (تصفح قراءة فقط عبر كل السيارات).                          ║
 // ╚══════════════════════════════════════════════════════════╝
 
-import { apiGet, fmtKWD } from './fleet-core.js';
+import { apiGet, fmtKWD, periodRange, inRange } from './fleet-core.js';
 import { navigate } from './fleet-router.js';
+import { mountVehiclePicker } from './fleet-ui.js';
 import { issueBillFlow } from './fleet-bills.js';
 import { mountVehiclesTable } from './fleet-vehicles.js';
 
@@ -16,32 +17,76 @@ function _balanceBadge(paid, amount) {
   return '<span class="fleet-badge err">غير مسددة</span>';
 }
 
+// شريط KPI الداشبورد — نفس فلتر الفترة ونفس منطق الحساب المستخدم جوه ملف
+// السيارة بالحرف (periodRange/inRange من fleet-core.js، Stage 3)، بس عبر
+// كل السيارات مع بعض. فواتير غير مسددة/متبقي على العملاء رصيد حالي دايمًا
+// (مش مقيّد بالفترة)، نفس مبدأ Stage 3.
 export async function renderDashboard(params, main) {
-  const currentMonthStr = new Date().toISOString().slice(0, 7) + '-01';
-  const [vehicles, unpaidInvoices] = await Promise.all([
+  const [activeVehicles, invoices, bills] = await Promise.all([
     apiGet('fleet_vehicles', { select: 'id', status: 'eq.active', plate_no: 'not.ilike.ZZTEST*' }),
-    apiGet('v_invoice_balances', { select: 'for_month,remaining_amount', remaining_amount: 'gt.0' }),
+    apiGet('v_invoice_balances', { select: 'for_month,amount,remaining_amount' }),
+    apiGet('v_bill_balances', { select: 'for_month,amount' }),
   ]);
-  const unpaidThisMonth = unpaidInvoices.filter(i => i.for_month === currentMonthStr).length;
-  const totalOutstanding = unpaidInvoices.reduce((s, i) => s + Number(i.remaining_amount), 0);
+
+  const ui = { preset: 'all', from: '', to: '' };
 
   main.innerHTML = `
-    <div class="fleet-stats-grid">
-      <div class="fleet-card fleet-stat">
-        <div class="fleet-stat-label">سيارات نشطة</div>
-        <div class="fleet-stat-val">${vehicles.length}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--text2);font-weight:700">الفترة:</span>
+      <div style="display:flex;background:var(--card2);border-radius:var(--radius-sm);padding:3px;gap:2px">
+        <button class="btn btn-sm period-btn active" data-preset="all" type="button">كل الوقت</button>
+        <button class="btn btn-sm period-btn" data-preset="3m" type="button">آخر 3 شهور</button>
+        <button class="btn btn-sm period-btn" data-preset="1y" type="button">آخر سنة</button>
+        <button class="btn btn-sm period-btn" data-preset="custom" type="button">تاريخ محدد</button>
       </div>
-      <div class="fleet-card fleet-stat">
-        <div class="fleet-stat-label">فواتير غير مسددة (الشهر الحالي)</div>
-        <div class="fleet-stat-val">${unpaidThisMonth}</div>
-      </div>
-      <div class="fleet-card fleet-stat">
-        <div class="fleet-stat-label">إجمالي المتبقي على العملاء</div>
-        <div class="fleet-stat-val">${fmtKWD(totalOutstanding)}</div>
+      <div id="customDateWrap" style="display:none;align-items:center;gap:6px">
+        <input type="date" id="periodFrom" class="fleet-input" style="width:auto">
+        <span style="color:var(--text2)">—</span>
+        <input type="date" id="periodTo" class="fleet-input" style="width:auto">
+        <button class="btn btn-secondary btn-sm" id="applyCustomBtn" type="button">تطبيق</button>
       </div>
     </div>
+    <div class="fleet-stats-grid" id="dashboardKpis"></div>
     <div id="dashboardVehicles"></div>`;
 
+  function _renderKpis() {
+    const range = periodRange(ui.preset, ui.from, ui.to);
+    const periodInvoices = invoices.filter(i => inRange(i.for_month, range));
+    const periodBills = bills.filter(b => inRange(b.for_month, range));
+    const rev = periodInvoices.reduce((s, i) => s + Number(i.amount), 0);
+    const exp = periodBills.reduce((s, b) => s + Number(b.amount), 0);
+    const unpaid = invoices.filter(i => Number(i.remaining_amount) > 0);
+    const totalRemaining = unpaid.reduce((s, i) => s + Number(i.remaining_amount), 0);
+
+    const kpi = (label, val, color) => `
+      <div class="fleet-card fleet-stat">
+        <div class="fleet-stat-label">${label}</div>
+        <div class="fleet-stat-val" ${color ? `style="color:${color}"` : ''}>${val}</div>
+      </div>`;
+    document.getElementById('dashboardKpis').innerHTML =
+      kpi('الإيراد', fmtKWD(rev), 'var(--blue)') +
+      kpi('المصروف', fmtKWD(exp), 'var(--red)') +
+      kpi('صافي الربح / الخسارة', fmtKWD(rev - exp), rev - exp >= 0 ? 'var(--green)' : 'var(--red)') +
+      kpi('سيارات نشطة', activeVehicles.length) +
+      kpi('فواتير غير مسددة', unpaid.length) +
+      kpi('متبقي على العملاء', fmtKWD(totalRemaining), 'var(--accent)');
+  }
+
+  main.querySelectorAll('.period-btn').forEach(btn => {
+    btn.onclick = () => {
+      ui.preset = btn.dataset.preset;
+      main.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b === btn));
+      main.querySelector('#customDateWrap').style.display = ui.preset === 'custom' ? 'flex' : 'none';
+      if (ui.preset !== 'custom') _renderKpis();
+    };
+  });
+  main.querySelector('#applyCustomBtn').onclick = () => {
+    ui.from = main.querySelector('#periodFrom').value;
+    ui.to = main.querySelector('#periodTo').value;
+    _renderKpis();
+  };
+
+  _renderKpis();
   await mountVehiclesTable(document.getElementById('dashboardVehicles'), params);
 }
 
@@ -50,24 +95,33 @@ export async function renderDashboard(params, main) {
 // كل السيارات مع بعض. قراءة فقط عمدًا — أي تحصيل/إلغاء يفضل حصري جوه ملف
 // السيارة (تصميم معتمد صراحةً، مش سهو).
 export async function renderRevenueList(params, main) {
-  const [vehicles, invoices] = await Promise.all([
-    apiGet('fleet_vehicles', { select: 'id,plate_no,status', plate_no: 'not.ilike.ZZTEST*', order: 'plate_no.asc' }),
+  const [vehicles, openAssignments, invoices] = await Promise.all([
+    apiGet('fleet_vehicles', { select: 'id,file_no,plate_no,status', plate_no: 'not.ilike.ZZTEST*', order: 'plate_no.asc' }),
+    apiGet('fleet_assignments', { select: 'vehicle_id,fleet_drivers(full_name)', end_date: 'is.null' }),
     apiGet('v_invoice_balances', { select: '*', order: 'for_month.desc,invoice_no.desc' }),
   ]);
   // لوحة الأسماء (plateById) من كل السيارات بلا استثناء — حتى لو أُرشِفت لاحقًا،
   // فاتورة قديمة مرتبطة بيها لازم تفضل تعرض اسمها صح. لكن قائمة الفلتر نفسها
   // بتستثني المؤرشفة (fixtures الريجريشن بتتأرشف آخر كل تشغيلة — §Phase 5)
   // عشان متظهرش جوه قائمة اختيار حقيقية تواجه المستخدم.
-  const plateById = Object.fromEntries(vehicles.map(v => [String(v.id), v.plate_no]));
+  const plateById = Object.fromEntries(vehicles.map(v => [String(v.id), v.file_no || v.plate_no]));
+  const driverByVehicle = Object.fromEntries(openAssignments.map(a => [a.vehicle_id, a.fleet_drivers?.full_name]));
   const selectableVehicles = vehicles.filter(v => v.status !== 'archived');
   const months = [...new Set(invoices.map(i => i.for_month))].sort().reverse();
+  const vehicleOptions = [
+    { value: '', label: 'كل السيارات', searchText: 'كل السيارات' },
+    ...selectableVehicles.map(v => {
+      const driverName = driverByVehicle[v.id];
+      return {
+        value: String(v.id), label: `${plateById[v.id]} — ${driverName || 'بدون سائق'}`,
+        searchText: `${plateById[v.id]} ${v.plate_no} ${driverName || ''}`,
+      };
+    }),
+  ];
 
   main.innerHTML = `
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <select id="filterVehicle" class="fleet-input" style="width:auto">
-        <option value="">كل السيارات</option>
-        ${selectableVehicles.map(v => `<option value="${v.id}">${v.plate_no}</option>`).join('')}
-      </select>
+      <div id="vehiclePickerHost" style="width:260px"></div>
       <select id="filterMonth" class="fleet-input" style="width:auto">
         <option value="">كل الشهور</option>
         ${months.map(m => `<option value="${m}">${m.slice(0, 7)}</option>`).join('')}
@@ -75,8 +129,13 @@ export async function renderRevenueList(params, main) {
     </div>
     <div id="revenueListBody"></div>`;
 
+  const vehiclePicker = mountVehiclePicker(main.querySelector('#vehiclePickerHost'), vehicleOptions, {
+    placeholder: 'ابحث عن سيارة...', onChange: () => renderList(),
+  });
+  vehiclePicker.setValue('', 'كل السيارات');
+
   async function renderList() {
-    const vf = main.querySelector('#filterVehicle').value;
+    const vf = vehiclePicker.getValue();
     const mf = main.querySelector('#filterMonth').value;
     const filtered = invoices.filter(i =>
       (!vf || String(i.vehicle_id) === vf) && (!mf || i.for_month === mf));
@@ -118,7 +177,6 @@ export async function renderRevenueList(params, main) {
     });
   }
 
-  main.querySelector('#filterVehicle').onchange = renderList;
   main.querySelector('#filterMonth').onchange = renderList;
   renderList();
 }
@@ -128,24 +186,33 @@ export async function renderRevenueList(params, main) {
 // زرار "+ مصروف عمومي" موجود هنا لأن مفيش ملف سيارة يستضيفه أصلًا (نفس السبب
 // اللي كان خلّاه في الداشبورد المؤقت قبل المرحلة دي).
 export async function renderExpensesList(params, main) {
-  const [vehicles, bills] = await Promise.all([
-    apiGet('fleet_vehicles', { select: 'id,plate_no,status', plate_no: 'not.ilike.ZZTEST*', order: 'plate_no.asc' }),
+  const [vehicles, openAssignments, bills] = await Promise.all([
+    apiGet('fleet_vehicles', { select: 'id,file_no,plate_no,status', plate_no: 'not.ilike.ZZTEST*', order: 'plate_no.asc' }),
+    apiGet('fleet_assignments', { select: 'vehicle_id,fleet_drivers(full_name)', end_date: 'is.null' }),
     apiGet('v_bill_balances', { select: '*', order: 'for_month.desc,bill_no.desc' }),
   ]);
   // نفس منطق renderRevenueList: لوحة الأسماء من كل السيارات، قائمة الفلتر
   // تستثني المؤرشفة فقط (يشمل fixtures الريجريشن المؤرشفة آخر كل تشغيلة).
-  const plateById = Object.fromEntries(vehicles.map(v => [String(v.id), v.plate_no]));
+  const plateById = Object.fromEntries(vehicles.map(v => [String(v.id), v.file_no || v.plate_no]));
+  const driverByVehicle = Object.fromEntries(openAssignments.map(a => [a.vehicle_id, a.fleet_drivers?.full_name]));
   const selectableVehicles = vehicles.filter(v => v.status !== 'archived');
   const months = [...new Set(bills.map(b => b.for_month))].sort().reverse();
+  const vehicleOptions = [
+    { value: '', label: 'كل السيارات', searchText: 'كل السيارات' },
+    { value: 'general', label: 'مصروفات عمومية', searchText: 'عمومي مصروفات عمومية general' },
+    ...selectableVehicles.map(v => {
+      const driverName = driverByVehicle[v.id];
+      return {
+        value: String(v.id), label: `${plateById[v.id]} — ${driverName || 'بدون سائق'}`,
+        searchText: `${plateById[v.id]} ${v.plate_no} ${driverName || ''}`,
+      };
+    }),
+  ];
 
   main.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <select id="filterVehicle" class="fleet-input" style="width:auto">
-          <option value="">كل السيارات</option>
-          <option value="general">مصروفات عمومية</option>
-          ${selectableVehicles.map(v => `<option value="${v.id}">${v.plate_no}</option>`).join('')}
-        </select>
+        <div id="vehiclePickerHost" style="width:260px"></div>
         <select id="filterMonth" class="fleet-input" style="width:auto">
           <option value="">كل الشهور</option>
           ${months.map(m => `<option value="${m}">${m.slice(0, 7)}</option>`).join('')}
@@ -155,8 +222,13 @@ export async function renderExpensesList(params, main) {
     </div>
     <div id="expensesListBody"></div>`;
 
+  const vehiclePicker = mountVehiclePicker(main.querySelector('#vehiclePickerHost'), vehicleOptions, {
+    placeholder: 'ابحث عن سيارة...', onChange: () => renderList(),
+  });
+  vehiclePicker.setValue('', 'كل السيارات');
+
   async function renderList() {
-    const vf = main.querySelector('#filterVehicle').value;
+    const vf = vehiclePicker.getValue();
     const mf = main.querySelector('#filterMonth').value;
     const filtered = bills.filter(b => {
       if (vf === 'general' && b.vehicle_id) return false;
@@ -201,7 +273,6 @@ export async function renderExpensesList(params, main) {
     });
   }
 
-  main.querySelector('#filterVehicle').onchange = renderList;
   main.querySelector('#filterMonth').onchange = renderList;
   main.querySelector('#newGeneralBillBtn').onclick = async () => {
     const ok = await issueBillFlow(null);

@@ -43,6 +43,51 @@ export function closeFormModal() {
   document.getElementById('fleetFormModal')?.remove();
 }
 
+// ── عنصر اختيار سيارة بحث+قائمة — بدل <select> عادي في كل نقاط اختيار
+// السيارة (اليومية، فلاتر الإيرادات/المصروفات...). كل خيار بيعرض رقم
+// الملف/اللوحة + اسم السائق الحالي مع بعض، وفلترة حية بالكتابة على أي منهم.
+// hostEl: عنصر فاضي (div) يُركَّب فيه العنصر. options: [{value,label,searchText}].
+// name: لو العنصر جوه فورمة عادية (openFormModal) بيحتاج اسم يظهر في FormData؛
+// اتركه فاضي لو مستخدَم كفلتر مستقل خارج فورمة (استخدم onChange بدل كده).
+export function mountVehiclePicker(hostEl, options, { name = '', placeholder = 'ابحث عن سيارة...', onChange = null } = {}) {
+  hostEl.innerHTML = `
+    <div style="position:relative">
+      <input type="text" class="fleet-input vp-input" placeholder="${placeholder}" autocomplete="off">
+      ${name ? `<input type="hidden" name="${name}" class="vp-value">` : ''}
+      <div class="vp-list" style="display:none;position:absolute;top:100%;right:0;left:0;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);z-index:10;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.15);margin-top:2px"></div>
+    </div>`;
+  const input = hostEl.querySelector('.vp-input');
+  const hidden = name ? hostEl.querySelector('.vp-value') : { value: '' };
+  const list = hostEl.querySelector('.vp-list');
+
+  function renderList(items) {
+    if (!items.length) { list.style.display = 'none'; return; }
+    list.innerHTML = items.map(o => `<div class="vp-item" data-value="${o.value}" style="padding:8px 12px;cursor:pointer;font-size:13px">${o.label}</div>`).join('');
+    list.style.display = 'block';
+    list.querySelectorAll('.vp-item').forEach(el => {
+      el.onclick = () => {
+        const opt = items.find(o => String(o.value) === el.dataset.value);
+        hidden.value = opt.value;
+        input.value = opt.label.replace(/<[^>]+>/g, '');
+        list.style.display = 'none';
+        onChange?.(opt.value);
+      };
+    });
+  }
+  input.addEventListener('focus', () => renderList(options));
+  input.addEventListener('input', () => {
+    hidden.value = '';
+    const q = input.value.trim().toLowerCase();
+    renderList(q ? options.filter(o => o.searchText.toLowerCase().includes(q)) : options);
+  });
+  input.addEventListener('blur', () => setTimeout(() => { list.style.display = 'none'; }, 150));
+
+  return {
+    getValue: () => hidden.value,
+    setValue: (value, label) => { hidden.value = value; input.value = (label || '').replace(/<[^>]+>/g, ''); },
+  };
+}
+
 export function toast(msg, type = 'ok') {
   let host = document.getElementById('fleetToastHost');
   if (!host) {

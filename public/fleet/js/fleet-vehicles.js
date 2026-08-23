@@ -2,7 +2,7 @@
 // ║  fleet-vehicles.js — قائمة السيارات + إدارة (CRUD)        ║
 // ╚══════════════════════════════════════════════════════════╝
 
-import { apiGet, apiPost, apiPatch, apiDelete, fmtKWD } from './fleet-core.js';
+import { apiGet, apiPost, apiPatch, apiDelete, fmtKWD, periodRange, inRange } from './fleet-core.js';
 import { toast, confirmAsync, openFormModal, guardedCall, showCtxMenu } from './fleet-ui.js';
 import { navigate } from './fleet-router.js';
 import { issueInvoiceFlow, settleInvoiceFlow, voidInvoiceFlow, voidReceiptFlow } from './fleet-invoices.js';
@@ -268,26 +268,6 @@ const VEHICLE_TABS = [
   { id: 'notes', label: '📝 الملاحظات' },
 ];
 
-// إضافة جديدة برّه نمط BOX/TM عمدًا (§Phase 7 Stage 3) — فلتر نطاق تاريخ
-// يقيّد الـKPI وتابَي الإيرادات/المصروفات، بدون فلتر تاريخ = تراكمي كامل
-// (نفس منطق Stage 2 في قائمة السيارات).
-function _periodRange(preset, from, to) {
-  if (preset === 'custom') return (from && to) ? { from, to } : null;
-  if (preset === 'all') return null;
-  const end = new Date();
-  const start = new Date();
-  if (preset === '3m') start.setMonth(start.getMonth() - 3);
-  if (preset === '1y') start.setFullYear(start.getFullYear() - 1);
-  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
-}
-
-function _inRange(dateStr, range) {
-  if (!range) return true;
-  if (range.from && dateStr < range.from) return false;
-  if (range.to && dateStr > range.to) return false;
-  return true;
-}
-
 function _balanceBadge(paid, amount) {
   paid = Number(paid); amount = Number(amount);
   if (paid >= amount) return '<span class="fleet-badge ok">مسددة بالكامل</span>';
@@ -366,9 +346,9 @@ export async function renderVehicleDetail(params, main) {
   main.querySelector('#backBtn').onclick = () => navigate('vehicles');
 
   function _renderKpis() {
-    const range = _periodRange(ui.preset, ui.from, ui.to);
-    const periodInvoices = invoices.filter(i => _inRange(i.for_month, range));
-    const periodBills = bills.filter(b => _inRange(b.for_month, range));
+    const range = periodRange(ui.preset, ui.from, ui.to);
+    const periodInvoices = invoices.filter(i => inRange(i.for_month, range));
+    const periodBills = bills.filter(b => inRange(b.for_month, range));
     const rev = periodInvoices.reduce((s, i) => s + Number(i.amount), 0);
     const exp = periodBills.reduce((s, b) => s + Number(b.amount), 0);
     // فواتير غير مسددة/متبقي على العميل: رصيد حالي (نقطة زمنية)، مش تدفق —

@@ -156,6 +156,26 @@ export function hasSession() {
   return !!(state.token && state.user?.email);
 }
 
+// فلتر نطاق تاريخ مشترك — نُقل من fleet-vehicles.js (Stage 3) لهنا عشان
+// الداشبورد (Phase 7) يعيد استخدام نفس منطق الحساب بالظبط، مش نسخة يدوية
+// موازية. preset='all' (كل الوقت) = بدون فلتر، تراكمي كامل.
+export function periodRange(preset, from, to) {
+  if (preset === 'custom') return (from && to) ? { from, to } : null;
+  if (preset === 'all') return null;
+  const end = new Date();
+  const start = new Date();
+  if (preset === '3m') start.setMonth(start.getMonth() - 3);
+  if (preset === '1y') start.setFullYear(start.getFullYear() - 1);
+  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+}
+
+export function inRange(dateStr, range) {
+  if (!range) return true;
+  if (range.from && dateStr < range.from) return false;
+  if (range.to && dateStr > range.to) return false;
+  return true;
+}
+
 // إعادة بناء مستقلة لنفس منطق logout() في js/core.js (بدون import منه) —
 // فليت مالهاش شاشة لوجين خاصة بيها، فالخروج هنا معناه مسح الجلسة والرجوع
 // لصفحة اللوجين الرئيسية مباشرة (مش إخفاء/إظهار شاشات محلية زي الأصل).

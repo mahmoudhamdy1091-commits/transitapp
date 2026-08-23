@@ -7,7 +7,7 @@
 // ╚══════════════════════════════════════════════════════════╝
 
 import { apiGet, fmtKWD } from './fleet-core.js';
-import { toast, openFormModal, showCtxMenu } from './fleet-ui.js';
+import { toast, openFormModal, showCtxMenu, mountVehiclePicker } from './fleet-ui.js';
 import { issueInvoiceFlow, settleInvoiceFlow, voidInvoiceFlow, voidReceiptFlow } from './fleet-invoices.js';
 import { issueBillFlow, settleBillFlow, voidBillFlow, voidPaymentFlow } from './fleet-bills.js';
 
@@ -65,17 +65,27 @@ export async function renderJournal(params, main) {
     <div id="journalTimeline"><div class="fleet-loading">جاري التحميل...</div></div>`;
 
   const [vehicles, openAssignments, invoices, bills, receipts, payments] = await Promise.all([
-    apiGet('fleet_vehicles', { select: 'id,plate_no,status', plate_no: 'not.ilike.ZZTEST*', order: 'plate_no.asc' }),
-    apiGet('fleet_assignments', { select: 'vehicle_id,driver_id,monthly_rent', end_date: 'is.null' }),
+    apiGet('fleet_vehicles', { select: 'id,file_no,plate_no,status', plate_no: 'not.ilike.ZZTEST*', order: 'plate_no.asc' }),
+    apiGet('fleet_assignments', { select: 'vehicle_id,driver_id,monthly_rent,fleet_drivers(full_name)', end_date: 'is.null' }),
     apiGet('v_invoice_balances', { select: '*', order: 'issue_date.desc' }),
     apiGet('v_bill_balances', { select: '*', order: 'issue_date.desc' }),
     apiGet('fleet_receipts', { select: '*', post_status: 'eq.posted', order: 'receipt_date.desc' }),
     apiGet('fleet_payments', { select: '*', post_status: 'eq.posted', order: 'payment_date.desc' }),
   ]);
-  const plateById = Object.fromEntries(vehicles.map(v => [v.id, v.plate_no]));
+  const plateById = Object.fromEntries(vehicles.map(v => [v.id, v.file_no || v.plate_no]));
   const assignmentByVehicle = Object.fromEntries(openAssignments.map(a => [a.vehicle_id, a]));
   const invoiceById = Object.fromEntries(invoices.map(i => [i.id, i]));
   const billById = Object.fromEntries(bills.map(b => [b.id, b]));
+
+  // خيارات عنصر اختيار السيارة (بحث بدل <select>) — رقم الملف/اللوحة +
+  // السائق الحالي مع بعض، فلترة حية على أي منهم.
+  function _vehicleOptions(list) {
+    return list.map(v => {
+      const driverName = assignmentByVehicle[v.id]?.fleet_drivers?.full_name;
+      const label = `${v.file_no || v.plate_no} — ${driverName || 'بدون سائق'}`;
+      return { value: String(v.id), label, searchText: `${v.file_no || ''} ${v.plate_no} ${driverName || ''}` };
+    });
+  }
 
   function _buildEntries() {
     const entries = [];
@@ -184,12 +194,13 @@ export async function renderJournal(params, main) {
     const eligible = vehicles.filter(v => assignmentByVehicle[v.id]);
     if (!eligible.length) { toast('لا يوجد سيارات عندها سائق حالي', 'warn'); return; }
     const fd = await openFormModal('فاتورة إيجار سريعة', `
-      <label>السيارة *
-        <select name="vehicle_id" required class="fleet-input">
-          ${eligible.map(v => `<option value="${v.id}">${v.plate_no}</option>`).join('')}
-        </select>
-      </label>`, { submitLabel: 'التالي' });
+      <label>السيارة *</label>
+      <div id="vehiclePickerHost" style="margin-bottom:14px"></div>`, {
+      submitLabel: 'التالي',
+      onMount: (formEl) => mountVehiclePicker(formEl.querySelector('#vehiclePickerHost'), _vehicleOptions(eligible), { name: 'vehicle_id' }),
+    });
     if (!fd) return;
+    if (!fd.get('vehicle_id')) { toast('اختر سيارة أولًا', 'warn'); return; }
     const vehicleId = Number(fd.get('vehicle_id'));
     const a = assignmentByVehicle[vehicleId];
     if (await issueInvoiceFlow(vehicleId, a.driver_id, a.monthly_rent)) refresh();
@@ -201,12 +212,13 @@ export async function renderJournal(params, main) {
     const eligibleVehicleIds = [...new Set(eligibleInvoices.map(i => i.vehicle_id))];
     const eligibleVehicles = vehicles.filter(v => eligibleVehicleIds.includes(v.id));
     const fd1 = await openFormModal('تحصيل سريع', `
-      <label>السيارة *
-        <select name="vehicle_id" required class="fleet-input">
-          ${eligibleVehicles.map(v => `<option value="${v.id}">${v.plate_no}</option>`).join('')}
-        </select>
-      </label>`, { submitLabel: 'التالي' });
+      <label>السيارة *</label>
+      <div id="vehiclePickerHost" style="margin-bottom:14px"></div>`, {
+      submitLabel: 'التالي',
+      onMount: (formEl) => mountVehiclePicker(formEl.querySelector('#vehiclePickerHost'), _vehicleOptions(eligibleVehicles), { name: 'vehicle_id' }),
+    });
     if (!fd1) return;
+    if (!fd1.get('vehicle_id')) { toast('اختر سيارة أولًا', 'warn'); return; }
     const vehicleId = Number(fd1.get('vehicle_id'));
     const vehicleInvoices = eligibleInvoices.filter(i => i.vehicle_id === vehicleId);
     let inv = vehicleInvoices[0];
@@ -224,13 +236,16 @@ export async function renderJournal(params, main) {
   };
 
   main.querySelector('#qBillBtn').onclick = async () => {
+    const generalOption = { value: '', label: 'عمومي (بدون سيارة)', searchText: 'عمومي بدون سيارة general' };
     const fd = await openFormModal('مصروف سريع', `
-      <label>السيارة
-        <select name="vehicle_id" class="fleet-input">
-          <option value="">عمومي (بدون سيارة)</option>
-          ${vehicles.map(v => `<option value="${v.id}">${v.plate_no}</option>`).join('')}
-        </select>
-      </label>`, { submitLabel: 'التالي' });
+      <label>السيارة</label>
+      <div id="vehiclePickerHost" style="margin-bottom:14px"></div>`, {
+      submitLabel: 'التالي',
+      onMount: (formEl) => {
+        const picker = mountVehiclePicker(formEl.querySelector('#vehiclePickerHost'), [generalOption, ..._vehicleOptions(vehicles)], { name: 'vehicle_id' });
+        picker.setValue('', 'عمومي (بدون سيارة)');
+      },
+    });
     if (!fd) return;
     const vehicleId = fd.get('vehicle_id') ? Number(fd.get('vehicle_id')) : null;
     if (await issueBillFlow(vehicleId)) refresh();
@@ -239,14 +254,18 @@ export async function renderJournal(params, main) {
   main.querySelector('#qPaymentBtn').onclick = async () => {
     const eligibleBills = bills.filter(b => Number(b.remaining_amount) > 0);
     if (!eligibleBills.length) { toast('لا يوجد التزامات غير مسددة', 'warn'); return; }
-    const options = [...new Set(eligibleBills.map(b => b.vehicle_id ? String(b.vehicle_id) : 'general'))];
+    const scopeIds = [...new Set(eligibleBills.map(b => b.vehicle_id ? String(b.vehicle_id) : 'general'))];
+    const scopeOptions = scopeIds.map(o => o === 'general'
+      ? { value: 'general', label: 'عمومي', searchText: 'عمومي general' }
+      : _vehicleOptions(vehicles.filter(v => String(v.id) === o))[0]);
     const fd1 = await openFormModal('سداد سريع', `
-      <label>السيارة / الجهة *
-        <select name="scope" required class="fleet-input">
-          ${options.map(o => `<option value="${o}">${o === 'general' ? 'عمومي' : (plateById[Number(o)] || '—')}</option>`).join('')}
-        </select>
-      </label>`, { submitLabel: 'التالي' });
+      <label>السيارة / الجهة *</label>
+      <div id="scopePickerHost" style="margin-bottom:14px"></div>`, {
+      submitLabel: 'التالي',
+      onMount: (formEl) => mountVehiclePicker(formEl.querySelector('#scopePickerHost'), scopeOptions, { name: 'scope' }),
+    });
     if (!fd1) return;
+    if (!fd1.get('scope')) { toast('اختر سيارة أو جهة أولًا', 'warn'); return; }
     const scope = fd1.get('scope');
     const scopedBills = eligibleBills.filter(b => (b.vehicle_id ? String(b.vehicle_id) : 'general') === scope);
     let bill = scopedBills[0];
