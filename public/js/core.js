@@ -340,30 +340,47 @@ export async function apiFetch(url, { headers: extraHeaders = {}, ...rest } = {}
   return res;
 }
 
+// ✅ Supabase/PostgREST بيفرض حد صارم من السيرفر نفسه = 1000 صف لكل طلب، بغض
+// النظر عن أي Range أكبر بيبعته الكلاينت (كنا بنبعت 0-49999 وبيترجاهل تمامًا —
+// مُثبَت مباشرة ضد القاعدة الحية 2026-08-23: 3 طلبات Range مختلفة، النتيجة
+// اتقطعت عند 1000 في كل مرة إلا لو الـRange نفسه كان صفحة 1000 مضبوطة). الحد
+// القديم (206 + console.warn) كان مفعّل بس نظريًا: Supabase بترجع 200 عادي
+// (مش 206) طالما الطلب مش حامل Prefer:count=exact، وheaders() هنا ما كانتش
+// بتبعته على GET — يعني التحذير نفسه معطّل بصمت في الإنتاج الفعلي. الحل
+// الوحيد الشغّال: صفحات حقيقية (loop على Range) لحد ما صفحة ترجع أقل من
+// PAGE_SIZE، بسقف MAX_PAGES يمنع أي loop مفتوح لو حصل سلوك غريب من السيرفر.
+const _API_PAGE_SIZE = 1000;
+const _API_MAX_PAGES = 50; // سقف 50,000 صف — يطابق نية الحد القديم (49999)
+
 export async function apiGet(table, params = {}) {
   const NO_ENCODE = new Set(['select','order','or','and','limit','offset']);
   const qs = Object.entries(params).map(([k,v]) => NO_ENCODE.has(k) ? `${k}=${v}` : `${k}=${encodeURIComponent(v)}`).join('&');
   const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
-  // ✅ Audit fix: رُفع الحد من 9999 إلى 49999 لمنع قطع البيانات الصامت
   // ✅ منع الكاش المتصفح/HTTP لطلبات GET — كان يسبب عرض بيانات قديمة
   // مباشرة بعد عمليات التعديل (مثال: طلب إلغاء يبقى ظاهراً في قائمة الانتظار رغم تنفيذه)
-  const res = await apiFetch(url, { headers: { 'Range': '0-49999', 'Range-Unit': 'items' }, cache: 'no-store' });
-  // ✅ Audit fix: HTTP 206 = Supabase أعاد بيانات جزئية فقط (تجاوز الحد)
-  // نُسجّل تحذيراً في الـ console بدلاً من قبول النتيجة بصمت
-  if (res.status === 206) {
-    const contentRange = res.headers.get('Content-Range') || '';
-    console.warn(
-      `[Transit] ⚠️ apiGet("${table}"): تحذير truncation — HTTP 206 Partial Content.\n` +
-      `Content-Range: ${contentRange}\n` +
-      `الجدول يحتوي على أكثر من 50,000 سجل أو تجاوز الحد المحدد.\n` +
-      `راجع إضافة pagination لهذا الجدول.`
-    );
+  let out = [];
+  let offset = 0;
+  for (let page = 0; page < _API_MAX_PAGES; page++) {
+    const res = await apiFetch(url, {
+      headers: { 'Range': `${offset}-${offset + _API_PAGE_SIZE - 1}`, 'Range-Unit': 'items' },
+      cache: 'no-store',
+    });
+    if (!res.ok && res.status !== 206) {
+      const e = await res.json().catch(()=>({}));
+      throw new Error(e.message || res.statusText);
+    }
+    const body = await res.json();
+    out = out.concat(body);
+    if (body.length < _API_PAGE_SIZE) break; // آخر صفحة
+    offset += _API_PAGE_SIZE;
+    if (page === _API_MAX_PAGES - 1) {
+      console.warn(
+        `[Transit] ⚠️ apiGet("${table}"): وصلنا لسقف ${_API_MAX_PAGES} صفحة (${_API_MAX_PAGES * _API_PAGE_SIZE} صف) — ` +
+        `البيانات ممكن تكون ناقصة لو الجدول أكبر من كده فعليًا لهذا الاستعلام.`
+      );
+    }
   }
-  if (!res.ok && res.status !== 206) {
-    const e = await res.json().catch(()=>({}));
-    throw new Error(e.message || res.statusText);
-  }
-  return res.json();
+  return out;
 }
 
 export async function apiGetAll(table, params = {}) {
@@ -403,18 +420,35 @@ export async function apiGetAll(table, params = {}) {
 /** جلب قيود journal_entries المرحّلة لفترة معيّنة (النظام الحالي + system_type=null) مع إزالة التكرار */
 export async function fetchJEForPeriod(sys, from, to) {
   const toEOD = to + 'T23:59:59';
+  // ✅ بلا &limit — كان بيتعارض مع الـpagination بالـRange تحت (PostgREST بيدّي
+  // أولوية لـlimit/offset في الـquery string لو موجودين، فكان بيرجّع نفس أول
+  // صفحة في كل تكرار بدل الصفحة التالية فعليًا). الحد الفعلي دلوقتي بالكامل
+  // عبر Range header في fetchOne — راجع نفس الإصلاح في apiGet أعلاه لنفس السبب
+  // (Supabase بتقطع عند 1000 صف بغض النظر عن Range الأكبر المطلوب).
   const buildUrl = (sysParam) =>
     `${SB_URL}/rest/v1/journal_entries?${sysParam}` +
     `&entry_date=gte.${encodeURIComponent(from)}` +
     `&entry_date=lte.${encodeURIComponent(toEOD)}` +
     `&post_status=eq.posted` +
-    `&select=id,entry_no,ref_id,account_code,account_name,dr_amount,cr_amount,ref_table,file_no,reverses` +
-    `&limit=49999`;
+    `&select=id,entry_no,ref_id,account_code,account_name,dr_amount,cr_amount,ref_table,file_no,reverses`;
 
   const fetchOne = async (url) => {
-    const res = await apiFetch(url, { headers: { 'Range': '0-49999', 'Range-Unit': 'items' } });
-    if (!res.ok && res.status !== 206) return [];
-    return res.json();
+    let out = [];
+    let offset = 0;
+    for (let page = 0; page < _API_MAX_PAGES; page++) {
+      const res = await apiFetch(url, {
+        headers: { 'Range': `${offset}-${offset + _API_PAGE_SIZE - 1}`, 'Range-Unit': 'items' },
+      });
+      if (!res.ok && res.status !== 206) return out; // نفس السلوك القديم: تجاهل الخطأ، رجّع اللي اتجمّع لحد كده
+      const body = await res.json();
+      out = out.concat(body);
+      if (body.length < _API_PAGE_SIZE) break;
+      offset += _API_PAGE_SIZE;
+      if (page === _API_MAX_PAGES - 1) {
+        console.warn(`[Transit] ⚠️ fetchJEForPeriod: وصلنا لسقف ${_API_MAX_PAGES} صفحة — البيانات ممكن تكون ناقصة.`);
+      }
+    }
+    return out;
   };
 
   const [rows1, rows2] = await Promise.all([
