@@ -65,7 +65,7 @@ export async function renderJournal(params, main) {
     <div id="journalTimeline"><div class="fleet-loading">جاري التحميل...</div></div>`;
 
   const [vehicles, openAssignments, invoices, bills, receipts, payments] = await Promise.all([
-    apiGet('fleet_vehicles', { select: 'id,plate_no,status', order: 'plate_no.asc' }),
+    apiGet('fleet_vehicles', { select: 'id,plate_no,status', plate_no: 'not.ilike.ZZTEST*', order: 'plate_no.asc' }),
     apiGet('fleet_assignments', { select: 'vehicle_id,driver_id,monthly_rent', end_date: 'is.null' }),
     apiGet('v_invoice_balances', { select: '*', order: 'issue_date.desc' }),
     apiGet('v_bill_balances', { select: '*', order: 'issue_date.desc' }),

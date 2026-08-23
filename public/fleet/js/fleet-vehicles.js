@@ -101,7 +101,10 @@ function _renderVehiclesTable(list, driverByVehicle, revByVehicle, expByVehicle,
 // يكون main الصفحة كاملة أو div فرعي جوه الداشبورد.
 export async function mountVehiclesTable(container, params) {
   const [vehicles, openAssignments, invoices, bills] = await Promise.all([
-    apiGet('fleet_vehicles', { select: '*', order: 'created_at.desc' }),
+    // استبعاد fixtures الريجريشن (ZZTEST%) صراحة من الاستعلام — مش الاعتماد
+    // على حالة الأرشفة بس، نفس مبدأ BOX/TM التاريخي. مستخدم عادي ميشوفش
+    // أي فكسشر ريجريشن خالص في أي قائمة يتصفّحها.
+    apiGet('fleet_vehicles', { select: '*', plate_no: 'not.ilike.ZZTEST*', order: 'created_at.desc' }),
     apiGet('fleet_assignments', { select: 'vehicle_id,fleet_drivers(full_name,civil_id)', end_date: 'is.null' }),
     apiGet('v_invoice_balances', { select: 'vehicle_id,amount' }),
     apiGet('v_bill_balances', { select: 'vehicle_id,amount' }),
@@ -138,7 +141,7 @@ export async function mountVehiclesTable(container, params) {
   // الموجود أصلًا في ملف السيارة بيكمّل أي خطوة فاتت) — بس لازم يوضَّح
   // للمستخدم بالظبط إيه اللي اتعمل وإيه اللي محتاج تكملة يدوية، لا فشل صامت.
   container.querySelector('#addVehicleBtn').onclick = async () => {
-    const activeDrivers = await apiGet('fleet_drivers', { select: 'id,full_name,civil_id', status: 'eq.active', order: 'full_name.asc' });
+    const activeDrivers = await apiGet('fleet_drivers', { select: 'id,full_name,civil_id', status: 'eq.active', full_name: 'not.ilike.ZZTEST*', order: 'full_name.asc' });
 
     const fd = await openFormModal('ملف جديد', `
       <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">بيانات السيارة</div>
@@ -611,7 +614,7 @@ export async function renderVehicleDetail(params, main) {
         if (ok) { toast('تم إنهاء التعيين', 'ok'); refresh(); }
       });
       content.querySelector('#newAssignmentBtn')?.addEventListener('click', async () => {
-        const drivers = await apiGet('fleet_drivers', { select: 'id,full_name,civil_id', status: 'eq.active', order: 'full_name.asc' });
+        const drivers = await apiGet('fleet_drivers', { select: 'id,full_name,civil_id', status: 'eq.active', full_name: 'not.ilike.ZZTEST*', order: 'full_name.asc' });
         if (!drivers.length) { toast('لا يوجد سائقين نشطين — أضف سائق أولًا', 'warn'); return; }
         const fd = await openFormModal('تعيين سائق', `
           <label>السائق *

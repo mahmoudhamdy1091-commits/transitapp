@@ -15,7 +15,9 @@ function _residencyBadge(expiry) {
 }
 
 export async function renderDriversList(params, main) {
-  const drivers = await apiGet('fleet_drivers', { select: '*', order: 'created_at.desc' });
+  // استبعاد fixtures الريجريشن (ZZTEST%) صراحة من الاستعلام — نفس مبدأ
+  // BOX/TM التاريخي، مش الاعتماد على حالة الأرشفة بس.
+  const drivers = await apiGet('fleet_drivers', { select: '*', full_name: 'not.ilike.ZZTEST*', order: 'created_at.desc' });
 
   main.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">

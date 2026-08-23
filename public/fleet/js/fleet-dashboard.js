@@ -19,7 +19,7 @@ function _balanceBadge(paid, amount) {
 export async function renderDashboard(params, main) {
   const currentMonthStr = new Date().toISOString().slice(0, 7) + '-01';
   const [vehicles, unpaidInvoices] = await Promise.all([
-    apiGet('fleet_vehicles', { select: 'id', status: 'eq.active' }),
+    apiGet('fleet_vehicles', { select: 'id', status: 'eq.active', plate_no: 'not.ilike.ZZTEST*' }),
     apiGet('v_invoice_balances', { select: 'for_month,remaining_amount', remaining_amount: 'gt.0' }),
   ]);
   const unpaidThisMonth = unpaidInvoices.filter(i => i.for_month === currentMonthStr).length;
@@ -51,7 +51,7 @@ export async function renderDashboard(params, main) {
 // السيارة (تصميم معتمد صراحةً، مش سهو).
 export async function renderRevenueList(params, main) {
   const [vehicles, invoices] = await Promise.all([
-    apiGet('fleet_vehicles', { select: 'id,plate_no,status', order: 'plate_no.asc' }),
+    apiGet('fleet_vehicles', { select: 'id,plate_no,status', plate_no: 'not.ilike.ZZTEST*', order: 'plate_no.asc' }),
     apiGet('v_invoice_balances', { select: '*', order: 'for_month.desc,invoice_no.desc' }),
   ]);
   // لوحة الأسماء (plateById) من كل السيارات بلا استثناء — حتى لو أُرشِفت لاحقًا،
@@ -129,7 +129,7 @@ export async function renderRevenueList(params, main) {
 // اللي كان خلّاه في الداشبورد المؤقت قبل المرحلة دي).
 export async function renderExpensesList(params, main) {
   const [vehicles, bills] = await Promise.all([
-    apiGet('fleet_vehicles', { select: 'id,plate_no,status', order: 'plate_no.asc' }),
+    apiGet('fleet_vehicles', { select: 'id,plate_no,status', plate_no: 'not.ilike.ZZTEST*', order: 'plate_no.asc' }),
     apiGet('v_bill_balances', { select: '*', order: 'for_month.desc,bill_no.desc' }),
   ]);
   // نفس منطق renderRevenueList: لوحة الأسماء من كل السيارات، قائمة الفلتر
