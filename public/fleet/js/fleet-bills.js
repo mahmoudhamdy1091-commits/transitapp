@@ -9,9 +9,13 @@ import { printFleetVoucher } from './fleet-print.js';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-// vehicleId = null → مصروف عمومي على الشركة (§5 من البرومبت المعتمد)
+// vehicleId = null → مصروف عمومي على الشركة (§5 من البرومبت المعتمد).
+// تقييد الحساب بفرع الشجرة الصحيح — 6100 (مصروفات مركبات) لو مربوط بسيارة،
+// 6200 (مصروفات عمومية وإدارية) لو عمومي — فصل وظيفي زي opex في BOX/TM،
+// كان الاثنين مختلطين قبل كده رغم إن الشجرة مصمَّمة بالفصل ده من الأصل.
 export async function issueBillFlow(vehicleId) {
-  const accounts = await apiGet('fleet_accounts', { select: 'code,name_ar', type: 'eq.expense', order: 'code.asc' });
+  const parentCode = vehicleId ? '6100' : '6200';
+  const accounts = await apiGet('fleet_accounts', { select: 'code,name_ar', type: 'eq.expense', parent_code: `eq.${parentCode}`, order: 'code.asc' });
   const fd = await openFormModal(vehicleId ? 'تسجيل مصروف على السيارة' : 'تسجيل مصروف عمومي', `
     <label>التصنيف *
       <select name="account_code" required class="fleet-input">

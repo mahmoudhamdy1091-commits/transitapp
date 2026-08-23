@@ -25,7 +25,7 @@ export async function renderDashboard(params, main) {
   const [activeVehicles, invoices, bills] = await Promise.all([
     apiGet('fleet_vehicles', { select: 'id', status: 'eq.active', plate_no: 'not.ilike.ZZTEST*' }),
     apiGet('v_invoice_balances', { select: 'for_month,amount,remaining_amount' }),
-    apiGet('v_bill_balances', { select: 'for_month,amount' }),
+    apiGet('v_bill_balances', { select: 'for_month,amount,vehicle_id' }),
   ]);
 
   const ui = { preset: 'all', from: '', to: '' };
@@ -55,6 +55,9 @@ export async function renderDashboard(params, main) {
     const periodBills = bills.filter(b => inRange(b.for_month, range));
     const rev = periodInvoices.reduce((s, i) => s + Number(i.amount), 0);
     const exp = periodBills.reduce((s, b) => s + Number(b.amount), 0);
+    // فصل وظيفي زي opex في BOX/TM: مصروفات تشغيلية عمومية (vehicle_id فارغ)
+    // مؤشر مستقل، مش مدموجة صامتة جوه "المصروف" الإجمالي.
+    const opexAmount = periodBills.filter(b => !b.vehicle_id).reduce((s, b) => s + Number(b.amount), 0);
     const unpaid = invoices.filter(i => Number(i.remaining_amount) > 0);
     const totalRemaining = unpaid.reduce((s, i) => s + Number(i.remaining_amount), 0);
 
@@ -69,7 +72,8 @@ export async function renderDashboard(params, main) {
       kpi('صافي الربح / الخسارة', fmtKWD(rev - exp), rev - exp >= 0 ? 'var(--green)' : 'var(--red)') +
       kpi('سيارات نشطة', activeVehicles.length) +
       kpi('فواتير غير مسددة', unpaid.length) +
-      kpi('متبقي على العملاء', fmtKWD(totalRemaining), 'var(--accent)');
+      kpi('متبقي على العملاء', fmtKWD(totalRemaining), 'var(--accent)') +
+      kpi('مصروفات تشغيلية عمومية', fmtKWD(opexAmount), 'var(--purple)');
   }
 
   main.querySelectorAll('.period-btn').forEach(btn => {
@@ -181,79 +185,51 @@ export async function renderRevenueList(params, main) {
   renderList();
 }
 
-// مرآة renderRevenueList لجانب المصروف — التزامات + سندات صرف مجمّعة تحتها.
-// اتنين مصدرها bill.vehicle_id ممكن يكون null (مصروف عمومي) — بيتعرض كـ"عمومي".
-// زرار "+ مصروف عمومي" موجود هنا لأن مفيش ملف سيارة يستضيفه أصلًا (نفس السبب
-// اللي كان خلّاه في الداشبورد المؤقت قبل المرحلة دي).
+// فصل وظيفي: تبويبان منفصلان — "مصروفات المركبات" (bill.vehicle_id مضبوط)
+// و"مصروفات تشغيلية عمومية" (vehicle_id فارغ، مرجعها OPEX- من §sql/
+// fleet_opex_reference_split.sql). نفس مبدأ opex في BOX/TM (استُخدم فعليًا
+// بعد مراجعة حية لـjs/operations.js) لكن جوه نفس الجدول/RPC — بدل قائمة
+// واحدة بخيار "عمومي" وسط السيارات.
 export async function renderExpensesList(params, main) {
   const [vehicles, openAssignments, bills] = await Promise.all([
     apiGet('fleet_vehicles', { select: 'id,file_no,plate_no,status', plate_no: 'not.ilike.ZZTEST*', order: 'plate_no.asc' }),
     apiGet('fleet_assignments', { select: 'vehicle_id,fleet_drivers(full_name)', end_date: 'is.null' }),
     apiGet('v_bill_balances', { select: '*', order: 'for_month.desc,bill_no.desc' }),
   ]);
-  // نفس منطق renderRevenueList: لوحة الأسماء من كل السيارات، قائمة الفلتر
-  // تستثني المؤرشفة فقط (يشمل fixtures الريجريشن المؤرشفة آخر كل تشغيلة).
   const plateById = Object.fromEntries(vehicles.map(v => [String(v.id), v.file_no || v.plate_no]));
   const driverByVehicle = Object.fromEntries(openAssignments.map(a => [a.vehicle_id, a.fleet_drivers?.full_name]));
   const selectableVehicles = vehicles.filter(v => v.status !== 'archived');
-  const months = [...new Set(bills.map(b => b.for_month))].sort().reverse();
-  const vehicleOptions = [
-    { value: '', label: 'كل السيارات', searchText: 'كل السيارات' },
-    { value: 'general', label: 'مصروفات عمومية', searchText: 'عمومي مصروفات عمومية general' },
-    ...selectableVehicles.map(v => {
-      const driverName = driverByVehicle[v.id];
-      return {
-        value: String(v.id), label: `${plateById[v.id]} — ${driverName || 'بدون سائق'}`,
-        searchText: `${plateById[v.id]} ${v.plate_no} ${driverName || ''}`,
-      };
-    }),
-  ];
+
+  const vehicleBills = bills.filter(b => b.vehicle_id);
+  const opexBills = bills.filter(b => !b.vehicle_id);
 
   main.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <div id="vehiclePickerHost" style="width:260px"></div>
-        <select id="filterMonth" class="fleet-input" style="width:auto">
-          <option value="">كل الشهور</option>
-          ${months.map(m => `<option value="${m}">${m.slice(0, 7)}</option>`).join('')}
-        </select>
-      </div>
-      <button id="newGeneralBillBtn" class="fleet-btn primary" type="button">+ مصروف عمومي</button>
+    <div class="tabs" id="expensesTabs">
+      <div class="tab active" data-tab="vehicle">🚚 مصروفات المركبات</div>
+      <div class="tab" data-tab="opex">💼 مصروفات تشغيلية عمومية</div>
     </div>
-    <div id="expensesListBody"></div>`;
+    <div id="expensesTabContent"></div>`;
 
-  const vehiclePicker = mountVehiclePicker(main.querySelector('#vehiclePickerHost'), vehicleOptions, {
-    placeholder: 'ابحث عن سيارة...', onChange: () => renderList(),
-  });
-  vehiclePicker.setValue('', 'كل السيارات');
+  const content = main.querySelector('#expensesTabContent');
 
-  async function renderList() {
-    const vf = vehiclePicker.getValue();
-    const mf = main.querySelector('#filterMonth').value;
-    const filtered = bills.filter(b => {
-      if (vf === 'general' && b.vehicle_id) return false;
-      if (vf && vf !== 'general' && String(b.vehicle_id) !== vf) return false;
-      return !mf || b.for_month === mf;
-    });
-
-    const body = main.querySelector('#expensesListBody');
-    if (!filtered.length) {
-      body.innerHTML = '<div class="fleet-card" style="text-align:center;color:var(--text3)">لا يوجد التزامات مصروفات</div>';
+  async function _renderBillCards(hostEl, list) {
+    if (!list.length) {
+      hostEl.innerHTML = '<div class="fleet-card" style="text-align:center;color:var(--text3)">لا يوجد التزامات مصروفات</div>';
       return;
     }
-    body.innerHTML = '<div class="fleet-loading">جاري التحميل...</div>';
+    hostEl.innerHTML = '<div class="fleet-loading">جاري التحميل...</div>';
 
     const paymentsByBill = {};
-    await Promise.all(filtered.filter(b => Number(b.paid_amount) > 0).map(async b => {
+    await Promise.all(list.filter(b => Number(b.paid_amount) > 0).map(async b => {
       paymentsByBill[b.id] = await apiGet('fleet_payments', {
         select: '*', bill_id: `eq.${b.id}`, post_status: 'eq.posted', order: 'payment_date.asc',
       });
     }));
 
-    body.innerHTML = filtered.map(b => `
+    hostEl.innerHTML = list.map(b => `
       <div class="fleet-card" ${b.vehicle_id ? `style="cursor:pointer" data-vehicle-id="${b.vehicle_id}"` : ''}>
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-          <span style="font-weight:700">${b.vehicle_id ? (plateById[b.vehicle_id] || '—') : 'مصروف عمومي'} — ${b.bill_no} — ${b.for_month.slice(0, 7)}</span>
+          <span style="font-weight:700">${b.vehicle_id ? (plateById[b.vehicle_id] || '—') : 'عمومي'} — ${b.bill_no} — ${b.for_month.slice(0, 7)}</span>
           ${_balanceBadge(b.paid_amount, b.amount)}
         </div>
         <div style="color:var(--text3);font-size:12px;margin:4px 0 8px">
@@ -268,15 +244,83 @@ export async function renderExpensesList(params, main) {
         </div>` : ''}
       </div>`).join('');
 
-    body.querySelectorAll('[data-vehicle-id]').forEach(el => {
+    hostEl.querySelectorAll('[data-vehicle-id]').forEach(el => {
       el.onclick = () => navigate('vehicle', { id: el.dataset.vehicleId });
     });
   }
 
-  main.querySelector('#filterMonth').onchange = renderList;
-  main.querySelector('#newGeneralBillBtn').onclick = async () => {
-    const ok = await issueBillFlow(null);
-    if (ok) renderExpensesList(params, main);
-  };
-  renderList();
+  function _renderVehicleTab() {
+    const months = [...new Set(vehicleBills.map(b => b.for_month))].sort().reverse();
+    const vehicleOptions = [
+      { value: '', label: 'كل السيارات', searchText: 'كل السيارات' },
+      ...selectableVehicles.map(v => {
+        const driverName = driverByVehicle[v.id];
+        return {
+          value: String(v.id), label: `${plateById[v.id]} — ${driverName || 'بدون سائق'}`,
+          searchText: `${plateById[v.id]} ${v.plate_no} ${driverName || ''}`,
+        };
+      }),
+    ];
+
+    content.innerHTML = `
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <div id="vehiclePickerHost" style="width:260px"></div>
+        <select id="filterMonth" class="fleet-input" style="width:auto">
+          <option value="">كل الشهور</option>
+          ${months.map(m => `<option value="${m}">${m.slice(0, 7)}</option>`).join('')}
+        </select>
+      </div>
+      <div id="listBody"></div>`;
+
+    const picker = mountVehiclePicker(content.querySelector('#vehiclePickerHost'), vehicleOptions, {
+      placeholder: 'ابحث عن سيارة...', onChange: () => renderList(),
+    });
+    picker.setValue('', 'كل السيارات');
+
+    function renderList() {
+      const vf = picker.getValue();
+      const mf = content.querySelector('#filterMonth').value;
+      const filtered = vehicleBills.filter(b => (!vf || String(b.vehicle_id) === vf) && (!mf || b.for_month === mf));
+      _renderBillCards(content.querySelector('#listBody'), filtered);
+    }
+
+    content.querySelector('#filterMonth').onchange = renderList;
+    renderList();
+  }
+
+  function _renderOpexTab() {
+    const months = [...new Set(opexBills.map(b => b.for_month))].sort().reverse();
+
+    content.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap">
+        <select id="filterMonth" class="fleet-input" style="width:auto">
+          <option value="">كل الشهور</option>
+          ${months.map(m => `<option value="${m}">${m.slice(0, 7)}</option>`).join('')}
+        </select>
+        <button id="newGeneralBillBtn" class="fleet-btn primary" type="button">+ مصروف عمومي</button>
+      </div>
+      <div id="listBody"></div>`;
+
+    function renderList() {
+      const mf = content.querySelector('#filterMonth').value;
+      const filtered = opexBills.filter(b => !mf || b.for_month === mf);
+      _renderBillCards(content.querySelector('#listBody'), filtered);
+    }
+
+    content.querySelector('#filterMonth').onchange = renderList;
+    content.querySelector('#newGeneralBillBtn').onclick = async () => {
+      const ok = await issueBillFlow(null);
+      if (ok) renderExpensesList(params, main);
+    };
+    renderList();
+  }
+
+  main.querySelectorAll('#expensesTabs .tab').forEach(t => {
+    t.onclick = () => {
+      main.querySelectorAll('#expensesTabs .tab').forEach(x => x.classList.toggle('active', x === t));
+      if (t.dataset.tab === 'vehicle') _renderVehicleTab(); else _renderOpexTab();
+    };
+  });
+
+  _renderVehicleTab();
 }
