@@ -2,6 +2,11 @@
 // ║  settings.js — Settings · Roles · Users · Activity Log  ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
+// ✅ import صريح لـsetCurrentRole — نفس سبب reports.js: كان معتمد على
+// window.setCurrentRole بدل import حقيقي، لازم يتصلح قبل شيلها من window
+// (§خطة الصلاحيات المرحلة 1 بند 3) عشان loadUserRoleFromDB (المسار
+// الحقيقي الوحيد لتحميل الصلاحية من القاعدة) يفضل شغال.
+import { setCurrentRole } from './permissions.js';
 
 // ════════════════════════════════════════
 // سجل العملية (Audit Trail) لكل سجل — يُفتح من قائمة ⋮ (المرحلة ج)
@@ -471,8 +476,11 @@ export async function loadUserRoles() {
 
     wrap.innerHTML = users.map(u => {
       const sysArr = [...u._allSystems].filter(Boolean);
+      // FLEET يتعرض باسم الشركة الحقيقي (زي مربع الاختيار بالظبط) — التوكن
+      // المخزَّن يفضل FLEET، العرض بس اللي بيتغيّر.
+      const SYS_LABEL = { FLEET: 'الترانزيت الدولي' };
       const sysTags = sysArr.map(s =>
-        `<span class="sett-sys-tag ${s==='BOX'?'sett-sys-box':'sett-sys-tr'}">${s}</span>`
+        `<span class="sett-sys-tag ${s==='BOX'?'sett-sys-box':'sett-sys-tr'}">${SYS_LABEL[s] || s}</span>`
       ).join(' ');
       const isSelf = u.email === state.user?.email;
       // لو في تكرار → نبين تحذير صغير
@@ -532,12 +540,28 @@ export async function mergeUserRows(email) {
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
 
+// ✅ توكنات BOX/TM/FLEET بس هي اللي مربعَي الاختيار بيتحكموا فيها — أي توكن
+// تاني موجود في systems (زي FLEET القديم قبل ما يبقى ليه مربع اختيار خاص،
+// أو TM قبل الترحيل) يتحافظ عليه زي ما هو، مش يتشال بصمت. نفس فلسفة
+// mergeUserRows (بيدمج التوكنات مش بيعيد بناءها من الصفر) — §خطة الصلاحيات
+// المرحلة 1 بند 1. TRANSIT اتحوّلت لـTM هنا عمدًا (بند 4): TM هي المستخدمة
+// فعليًا في بيانات الأعمال (system_type على purchase_orders/vehicles)،
+// TRANSIT كانت موجودة بس في user_roles.
+function _mergeSystemsTokens(existingSystems, sysBox, sysTm, sysFleet) {
+  const KNOWN = new Set(['BOX', 'TRANSIT', 'TM', 'FLEET']);
+  const preserved = (existingSystems || '').split(',').map(s => s.trim()).filter(s => s && !KNOWN.has(s));
+  const active = [sysBox ? 'BOX' : null, sysTm ? 'TM' : null, sysFleet ? 'FLEET' : null].filter(Boolean);
+  return [...active, ...preserved].join(',');
+}
+
 export function openSettEditCard(id, email, role, systems) {
   el('sett-edit-id').value            = id;
   el('sett-edit-email-label').textContent = email;
   el('sett-edit-role').value          = role;
   el('sett-edit-sys-box').checked     = systems.includes('BOX');
-  el('sett-edit-sys-tr').checked      = systems.includes('TRANSIT');
+  el('sett-edit-sys-tm').checked      = systems.includes('TRANSIT') || systems.includes('TM');
+  el('sett-edit-sys-fleet').checked   = systems.includes('FLEET');
+  el('sett-edit-systems-orig').value  = systems;
   el('sett-edit-card').style.display  = 'block';
   el('sett-edit-card').scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
@@ -547,14 +571,15 @@ export function closeSettEditCard() {
 }
 
 export async function saveUserRoleEdit() {
-  const id      = el('sett-edit-id').value;
-  const role    = el('sett-edit-role').value;
-  const sysBox  = el('sett-edit-sys-box').checked;
-  const sysTr   = el('sett-edit-sys-tr').checked;
-  if (!sysBox && !sysTr) { toast('اختر نظاماً واحداً على الأقل','err'); return; }
-  const systems = [sysBox?'BOX':null, sysTr?'TRANSIT':null].filter(Boolean).join(',');
+  const id       = el('sett-edit-id').value;
+  const role     = el('sett-edit-role').value;
+  const sysBox   = el('sett-edit-sys-box').checked;
+  const sysTm    = el('sett-edit-sys-tm').checked;
+  const sysFleet = el('sett-edit-sys-fleet').checked;
+  if (!sysBox && !sysTm && !sysFleet) { toast('اختر نظاماً واحداً على الأقل','err'); return; }
+  const systems = _mergeSystemsTokens(el('sett-edit-systems-orig').value, sysBox, sysTm, sysFleet);
   try {
-    await apiPatch('user_roles', { id:`eq.${id}` }, { role, systems, system_type: sysBox ? 'BOX' : 'TRANSIT' });
+    await apiPatch('user_roles', { id:`eq.${id}` }, { role, systems, system_type: sysBox ? 'BOX' : (sysTm ? 'TM' : 'FLEET') });
     toast('✅ تم تحديث بيانات المستخدم','ok');
     closeSettEditCard();
     await loadUserRoles();
@@ -562,18 +587,19 @@ export async function saveUserRoleEdit() {
 }
 
 export async function addUserRole() {
-  const email  = el('newUserEmail')?.value.trim();
-  const role   = el('newUserRole')?.value;
-  const sysBox = el('newUserSysBox')?.checked;
-  const sysTr  = el('newUserSysTr')?.checked;
-  const note   = el('newUserNote')?.value.trim() || '';
-  const errEl  = el('inviteError');
+  const email    = el('newUserEmail')?.value.trim();
+  const role     = el('newUserRole')?.value;
+  const sysBox   = el('newUserSysBox')?.checked;
+  const sysTm    = el('newUserSysTm')?.checked;
+  const sysFleet = el('newUserSysFleet')?.checked;
+  const note     = el('newUserNote')?.value.trim() || '';
+  const errEl    = el('inviteError');
   if (errEl) errEl.style.display = 'none';
   if (!email) { if(errEl){errEl.textContent='أدخل البريد الإلكتروني';errEl.style.display='flex';} return; }
-  if (!sysBox && !sysTr) { if(errEl){errEl.textContent='اختر نظاماً واحداً على الأقل';errEl.style.display='flex';} return; }
-  const systems = [sysBox?'BOX':null, sysTr?'TRANSIT':null].filter(Boolean).join(',');
+  if (!sysBox && !sysTm && !sysFleet) { if(errEl){errEl.textContent='اختر نظاماً واحداً على الأقل';errEl.style.display='flex';} return; }
+  const systems = [sysBox?'BOX':null, sysTm?'TM':null, sysFleet?'FLEET':null].filter(Boolean).join(',');
   try {
-    await apiPost('user_roles', { email, role, system_type: sysBox ? 'BOX' : 'TRANSIT', systems, notes: note });
+    await apiPost('user_roles', { email, role, system_type: sysBox ? 'BOX' : (sysTm ? 'TM' : 'FLEET'), systems, notes: note });
     el('newUserEmail').value = '';
     if(el('newUserNote')) el('newUserNote').value = '';
     toast(`✅ تم إضافة ${email}`,'ok');
@@ -631,7 +657,7 @@ export async function loadUserRoleFromDB() {
           await apiPost('user_roles', {
             email, role:'admin',
             system_type: state.system,
-            systems: 'BOX,TRANSIT',
+            systems: 'BOX,TM',
             notes: 'أول مستخدم — مدير تلقائي'
           });
         } catch(e2) { console.warn('autoAdmin insert:', e2.message); }

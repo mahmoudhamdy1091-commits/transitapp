@@ -1181,6 +1181,7 @@
               <button class="btn btn-secondary btn-sm" onclick="closeSettEditCard()">✕ إغلاق</button>
             </div>
             <input type="hidden" id="sett-edit-id">
+            <input type="hidden" id="sett-edit-systems-orig">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
               <div class="field">
                 <label>الدور</label>
@@ -1192,12 +1193,15 @@
               </div>
               <div class="field">
                 <label>الأنظمة المسموح بها</label>
-                <div style="display:flex;gap:16px;margin-top:8px">
+                <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
                   <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
                     <input type="checkbox" id="sett-edit-sys-box" style="width:16px;height:16px;accent-color:var(--accent)"> BOX
                   </label>
                   <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-                    <input type="checkbox" id="sett-edit-sys-tr" style="width:16px;height:16px;accent-color:var(--accent)"> TRANSIT
+                    <input type="checkbox" id="sett-edit-sys-tm" style="width:16px;height:16px;accent-color:var(--accent)"> TM
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                    <input type="checkbox" id="sett-edit-sys-fleet" style="width:16px;height:16px;accent-color:var(--accent)"> الترانزيت الدولي لنقل البضائع
                   </label>
                 </div>
               </div>
@@ -1254,7 +1258,7 @@
                 <tr><td>🖨️ طباعة وتصدير Excel / PDF</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td></tr>
                 <tr><td>👥 إدارة جهات الاتصال</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
                 <tr><td>🔐 إدارة المستخدمين والصلاحيات</td><td style="text-align:center;color:var(--green);font-size:16px">✓</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td><td style="text-align:center;color:var(--red);font-size:16px">✗</td></tr>
-                <tr><td>🏢 الوصول للأنظمة (BOX / TRANSIT)</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">الكل</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">حسب الإعداد</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">حسب الإعداد</td></tr>
+                <tr><td>🏢 الوصول للأنظمة (BOX / TM / الترانزيت الدولي)</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">الكل</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">حسب الإعداد</td><td style="text-align:center;font-size:11px;color:var(--accent);font-weight:700">حسب الإعداد</td></tr>
               </tbody>
             </table>
           </div>
@@ -1302,12 +1306,15 @@
               </div>
               <div class="field">
                 <label>الأنظمة المسموح بها</label>
-                <div style="display:flex;gap:16px;margin-top:8px">
+                <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
                   <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
                     <input type="checkbox" id="newUserSysBox" checked style="width:16px;height:16px;accent-color:var(--accent)"> BOX
                   </label>
                   <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-                    <input type="checkbox" id="newUserSysTr" style="width:16px;height:16px;accent-color:var(--accent)"> TRANSIT
+                    <input type="checkbox" id="newUserSysTm" style="width:16px;height:16px;accent-color:var(--accent)"> TM
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                    <input type="checkbox" id="newUserSysFleet" style="width:16px;height:16px;accent-color:var(--accent)"> الترانزيت الدولي لنقل البضائع
                   </label>
                 </div>
               </div>

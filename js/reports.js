@@ -2,6 +2,12 @@
 // ║  reports.js — Reports · Filters · Export                ║
 // ║  Transit Management System — نقل حرفي، لا تعديل منطق   ║
 // ╚══════════════════════════════════════════════════════════╝
+// ✅ import صريح لـsetCurrentRole — الملف ده كان بيعتمد على window.setCurrentRole
+// (الجسر في permissions.js) بدل import حقيقي. بعد شيل setCurrentRole من
+// window (§خطة الصلاحيات المرحلة 1 بند 3)، لازم import مباشر بدل الاعتماد
+// على global (نفس السبب اللي كان بيخلّي تعريضها على window خطر أمني أصلًا).
+import { setCurrentRole } from './permissions.js';
+
 export function showReport(type) {
   sessionStorage.setItem('tm_last_view','report:'+type);
   hideAllViews();
@@ -1078,12 +1084,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── window bridge: تعريض الدوال للاستخدام من classic scripts وسمات onclick ──
+// ✅ setRole/saveRole عمدًا برّه هذا الجسر — بيكتبوا الدور الفعلي
+// (setCurrentRole + localStorage tm_role) من غير أي تحقق سيرفر. الشاشة
+// اللي بتستدعيهم (rolesModal) مش مربوطة بأي زرار وصول فعلي في الواجهة
+// (openRolesModal نفسها ميتة)، فكان تعريضهم بيسيب مسار تصعيد صلاحيات كامل
+// عبر كونسول المتصفح بس، من غير حتى فتح الشاشة (§خطة الصلاحيات المرحلة 1
+// بند 3). onclick="setRole(...)" جوه rolesModal بقت مسارات ميتة بدورها —
+// مقصود، الشاشة أصلاً غير قابلة للفتح من أي مكان في الواجهة.
 Object.assign(window, {
   showReport, setReportPeriod, setReportType, runReport,
   runCashFlowReport, runInventoryReport, filterInventoryByWarehouse, exportReportCSV,
   togglePassword, clearSavedLogin,
   showConfirm, showConfirmHtml, confirmDeleteDealFromModal, deleteDealCompletely, confirmDeleteVehicle, deletePayoutEntry,
-  openRolesModal, getPendingRole, setPendingRole, setRole, updateRoleUI, saveRole, applyRoleRestrictions,
+  openRolesModal, getPendingRole, setPendingRole, updateRoleUI, applyRoleRestrictions,
   checkVinDuplicate, onVinBlur,
   sendWhatsappInvoice,
   openQuickExpFab, showDashboard_withFab,

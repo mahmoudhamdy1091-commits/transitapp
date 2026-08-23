@@ -22,4 +22,10 @@ export function setCurrentRole(role) { _currentRole = role; }
 
 export function can(action) { return ROLES[_currentRole]?.[action] === true; }
 
-Object.assign(window, { ROLES, getCurrentRole, setCurrentRole, can });
+// ✅ setCurrentRole عمدًا برّه هذا الجسر — _currentRole هو المصدر اللي can()
+// بيتحقق منه لكل صلاحية في التطبيق كله. تعريضه على window كان بيسمح لأي
+// مستخدم مسجّل دخول (حتى "مشاهدة") يرفع صلاحيته الظاهرية من كونسول
+// المتصفح مباشرة (window.setCurrentRole('admin')) بدون أي تفاعل مع الواجهة
+// (§خطة الصلاحيات المرحلة 1 بند 3). القراءة (getCurrentRole/can/ROLES)
+// آمنة وتفضل مُعرَّضة لأي كود classic محتاجها.
+Object.assign(window, { ROLES, getCurrentRole, can });
