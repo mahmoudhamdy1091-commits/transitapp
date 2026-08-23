@@ -476,11 +476,13 @@ export async function loadUserRoles() {
 
     wrap.innerHTML = users.map(u => {
       const sysArr = [...u._allSystems].filter(Boolean);
-      // FLEET يتعرض باسم الشركة الحقيقي (زي مربع الاختيار بالظبط) — التوكن
-      // المخزَّن يفضل FLEET، العرض بس اللي بيتغيّر.
-      const SYS_LABEL = { FLEET: 'الترانزيت الدولي' };
+      // تاج القائمة: رمز قصير زي BOX/TM بالظبط (مش الاسم الكامل) — التوكن
+      // المخزَّن يفضل FLEET، العرض بس اللي بيتغيّر. لون مستقل (أخضر) بدل
+      // ما ياخد نفس لون تاج TM.
+      const SYS_LABEL = { FLEET: 'TG' };
+      const SYS_CLASS = { BOX: 'sett-sys-box', FLEET: 'sett-sys-fleet' };
       const sysTags = sysArr.map(s =>
-        `<span class="sett-sys-tag ${s==='BOX'?'sett-sys-box':'sett-sys-tr'}">${SYS_LABEL[s] || s}</span>`
+        `<span class="sett-sys-tag ${SYS_CLASS[s] || 'sett-sys-tr'}">${SYS_LABEL[s] || s}</span>`
       ).join(' ');
       const isSelf = u.email === state.user?.email;
       // لو في تكرار → نبين تحذير صغير
