@@ -145,9 +145,17 @@ async function loadPatchedReports() {
       'اختبار انحدار يستخدم reports.js (deletePayoutEntry وغيرها).'
     );
   }
+  // ✅ اكتُشف حيًّا 2026-08-18: reports.js بقى فيه import حقيقي واحد على الأقل
+  // (setCurrentRole من permissions.js — إضافة من عمل الفليت المتوازي، خروج عن
+  // نمط "بلا imports حقيقية بين js/*.js" اللي كان سائدًا وقت بناء هذا الملف).
+  // النسخة المُصحَّحة بتُكتَب في os.tmpdir()، فأي import نسبي (./xxx.js) كان
+  // بيفشل resolve لأن permissions.js مش موجودة جنب الملف المؤقت — بيوقف loadApp()
+  // بالكامل بخطأ ERR_MODULE_NOT_FOUND. الحل: تحويل أي import نسبي لمسار مطلق
+  // (نفس u() المُستخدَمة في باقي الملف) قبل الكتابة، بدل افتراض عدم وجود أي import
   const patched = src
     .replace(reSC,  `export function showConfirm(title, msg, onConfirm, onCancel, beforeShow) { globalThis.__autoConfirm(onConfirm); }`)
-    .replace(reSCH, `export function showConfirmHtml(title, htmlMsg, onConfirm, onCancel, beforeShow) { globalThis.__autoConfirm(onConfirm); }`);
+    .replace(reSCH, `export function showConfirmHtml(title, htmlMsg, onConfirm, onCancel, beforeShow) { globalThis.__autoConfirm(onConfirm); }`)
+    .replace(/from '(\.\/[^']+)'/g, (m, relPath) => `from '${u('/js/' + relPath.slice(2))}'`);
   const tmpFile = path.join(os.tmpdir(), `reports-headless-${process.pid}-${Date.now()}.mjs`);
   fs.writeFileSync(tmpFile, patched, 'utf8');
   try {
