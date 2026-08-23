@@ -46,7 +46,7 @@ export async function renderDashboard(params, main) {
         <button class="btn btn-secondary btn-sm" id="applyCustomBtn" type="button">تطبيق</button>
       </div>
     </div>
-    <div class="fleet-stats-grid" id="dashboardKpis"></div>
+    <div id="dashboardKpis"></div>
     <div id="dashboardVehicles"></div>`;
 
   function _renderKpis() {
@@ -61,19 +61,28 @@ export async function renderDashboard(params, main) {
     const unpaid = invoices.filter(i => Number(i.remaining_amount) > 0);
     const totalRemaining = unpaid.reduce((s, i) => s + Number(i.remaining_amount), 0);
 
-    const kpi = (label, val, color) => `
-      <div class="fleet-card fleet-stat">
-        <div class="fleet-stat-label">${label}</div>
-        <div class="fleet-stat-val" ${color ? `style="color:${color}"` : ''}>${val}</div>
+    // نفس ماركب .kpi-card الحقيقي في BOX/TM بالحرف (public/index.html:345-350،
+    // public/js/dashboard.js:792-796) — kpi-top(label+icon)/kpi-val/kpi-sub،
+    // بدل .fleet-stat المصغّرة اللي كانت هنا قبل كده (ناقصة أيقونة/سطر توضيحي).
+    const kpi = (cls, icon, label, val, sub) => `
+      <div class="kpi-card ${cls}">
+        <div class="kpi-top"><span class="kpi-label">${label}</span><div class="kpi-icon">${icon}</div></div>
+        <div class="kpi-val">${val}</div>
+        <div class="kpi-sub">${sub}</div>
       </div>`;
-    document.getElementById('dashboardKpis').innerHTML =
-      kpi('الإيراد', fmtKWD(rev), 'var(--blue)') +
-      kpi('المصروف', fmtKWD(exp), 'var(--red)') +
-      kpi('صافي الربح / الخسارة', fmtKWD(rev - exp), rev - exp >= 0 ? 'var(--green)' : 'var(--red)') +
-      kpi('سيارات نشطة', activeVehicles.length) +
-      kpi('فواتير غير مسددة', unpaid.length) +
-      kpi('متبقي على العملاء', fmtKWD(totalRemaining), 'var(--accent)') +
-      kpi('مصروفات تشغيلية عمومية', fmtKWD(opexAmount), 'var(--purple)');
+    // صفين متوازنين (4+3) بدل صف واحد ضيق أو التفاف عشوائي — 7 مؤشرات ثابتة العدد.
+    document.getElementById('dashboardKpis').innerHTML = `
+      <div class="fleet-kpi-row">
+        ${kpi('kpi-blue', '🧾', 'الإيراد', fmtKWD(rev), 'في الفترة')}
+        ${kpi('kpi-red', '💸', 'المصروف', fmtKWD(exp), 'في الفترة')}
+        ${kpi('kpi-green', '📈', 'صافي الربح / الخسارة', fmtKWD(rev - exp), 'إيراد - مصروف')}
+        ${kpi('kpi-amber', '🚚', 'سيارات نشطة', activeVehicles.length, 'من إجمالي الأسطول')}
+      </div>
+      <div class="fleet-kpi-row">
+        ${kpi('kpi-amber', '⏳', 'فواتير غير مسددة', unpaid.length, 'رصيد حالي')}
+        ${kpi('kpi-amber', '💰', 'متبقي على العملاء', fmtKWD(totalRemaining), 'رصيد حالي')}
+        ${kpi('kpi-purple', '💼', 'مصروفات تشغيلية عمومية', fmtKWD(opexAmount), 'في الفترة')}
+      </div>`;
   }
 
   main.querySelectorAll('.period-btn').forEach(btn => {
