@@ -354,21 +354,17 @@ const _API_MAX_PAGES = 50; // سقف 50,000 صف — يطابق نية الحد 
 
 export async function apiGet(table, params = {}) {
   const NO_ENCODE = new Set(['select','order','or','and','limit','offset']);
-  const qs = Object.entries(params).map(([k,v]) => NO_ENCODE.has(k) ? `${k}=${v}` : `${k}=${encodeURIComponent(v)}`).join('&');
-  const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
   // ✅ منع الكاش المتصفح/HTTP لطلبات GET — كان يسبب عرض بيانات قديمة
   // مباشرة بعد عمليات التعديل (مثال: طلب إلغاء يبقى ظاهراً في قائمة الانتظار رغم تنفيذه)
 
-  // ✅ لو الكولر حدّد limit/offset صراحة، هو عايز نتيجة محدودة بالظبط — طلب واحد
-  // بس بلا أي محاولة صفحات تلقائية. لو حاولنا نصفّح فوق limit صريح، أي قيمة
-  // limit تساوي أو تتجاوز حجم الصفحة (1000) هتسبب تعارض Range/limit حقيقي —
-  // مُثبَت مباشرة ضد القاعدة الحية: طلب صفحة تانية بـRange مُزاح مع limit ثابت
-  // من الصفحة الأولى برجّع HTTP 416 (PGRST103 "Limit should be greater than
-  // or equal to zero") بدل بيانات. أمثلة حقيقية: genSeqRef (journal.js)
-  // limit:1000 بالظبط = حجم الصفحة، وaudit_log query (core.js) limit:2000.
-  // احترام limit/offset الصريح بطلب واحد بلا Range مطابق لسلوك PostgREST
-  // الطبيعي، وبيفادي التعارض ده تمامًا بدل ما نحاول نخمّن حد أدنى آمن.
-  if ('limit' in params || 'offset' in params) {
+  const hasLimit  = 'limit'  in params;
+  const explicitLimit  = hasLimit ? parseInt(params.limit, 10) : null;
+
+  // ✅ حالة سريعة وآمنة: limit صريح ≤ حجم الصفحة (1000) — طلب واحد كافٍ، حد
+  // السيرفر مش هيقطع لأن المطلوب أصلاً أصغر من/يساوي حده، فمفيش داعي لأي حلقة.
+  if (hasLimit && explicitLimit <= _API_PAGE_SIZE) {
+    const qs = Object.entries(params).map(([k,v]) => NO_ENCODE.has(k) ? `${k}=${v}` : `${k}=${encodeURIComponent(v)}`).join('&');
+    const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
     const res = await apiFetch(url, { cache: 'no-store' });
     if (!res.ok && res.status !== 206) {
       const e = await res.json().catch(()=>({}));
@@ -377,11 +373,28 @@ export async function apiGet(table, params = {}) {
     return res.json();
   }
 
+  // ✅ باقي الحالات: مفيش limit خالص (يعني "هات كل حاجة")، أو limit > حجم
+  // الصفحة (يعني لسه محتاج صفحات حقيقية لحد ما نوصل له). الاتنين لازم
+  // pagination فعلي بالـRange — بلا limit/offset في الـquery string نفسه،
+  // لأن سيبهم في الطلب مع Range على صفحة غير الأولى بيسبب تعارض حقيقي مُثبَت
+  // (HTTP 416 PGRST103). لو مفيش limit، بيكرر لحد ما البيانات تخلص أو سقف
+  // الصفحات. لو فيه limit > 1000، بيوقف بالظبط لما يجمع العدد المطلوب —
+  // مش يتخطى الصفحات زي ما كان بيحصل غلط قبل كده (اكتُشف حيًّا: getCreatorsMap
+  // بـlimit:2000 كان برجّع 1000 بصمت status 200 بلا أي تحذير).
+  const restParams = { ...params };
+  delete restParams.limit;
+  delete restParams.offset;
+  const qs = Object.entries(restParams).map(([k,v]) => NO_ENCODE.has(k) ? `${k}=${v}` : `${k}=${encodeURIComponent(v)}`).join('&');
+  const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
+
   let out = [];
-  let offset = 0;
+  let offset = 'offset' in params ? parseInt(params.offset, 10) : 0;
   for (let page = 0; page < _API_MAX_PAGES; page++) {
+    const remaining = explicitLimit != null ? (explicitLimit - out.length) : _API_PAGE_SIZE;
+    if (remaining <= 0) break;
+    const pageSize = Math.min(_API_PAGE_SIZE, remaining);
     const res = await apiFetch(url, {
-      headers: { 'Range': `${offset}-${offset + _API_PAGE_SIZE - 1}`, 'Range-Unit': 'items' },
+      headers: { 'Range': `${offset}-${offset + pageSize - 1}`, 'Range-Unit': 'items' },
       cache: 'no-store',
     });
     if (!res.ok && res.status !== 206) {
@@ -390,8 +403,8 @@ export async function apiGet(table, params = {}) {
     }
     const body = await res.json();
     out = out.concat(body);
-    if (body.length < _API_PAGE_SIZE) break; // آخر صفحة
-    offset += _API_PAGE_SIZE;
+    if (body.length < pageSize) break; // آخر صفحة فعليًا (وصلنا لآخر البيانات)
+    offset += pageSize;
     if (page === _API_MAX_PAGES - 1) {
       console.warn(
         `[Transit] ⚠️ apiGet("${table}"): وصلنا لسقف ${_API_MAX_PAGES} صفحة (${_API_MAX_PAGES * _API_PAGE_SIZE} صف) — ` +
