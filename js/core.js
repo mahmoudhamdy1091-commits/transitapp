@@ -358,6 +358,25 @@ export async function apiGet(table, params = {}) {
   const url = `${SB_URL}/rest/v1/${table}${qs ? '?' + qs : ''}`;
   // ✅ منع الكاش المتصفح/HTTP لطلبات GET — كان يسبب عرض بيانات قديمة
   // مباشرة بعد عمليات التعديل (مثال: طلب إلغاء يبقى ظاهراً في قائمة الانتظار رغم تنفيذه)
+
+  // ✅ لو الكولر حدّد limit/offset صراحة، هو عايز نتيجة محدودة بالظبط — طلب واحد
+  // بس بلا أي محاولة صفحات تلقائية. لو حاولنا نصفّح فوق limit صريح، أي قيمة
+  // limit تساوي أو تتجاوز حجم الصفحة (1000) هتسبب تعارض Range/limit حقيقي —
+  // مُثبَت مباشرة ضد القاعدة الحية: طلب صفحة تانية بـRange مُزاح مع limit ثابت
+  // من الصفحة الأولى برجّع HTTP 416 (PGRST103 "Limit should be greater than
+  // or equal to zero") بدل بيانات. أمثلة حقيقية: genSeqRef (journal.js)
+  // limit:1000 بالظبط = حجم الصفحة، وaudit_log query (core.js) limit:2000.
+  // احترام limit/offset الصريح بطلب واحد بلا Range مطابق لسلوك PostgREST
+  // الطبيعي، وبيفادي التعارض ده تمامًا بدل ما نحاول نخمّن حد أدنى آمن.
+  if ('limit' in params || 'offset' in params) {
+    const res = await apiFetch(url, { cache: 'no-store' });
+    if (!res.ok && res.status !== 206) {
+      const e = await res.json().catch(()=>({}));
+      throw new Error(e.message || res.statusText);
+    }
+    return res.json();
+  }
+
   let out = [];
   let offset = 0;
   for (let page = 0; page < _API_MAX_PAGES; page++) {
