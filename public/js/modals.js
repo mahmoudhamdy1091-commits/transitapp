@@ -1028,37 +1028,60 @@ export async function openExpenseModal() {
   if (el('exp-splitPartners')) { el('exp-splitPartners').style.display = 'none'; el('exp-splitPartners').innerHTML = ''; }
   if (el('exp-paidBy')) el('exp-paidBy').style.display = '';
   openModal('expenseModal');
-  // populate paid_by dropdown + قائمة شركاء التوزيع async (بعد فتح المودال مباشرة)
+  // ✅ اكتُشف حيًّا 2026-08-25: المودال ده بيتفتح من زراير عامة كمان (index.html
+  // "➕ مصروف جديد"، dashboard.js "💸 مصروف"، accounting.js) مش بس من داخل شاشة
+  // ملف محدد — في السياق العام ده state.currentFileNo بيكون فاضي، فـfn هنا
+  // كانت بتبقى '' والشرط `if (paidByEl && fn)` القديم كان بيتخطى تحميل الشركاء
+  // بالكامل، تسيب "توزيع متساوي" بلا أي شريك يُختار حتى لو المستخدم اختار
+  // الملف يدويًا من قائمة الصف بعد كده. بننده هنا بـfn الحالي (لو موجود، زي
+  // السلوك القديم)، وبنعلّق كمان على تغيير قائمة الملف في الصف (addExpenseRow)
+  // عشان تعيد التحميل لما المستخدم يختار الملف من الداخل.
+  await loadExpensePartnerOptions(fn);
+}
+
+// ✅ استُخرجت من داخل openExpenseModal — قابلة للنداء مرة تانية لما المستخدم
+// يغيّر الملف من قائمة الصف (بعد فتح المودال من زرار عام بلا state.currentFileNo)
+export async function loadExpensePartnerOptions(fn) {
   const paidByEl = el('exp-paidBy');
-  if (paidByEl && fn) {
-    try {
-      const partners = await apiGetAll('partners_master', {
-        select: 'partner', system_type: `eq.${state.system}`, file_no: `eq.${fn}`
-      });
-      const raw = (partners||[]).map(p => p.partner);
-      // ✅ نتحقق من وجود أي اسم خزينة (TREASURY_ALIASES) لا "الصندوق" الحرفي بس —
-      // TM مسجّلة باسم "صندوق الترانزيت" فعليًا كشريك حقيقي في partners_master؛
-      // كانت المقارنة القديمة تفشل معه فتحقن "الصندوق" العام كخيار وهمي ثالث
-      const list = raw.some(p => TREASURY_ALIASES.has(p)) ? raw : [TREASURY_PARTNER, ...raw];
-      paidByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
-      // ✅ TM: "صندوق الترانزيت" هو خزينة الملف الفعلية هنا — افتراضي أولى من "الصندوق" العام
-      paidByEl.value = raw.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
-      // ✅ قائمة التوزيع تستثني الصندوق — لا يُقيَّد على 2400 بتصميم النظام (مصاريفه تُدفع نقدًا مباشرة)
-      const splitWrap = el('exp-splitPartners');
-      if (splitWrap) {
-        // ✅ الصندوق/صندوق الترانزيت يظهر كخيار عادي — je_expense بتوجّه حصته
-        // لـ1110/1120 تلقائيًا (لا 2400) حسب _isPartnerPocket لكل عنصر مستقلاً
-        splitWrap.innerHTML = raw.length
-          ? raw.map(p => `<label style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;font-weight:400;cursor:pointer">
-              <input type="checkbox" class="exp-split-partner" value="${p}"> ${p}
-            </label>`).join('')
-          : `<div style="font-size:12px;color:var(--text3)">لا يوجد شركاء لهذا الملف</div>`;
-      }
-    } catch(_) {
-      paidByEl.innerHTML = `<option value="${TREASURY_PARTNER}">${TREASURY_PARTNER}</option>`;
-      if (el('exp-splitPartners')) el('exp-splitPartners').innerHTML = '';
-    }
+  if (!paidByEl) return;
+  if (!fn) {
+    paidByEl.innerHTML = `<option value="${TREASURY_PARTNER}">${TREASURY_PARTNER}</option>`;
+    if (el('exp-splitPartners')) el('exp-splitPartners').innerHTML = '';
+    return;
   }
+  try {
+    const partners = await apiGetAll('partners_master', {
+      select: 'partner', system_type: `eq.${state.system}`, file_no: `eq.${fn}`
+    });
+    const raw = (partners||[]).map(p => p.partner);
+    // ✅ نتحقق من وجود أي اسم خزينة (TREASURY_ALIASES) لا "الصندوق" الحرفي بس —
+    // TM مسجّلة باسم "صندوق الترانزيت" فعليًا كشريك حقيقي في partners_master؛
+    // كانت المقارنة القديمة تفشل معه فتحقن "الصندوق" العام كخيار وهمي ثالث
+    const list = raw.some(p => TREASURY_ALIASES.has(p)) ? raw : [TREASURY_PARTNER, ...raw];
+    paidByEl.innerHTML = list.map(p => `<option value="${p}">${p}</option>`).join('');
+    // ✅ TM: "صندوق الترانزيت" هو خزينة الملف الفعلية هنا — افتراضي أولى من "الصندوق" العام
+    paidByEl.value = raw.includes('صندوق الترانزيت') ? 'صندوق الترانزيت' : TREASURY_PARTNER;
+    // ✅ قائمة التوزيع تستثني الصندوق — لا يُقيَّد على 2400 بتصميم النظام (مصاريفه تُدفع نقدًا مباشرة)
+    const splitWrap = el('exp-splitPartners');
+    if (splitWrap) {
+      // ✅ الصندوق/صندوق الترانزيت يظهر كخيار عادي — je_expense بتوجّه حصته
+      // لـ1110/1120 تلقائيًا (لا 2400) حسب _isPartnerPocket لكل عنصر مستقلاً
+      splitWrap.innerHTML = raw.length
+        ? raw.map(p => `<label style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;font-weight:400;cursor:pointer">
+            <input type="checkbox" class="exp-split-partner" value="${p}"> ${p}
+          </label>`).join('')
+        : `<div style="font-size:12px;color:var(--text3)">لا يوجد شركاء لهذا الملف</div>`;
+    }
+  } catch(_) {
+    paidByEl.innerHTML = `<option value="${TREASURY_PARTNER}">${TREASURY_PARTNER}</option>`;
+    if (el('exp-splitPartners')) el('exp-splitPartners').innerHTML = '';
+  }
+}
+
+// ✅ onchange على قائمة الملف في صف المصروف (addExpenseRow) — يعيد تحميل قائمة
+// الشركاء لما المستخدم يختار/يغيّر الملف من داخل المودال، لا وقت الفتح بس
+export function onExpenseRowFileChange(selectEl) {
+  loadExpensePartnerOptions(selectEl?.value || '');
 }
 
 export function toggleExpenseSplitMode() {
@@ -1083,7 +1106,7 @@ export function addExpenseRow(prefill={}) {
   const s = 'width:100%;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:5px 7px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px';
   tr.innerHTML = `
     <td style="padding:4px 3px">
-      <select name="er-file" style="${s}">
+      <select name="er-file" style="${s}" onchange="onExpenseRowFileChange(this)">
         <option value="">-- اختر --</option>${dealOpts}
       </select>
     </td>
@@ -2423,7 +2446,7 @@ Object.assign(window, {
   updateEqualPriceInfo, addVehicleRow, copyVehicleRow, renumberVehicles, addPartnerRow,
   updatePartnerSummary, checkShareTotal, _assignPartVins, submitNewFile, _submitNewFileInner,
   voidOrDeleteOldPayment, submitEditFileFull, openPaymentModal, onPayFileSelectorChange,
-  _loadPaymentModalData, openExpenseModal, addExpenseRow, updateExpenseTotal,
+  _loadPaymentModalData, openExpenseModal, loadExpensePartnerOptions, onExpenseRowFileChange, addExpenseRow, updateExpenseTotal,
   toggleExpenseModalSize, submitExpense, toggleExpenseSplitMode, submitPayment, _proceedSubmitPayment, openSaleModal,
   onSaleFileChange, loadAvailableVehicles, renderSaleVehiclePicker, filterSaleVehiclesByVin,
   clearSaleVinSearch, onSaleVehicleCheck, saleToggleAll, addSaleVehicleRow,
