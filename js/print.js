@@ -846,9 +846,14 @@ export async function printDealSummary(fn) {
       const share = +p.share_percent||0;
       const x = settlementPartners.find(sp => sp.name === (p.partner||'').trim())
         || { actualContribution:0, fairShare:0, profitShare: profit*(share/100), withdrawnViaPayout:0, collectionsHeld:0, netDue:0, isTreasury:false };
-      const capitalIn   = x.actualContribution;
+      const isTreasury  = x.isTreasury || false;
+      // للصندوق: افصل رأس المال (دفعات) عن المصاريف (باقي المساهمة)
+      const capitalIn   = isTreasury ? (x.capitalPaid || 0) : x.actualContribution;
+      const expIn_      = isTreasury ? Math.max(0, (x.actualContribution||0) - (x.capitalPaid||0)) : 0;
       const liability    = x.fairShare;
-      const remaining_  = Math.max(liability - capitalIn, 0);
+      const diff_       = liability - capitalIn;
+      const remaining_  = Math.max(diff_, 0);
+      const overpaid_   = Math.max(-diff_, 0);
       const profitShare = x.profitShare;
       const totalOut    = x.withdrawnViaPayout + x.collectionsHeld;
       const netDue      = x.netDue;
@@ -875,8 +880,12 @@ export async function printDealSummary(fn) {
       html += '<div style="padding:12px 14px;border-left:1px solid #e4e0d8;border-bottom:1px solid #e4e0d8">'
             + '<div style="font-size:12px;color:#78716c;font-weight:700;margin-bottom:8px;letter-spacing:1px">رأس المال</div>'
             + rows('حصته في التكلفة', f2(liability),  false, '#1d4ed8')
-            + rows('دفع فعلاً',        f2(capitalIn),  false, '#15803d')
-            + rows('المتبقي عليه',     remaining_ > 0.01 ? f2(remaining_)+' ⚠️' : 'صفر ✅', true, remaining_>0.01?'#c0392b':'#15803d')
+            + rows('رأس المال المدفوع', f2(capitalIn), false, '#15803d')
+            + (isTreasury && expIn_ > 0.01 ? rows('مصاريف من جيبه', f2(expIn_), false, '#0369a1') : '')
+            + rows('ساهم فعلاً',       f2(isTreasury ? x.actualContribution : capitalIn), false, '#15803d')
+            + (overpaid_ > 0.01
+                ? rows('دفع زيادة',    '+' + f2(overpaid_) + ' ↑', true, '#0369a1')
+                : rows('المتبقي عليه', remaining_ > 0.01 ? f2(remaining_) + ' ⚠️' : 'صفر ✅', true, remaining_ > 0.01 ? '#c0392b' : '#15803d'))
             + '</div>';
 
       // الربح
