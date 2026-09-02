@@ -260,6 +260,10 @@ export function statusClass(s) {
   if (s === 'OPEN') return 'open';
   if (s === 'IN PROGRESS') return 'progress';
   if (s === 'CLOSED') return 'closed';
+  // ✅ اكتُشف حيًّا 2026-08-18 (TM-093/094): أي status غير الثلاثة فوق (زي
+  // 'VOIDED' — engine.js يكتبها مع post_status='voided' في نفس الـpatch) كان
+  // بيقع على fallback 'open' بالغلط، فبادج ملف ملغى بيتلوّن كأنه مفتوح عادي
+  if (s === 'VOIDED') return 'void';
   return 'open';
 }
 

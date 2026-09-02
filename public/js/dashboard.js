@@ -429,6 +429,14 @@ export function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) 
   const target = el(targetId);
   if (!target) return;
 
+  // ✅ اكتُشف حيًّا 2026-08-18 (TM-093/094): _doLoadCache (core.js) بتجيب
+  // purchase_orders بلا أي فلتر post_status، وهذه الدالة كانت بتعرض كل حاجة
+  // بلا استثناء الملفات الملغاة (isVisible موجودة أصلاً وبتُستخدم لنفس الغرض
+  // في جداول تانية — المصاريف/الدفعات/صرف الشركاء — بس مش هنا). مفيش أي فلتر
+  // تبويب حالي في الواجهة يعرض "ملغى" عمدًا (راجع filterDeals labels)، فالاستبعاد
+  // هنا آمن بالكامل ولا يكسر أي استخدام مقصود
+  deals = (deals || []).filter(isVisible);
+
   const countLabel = el('dealsCountLabel');
   if (countLabel) countLabel.textContent = `${deals.length} ملف`;
 
@@ -442,8 +450,12 @@ export function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) 
     const purchase    = d._totalCost || d.total_purchase || d.purchase || 0;
     const expenses    = d._totalExp  || d.expenses || 0;
     const fullCost    = d._fullCost  || d.fullCost || (purchase + expenses);
-    const sales       = d._totalSale || d.sales || 0;
-    const profit      = d._profit    || d.profit || (sales - fullCost);
+    // ✅ اكتُشف حيًّا 2026-08-18 (TM-093/094، ملفان اتلغيا قبل أي بيع — jeProfit
+    // الحقيقي صفر بالضبط): || بتتعامل مع 0 الصحيح كـ"مش موجود" فتقع على
+    // fallback خاطئ (مثال: profit صفر حقيقي → يقع على sales-fullCost = 0-5780
+    // = -5780، خسارة وهمية). != null صريح بيحافظ على صفر صحيح بدل تجاوزه
+    const sales       = d._totalSale != null ? d._totalSale : (d.sales  != null ? d.sales  : 0);
+    const profit      = d._profit    != null ? d._profit    : (d.profit != null ? d.profit : (sales - fullCost));
     const profitColor = profit > 0 ? 'var(--green)' : profit < 0 ? 'var(--red)' : 'var(--text2)';
     const profitBg    = profit > 0 ? 'var(--green-dim)' : profit < 0 ? 'var(--red-dim)' : 'transparent';
     const profitArrow = profit >= 0 ? '▲' : '▼';
