@@ -635,14 +635,18 @@ export function computeFinancials(jeRows) {
  * فروق "العدالة" (fairShareDiff) عبر كل الشركاء = صفر دائمًا (تحقق ذاتي).
  */
 export async function computePartnerSettlement(fileNo, sys) {
-  const [partnersRaw, jeAll] = await Promise.all([
+  const [partnersRaw, jeAll, poRow] = await Promise.all([
     apiGetAll('partners_master', { select:'partner,share_percent', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
     apiGetAll('journal_entries', {
       select:'account_code,contact_name,dr_amount,cr_amount,ref_table,ref_id,entry_date,description,entry_no,file_no',
       system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:`eq.posted`,
       order:'entry_date.asc,id.asc',
     }),
+    // ✅ حالة السند — لازمة لـpayableNow تحت (أي فرع يُطبَّق). مجلوبة بالتوازي
+    // مع الاتنين فوق فبلا أي زيادة في زمن الاستجابة
+    apiGetAll('purchase_orders', { select:'status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
   ]);
+  const isClosed = (poRow?.[0]?.status || '') === 'CLOSED';
 
   const fin = computeFinancials(jeAll).byFile[fileNo] || { sales:0, cogs:0, dealExp:0, purchase:0, expenseAmount:0 };
   // مجموع الطرف الدائن لأي سطر مصروف — ثابت بغض النظر عن حساب الترسملة
@@ -720,6 +724,18 @@ export async function computePartnerSettlement(fileNo, sys) {
     .reduce((s,[,c]) => s + c.crByRef.payments + c.crByRef.expenses, 0);
   const treasuryActual = Math.max(0, fullCost - nonTreasurySum);
 
+  // ✅ النقد المحصَّل فعليًا للملف — من نفس القيود المجلوبة، بلا استعلام إضافي.
+  // je_collection (engine.js) بتدائن 1200 بالمبلغ دايمًا، سواء راح الطرف المدين
+  // للنقد/البنك أو لجيب شريك (2400) — فمجموع دائن 1200 بمرجع collections هو
+  // "الفلوس اللي دخلت فعلاً" بغض النظر عن مين ماسكها. طرح المدين يستوعب قيود
+  // العكس (إلغاء تحصيل يدين 1200 بنفس المرجع).
+  // مصدر القيود مقصود لا جدول collections: journal_entries هو مصدر الحقيقة،
+  // ومقارنة المصدرين على 77 ملف أعطت تطابقًا في 75 (الشاذّان BOX-138/TM-035
+  // لهما تاريخ تصحيحات يدوية — بند منفصل)
+  const collectedCash = (jeAll||[])
+    .filter(r => r.account_code === '1200' && r.ref_table === 'collections')
+    .reduce((s,r) => s + (+r.cr_amount||0) - (+r.dr_amount||0), 0);
+
   const partners = (partnersRaw||[]).map(p => {
     const name  = (p.partner||'').trim();
     const share = (+p.share_percent||0) / 100;
@@ -745,15 +761,35 @@ export async function computePartnerSettlement(fileNo, sys) {
     // كانت بتطابق fairShareDiff بالصدفة بس لو الشريك مالوش أي صرفات سابقة)
     const netDue = fairShareDiff + profitShare;
 
+    // ✅ سقف "استرداد وتوزيع أرباح" — مفهوم مختلف عن netDue تمامًا، إضافة لا
+    // استبدال. netDue بيقيس التسوية بين الشركاء (مين ساهم زيادة/نقص عن حصته
+    // العادلة) ومجموعه عبر الشركاء = ربح الملف — ثابت مُتحقَّق منه على 115 من
+    // 116 ملف (الاستثناء BOX-127: الملف الوحيد بلا شريك خزينة يستوعب المتبقي).
+    // أما payableNow فبيجاوب سؤالًا تانيًا: كام فلوس تتصرف فعليًا دلوقتي؟
+    //   • ملف مغلق: رقم التسوية النهائي ناقص اللي أخده فعلاً. بدون طرح المسحوب
+    //     يظهر شريك استلم كل حقه كأنه لسه مستحقّله (BOX-141/ماجد الجبالي:
+    //     netDue=3,446 رغم صرفية 8,626.50 = رأس ماله 7,107 + ربحه 1,519.50
+    //     بالظبط) — وده الباج الموجود في grandTransferable (accounting.js).
+    //   • ملف مفتوح: حصته من النقد المحصَّل فعلاً، ناقص المسحوب وناقص التحصيلات
+    //     اللي ماسكها بنفسه. بلا سقف علوي عند netDue عمدًا (قرار 2026-09-02):
+    //     التوزيع أثناء الصفقة بالتناسب مع المحصَّل ممارسة سليمة، والربح لسه غير
+    //     نهائي فأي سقف مبني عليه هيبقى تعسفيًا.
+    // الوعد باسترداد رأس مال لسه محبوس في مخزون غير مباع هو وعد بفلوس مش موجودة
+    const payableNow = isClosed
+      ? Math.max(0, netDue - withdrawnViaPayout)
+      : Math.max(0, collectedCash * share - withdrawnViaPayout - collectionsHeld);
+
     return {
       name, share, sharePercent: +p.share_percent, isTreasury,
       capitalPaid, expPaid, collectionsHeld, withdrawnViaPayout, netJE2400,
       actualContribution, fairShare, fairShareDiff,
-      profitShare, netDue, movements: c.movements,
+      profitShare, netDue, payableNow, movements: c.movements,
     };
   });
 
-  return { fullCost, totalPurchase, totalExpenseAmount, totalSales: fin.sales, profit, hasJEData, partners };
+  // isClosed/collectedCash مُصدَّران عشان الواجهة تقدر تشرح للمستخدم ليه السقف
+  // بالرقم ده، بدل ما يظهر رقم بلا مبرر
+  return { fullCost, totalPurchase, totalExpenseAmount, totalSales: fin.sales, profit, hasJEData, isClosed, collectedCash, partners };
 }
 
 // ✅ تصنيف مركزي لأخطاء "قيد فريد" (unique constraint) — مُعمَّم لأي اسم قيد،
