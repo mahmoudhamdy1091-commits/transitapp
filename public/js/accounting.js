@@ -1778,6 +1778,11 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
           expPaid, expShould: settlement.totalExpenseAmount * x.share,
           expDiff: expPaid - (settlement.totalExpenseAmount * x.share),
           profit: x.profitShare, withdrawn: x.withdrawnViaPayout, collectedDirect: x.collectionsHeld, netDue: x.netDue,
+          // ✅ payableNow (core.js) — سقف التحويل النقدي الفعلي. مُمرَّر من
+          // المصدر بدل إعادة حساب الصيغة هنا: كانت مكرَّرة يدويًا في موضعين
+          // (grandTransferable وكارت "الإجراء المطلوب") فبقيت على النسخة
+          // القديمة الخاطئة بعد تصحيح core.js — راجع 48f280a و6d51a86
+          payableNow: x.payableNow,
           // ✅ pCOGSShare = تكلفة البيع الفعلية (شراء + مصاريف مُرسملة، ما تخصمه
           // القيود فعليًا). pPurchaseShare/pExpenseShare توضيحيان بس (تفكيك نفس
           // الرقم لمعرفة قد إيه شراء وقد إيه مصاريف) — بلا أي خصم إضافي، عشان
@@ -1835,12 +1840,21 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
     const grandWithdrawn  = dealDetails.reduce((s,d)=>s+d.totalWithdrawn,0);
     const grandNetDue     = dealDetails.reduce((s,d)=>s+d.netDue,        0);
     const grandDealProfit = dealDetails.reduce((s,d)=>s+d.dealProfit,    0);
+    // ✅ payableNow من core.js مباشرة — لا إعادة حساب للصيغة هنا. الصيغة كانت
+    // مكرَّرة يدويًا (netDue للمغلق، totalColl×share للمفتوح) فبقيت على النسخة
+    // الخاطئة بعد تصحيح core.js: netDue تطرح fairShare زيادة (مفهومها في
+    // التسوية بين الشركاء لا في "كام فلوس يقدر ياخدها")، والفرع المفتوح كان
+    // بلا سقف المساهمة الفعلية. أثر حي مقيس 2026-09-06 على الرقم المعروض
+    // "💸 القابل للتحويل الآن": الصندوق(BOX) ‎−777,138.50 أقل من حقه،
+    // مازن الخلف/صندوق الترانزيت(TM) ‎−334,525.98 لكلٍّ، وماجد الجبالي(BOX)
+    // ‎+3,446 أكتر من حقه رغم استلامه كامل مستحقه (كان صفرًا فعليًا).
+    // ملاحظة: payableNow تعتمد collectedCash من القيود (SSOT) لا totalColl من
+    // جدول collections — يختلفان على ملفين فقط لهما تاريخ تصحيحات يدوية
+    // (BOX-138، TM-035)، وهذا الفرق مقصود ومُوثَّق في core.js
     const grandTransferable = dealDetails.reduce((sum, d) => {
       const ps2 = (d.partnerSettlement||[]).find(p => p.name === partnerName);
       if (!ps2) return sum;
-      if (d.status === 'CLOSED') return sum + ps2.netDue;
-      if (d.totalSales < 0.01) return sum;
-      return sum + Math.max(0, (d.totalColl * ps2.share) - ps2.withdrawn - ps2.collectedDirect);
+      return sum + (+ps2.payableNow || 0);
     }, 0);
 
     // ── 4. بناء الـ HTML ──
@@ -2099,7 +2113,10 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                           + '<div style="font-size:14px;font-weight:700;color:#64748b">⏳ الصفقة لم تبدأ — لا يوجد مبلغ للتحويل</div></div>';
                       }
                       if (!isClosed) {
-                        const tNow = (d.totalColl * ps.share) - ps.withdrawn - ps.collectedDirect;
+                        // ✅ payableNow من core.js — كان هنا تكرار يدوي ثالث لنفس
+                        // الصيغة (بعد core.js وgrandTransferable) بلا سقف المساهمة
+                        // الفعلية، فبقي على النسخة الخاطئة بعد تصحيح 6d51a86
+                        const tNow = +ps.payableNow || 0;
                         if (tNow > 0.01) {
                           return '<div style="margin-top:10px;border:2px solid #3b82f6;border-radius:8px;padding:10px 12px;text-align:center;background:#eff6ff">'
                             + '<div style="font-size:10px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">الإجراء المطلوب — صفقة جارية</div>'
@@ -2112,10 +2129,14 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                             + '<div style="font-size:11px;color:#64748b;margin-top:5px">المستحق الإجمالي (تقديري): ' + fmt2(ps.netDue) + '</div></div>';
                         }
                       }
-                      const bc  = ps.netDue>0.01?'#3b82f6':ps.netDue<-0.01?'#ef4444':'#22c55e';
-                      const bg  = ps.netDue>0.01?'#eff6ff':ps.netDue<-0.01?'#fef2f2':'#f0fdf4';
-                      const tc  = ps.netDue>0.01?'#1d4ed8':ps.netDue<-0.01?'#dc2626':'#16a34a';
-                      const lbl = ps.netDue>0.01?'💸 يُحوَّل له '+fmt2(ps.netDue):ps.netDue<-0.01?'⚠️ مدين للشركة بـ '+fmt2(Math.abs(ps.netDue)):'✅ حساب متوازن';
+                      // ✅ مبلغ التحويل من payableNow (المبلغ النقدي الفعلي)،
+                      // بينما حالة "مدين للشركة" تظل من netDue (رقم التسوية بين
+                      // الشركاء — payableNow مقيَّدة بـmax(0,…) فلا تعبّر عن مديونية)
+                      const pn   = +ps.payableNow || 0;
+                      const bc  = pn>0.01?'#3b82f6':ps.netDue<-0.01?'#ef4444':'#22c55e';
+                      const bg  = pn>0.01?'#eff6ff':ps.netDue<-0.01?'#fef2f2':'#f0fdf4';
+                      const tc  = pn>0.01?'#1d4ed8':ps.netDue<-0.01?'#dc2626':'#16a34a';
+                      const lbl = pn>0.01?'💸 يُحوَّل له '+fmt2(pn):ps.netDue<-0.01?'⚠️ مدين للشركة بـ '+fmt2(Math.abs(ps.netDue)):'✅ حساب متوازن';
                       return '<div style="margin-top:10px;border:2px solid '+bc+';border-radius:8px;padding:10px 12px;text-align:center;background:'+bg+'">'
                         + '<div style="font-size:10px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">الإجراء المطلوب</div>'
                         + '<div style="font-size:15px;font-weight:800;color:'+tc+'">'+lbl+'</div></div>';
