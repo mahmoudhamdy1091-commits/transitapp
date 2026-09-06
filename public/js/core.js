@@ -635,7 +635,7 @@ export function computeFinancials(jeRows) {
  * فروق "العدالة" (fairShareDiff) عبر كل الشركاء = صفر دائمًا (تحقق ذاتي).
  */
 export async function computePartnerSettlement(fileNo, sys) {
-  const [partnersRaw, jeAll, poRow] = await Promise.all([
+  const [partnersRaw, jeAll, poRow, confirmations] = await Promise.all([
     apiGetAll('partners_master', { select:'partner,share_percent', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
     apiGetAll('journal_entries', {
       select:'account_code,contact_name,dr_amount,cr_amount,ref_table,ref_id,entry_date,description,entry_no,file_no',
@@ -645,6 +645,14 @@ export async function computePartnerSettlement(fileNo, sys) {
     // ✅ حالة السند — لازمة لـpayableNow تحت (أي فرع يُطبَّق). مجلوبة بالتوازي
     // مع الاتنين فوق فبلا أي زيادة في زمن الاستجابة
     apiGetAll('purchase_orders', { select:'status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
+    // ✅ Phase 2 / المرحلة أ — صفوف "تأكيد استلام" (LEDGER_TYPES, lifecycle.js):
+    // بلا قيد محاسبي بالتصميم (الشريك ماسك الفلوس أصلاً)، فمش هتظهر في jeAll
+    // فوق إطلاقًا. تُضاف لـwithdrawnViaPayout يدويًا تحت — بلا هذا الاستعلام
+    // كان صرف "تأكيد استلام" هيفضل يُحسب كمستحق غير مسدَّد للأبد
+    apiGetAll('partner_ledger', {
+      select:'partner,amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`,
+      entry_type:'eq.تأكيد استلام', post_status:`eq.posted`,
+    }),
   ]);
   const isClosed = (poRow?.[0]?.status || '') === 'CLOSED';
 
@@ -680,7 +688,9 @@ export async function computePartnerSettlement(fileNo, sys) {
     if (r.ref_table === 'payments') paymentRefIds.add(r.ref_id);
     else if (r.ref_table === 'expenses') expenseRefIds.add(r.ref_id);
     else if (r.ref_table === 'collections') collectionRefIds.add(r.ref_id);
-    else if (r.ref_table === 'partner_payouts') payoutRefIds.add(r.ref_id);
+    // ✅ 'partner_ledger' — Phase 2 / المرحلة أ، جنب 'partner_payouts' التاريخية
+    // (الهجرة لا تعدّل القيود القديمة، راجع sql/partner_ledger_stage_a.sql)
+    else if (r.ref_table === 'partner_payouts' || r.ref_table === 'partner_ledger') payoutRefIds.add(r.ref_id);
   });
 
   const je2400 = (jeAll||[]).filter(r => r.account_code === '2400');
@@ -703,7 +713,7 @@ export async function computePartnerSettlement(fileNo, sys) {
     if (ref === 'payments') byContact[name].crByRef.payments += (cr - dr);
     else if (ref === 'expenses') byContact[name].crByRef.expenses += (cr - dr);
     else if (ref === 'collections') byContact[name].drByRef.collections += (dr - cr);
-    else if (ref === 'partner_payouts') byContact[name].drByRef.partner_payouts += (dr - cr);
+    else if (ref === 'partner_payouts' || ref === 'partner_ledger') byContact[name].drByRef.partner_payouts += (dr - cr);
     else if (ref === 'reversal' && refId != null) {
       if (paymentRefIds.has(refId)) byContact[name].crByRef.payments += (cr - dr);
       else if (expenseRefIds.has(refId)) byContact[name].crByRef.expenses += (cr - dr);
@@ -745,7 +755,12 @@ export async function computePartnerSettlement(fileNo, sys) {
     const capitalPaid        = c.crByRef.payments;
     const expPaid            = c.crByRef.expenses;
     const collectionsHeld    = c.drByRef.collections;
-    const withdrawnViaPayout = c.drByRef.partner_payouts;
+    // ✅ صفوف "تأكيد استلام" (بلا قيد) تُضاف يدويًا — لا تظهر في byContact
+    // أصلاً لأنها لم تمرّ بـjeAll إطلاقًا (راجع الاستعلام الرابع أعلى الدالة)
+    const confirmedAmt = (confirmations||[])
+      .filter(cf => (cf.partner||'').trim() === name)
+      .reduce((s,cf) => s + (+cf.amount||0), 0);
+    const withdrawnViaPayout = c.drByRef.partner_payouts + confirmedAmt;
     const netJE2400          = c.cr - c.dr;
     const actualContribution = isTreasury ? treasuryActual : (capitalPaid + expPaid);
     const fairShare      = fullCost * share;
@@ -1026,6 +1041,87 @@ export async function login() {
   btn.textContent = 'دخول';
 }
 
+// ╔══════════════════════════════════════════════════════════╗
+// ║  Phase 2 / المرحلة أ — موديل معاملات الشريك الموحَّد       ║
+// ╚══════════════════════════════════════════════════════════╝
+
+/**
+ * الرصيد التراكمي لشريك عبر كل ملفاته في نظام معيّن — صافي حركة حساب 2400
+ * الخام من journal_entries وحده (بلا فلتر ملف). يُستخدم كسقف "سحب عام"
+ * (Math.max(0, …) عند الاستدعاء — القيمة الخام قد تكون سالبة).
+ *
+ * ⚠️ قرار مُتحقَّق منه بالأرقام: هذا الرصيد الخام ≠ "المستحق الفعلي" — شريك
+ * أخذ ربحه بالكامل عبر je_payout/je_partnerLedger (قيد نقدي حقيقي) يظهر هنا
+ * سالبًا رغم عدم استحقاقه أي شيء، لأن الربح لا يُقيَّد كدائن على 2400 قبل
+ * صرفه (هو مفهوم مشتق في computePartnerSettlement، لا حركة نقدية). مثال
+ * حي: ماجد الجبالي/BOX-141 — رصيد خام=-1,519.50 بينما payableNow=0.00
+ * (استلم رأس ماله وربحه بالكامل). لحساب "المستحق الفعلي" الصحيح اقتصاديًا،
+ * استخدم مجموع payableNow عبر computePartnerSettlement لكل ملفات الشريك —
+ * أُجِّل عمدًا هنا (قرار 2026-09-03): "سحب عام" ليس مسارًا ساخنًا حاليًا
+ * (صفر استخدام فعلي)، وتكرار حساب التسوية المعقّد بلغة SQL منفصلة هو نفس
+ * نمط الأخطاء المعالَج طول هذه الجلسة (تسمية الخزينة، الحسابات الفرعية
+ * المهجورة) — يُعاد النظر بدليل أداء حقيقي لا افتراض مسبق.
+ */
+export async function computePartnerGlobalBalance(partner, sys) {
+  const je2400 = await apiGetAll('journal_entries', {
+    select: 'dr_amount,cr_amount', system_type:`eq.${sys}`,
+    account_code:'eq.2400', contact_name:`eq.${partner.trim()}`, post_status:`eq.posted`,
+  });
+  return je2400.reduce((s,r) => s + (+r.cr_amount||0) - (+r.dr_amount||0), 0);
+}
+
+/**
+ * "المرشَّح" الافتراضي لـ"تأكيد استلام" ملف معيّن — من تحصيلاته الفعلية
+ * (collections.received_by)، لا افتراض ثابت باسم الخزينة. الأكبر مبلغًا هو
+ * top (يُستخدم كتحديد مسبق في الواجهة)؛ isMixed=true يعني الملف فيه أكتر
+ * من مستلم حقيقي — الواجهة تُلزم اختيارًا يدويًا بدل التحديد التلقائي.
+ * لا تسجيل "تأكيد استلام" تلقائيًا بناءً على هذه — قرار المستخدم دائمًا.
+ */
+export async function getFileDefaultReceiver(fileNo, sys) {
+  const cols = await apiGetAll('collections', {
+    select:'received_by,amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, post_status:'eq.posted',
+  });
+  const byReceiver = {};
+  cols.forEach(c => {
+    const rb = (c.received_by && c.received_by.trim()) || TREASURY_PARTNER;
+    byReceiver[rb] = (byReceiver[rb]||0) + (+c.amount||0);
+  });
+  const entries = Object.entries(byReceiver).sort((a,b) => b[1]-a[1]);
+  return { top: entries[0]?.[0] || TREASURY_PARTNER, isMixed: entries.length > 1, breakdown: entries };
+}
+
+/**
+ * كتابة صف partner_ledger — عبر create_partner_ledger_entry (RPC، راجع
+ * sql/partner_ledger_stage_a.sql). القفل + فحص السقف + الترقيم + الإدراج
+ * كلهم في نفس الـtransaction بالضرورة: PostgREST ينفّذ كل نداء RPC في
+ * transaction مستقلة، فأي قفل يُحرَّر لحظة رجوع النداء — فصل "احجز رقمًا"
+ * عن "أدرِج الصف" في نداءين منفصلين يعيد فتح نفس سباق التزامن الذي هذه
+ * الدالة مصمَّمة لإغلاقه.
+ *
+ * ⚠️ settlementPartner (لا رقم مفرد): مرِّر كائن الشريك كما يرجعه
+ * computePartnerSettlement(fileNo, sys).partners.find(...) — إلزامي للأنواع
+ * المرتبطة بملف (استرداد وتوزيع أرباح / تأكيد استلام) فقط. الدالة تحسب
+ * الاستحقاق الإجمالي داخليًا (payableNow + withdrawnViaPayout) وتمرّره
+ * كمعامل موثوق للـRPC (نفس الموقف الأمني القائم في التطبيق كله؛
+ * postDoubleEntry لا يعيد التحقق من الأرصدة من طرف الخادم هو الآخر) —
+ * تمرير payableNow وحدها مباشرة يُنتج خصمًا مزدوجًا (اكتُشف تجريبيًا
+ * 2026-09-06، راجع sql/partner_ledger_stage_a.sql)، لذا الدالة تفرض الكائن
+ * الكامل بدل رقم مفصول عن حسابه، لا مجرد توثيق بالتعليق.
+ */
+export async function createPartnerLedgerEntry({sys, partner, entryType, payDate, fileNo=null,
+  amount=null, capital=0, profit=0, payMethod=null, document=null, notes=null,
+  postStatus='draft', idempotencyKey=null, settlementPartner=null}) {
+  const grossEntitlement = settlementPartner
+    ? settlementPartner.payableNow + settlementPartner.withdrawnViaPayout
+    : null;
+  return await apiRpc('create_partner_ledger_entry', {
+    p_sys: sys, p_partner: partner, p_entry_type: entryType, p_pay_date: payDate,
+    p_file_no: fileNo, p_amount: amount, p_capital: capital, p_profit: profit,
+    p_pay_method: payMethod, p_document: document, p_notes: notes,
+    p_post_status: postStatus, p_idempotency_key: idempotencyKey, p_gross_entitlement: grossEntitlement,
+  });
+}
+
 export function logout() {
   localStorage.removeItem('tm_token');
   localStorage.removeItem('tm_refresh');
@@ -1045,5 +1141,6 @@ Object.assign(window, {
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, computeFinancials, computePartnerSettlement, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
+  computePartnerGlobalBalance, getFileDefaultReceiver, createPartnerLedgerEntry,
   login, logout, state, SB_URL, SB_KEY,
 });

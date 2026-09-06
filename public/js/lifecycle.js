@@ -140,8 +140,44 @@ export function samePartnerSet(a, b) {
   return A.every((v, i) => v === B[i]);
 }
 
+// ╔══════════════════════════════════════════════════════════╗
+// ║  Phase 2 / المرحلة أ — موديل معاملات الشريك الموحَّد       ║
+// ╚══════════════════════════════════════════════════════════╝
+//
+// يحل محل الموديل القديم الأربعة (استرداد رأس مال / توزيع أرباح / سلفة /
+// رأس مال+أرباح في partner_payouts) بثلاثة أنواع + نوع رابع بلا حركة نقدية:
+//   - سحب عام / إيداع عام: شخصي، غير مربوط بملف، حركة مباشرة على حساب الشريك
+//   - استرداد وتوزيع أرباح: مربوط بملف، مصنَّف رأس مال/ربح، بسقف payableNow
+//   - تأكيد استلام: نفس تصنيف "استرداد وتوزيع أرباح" لكن بلا قيد محاسبي —
+//     لمن كان فعليًا المستلم الافتراضي لتحصيلات الملف (غالبًا الصندوق) ولا
+//     داعي لتحريك نقد لأنه ماسكه أصلاً
+// "سلفة" لا مقابل صريح لها هنا عمدًا — سحب عام يغطي نفس الحاجة الاقتصادية
+// (فلوس غير مربوطة بصفقة منتهية)، فالنموذج الجديد يوحّدهما بدل تكرارهما.
+export const LEDGER_TYPES = {
+  'سحب عام':             { linkedToFile: false, needsJE: true,  isDeposit: false },
+  'إيداع عام':           { linkedToFile: false, needsJE: true,  isDeposit: true  },
+  'استرداد وتوزيع أرباح': { linkedToFile: true,  needsJE: true,  isDeposit: false },
+  'تأكيد استلام':        { linkedToFile: true,  needsJE: false, isDeposit: false },
+};
+
+/**
+ * يبني (amount, capital_amount, profit_amount) من (النوع + المدخلات) —
+ * نقطة واحدة تضمن الثابت البنيوي (مطابق لقيد chk_capital_profit_sum في
+ * sql/partner_ledger_stage_a.sql): الأنواع المرتبطة بملف تُحسَب من رأس
+ * المال+الربح، والأنواع العامة من مبلغ واحد بلا تصنيف.
+ */
+export function buildLedgerAmounts(type, { amount = 0, capital = 0, profit = 0 } = {}) {
+  const spec = LEDGER_TYPES[type];
+  if (!spec) throw new Error(`نوع حركة غير معروف: "${type}"`);
+  const out = spec.linkedToFile
+    ? { amount: (+capital||0) + (+profit||0), capital_amount: +capital||0, profit_amount: +profit||0 }
+    : { amount: +amount||0, capital_amount: 0, profit_amount: 0 };
+  if (!out.amount) throw new Error('يرجى إدخال المبلغ');
+  return out;
+}
+
 // ════════════════════════════════════════
 // WINDOW BRIDGE — تعريض الرمز للسكريبتات الكلاسيكية (نفس نمط باقي الملفات —
 // لا imports حقيقية بين ملفات js/*.js في هذا المشروع، الاعتماد على globals)
 // ════════════════════════════════════════
-Object.assign(window, { wasAlreadyPosted, statusAfterEdit, resolveDeleteAction, computeEqualSplit, samePartnerSet });
+Object.assign(window, { wasAlreadyPosted, statusAfterEdit, resolveDeleteAction, computeEqualSplit, samePartnerSet, LEDGER_TYPES, buildLedgerAmounts });

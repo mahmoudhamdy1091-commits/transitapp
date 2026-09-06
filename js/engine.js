@@ -1075,7 +1075,8 @@ export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,meth
   ]});
 }
 
-// صرف شريك: شريك Dr / نقد Cr
+// صرف شريك (الموديل القديم — لا تُستخدم لأي صف جديد، تفضل للصفوف التاريخية
+// المرحَّلة قبل Phase 2 فقط): شريك Dr / نقد Cr
 export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
   if(!amount||amount<=0) throw new Error(`قيمة صرف شريك غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد الصرف`);
   const cashAcc = method==='نقد'?'1110':'1120';
@@ -1086,6 +1087,25 @@ export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
     {acc:'2400',  name:`حسابات الشركاء`, dr:amount, cr:0,     contact:partner },
     {acc:cashAcc, name:cashNm,           dr:0,      cr:amount, contact:null    },
   ]});
+}
+
+// ✅ Phase 2 / المرحلة أ — موديل معاملات الشريك الموحَّد (js/lifecycle.js
+// LEDGER_TYPES). يحل محل je_payout لكل صف جديد. 'تأكيد استلام' (needsJE=false
+// في LEDGER_TYPES) لا تستدعي هذه الدالة إطلاقًا — الفرع يُقرَّر عند الكتابة،
+// لا هنا. سحب عام/إيداع عام: fileNo=null (postDoubleEntry تتعامل معه كقيد
+// عام، computeFinancials تتجاهله تلقائياً لأنه بلا ملف — راجع core.js:92).
+export async function je_partnerLedger({sys,date,entryType,amount,fileNo,refId,partner,method}) {
+  if(!amount||amount<=0) throw new Error(`قيمة غير صالحة (${amount}) — لن يُسجَّل القيد`);
+  const cashAcc = method==='نقد'?'1110':'1120';
+  const cashNm  = method==='نقد'?'النقد':'البنك';
+  const isDeposit = entryType === 'إيداع عام';
+  const desc = fileNo ? `${entryType} — ${partner} — ملف ${fileNo}` : `${entryType} — ${partner}`;
+  return await postDoubleEntry({sys,date,fileNo:fileNo||null,refTable:'partner_ledger',refId,desc,lines: isDeposit
+    ? [ {acc:cashAcc, name:cashNm,           dr:amount, cr:0,      contact:null    },
+        {acc:'2400',  name:'حسابات الشركاء', dr:0,      cr:amount, contact:partner } ]
+    : [ {acc:'2400',  name:'حسابات الشركاء', dr:amount, cr:0,      contact:partner },
+        {acc:cashAcc, name:cashNm,           dr:0,      cr:amount, contact:null    } ],
+  });
 }
 
 // عهدة: صرف = عهدة Dr / نقد Cr — تسوية = نقد Dr / عهدة Cr
@@ -1290,7 +1310,7 @@ Object.assign(window, {
   toggleAdminPostSetting, updateAdminPostToggleUI,
   updateJEInPlace, voidTransaction, reverseManualJE, voidPurchaseOrder,
   _jeNo, postDoubleEntry, _handoffPrimaryLine, calcCOGS, checkCOGSInvariant, auditAllFilesCOGS,
-  je_purchase, je_sale, je_collection, je_payment, je_expense, je_payout,
+  je_purchase, je_sale, je_collection, je_payment, je_expense, je_payout, je_partnerLedger,
   je_custodian, je_opex, simulateDraftJE,
   TREASURY_PARTNER, TREASURY_ALIASES, _isPartnerPocket, USER_DISPLAY_NAMES, displayUser,
 });
