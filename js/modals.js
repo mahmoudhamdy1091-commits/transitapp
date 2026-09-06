@@ -2310,10 +2310,10 @@ export async function onPayoutPartnerChange() {
           <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:${s.dealProfit>=0?'var(--green)':'var(--red)'}">${fmt2(s.dealProfit * s.share)}</div>
         </div>
       </div>
-      <div style="background:${s.netDue>=0?'var(--green-dim)':'var(--red-dim)'};border:1px solid ${s.netDue>=0?'var(--green)':'var(--red)'};border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+      <div style="background:${(+s.payableNow||0)>0.01?'var(--green-dim)':'var(--red-dim)'};border:1px solid ${(+s.payableNow||0)>0.01?'var(--green)':'var(--red)'};border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:12px;font-weight:700">المتبقي المستحق للشريك</span>
-        <span style="font-family:var(--mono);font-size:16px;font-weight:900;color:${s.netDue>=0?'var(--green)':'var(--red)'}">
-          ${fmt2(Math.abs(s.netDue))} ${s.netDue>=0?'✅':'⚠️'}
+        <span style="font-family:var(--mono);font-size:16px;font-weight:900;color:${(+s.payableNow||0)>0.01?'var(--green)':'var(--red)'}">
+          ${fmt2(+s.payableNow||0)} ${(+s.payableNow||0)>0.01?'✅':'⚠️'}
         </span>
       </div>`;
     // ملء المبالغ تلقائياً
@@ -2362,14 +2362,17 @@ export async function getPartnerDealBalance(fileNo, partner, sys) {
     apiGetAll('partner_payouts', { select:'amount,payout_type,capital_amount,profit_amount,advance_amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}` }),
   ]);
   const x = (settlement.partners||[]).find(p => p.name === (partner||'').trim())
-    || { share:0, capitalPaid:0, expPaid:0, netJE2400:0, profitShare:0, netDue:0 };
+    || { share:0, capitalPaid:0, expPaid:0, netJE2400:0, profitShare:0, netDue:0, payableNow:0 };
   const capitalRet  = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
   const profitTaken = (payouts||[]).reduce((s,p)=>s+(+p.profit_amount||0),0);
   const advances    = (payouts||[]).reduce((s,p)=>s+(+p.advance_amount||0),0);
   const totalWithdrawn = capitalRet + profitTaken + advances;
   return {
     share: x.share, capitalPaid: x.capitalPaid, profit: x.profitShare,
-    capitalRet, profitTaken, advances, totalWithdrawn, netDue: x.netDue, dealProfit: settlement.profit,
+    capitalRet, profitTaken, advances, totalWithdrawn, netDue: x.netDue,
+    // ✅ payableNow — المبلغ النقدي القابل للصرف فعليًا (core.js). netDue تظل
+    // متاحة للسياقات التي تعبّر عن التسوية بين الشركاء لا عن نقد قابل للصرف
+    payableNow: x.payableNow, dealProfit: settlement.profit,
     _totalCost: settlement.totalPurchase, _totalExp: settlement.totalExpenseAmount, _totalSales: settlement.totalSales,
   };
 }

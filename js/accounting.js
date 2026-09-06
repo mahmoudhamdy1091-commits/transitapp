@@ -2293,9 +2293,14 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
             <div style="font-size:12px;opacity:.6;margin-bottom:4px">إجمالي المسحوبات</div>
             <div style="font-family:monospace;font-size:16px;font-weight:700;color:#fbbf24">${fmt2(grandWithdrawn)}</div>
           </div>
-          <div style="text-align:center;flex:1 1 22%;min-width:140px;background:${grandNetDue>=0?'#16a34a33':'#dc262633'};border-radius:8px;padding:8px">
+          <!-- ✅ grandTransferable لا grandNetDue: هذا الصندوق يقع في صف KPI
+               يعرض (رأس المال · الأرباح · المسحوبات) — والرابع كان grandNetDue
+               وهو ليس ناتج جمعها، فالأرقام الأربعة كانت متجاورة وغير متسقة.
+               وكان يتعارض أيضًا مع "💸 القابل للتحويل الآن" أسفل نفس الصفحة
+               (grandTransferable المُصحَّحة) بلا أي سياق يوضّح الفرق -->
+          <div style="text-align:center;flex:1 1 22%;min-width:140px;background:${grandTransferable>0.01?'#16a34a33':'#dc262633'};border-radius:8px;padding:8px">
             <div style="font-size:12px;opacity:.8;margin-bottom:4px">الرصيد الكلي المستحق</div>
-            <div style="font-family:monospace;font-size:20px;font-weight:900;color:${grandNetDue>=0?'#4ade80':'#f87171'}">${grandNetDue>=0?'+':''}${fmt2(grandNetDue)}</div>
+            <div style="font-family:monospace;font-size:20px;font-weight:900;color:${grandTransferable>0.01?'#4ade80':'#f87171'}">${fmt2(grandTransferable)}</div>
           </div>
         </div>
         ${(totalOverpaid > 0.001 || totalUnderpaid > 0.001) ? `

@@ -869,7 +869,10 @@ export async function loadSummaryTab(fn, sys) {
               <th style="text-align:left;padding:6px 8px">نصيبه العادل</th>
               <th style="text-align:left;padding:6px 8px">الفرق</th>
               <th style="text-align:left;padding:6px 8px">حصة الربح</th>
-              <th style="text-align:left;padding:6px 8px">صافي المستحق</th>
+              <!-- ✅ "صافي التسوية" لا "صافي المستحق": العمود يعرض netDue (تسوية بين
+                   الشركاء: مين ساهم زيادة/نقص عن حصته) وسط أعمدة تحليلية أخرى، لا
+                   مبلغًا قابلاً للتحويل. المبلغ القابل للتحويل في كارت "المستحق" أسفل -->
+              <th style="text-align:left;padding:6px 8px">صافي التسوية</th>
             </tr>
           </thead>
           <tbody>
@@ -946,18 +949,23 @@ export async function loadSummaryTab(fn, sys) {
         </div>` : ''}
 
         <!-- المستحق النهائي -->
+        <!-- ✅ payableNow (core.js) لا netDue: "المستحق" هنا يُقرأ كمبلغ قابل
+             للتحويل فعليًا، وnetDue رقم تسوية بين الشركاء يطرح fairShare زيادة.
+             والشرح النصّي كان يعرض معادلة خاطئة (netJE2400 + profitShare) —
+             بقايا الصيغة قبل 0f7b1be — فكان الطرفان لا يتساويان على الشاشة
+             (ماجد الجبالي: −1,519.50 + 1,519.50 = 3,446 معروضة حرفيًا) -->
         <div style="background:var(--card2);padding:12px 16px;border-top:1px solid var(--border)">
           <div style="font-size:12px;color:var(--text2);margin-bottom:6px">
-            ${x.isTreasury ? 'المستحق = حصة الربح فقط (الصندوق لا يسترد رأس مال من نفسه)' : 'المستحق = صافي حركته على حساب جاري الشركاء + حصة الربح'}
+            ${x.isTreasury ? 'المستحق = مساهمته الفعلية + حصة الربح − ما استلمه' : 'المستحق = رأس ماله المدفوع فعلاً + حصة الربح − ما استلمه'}
           </div>
           <div style="font-size:13px;color:var(--text2);font-family:var(--mono);margin-bottom:10px">
-            ${x.isTreasury ? fmt(x.profitShare) : `${fmt(x.netJE2400)} + (${fmt(x.profitShare)})`} = <strong>${fmt(Math.abs(x.netDue))}</strong>
+            ${fmt(x.actualContribution)} + (${fmt(x.profitShare)}) − ${fmt(x.withdrawnViaPayout)} = <strong>${fmt(+x.payableNow||0)}</strong>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:12px;font-weight:700;color:var(--text)">المستحق${isOpen?' (تقديري)':''}:</span>
             <div style="text-align:left">
-              <div style="font-size:20px;font-weight:700;color:${nc};font-family:var(--mono)">${fmt(Math.abs(x.netDue))} ${x.netDue>=0?'↑':'↓'}</div>
-              <div style="font-size:12px;color:var(--text2)">${x.netDue>=0?'مستحق له':'مدين عليه'}</div>
+              <div style="font-size:20px;font-weight:700;color:${(+x.payableNow||0)>0.01?'var(--green)':'var(--text2)'};font-family:var(--mono)">${fmt(+x.payableNow||0)}</div>
+              <div style="font-size:12px;color:var(--text2)">${(+x.payableNow||0)>0.01?'مستحق له':(x.netDue<-0.01?'لا يستحق حاليًا — رصيد تسوية سالب':'لا يوجد مستحق')}</div>
             </div>
           </div>
         </div>

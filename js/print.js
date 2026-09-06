@@ -906,15 +906,18 @@ export async function printDealSummary(fn) {
       }
 
       // المستحق النهائي
+      // ✅ payableNow (core.js) لا netDue — نفس تصحيح dashboard.js: "المستحق"
+      // يُقرأ كمبلغ قابل للتحويل، والشرح النصّي كان يعرض معادلة خاطئة
+      // (netJE2400 + profitShare) لا يتساوى طرفاها على الورق المطبوع
       html += '<div style="background:#f9f8f6;padding:12px 16px;border-top:1px solid #e4e0d8">'
-            + '<div style="font-size:12px;color:#78716c;margin-bottom:6px">' + (x.isTreasury ? 'المستحق = حصة الربح فقط (لا يسترد رأس مال من نفسه)' : 'المستحق = صافي حركته على حساب جاري الشركاء + حصة الربح') + '</div>'
+            + '<div style="font-size:12px;color:#78716c;margin-bottom:6px">' + (x.isTreasury ? 'المستحق = مساهمته الفعلية + حصة الربح − ما استلمه' : 'المستحق = رأس ماله المدفوع فعلاً + حصة الربح − ما استلمه') + '</div>'
             + '<div style="font-size:13px;color:#57534e;font-family:monospace;margin-bottom:10px">'
-            + (x.isTreasury ? f2(profitShare) : (f2(x.netJE2400||0) + ' + (' + f2(profitShare) + ')')) + ' = <strong>' + f2(Math.abs(netDue)) + '</strong>'
+            + f2(x.actualContribution||0) + ' + (' + f2(profitShare) + ') − ' + f2(x.withdrawnViaPayout||0) + ' = <strong>' + f2(+x.payableNow||0) + '</strong>'
             + '</div>'
             + (totalOut > 0 ? '<div style="font-size:13px;color:#57534e;margin-bottom:8px">تم الصرف: <span style="font-family:monospace;color:#d97706;font-weight:600">' + f2(totalOut) + '</span></div>' : '')
             + '<div style="display:flex;justify-content:space-between;align-items:center">'
             + '<span style="font-size:12px;font-weight:700;color:#1c1917">المستحق' + (isOpen?' (تقديري)':'') + ':</span>'
-            + '<span style="font-size:20px;font-weight:700;font-family:monospace;color:' + nc + '">' + f2(Math.abs(netDue)) + ' ' + (netDue>=0?'↑':'↓') + '</span>'
+            + '<span style="font-size:20px;font-weight:700;font-family:monospace;color:' + ((+x.payableNow||0)>0.01?'#15803d':'#78716c') + '">' + f2(+x.payableNow||0) + '</span>'
             + '</div>'
             + '</div>';
 
