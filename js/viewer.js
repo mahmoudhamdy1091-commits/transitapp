@@ -606,10 +606,12 @@ export async function submitQuickPayout() {
   }
   // ✅ تفصيل رأس مال/أرباح/سلفة — نفس ما يحفظه فورم "صرف شريك" الكامل،
   // يُستخدم في كشف حساب الشريك وجاري الشريك (راجع capital_amount في dashboard.js/print.js)
+  // ✅ "سلفة" شيلت من خيارات الإنشاء (قرار المستخدم 2026-09-07) — راجع نفس
+  // الشرح في modals.js/submitPayout. advanceAmt يفضل صفرًا دائمًا؛ العمود باقٍ
+  // في partner_payouts للصفوف التاريخية
   let capitalAmt = 0, profitAmt = 0, advanceAmt = 0;
   if (type === 'استرداد') capitalAmt = amount;
   else if (type === 'توزيع أرباح') profitAmt = amount;
-  else if (type === 'سلفة') advanceAmt = amount;
   try {
     // Generate pay_id
     let pay_id = `PAY-${fileNo}-001`;

@@ -2337,8 +2337,13 @@ export function onPayoutTypeChange() {
   const isSplit = type === 'رأس مال + أرباح';
   el('pout-split-wrap').style.display  = isSplit ? '' : 'none';
   el('pout-simple-wrap').style.display = isSplit ? 'none' : '';
-  el('pout-amount-label').textContent  = type === 'توزيع أرباح' ? 'مبلغ الأرباح *' :
-                                          type === 'سلفة' ? 'مبلغ السلفة *' : 'مبلغ رأس المال *';
+  // ✅ "سلفة" شيلت من خيارات الإنشاء (قرار المستخدم 2026-09-07) — مالهاش شكل
+  // قابل للتمثيل في partner_ledger: مربوطة بملف دائمًا، والنوعان المرتبطان
+  // بملف يشترطان capital+profit=amount، والنوعان اللذان يقبلان مبلغًا مجردًا
+  // ممنوعان من file_no بـchk_file_link. مسارات القراءة والعرض للصفوف
+  // التاريخية بقيت كما هي عمدًا (advance_amount في accounting/dashboard/print
+  // وgetPartnerDealBalance) حتى لا يختفي أي صف قديم من الحسابات
+  el('pout-amount-label').textContent  = type === 'توزيع أرباح' ? 'مبلغ الأرباح *' : 'مبلغ رأس المال *';
 }
 
 export function onPayoutAmountChange() { /* live validation if needed */ }
@@ -2400,9 +2405,9 @@ export async function submitPayout() {
     amount = capitalAmt = parseFloat(el('pout-amount').value) || 0;
   } else if (type === 'توزيع أرباح') {
     amount = profitAmt = parseFloat(el('pout-amount').value) || 0;
-  } else if (type === 'سلفة') {
-    amount = advanceAmt = parseFloat(el('pout-amount').value) || 0;
   }
+  // advanceAmt يفضل صفرًا دائمًا — "سلفة" لم تعد خيارًا. العمود نفسه باقٍ في
+  // partner_payouts للصفوف التاريخية، فنكتب صفرًا صراحةً لا نحذف الحقل
 
   if (!amount && type !== 'رأس مال + أرباح') { showFieldErr('poutError','يرجى إدخال المبلغ'); return; }
   if (type === 'رأس مال + أرباح' && amount === 0) { showFieldErr('poutError','يرجى إدخال المبالغ'); return; }
