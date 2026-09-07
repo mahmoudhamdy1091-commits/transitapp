@@ -122,3 +122,47 @@ returning id, entry_no, description;
 
 -- ب-٦) ثم افتح شاشة اليومية في التطبيق وتأكّد بعينك أنها اختفت.
 -- استعلام صمّمتُ أنا معاييره لا يُثبت إلا ما افترضتُه — الشاشة الحية هي الدليل.
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- القسم ج — «سلفة»: فجوة نمذجة + خطر أمامي (أُضيف 2026-09-07)
+-- قراءة فقط.
+-- ════════════════════════════════════════════════════════════════════
+--
+-- الخلفية (مُثبَتة من الكود وحده، بلا بيانات حية):
+--   modals.js:2403 وviewer.js:613 يكتبان «سلفة» كـamount = advance_amount
+--   مع capital_amount = profit_amount = 0. لكن partner_ledger لا تحتوي عمود
+--   advance_amount إطلاقًا (صفر ورود لكلمة advance في ملف المرحلة أ)، والهجرة
+--   تُثبِّت النوع على 'استرداد وتوزيع أرباح' وتنسخ capital/profit كما هما.
+--   وchk_capital_profit_sum يشترط لهذا النوع abs(capital+profit−amount)<0.01
+--   ⇒ لصف سلفة: abs(0+0−amount) = amount > 0 ⇒ انتهاك CHECK.
+--   وبما أنها insert … select واحدة ⇒ ترتدّ الهجرة كلها لا الصف وحده.
+--
+-- ⚠️ استنتاج مهم يُغيّر الأولوية: الهجرة نجحت فعلًا في 91b8de7. نجاحها نفسه
+-- يُثبت حسابيًا أنه لم يكن أي صف سلفة موجودًا وقتها — وإلا ما هاجر ولا صف.
+-- فهذه ليست عطلًا قائمًا بل (أ) فجوة نمذجة: سلفة مربوطة بملف لا شكل لها في
+-- الموديل الجديد — النوعان المرتبطان بملف يشترطان capital+profit=amount،
+-- والنوعان اللذان يقبلان مبلغًا مجردًا ممنوعان من file_no بـchk_file_link؛
+-- (ب) خطر أمامي: زر «صرف شريك» القديم ما زال قادرًا على إنشاء صف سلفة اليوم.
+-- الاستعلام أدناه للتأكيد لا للاكتشاف — المتوقَّع صفر.
+
+select
+  system_type,
+  count(*)                                   as advance_rows,
+  coalesce(sum(advance_amount), 0)           as total_advance,
+  min(pay_date)                              as first_date,
+  max(pay_date)                              as last_date
+from partner_payouts
+where payout_type = 'سلفة'
+   or coalesce(advance_amount, 0) > 0
+group by system_type
+order by system_type;
+
+-- تفصيل الصفوف إن وُجدت (شغّله فقط لو الاستعلام فوق أرجع أي صف)
+select id, system_type, file_no, partner, pay_id, payout_type,
+       amount, capital_amount, profit_amount, advance_amount,
+       post_status, pay_date
+from partner_payouts
+where payout_type = 'سلفة'
+   or coalesce(advance_amount, 0) > 0
+order by system_type, pay_date;
