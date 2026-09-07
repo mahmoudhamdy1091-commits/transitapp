@@ -690,7 +690,11 @@ export async function loadDealStatement(fn, sys) {
   const wrap = el('dealStatementWrap');
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
-    const [po, vehicles, payments, expenses, sales, collections, partners, payouts] = await Promise.all([
+    // ✅ settlement — المصدر الموحّد لأرقام الشركاء (computePartnerSettlement,
+    // core.js). مجلوب بالتوازي مع الباقي فبلا أي زيادة في زمن الاستجابة.
+    // راجع كتلة "توزيع الأرباح على الشركاء" تحت: كانت تعيد اشتقاق كل حد من
+    // الجداول الخام بنسخة يدوية ثالثة من معادلة الاستحقاق.
+    const [po, vehicles, payments, expenses, sales, collections, partners, payouts, settlement] = await Promise.all([
       apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
@@ -699,6 +703,7 @@ export async function loadDealStatement(fn, sys) {
       apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.asc' }),
       apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
+      computePartnerSettlement(fn, sys),
     ]);
 
     const deal = po?.[0] || {};
@@ -803,39 +808,35 @@ export async function loadDealStatement(fn, sys) {
       <div style="margin-top:16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
         <div style="font-weight:700;margin-bottom:12px;font-size:13px">👥 توزيع الأرباح على الشركاء</div>
         ${(partners||[]).map(p=>{
-          const pctShare = (+p.share_percent||0) / 100;
-          // ما دفعه الشريك للمورد (رأس المال)
-          const _singlePartner = (partners||[]).length <= 1;
-          const capitalPaid  = (payments||[])
-            .filter(py => isActive(py))
-            .filter(py => _singlePartner || py.payer === p.partner)
-            .reduce((s,py)=>s+(+py.amount||0),0);
-          // مصروفات دفعها هذا الشريك من جيبه
-          // ✅ مصروف موزَّع (paid_by_split): كل شريك ياخد حصته المخزَّنة فقط من
-          // القائمة، مش كل مبلغ المصروف — بدونه كان هيختفي أي مصروف موزَّع من
-          // حساب "مصروفات من جيبه" لكل الشركاء (paid_by نفسه يبقى null للمصروف
-          // الموزَّع، فمقارنته بأي اسم شريك واحد كانت هتفشل دائمًا بصمت). مصروف
-          // عادي (paid_by_split فاضي) يمر بنفس الفلتر القديم بالحرف.
-          const expCapital   = (expenses||[])
-            .filter(isSettled)
-            .reduce((s,e) => {
-              if (Array.isArray(e.paid_by_split) && e.paid_by_split.length) {
-                if (TREASURY_ALIASES.has(p.partner)) return s; // الصندوق لا يدخل توزيع 2400 أصلاً
-                const share = e.paid_by_split.find(x => x.partner === p.partner);
-                return s + (share ? (+share.amount||0) : 0);
-              }
-              const matches = TREASURY_ALIASES.has(p.partner)
-                ? (!e.paid_by || TREASURY_ALIASES.has(e.paid_by.trim()))
-                : (e.paid_by && e.paid_by.trim() === p.partner);
-              return matches ? s + (+e.amount||0) : s;
-            }, 0);
-          // حصته في الربح
-          const profitShare  = profit * pctShare;
-          // ما استرده (كل payouts بغض النظر عن النوع)
-          const withdrawn    = (payouts||[]).filter(py=>py.partner===p.partner && isActive(py)).reduce((s,py)=>s+(+py.amount||0),0);
-          // المستحق = (رأس المال + مصروفات من جيبه) + حصة الربح - ما استرده
-          const totalDue     = capitalPaid + expCapital + profitShare - withdrawn;
-          const dueColor     = totalDue > 0.01 ? 'var(--green)' : totalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
+          // ✅ كل أرقام الشريك من computePartnerSettlement (core.js) مباشرة — لا إعادة
+          // اشتقاق محلي. كانت هنا نسخة يدوية ثالثة من معادلة الاستحقاق
+          // (capitalPaid + expCapital + profitShare - withdrawn) لا تستخدم اسم
+          // netDue إطلاقًا، ففاتت البحث الشامل الذي وحّد التسعة مواضع (11241fd).
+          // ثلاث علل مجتمعة فيها: (١) بلا Math.max(0,…) وبلا سقف النقد
+          // المحصَّل للملف المفتوح — تطابق فرع المغلق وحده (راجع 6d51a86)؛
+          // (٢) withdrawn من partner_payouts وحدها — فكانت ستتجمّد عن عدّ
+          // أي سحب جديد بمجرد انتقال الكتابة إلى partner_ledger؛
+          // (٣) تكرار منطق paid_by_split وTREASURY_ALIASES — وهو نفسه موضع
+          // باج سابق في هذه الدالة بالذات (ec02ecf).
+          const _st = (settlement?.partners||[]).find(sp => sp.name === (p.partner||'').trim())
+            || { capitalPaid:0, expPaid:0, profitShare:0, withdrawnViaPayout:0, payableNow:0,
+                 isTreasury:false, actualContribution:0 };
+          // ✅ الخزينة لا تُقيَّد على 2400 إطلاقًا (مصاريفها تُدفع نقدًا مباشرة)،
+          // فـcapitalPaid/expPaid عبر القيود يفضلان صفرًا رغم مساهمتها الفعلية.
+          // نعرض actualContribution (المحسوبة بالمتبقي في core.js) تحت بند
+          // المصروفات بدل أن تختفي المساهمة كلها من الصف — نفس المعالجة
+          // الحرفية في كشف حساب الشريك (accounting.js:1772-1774)، فيتطابق
+          // الصفّان بدل أن يتناقضا
+          const capitalPaid = _st.isTreasury ? 0 : _st.capitalPaid;
+          const expCapital  = _st.isTreasury ? _st.actualContribution : _st.expPaid;
+          const profitShare = _st.profitShare;
+          const withdrawn   = _st.withdrawnViaPayout;
+          // المستحق = payableNow — السقف النقدي الفعلي، نفس الرقم
+          // المعروض في كشف حساب الشريك (grandTransferable, accounting.js:1854)
+          const totalDue    = _st.payableNow;
+          // payableNow لا تكون سالبة أبدًا (Math.max(0,…) في core.js)،
+          // ففرع الأحمر هنا مُحتفَظ به دفاعيًا لا أكثر
+          const dueColor    = totalDue > 0.01 ? 'var(--green)' : totalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
           return `<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
             <div style="flex:1;font-weight:700;min-width:100px">${p.partner}</div>
             <div style="font-size:12px;color:var(--text2)">حصة: <b>${p.share_percent}%</b></div>
