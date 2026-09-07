@@ -1124,6 +1124,44 @@ export async function getFileDefaultReceiver(fileNo, sys) {
 }
 
 /**
+ * فحص سقف "صرف شريك" المربوط بملف — نقطة واحدة يستدعيها كل مسار كتابة
+ * (submitPayout في modals.js، submitQuickPayout في viewer.js). لا تُكرَّر
+ * الصيغة في المستدعي: تكرارها يدويًا هو بالضبط نمط الأخطاء الذي عولج في
+ * 2026-09-06/07 (تسع مواضع netDue، ثم ثلاث نسخ يدوية لمعادلة الاستحقاق).
+ *
+ * ⚠️ سبب وجودها كإجراء مؤقت: قرار المستخدم 2026-09-07 أن الصرف المربوط بملف
+ * *له سقف* بالتصميم. الـRPC الجديدة (create_partner_ledger_entry) تفرضه
+ * ذرّيًا، لكن الزر القديم يكتب في partner_payouts مباشرة بلا أي فحص. وأسوأ:
+ * سقف الـRPC يحسب "الاستحقاق الإجمالي" من قيود الجدولين بينما يحسب "المسدَّد
+ * سابقًا" (v_prior) من partner_ledger وحدها — فأي صرف جديد بالزر القديم يرفع
+ * سقف الـRPC بمقدار نفسه، أي يصير المبلغ قابلًا للسحب مرتين. هذا الفحص يغلق
+ * النافذة حتى تنقل المرحلة ب-٢ مسار الكتابة إلى الـRPC، وعندها يصبح زائدًا
+ * (لا ضار) ويمكن إزالته مع الزر القديم.
+ *
+ * ليس بديلًا عن قفل الـRPC الذرّي: هذا فحص من طرف العميل، يمنع الخطأ العادي
+ * لا السباق المتزامن. القراءة طازجة عند الإرسال عمدًا (لا الرقم المعروض في
+ * النموذج) لأن النموذج قد يبقى مفتوحًا بعد تغيّر البيانات.
+ */
+export async function checkPayoutCap(fileNo, partner, sys, amount) {
+  const nm = (partner || '').trim();
+  const f2 = n => (+n || 0).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  const settlement = await computePartnerSettlement(fileNo, sys);
+  const x = (settlement.partners || []).find(p => p.name === nm);
+  if (!x) {
+    return { ok:false, payableNow:0,
+      message:`الشريك "${nm}" غير مسجَّل ضمن شركاء الملف ${fileNo} — لا يمكن تحديد مستحقه` };
+  }
+  const cap = +x.payableNow || 0;
+  // 0.001 — نفس هامش create_partner_ledger_entry بالضبط، حتى لا يقبل مسار
+  // ما يرفضه الآخر على نفس المبلغ
+  if (amount > cap + 0.001) {
+    return { ok:false, payableNow:cap,
+      message:`المبلغ ${f2(amount)} يتجاوز المستحق المتبقي ${f2(cap)} للشريك ${nm} على الملف ${fileNo}` };
+  }
+  return { ok:true, payableNow:cap, message:'' };
+}
+
+/**
  * كتابة صف partner_ledger — عبر create_partner_ledger_entry (RPC، راجع
  * sql/partner_ledger_stage_a.sql). القفل + فحص السقف + الترقيم + الإدراج
  * كلهم في نفس الـtransaction بالضرورة: PostgREST ينفّذ كل نداء RPC في
@@ -1174,6 +1212,6 @@ Object.assign(window, {
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, computeFinancials, computePartnerSettlement, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
-  computePartnerGlobalBalance, getFileDefaultReceiver, createPartnerLedgerEntry,
+  computePartnerGlobalBalance, getFileDefaultReceiver, createPartnerLedgerEntry, checkPayoutCap,
   login, logout, state, SB_URL, SB_KEY,
 });

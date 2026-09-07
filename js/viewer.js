@@ -612,6 +612,17 @@ export async function submitQuickPayout() {
   let capitalAmt = 0, profitAmt = 0, advanceAmt = 0;
   if (type === 'استرداد') capitalAmt = amount;
   else if (type === 'توزيع أرباح') profitAmt = amount;
+
+  // ✅ نفس سقف "صرف شريك" بالضبط — checkPayoutCap في core.js، لا نسخة ثانية
+  // من الصيغة هنا. راجع الشرح الكامل فوق الدالة هناك
+  try {
+    const capChk = await checkPayoutCap(fileNo, partner, state.system, amount);
+    if (!capChk.ok) { showFieldErr('qsPoError', '⚠️ ' + capChk.message); return; }
+  } catch(e) {
+    showFieldErr('qsPoError', '⚠️ تعذّر التحقق من المستحق قبل الصرف — لم يُحفظ شيء. حاول مرة أخرى (' + e.message + ')');
+    return;
+  }
+
   try {
     // Generate pay_id
     let pay_id = `PAY-${fileNo}-001`;

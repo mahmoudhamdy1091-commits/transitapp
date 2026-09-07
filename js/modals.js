@@ -2412,6 +2412,18 @@ export async function submitPayout() {
   if (!amount && type !== 'رأس مال + أرباح') { showFieldErr('poutError','يرجى إدخال المبلغ'); return; }
   if (type === 'رأس مال + أرباح' && amount === 0) { showFieldErr('poutError','يرجى إدخال المبالغ'); return; }
 
+  // ✅ سقف الصرف — قرار المستخدم 2026-09-07: الصرف المربوط بملف له سقف.
+  // الفحص في core.js (نقطة واحدة مشتركة مع الصرف السريع)، والقراءة طازجة هنا
+  // لا من الرقم المعروض في النموذج. عند فشل الجلب نتوقف بدل أن نمرّر بصمت —
+  // مبلغ بلا تحقق أخطر من رسالة خطأ
+  try {
+    const capChk = await checkPayoutCap(fn, partner, state.system, amount);
+    if (!capChk.ok) { showFieldErr('poutError', '⚠️ ' + capChk.message); return; }
+  } catch(e) {
+    showFieldErr('poutError', '⚠️ تعذّر التحقق من المستحق قبل الصرف — لم يُحفظ شيء. حاول مرة أخرى (' + e.message + ')');
+    return;
+  }
+
   try {
     // Generate pay_id
     let pay_id = `PAY-${fn}-001`;
