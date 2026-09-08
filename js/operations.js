@@ -1257,6 +1257,7 @@ const FIELD_LABELS = {
   due_date:'تاريخ الاستحقاق', paid_date:'تاريخ الدفع',
   partner:'الشريك', payout_type:'نوع الصرف',
   capital_amount:'رأس المال', profit_amount:'الأرباح', advance_amount:'السلفة',
+  entry_type:'نوع المعاملة', ref_no:'المرجع', pay_method:'طريقة الدفع', pay_date:'التاريخ',
 };
 const SKIP_FIELDS = new Set(['_type','_amount','_date','_desc','_file','post_status',
   'created_at','updated_at','id','system_type','ref_table','ref_id','status','po_no']);
