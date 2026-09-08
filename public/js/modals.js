@@ -2467,8 +2467,254 @@ export async function submitPayout() {
   } catch(e) { showFieldErr('poutError','خطأ: '+e.message); }
 }
 
+// ╔══════════════════════════════════════════════════════════╗
+// ║  Phase 2 / المرحلة ب-٢ — واجهة معاملة الشريك الموحَّدة     ║
+// ╚══════════════════════════════════════════════════════════╝
+//
+// شاشة واحدة بحالتين (لا شاشتان): من اليومية المساران مفتوحان، ومن داخل
+// الملف يكون الملف مثبَّتًا والمسار العام مقفولًا برسالته. القفل لا الإخفاء
+// بقرار المستخدم 2026-09-08: الإخفاء يجعله يظن الميزة غير موجودة فيسجّل
+// السحب العام كصرف على صفقة — وهو بالضبط الخلط الذي أنتج أخطاء التسوية.
+//
+// زر «صرف شريك» القديم (payoutModal) يبقى كما هو لتعديل الصفوف التاريخية
+// في partner_payouts — هذه الشاشة للصفوف الجديدة وحدها.
+const ledgerState = { type:null, fileNo:null, lockedFile:false, settlement:null };
+
+export async function openLedgerModal(fileNo = null, opts = {}) {
+  // ⚠️ ignoreCurrentFile إلزامية من صفحة اليومية: state.currentFileNo يبقى
+  //    محفوظًا من آخر ملف فُتح، فبدونها كان المسار العام يُقفل على اليومية
+  //    بلا سبب — والمعاملات العامة لا تُسجَّل من أي مكان آخر
+  const fn = opts.ignoreCurrentFile ? null : (fileNo || state.currentFileNo || null);
+  ledgerState.type       = null;
+  ledgerState.fileNo     = fn;
+  ledgerState.lockedFile = !!fn;
+  ledgerState.settlement = null;
+
+  el('lgModalTitle').textContent = fn ? `معاملة شريك — ملف ${fn}` : 'معاملة شريك';
+  el('lg-deal-file').textContent = fn ? `الملف مثبَّت: ${fn}` : '';
+
+  // ✅ القفل مرئي لا مخفي — والرسالة تشرح السبب بدل ترك المستخدم يخمّن
+  const locked = !!fn;
+  el('lg-btn-withdraw').disabled = locked;
+  el('lg-btn-deposit').disabled  = locked;
+  el('lg-gen-lock').style.display = locked ? '' : 'none';
+  el('lg-gen-box').style.opacity  = locked ? '.6' : '';
+
+  el('lg-picker').style.display   = '';
+  el('lg-form').style.display     = 'none';
+  el('lgSubmitBtn').style.display = 'none';
+  el('lgError').style.display     = 'none';
+  openModal('ledgerModal');
+}
+
+export function backToLedgerPicker() {
+  ledgerState.type = null;
+  el('lg-picker').style.display   = '';
+  el('lg-form').style.display     = 'none';
+  el('lgSubmitBtn').style.display = 'none';
+  el('lgError').style.display     = 'none';
+}
+
+export async function selectLedgerType(type) {
+  const spec = LEDGER_TYPES[type];
+  if (!spec) { toast('نوع غير معروف','err'); return; }
+  ledgerState.type = type;
+
+  el('lg-type-label').textContent = type;
+  el('lg-picker').style.display   = 'none';
+  el('lg-form').style.display     = '';
+  el('lgSubmitBtn').style.display = '';
+  el('lgError').style.display     = 'none';
+
+  // شكل المبلغ: الأنواع المرتبطة بملف تُقسَّم رأس مال/ربح (قيد
+  // chk_capital_profit_sum يفرض تطابق المجموع)، والعامة مبلغ واحد
+  el('lg-split-wrap').style.display  = spec.linkedToFile ? '' : 'none';
+  el('lg-amount-wrap').style.display = spec.linkedToFile ? 'none' : '';
+  // «تأكيد استلام» بلا حركة نقد ⇒ لا طريقة دفع. الحقل يختفي لا يُعطَّل —
+  // حقل معطَّل يوحي بأن له معنى هنا
+  el('lg-method-wrap').style.display = spec.needsJE ? '' : 'none';
+  el('lg-cap-card').style.display    = 'none';
+
+  el('lg-amount').value  = '';
+  el('lg-capital').value = '';
+  el('lg-profit').value  = '';
+  el('lg-doc').value     = '';
+  el('lg-notes').value   = '';
+  el('lg-date').value    = today();
+  el('lg-split-total').innerHTML = '';
+
+  // حقل الملف — للأنواع المرتبطة فقط، ومثبَّت لو فُتحت الشاشة من داخل ملف
+  const fw = el('lg-file-wrap');
+  if (!spec.linkedToFile) {
+    fw.innerHTML = '';
+  } else if (ledgerState.lockedFile) {
+    fw.innerHTML = `<div class="field" style="margin-bottom:10px">
+      <label>الملف / الصفقة</label>
+      <input type="text" value="${ledgerState.fileNo}" disabled style="width:100%">
+    </div>`;
+  } else {
+    await ensureCache();
+    const opts = (state.allDeals||[]).map(d=>`<option value="${d.file_no}">${d.file_no} — ${d.supplier||'—'}</option>`).join('');
+    fw.innerHTML = `<div class="field" style="margin-bottom:10px">
+      <label>الملف / الصفقة *</label>
+      <select id="lg-file" onchange="onLedgerFileChange()" style="width:100%">
+        <option value="">— اختر الملف —</option>${opts}
+      </select>
+    </div>`;
+  }
+
+  await _fillLedgerPartners();
+}
+
+async function _fillLedgerPartners() {
+  const spec = LEDGER_TYPES[ledgerState.type] || {};
+  const sys  = state.system;
+  const fn   = spec.linkedToFile ? _lgFileNo() : null;
+  let partners = [];
+  if (spec.linkedToFile && fn) {
+    partners = await apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}`, file_no:`eq.${fn}` });
+  }
+  if (!partners?.length) {
+    const all = await getContactsByType('partner');
+    partners = (all||[]).map(p => ({ partner: p.name }));
+  }
+  el('lg-partner').innerHTML = '<option value="">-- اختر الشريك --</option>' +
+    (partners||[]).map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('');
+
+  // «تأكيد استلام»: نقترح المستلم الفعلي لتحصيلات الملف بدل افتراض ثابت
+  // باسم الخزينة. اقتراح فقط — لا تسجيل تلقائي، القرار للمستخدم دائمًا.
+  // isMixed=true يعني للملف أكثر من مستلم حقيقي ⇒ لا نختار نيابةً عنه.
+  if (ledgerState.type === 'تأكيد استلام' && fn) {
+    try {
+      const d = await getFileDefaultReceiver(fn, sys);
+      if (d?.top && !d.isMixed) {
+        el('lg-partner').value = d.top;
+        await onLedgerPartnerChange();
+      }
+    } catch(e) { console.warn('getFileDefaultReceiver:', e.message); }
+  }
+}
+
+function _lgFileNo() {
+  return ledgerState.lockedFile ? ledgerState.fileNo : (el('lg-file')?.value || null);
+}
+
+export async function onLedgerFileChange() { await _fillLedgerPartners(); }
+
+export async function onLedgerPartnerChange() {
+  const spec    = LEDGER_TYPES[ledgerState.type] || {};
+  const partner = el('lg-partner').value;
+  const fn      = _lgFileNo();
+  const card    = el('lg-cap-card');
+  if (!spec.linkedToFile || !partner || !fn) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  card.innerHTML = '<span style="color:var(--text2)">جاري حساب المستحق…</span>';
+  try {
+    const s = await computePartnerSettlement(fn, state.system);
+    ledgerState.settlement = s;
+    const x = (s.partners||[]).find(p => p.name === partner.trim());
+    if (!x) { card.innerHTML = `<span style="color:var(--red)">⚠️ ${partner} غير مسجَّل ضمن شركاء ${fn}</span>`; return; }
+    const cap = +x.payableNow || 0;
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <span>ساهم فعلًا: <b>${fmt(x.actualContribution)}</b></span>
+        <span>حصة الربح: <b style="color:${x.profitShare>=0?'var(--green)':'var(--red)'}">${fmt(x.profitShare)}</b></span>
+        <span>استرد سابقًا: <b>${fmt(x.withdrawnViaPayout)}</b></span>
+        <span style="font-weight:700;color:var(--purple)">القابل للتحويل الآن: ${fmt(cap)}</span>
+      </div>`;
+  } catch(e) {
+    card.innerHTML = `<span style="color:var(--red)">تعذّر حساب المستحق: ${e.message}</span>`;
+  }
+}
+
+export function calcLedgerTotal() {
+  const cap = parseFloat(el('lg-capital').value) || 0;
+  const prf = parseFloat(el('lg-profit').value)  || 0;
+  el('lg-split-total').innerHTML = `الإجمالي: <strong style="color:var(--accent)">${fmt(cap+prf)}</strong>`;
+}
+
+export async function submitLedger() {
+  const errEl = el('lgError'); if (errEl) errEl.style.display = 'none';
+  const type = ledgerState.type;
+  const spec = LEDGER_TYPES[type];
+  if (!spec) { showFieldErr('lgError','اختر نوع المعاملة أولًا'); return; }
+  const partner = el('lg-partner').value;
+  const date    = el('lg-date').value;
+  const method  = spec.needsJE ? el('lg-method').value : null;
+  const doc     = el('lg-doc').value.trim();
+  const notes   = el('lg-notes').value.trim();
+  const fn      = spec.linkedToFile ? _lgFileNo() : null;
+
+  if (spec.linkedToFile && !fn) { showFieldErr('lgError','يرجى اختيار الملف/الصفقة'); return; }
+  if (!partner) { showFieldErr('lgError','يرجى اختيار الشريك'); return; }
+  if (!date)    { showFieldErr('lgError','يرجى إدخال التاريخ'); return; }
+
+  // buildLedgerAmounts (lifecycle.js) — نقطة واحدة تضمن الثابت البنيوي
+  // المطابق لـchk_capital_profit_sum، فلا تُبنى الأرقام يدويًا هنا
+  let amounts;
+  try {
+    amounts = buildLedgerAmounts(type, {
+      amount:  parseFloat(el('lg-amount').value)  || 0,
+      capital: parseFloat(el('lg-capital').value) || 0,
+      profit:  parseFloat(el('lg-profit').value)  || 0,
+    });
+  } catch(e) { showFieldErr('lgError', e.message); return; }
+
+  // السقف — للأنواع المرتبطة بملف فقط (العامة بلا سقف بقرار المستخدم).
+  // نفس نقطة الفحص المشتركة مع الزر القديم — لا نسخة ثانية من الصيغة.
+  let settlementPartner = null;
+  if (spec.linkedToFile) {
+    let chk;
+    try { chk = await checkPayoutCap(fn, partner, state.system, amounts.amount); }
+    catch(e) { showFieldErr('lgError','⚠️ تعذّر التحقق من المستحق — لم يُحفظ شيء ('+e.message+')'); return; }
+    if (!chk.ok) { showFieldErr('lgError','⚠️ '+chk.message); return; }
+    if (chk.warning) {
+      const go = await confirmAsync('⚠️ مبلغ يتجاوز النقد المحصَّل',
+        chk.warning + '\n\nهل تريد المتابعة؟', true, '⚠️ نعم، سجّل');
+      if (!go) return;
+    }
+    const s = ledgerState.settlement || await computePartnerSettlement(fn, state.system);
+    settlementPartner = (s.partners||[]).find(p => p.name === partner.trim()) || null;
+  }
+
+  try {
+    const postStatus = entryStatus();
+    const row = await createPartnerLedgerEntry({
+      sys: state.system, partner, entryType: type, payDate: date,
+      fileNo: fn, amount: amounts.amount,
+      capital: amounts.capital_amount, profit: amounts.profit_amount,
+      payMethod: method, document: doc||null, notes: notes||null,
+      postStatus, settlementPartner,
+    });
+    const rowId = Array.isArray(row) ? row[0]?.id : row?.id;
+    await logAudit('INSERT','partner_ledger', fn, null, { partner, entry_type:type, amount: amounts.amount, pay_date:date });
+
+    // ✅ القيد يُنشأ فقط عند الترحيل المباشر ولنوع يحتاجه. «تأكيد استلام»
+    // (needsJE=false) لا قيد له بحال — computePartnerSettlement تحتسبه من
+    // الجدول مباشرة. والمسودة تنتظر الطابور، وهناك يُنشأ قيدها.
+    if (postStatus === 'posted' && spec.needsJE && rowId) {
+      try {
+        await je_partnerLedger({ sys:state.system, date, entryType:type,
+          amount:amounts.amount, fileNo:fn, refId:rowId, partner, method });
+      } catch(jeErr) {
+        await apiPatch('partner_ledger', { id:`eq.${rowId}` }, { post_status:'draft' });
+        toast(`⚠️ حُفظت ${type} بدون ترحيل قيدها — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
+      }
+    }
+
+    markSaving('ledgerModal'); await closeModal('ledgerModal');
+    toast(`✅ تم تسجيل ${type} — ${partner}`,'ok');
+    invalidateCache();
+    if (typeof updateApprovalBadge === 'function') updateApprovalBadge();
+    if (state.currentTab === 6 && fn) loadPayoutsTab(fn, state.system);
+    if (state.currentTab === 0 && fn) loadSummaryTab(fn, state.system);
+  } catch(e) { showFieldErr('lgError','خطأ: '+e.message); }
+}
+
 // ── window bridge: تعريض الدوال للاستخدام من classic scripts وسمات onclick ──
 Object.assign(window, {
+  openLedgerModal, backToLedgerPicker, selectLedgerType, onLedgerFileChange,
+  onLedgerPartnerChange, calcLedgerTotal, submitLedger,
   getNfEditFileNo, openNewFileModal, populatePartnersSelect, onVehicleCountChange,
   onTotalAmountChange, setPriceMode, buildVehicleRows, applyEqualPrices, checkPriceTotal,
   updateEqualPriceInfo, addVehicleRow, copyVehicleRow, renumberVehicles, addPartnerRow,

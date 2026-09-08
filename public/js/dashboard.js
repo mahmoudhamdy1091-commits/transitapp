@@ -622,7 +622,7 @@ export async function openViewer(fileNo) {
       <button class="btn btn-secondary btn-sm" onclick="openSaleModal()">🤝 بيع</button>
       <button class="btn btn-secondary btn-sm" onclick="openExpenseModal()">💸 مصروف</button>
       <button class="btn btn-secondary btn-sm" onclick="openCollectionModal()">💰 تحصيل</button>
-      <button class="btn btn-secondary btn-sm" onclick="openPayoutModal()">👥 صرف شريك</button>
+      <button class="btn btn-secondary btn-sm" onclick="openLedgerModal()">👥 معاملة شريك</button>
       <button class="btn btn-secondary btn-sm" onclick="openNewFileModal('${fileNo}')">✏️ تعديل</button>
     </div>
     <div class="vh-print-group">

@@ -558,7 +558,8 @@
           <div class="section-header">
             <div class="section-title">صرف الشركاء</div>
             <div class="section-actions">
-              <button class="btn btn-secondary btn-sm" onclick="openModal('payoutModal')">➕ صرف للشريك</button>
+              <button class="btn btn-primary btn-sm" onclick="openLedgerModal()">➕ معاملة شريك</button>
+              <button class="btn btn-secondary btn-sm" onclick="openModal('payoutModal')" title="الموديل القديم — للصفوف التاريخية">صرف (قديم)</button>
             </div>
           </div>
           <div class="data-table-wrap" id="payoutsTable"></div>
@@ -599,7 +600,12 @@
           <!-- Row 1: العنوان + تقرير -->
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
             <div style="font-size:15px;font-weight:700">📒 صفحة اليومية</div>
-            <button class="btn btn-secondary btn-sm" onclick="showJournalReport()">📊 تقرير اليومية</button>
+            <div style="display:flex;gap:8px">
+              <!-- نقطة الدخول الثانية — المساران مفتوحان هنا (بلا ملف مثبَّت)،
+                   وهي المكان الوحيد الذي تُسجَّل منه المعاملات العامة -->
+              <button class="btn btn-primary btn-sm" onclick="openLedgerModal(null, {ignoreCurrentFile:true})">👥 معاملة شريك</button>
+              <button class="btn btn-secondary btn-sm" onclick="showJournalReport()">📊 تقرير اليومية</button>
+            </div>
           </div>
 
           <!-- Row 2: فلتر الفترة -->
@@ -2494,6 +2500,115 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('payoutModal')">إلغاء</button>
       <button class="btn btn-primary" id="poutSubmitBtn" onclick="guardSubmit(this, submitPayout)">💾 حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ معاملة شريك — الموديل الموحَّد (partner_ledger) ═══
+     شاشة واحدة بحالتين: من اليومية المساران مفتوحان، ومن داخل الملف
+     يكون الملف مثبَّتًا والمسار العام مقفولًا برسالته. -->
+<div class="modal-overlay" id="ledgerModal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:var(--purple-dim)">👥</div>
+      <h3 id="lgModalTitle">معاملة شريك</h3>
+      <button class="modal-expand-btn" onclick="toggleModalSize('ledgerModal')" title="تكبير/تصغير">⛶</button>
+      <button class="modal-close" onclick="closeModal('ledgerModal')">✕</button>
+    </div>
+    <div class="modal-body"><div class="form-col">
+
+      <!-- ① بطاقة اختيار النوع -->
+      <div id="lg-picker">
+        <div class="divider-label">اختر نوع المعاملة</div>
+        <div class="form-row" style="align-items:stretch">
+
+          <div class="field" style="border:1px solid var(--border);border-top:3px solid var(--green);border-radius:var(--radius-sm);padding:12px 14px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:2px">معاملة على صفقة</div>
+            <div class="hint" style="color:var(--text2);margin-bottom:10px">مرتبطة بملف — لها سقف</div>
+            <button type="button" class="btn btn-secondary btn-sm" style="width:100%;margin-bottom:6px" onclick="selectLedgerType('استرداد وتوزيع أرباح')">استرداد وتوزيع أرباح</button>
+            <button type="button" class="btn btn-secondary btn-sm" style="width:100%" onclick="selectLedgerType('تأكيد استلام')">تأكيد استلام</button>
+            <div class="hint" id="lg-deal-file" style="color:var(--text2);margin-top:8px"></div>
+          </div>
+
+          <div class="field" id="lg-gen-box" style="border:1px solid var(--border);border-top:3px solid var(--purple);border-radius:var(--radius-sm);padding:12px 14px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:2px">معاملة عامة</div>
+            <div class="hint" style="color:var(--text2);margin-bottom:10px">غير مرتبطة بملف — بلا سقف</div>
+            <button type="button" class="btn btn-secondary btn-sm" id="lg-btn-withdraw" style="width:100%;margin-bottom:6px" onclick="selectLedgerType('سحب عام')">سحب عام</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="lg-btn-deposit" style="width:100%" onclick="selectLedgerType('إيداع عام')">إيداع عام</button>
+            <div class="hint" id="lg-gen-lock" style="display:none;color:var(--amber,#d97706);margin-top:8px;font-weight:700">🔒 المعاملات العامة تُسجَّل من صفحة اليومية فقط</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ② النموذج -->
+      <div id="lg-form" style="display:none">
+        <div class="divider-label">
+          <span id="lg-type-label"></span>
+          <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" onclick="backToLedgerPicker()">↩ تغيير النوع</button>
+        </div>
+
+        <div id="lg-file-wrap"></div>
+
+        <div class="form-row">
+          <div class="field">
+            <label>الشريك *</label>
+            <select id="lg-partner" onchange="onLedgerPartnerChange()"></select>
+          </div>
+          <div class="field">
+            <label>التاريخ *</label>
+            <input type="date" id="lg-date">
+          </div>
+        </div>
+
+        <div id="lg-cap-card" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 13px;font-size:12px;margin-bottom:10px"></div>
+
+        <!-- مبلغ واحد — الأنواع العامة -->
+        <div id="lg-amount-wrap" class="field" style="display:none">
+          <label>المبلغ *</label>
+          <input type="number" id="lg-amount" placeholder="0.00" min="0" step="0.01">
+        </div>
+
+        <!-- تقسيم رأس مال/ربح — الأنواع المرتبطة بملف -->
+        <div id="lg-split-wrap" style="display:none">
+          <div class="form-row">
+            <div class="field">
+              <label>منه رأس مال</label>
+              <input type="number" id="lg-capital" placeholder="0.00" step="0.01" oninput="calcLedgerTotal()">
+            </div>
+            <div class="field">
+              <label>منه أرباح</label>
+              <input type="number" id="lg-profit" placeholder="0.00" step="0.01" oninput="calcLedgerTotal()">
+            </div>
+          </div>
+          <div id="lg-split-total" style="font-size:12px;color:var(--text2);margin-top:4px"></div>
+        </div>
+
+        <div class="form-row">
+          <div class="field" id="lg-method-wrap">
+            <label>طريقة الدفع</label>
+            <select id="lg-method">
+              <option>نقد</option><option>تحويل بنكي</option><option>شيك</option><option>لينك</option><option>كي نت</option><option>ومض</option><option>أخرى</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>رقم المستند</label>
+            <input type="text" id="lg-doc" placeholder="رقم التحويل أو الشيك">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>ملاحظات</label>
+          <textarea id="lg-notes" placeholder="..." rows="2"></textarea>
+        </div>
+
+        <div id="lgError" class="alert alert-err" style="display:none"></div>
+      </div>
+
+    </div></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('ledgerModal')">إلغاء</button>
+      <button class="btn btn-primary" id="lgSubmitBtn" style="display:none" onclick="guardSubmit(this, submitLedger)">💾 حفظ</button>
     </div>
   </div>
 </div>

@@ -247,7 +247,7 @@ export async function voidTransaction(type, record, force=false) {
   // ✅ استثناء: عند التنفيذ من قائمة المراجعة (force=true) — السجل أصلاً pending_void
   // والموافقة تعني "نفّذ الآن فعلياً"، فلا معنى لإعادة إرساله للمراجعة (كان يسبب حلقة عالقة)
   if (!force && typeof entryStatus === 'function' && entryStatus() === 'draft') {
-    const tableMap = { payment:'payments', expense:'expenses', collection:'collections', payout:'partner_payouts' };
+    const tableMap = { payment:'payments', expense:'expenses', collection:'collections', payout:'partner_payouts', ledger:'partner_ledger' };
     const tbl = tableMap[type];
     if (tbl) {
       await apiPatch(tbl, { id:`eq.${record.id}` }, {
@@ -386,6 +386,41 @@ export async function voidTransaction(type, record, force=false) {
       { acc: '2400',  name: 'حسابات الشركاء',     dr: 0,      cr: amount, contact: record.partner  },
     ];
 
+  } else if (type === 'ledger') {
+    // ✅ Phase 2 / المرحلة ب — الموديل الموحَّد.
+    // "تأكيد استلام" لا قيد له بالتصميم (LEDGER_TYPES.needsJE=false) — إلغاؤه
+    // تغيير حالة فقط، بلا قيد عكسي. لا نرمي خطأً: الإلغاء عملية مشروعة، غير
+    // أن ما يُعكَس غير موجود. نُرحّل الحالة ونخرج قبل بناء أي سطر.
+    if (record.entry_type === 'تأكيد استلام') {
+      await apiPatch('partner_ledger', { id:`eq.${record.id}` }, {
+        post_status: 'voided',
+        notes: `${record.notes ? record.notes + ' | ' : ''}مُلغى بتاريخ ${today_}`,
+      });
+      await logAudit('VOID', 'partner_ledger', record.file_no,
+        record, { voided_at: today_, no_je: true },
+        `إلغاء تأكيد استلام ${record.ref_no||''} — ${record.partner||''} (بلا قيد عكسي، لا قيد أصلي له)`);
+      invalidateCache();
+      return;
+    }
+    // الاتجاه يعتمد النوع: "إيداع عام" قيده Dr نقد / Cr 2400، فعكسه معكوس
+    // كذلك. باقي الأنواع قيدها Dr 2400 / Cr نقد. نفس منطق je_partnerLedger.
+    try {
+      const orig = await apiGetAll('journal_entries', {
+        select:'id', system_type:`eq.${sys}`, ref_table:'eq.partner_ledger', ref_id:`eq.${record.id}`,
+        post_status:'eq.posted', order:'id.desc', limit:1,
+      });
+      if (orig?.[0]) origId = orig[0].id || null;
+    } catch(e) { console.warn('void ledger: فشل جلب id الأصلي:', e.message); }
+    const cashAcc = (record.pay_method||'') === 'نقد' ? '1110' : '1120';
+    const cashNm  = (record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك';
+    const isDeposit = record.entry_type === 'إيداع عام';
+    reversalDesc  = `عكس ${record.entry_type||'معاملة شريك'} ${record.ref_no||''} — ${record.partner||''}${record.file_no ? ' — ملف '+record.file_no : ''}`;
+    reversalLines = isDeposit
+      ? [ { acc: '2400',  name: 'حسابات الشركاء', dr: amount, cr: 0,      contact: record.partner },
+          { acc: cashAcc, name: cashNm,           dr: 0,      cr: amount, contact: null           } ]
+      : [ { acc: cashAcc, name: cashNm,           dr: amount, cr: 0,      contact: null           },
+          { acc: '2400',  name: 'حسابات الشركاء', dr: 0,      cr: amount, contact: record.partner } ];
+
   } else {
     throw new Error(`نوع العملية "${type}" غير مدعوم في الإلغاء`);
   }
@@ -408,6 +443,7 @@ export async function voidTransaction(type, record, force=false) {
     expense:    'expenses',
     collection: 'collections',
     payout:     'partner_payouts',
+    ledger:     'partner_ledger',
   };
   const tableName = tableMap[type];
   if (tableName && record.id) {

@@ -972,6 +972,10 @@ const APPROVAL_CONFIG = {
   collection:{ icon:'💰', label:'تحصيل',        color:'var(--blue)',   table:'collections',      amountField:'amount',         dateField:'paid_date',  descFields:['inv_no','customer','file_no'] },
   payment:   { icon:'💳', label:'دفعة مورد',    color:'var(--cyan)',   table:'payments',         amountField:'amount',         dateField:'pay_date',   descFields:['payer','file_no','pay_method'] },
   payout:    { icon:'👥', label:'صرف شريك',    color:'var(--purple)', table:'partner_payouts',  amountField:'amount',         dateField:'pay_date',   descFields:['partner','payout_type','file_no'] },
+  // ✅ Phase 2 / المرحلة ب — الموديل الموحَّد (partner_ledger). النوع القديم
+  // 'payout' يبقى للصفوف التاريخية في partner_payouts، وهذا للصفوف الجديدة.
+  // اللافتة عامة لأن entry_type يختلف من صف لآخر — النوع الفعلي في الوصف.
+  ledger:    { icon:'👥', label:'معاملة شريك',  color:'var(--purple)', table:'partner_ledger',   amountField:'amount',         dateField:'pay_date',   descFields:['partner','entry_type','file_no'] },
   reversal:      { icon:'🔄', label:'طلب إلغاء',        color:'var(--orange,#f97316)', table:null,          amountField:'amount', dateField:'created_at', descFields:['ref_type','ref_desc','file_no'] },
   // ✅ طلبات التعديل — in-place edit requests
   payment_edit:    { icon:'✏️', label:'تعديل دفعة',      color:'var(--cyan)',   table:'payments',         amountField:'amount',      dateField:'pay_date',   descFields:['payer','file_no'] },
@@ -979,6 +983,7 @@ const APPROVAL_CONFIG = {
   collection_edit: { icon:'✏️', label:'تعديل تحصيل',     color:'var(--blue)',   table:'collections',      amountField:'amount',      dateField:'paid_date',  descFields:['inv_no','customer','file_no'] },
   purchase_edit:   { icon:'✏️', label:'تعديل سند شراء',  color:'var(--purple)', table:'purchase_orders',  amountField:'total_purchase', dateField:'updated_at', descFields:['file_no','supplier'] },
   payout_edit:     { icon:'✏️', label:'تعديل صرف شريك', color:'var(--purple)', table:'partner_payouts',  amountField:'amount',      dateField:'pay_date',   descFields:['partner','file_no'] },
+  ledger_edit:     { icon:'✏️', label:'تعديل معاملة شريك', color:'var(--purple)', table:'partner_ledger', amountField:'amount',    dateField:'pay_date',   descFields:['partner','entry_type','file_no'] },
   opex_edit:       { icon:'✏️', label:'تعديل مصروف تشغيلي', color:'var(--orange,#f97316)', table:'operating_expenses', amountField:'amount', dateField:'exp_date', descFields:['description','file_no'] },
   sale_edit:       { icon:'✏️', label:'تعديل فاتورة بيع',  color:'var(--green)',  table:'sales',              amountField:'sale_price', dateField:'sale_date', descFields:['inv_no','customer','file_no'] },
 };
@@ -991,6 +996,7 @@ const EDIT_TYPES = {
   collection_edit: { table:'collections',        label:'تحصيل' },
   purchase_edit:   { table:'purchase_orders',    label:'سند شراء' },
   payout_edit:     { table:'partner_payouts',    label:'صرف شريك' },
+  ledger_edit:     { table:'partner_ledger',     label:'معاملة شريك' },
   opex_edit:       { table:'operating_expenses', label:'مصروف تشغيلي' },
   sale_edit:       { table:'sales',              label:'فاتورة بيع' },
 };
@@ -1015,7 +1021,8 @@ export async function loadApprovalQueue() {
     // جيب كل البنود المعلقة من كل الجداول بالتوازي
     const [purchases, sales, expenses, collections, payments, payouts,
            voidPay, voidExp, voidCol, voidPayout,
-           editPay, editExp, editCol, editPO, editPayout] = await Promise.all([
+           editPay, editExp, editCol, editPO, editPayout,
+           ledgerDraft, ledgerVoid, ledgerEdit] = await Promise.all([
       apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
       apiGetAll('sales',           { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
       apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
@@ -1032,6 +1039,10 @@ export async function loadApprovalQueue() {
       apiGetAll('collections',         { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
       apiGetAll('purchase_orders',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
       apiGetAll('partner_payouts',     { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
+      // ✅ Phase 2 / المرحلة ب — partner_ledger بالحالات الثلاث
+      apiGetAll('partner_ledger',      { select:'*', system_type:`eq.${sys}`, post_status:`eq.draft`,        order:'created_at.desc' }),
+      apiGetAll('partner_ledger',      { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_void`, order:'created_at.desc' }),
+      apiGetAll('partner_ledger',      { select:'*', system_type:`eq.${sys}`, post_status:`eq.pending_edit`, order:'created_at.desc' }),
       // operating_expenses لا تحتوي على post_status — لا تدخل في قائمة المراجعة
     ]);
     const editOpex = []; // operating_expenses بدون workflow موافقة
@@ -1071,7 +1082,7 @@ export async function loadApprovalQueue() {
     const buildRevItem = (r, srcType, descFn) => ({
       ...r, _type:'reversal', _srcType:srcType,
       _amount:+r.amount||0, _date:r.created_at,
-      _desc:`إلغاء ${srcType==='payment'?'دفعة':srcType==='expense'?'مصروف':srcType==='collection'?'تحصيل':'صرف شريك'} — ${descFn(r)}`,
+      _desc:`إلغاء ${srcType==='payment'?'دفعة':srcType==='expense'?'مصروف':srcType==='collection'?'تحصيل':srcType==='ledger'?'معاملة شريك':'صرف شريك'} — ${descFn(r)}`,
       _file:r.file_no,
     });
     const reversalItems = [
@@ -1079,6 +1090,9 @@ export async function loadApprovalQueue() {
       ...(voidExp   ||[]).map(r => buildRevItem(r,'expense',   r=>`${r.description||'—'} · ${r.file_no||'—'}`)),
       ...(voidCol   ||[]).map(r => buildRevItem(r,'collection',r=>`${r.inv_no||'—'} · ${r.customer||'—'}`)),
       ...(voidPayout||[]).map(r => buildRevItem(r,'payout',    r=>`${r.partner||'—'} · ${r.file_no||'—'}`)),
+      // ✅ الحركات العامة بلا file_no بالتصميم — نعرض النوع بدلًا منه حتى لا
+      //    يظهر "—" بلا معنى في بطاقة الاعتماد
+      ...(ledgerVoid||[]).map(r => buildRevItem(r,'ledger',    r=>`${r.partner||'—'} · ${r.file_no||r.entry_type||'—'}`)),
     ];
 
     // بناء edit items
@@ -1100,6 +1114,7 @@ export async function loadApprovalQueue() {
       ...(editCol   ||[]).map(r => ({...r, _type:'collection_edit', _amount:+r.amount||0,          _date:r.paid_date, _desc:`تعديل تحصيل — ${r.inv_no||'—'} · ${fmt(r.amount)} · ${r.file_no||'—'}`, _file:r.file_no })),
       ...(editPO    ||[]).map(r => ({...r, _type:'purchase_edit',   _amount:+r.total_purchase||0,  _date:r.po_date,   _desc:`تعديل سند شراء — ${r.file_no||'—'} · ${r.supplier||'—'} · ${fmt(r.total_purchase)}`, _file:r.file_no })),
       ...(editPayout||[]).map(r => ({...r, _type:'payout_edit',     _amount:+r.amount||0,          _date:r.pay_date,  _desc:`تعديل صرف شريك — ${r.partner||'—'} · ${fmt(r.amount)} · ${r.file_no||'—'}`, _file:r.file_no })),
+      ...(ledgerEdit||[]).map(r => ({...r, _type:'ledger_edit',     _amount:+r.amount||0,          _date:r.pay_date,  _desc:`تعديل ${r.entry_type||'معاملة شريك'} — ${r.partner||'—'} · ${fmt(r.amount)} · ${r.file_no||'حركة عامة'}`, _file:r.file_no })),
       ...(editOpex  ||[]).map(r => ({...r, _type:'opex_edit',       _amount:+r.amount||0,          _date:r.exp_date,  _desc:`تعديل مصروف تشغيلي — ${r.description||'—'} · ${fmt(r.amount)}`, _file:r.file_no||null })),
       ...(editSales ||[]).map(r => ({...r, _type:'sale_edit',       _amount:r._totalSale||+r.sale_price||0, _date:r.sale_date, _desc:`تعديل فاتورة — ${r.inv_no||'—'} · ${r.customer||'—'} · ${fmt(r._totalSale||r.sale_price)}`, _file:r.file_no })),
     ];
@@ -1111,6 +1126,8 @@ export async function loadApprovalQueue() {
       ...(collections||[]).map(r  => ({...r, _type:'collection', _amount:+r.amount||0,         _date:r.paid_date||r.due_date,    _desc:`${r.inv_no||'—'} · ${r.customer||'—'} · ${r.file_no||'—'}`,      _file:r.file_no })),
       ...(payments||[]).map(r     => ({...r, _type:'payment',    _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.payer||'—'} · ${r.file_no||'—'} · ${r.pay_method||'—'}`,          _file:r.file_no })),
       ...(payouts||[]).map(r      => ({...r, _type:'payout',     _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.partner||'—'} · ${r.payout_type||'—'} · ${r.file_no||'—'}`,       _file:r.file_no })),
+      // ✅ "حركة عامة" بدل "—" للأنواع بلا ملف (سحب/إيداع عام، file_no=null بالتصميم)
+      ...(ledgerDraft||[]).map(r  => ({...r, _type:'ledger',     _amount:+r.amount||0,         _date:r.pay_date,   _desc:`${r.partner||'—'} · ${r.entry_type||'—'} · ${r.file_no||'حركة عامة'}`, _file:r.file_no })),
       ...reversalItems,
       ...editItems,
     ].sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
@@ -1240,6 +1257,7 @@ const FIELD_LABELS = {
   due_date:'تاريخ الاستحقاق', paid_date:'تاريخ الدفع',
   partner:'الشريك', payout_type:'نوع الصرف',
   capital_amount:'رأس المال', profit_amount:'الأرباح', advance_amount:'السلفة',
+  entry_type:'نوع المعاملة', ref_no:'المرجع', pay_method:'طريقة الدفع', pay_date:'التاريخ',
 };
 const SKIP_FIELDS = new Set(['_type','_amount','_date','_desc','_file','post_status',
   'created_at','updated_at','id','system_type','ref_table','ref_id','status','po_no']);
@@ -1727,7 +1745,7 @@ export async function approveItem(type, id) {
     };
     // ✅ شراء/دفعة/مصروف/صرف شريك — دالة مشتركة مع _ensureApprovalJE (كانت 5 نسخ منفصلة)
     // item مضمون موجود هنا (توقفنا فوق لو لأ) — القيد بقى يتكوّن دايمًا، مش بشرط قابل للتخطي الصامت
-    if (type === 'purchase' || type === 'payment' || type === 'expense' || type === 'payout') {
+    if (type === 'purchase' || type === 'payment' || type === 'expense' || type === 'payout' || type === 'ledger') {
       try { await _createApprovalJE(type, item, state.system); }
       catch(e) { await revertToDraft(); throw e; }
     }
@@ -1761,9 +1779,9 @@ export async function rejectItem(type, id) {
   if (!cfg) return;
 
   // ── رفض طلب التعديل — يرجع السجل والقيد للقيمة قبل التعديل ──
-  if (type === 'payment_edit' || type === 'expense_edit' || type === 'collection_edit') {
+  if (type === 'payment_edit' || type === 'expense_edit' || type === 'collection_edit' || type === 'ledger_edit' || type === 'payout_edit') {
     const srcType = type.replace('_edit','');
-    const tableMap = { payment:'payments', expense:'expenses', collection:'collections' };
+    const tableMap = { payment:'payments', expense:'expenses', collection:'collections', ledger:'partner_ledger', payout:'partner_payouts' };
     const tbl = tableMap[srcType];
     const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
 
@@ -1805,9 +1823,11 @@ export async function rejectItem(type, id) {
       await apiPatch(tbl, { id:`eq.${id}` }, restoreData);
 
       // ✅ عكس القيد المحاسبي للقيمة الأصلية (وكذلك اسم الطرف لو تغيّر)
-      const contactPatch = (srcType === 'payment' && oldRow.payer !== current.payer) ? oldRow.payer : null;
+      const contactPatch = (srcType === 'payment' && oldRow.payer !== current.payer) ? oldRow.payer
+                         : ((srcType === 'ledger' || srcType === 'payout') && oldRow.partner !== current.partner) ? oldRow.partner
+                         : null;
       // ✅ إرجاع تاريخ القيد لتاريخ العملية الأصلي (اتساقاً مع مزامنة التاريخ عند التعديل)
-      const _dateField = { payments:'pay_date', expenses:'exp_date', collections:'paid_date', partner_payouts:'pay_date', sales:'sale_date', purchase_orders:'po_date', operating_expenses:'exp_date' }[tbl];
+      const _dateField = { payments:'pay_date', expenses:'exp_date', collections:'paid_date', partner_payouts:'pay_date', partner_ledger:'pay_date', sales:'sale_date', purchase_orders:'po_date', operating_expenses:'exp_date' }[tbl];
       await updateJEInPlace({
         sys: state.system, fileNo: oldRow.file_no,
         refTable: tbl, refId: id,
@@ -1823,11 +1843,25 @@ export async function rejectItem(type, id) {
     return;
   }
 
+  // ⛔ ثلاثة أنواع لا يمكن رفض تعديلها بأمان بعد.
+  // العلة: submitEdit* تستدعي updateJEInPlace **وقت التعديل نفسه**، قبل أن
+  // يرى المدير الطلب — فالقيد يصير على المبلغ غير المعتمَد. واسترجاعه يحتاج
+  // بحثًا مخصَّصًا لكل نوع لأن قيودها غير قابلة للعنونة بـref_id الرقمي:
+  //   je_opex     تخزن ref_id = ref_no (نص) لا id
+  //   je_sale     لا تخزن ref_id إطلاقًا
+  //   je_purchase تاريخيًا لم تكتبه
+  // المسار العام تحتها كان يضع post_status='cancelled' على صف مُرحَّل ويترك
+  // الدفاتر على المبلغ المرفوض ⇒ الرفض يثبّت ما رفضه المدير ويمحو السجل، بصمت.
+  // المنع يحوّل الإفساد الصامت إلى رفض ظاهر حتى يُبنى لكل نوع مساره.
+  if (type === 'purchase_edit' || type === 'opex_edit' || type === 'sale_edit') {
+    toast('⚠️ رفض هذا التعديل غير متاح مؤقتًا — القيد المحاسبي حُدِّث بالفعل وقت التعديل، واسترجاعه لهذا النوع يحتاج مراجعة يدوية. اعتمد التعديل ثم سجّل تصحيحًا، أو راجع اليومية.', 'err');
+    return;
+  }
   // ── استرداد طلب الإلغاء (reversal) — يرجع للحالة posted ──
   if (type === 'reversal') {
     const item = approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
     if (!item) return;
-    const tableMap = { payment:'payments', expense:'expenses', collection:'collections', payout:'partner_payouts' };
+    const tableMap = { payment:'payments', expense:'expenses', collection:'collections', payout:'partner_payouts', ledger:'partner_ledger' };
     const tbl = tableMap[item._srcType];
     if (tbl) {
       _optimisticRemove(type, id);
@@ -1862,7 +1896,7 @@ export async function rejectItem(type, id) {
               post_status: 'cancelled',
               notes: `${item.notes||''} | مرفوض بتاريخ ${today()}`.trim(),
             });
-            for (const t of ['payments','expenses','sales','collections','partner_payouts']) {
+            for (const t of ['payments','expenses','sales','collections','partner_payouts','partner_ledger']) {
               try {
                 const rows = await apiGetAll(t, { select:'id,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}`, post_status:'eq.draft' });
                 for (const r of (rows||[])) {
@@ -1966,7 +2000,13 @@ export async function _ensureSaleJE(sys, fileNo, invNo, dateFallback, customerFa
 // حتى لو استُدعيت الدالة مرتين لنفس السجل.
 // ════════════════════════════════════════════════════════════
 export async function _createApprovalJE(type, record, sys) {
-  const refMap = { collection:'collections', payment:'payments', expense:'expenses', payout:'partner_payouts' };
+  const refMap = { collection:'collections', payment:'payments', expense:'expenses', payout:'partner_payouts', ledger:'partner_ledger' };
+
+  // ✅ "تأكيد استلام" بلا قيد بالتصميم (LEDGER_TYPES.needsJE=false, lifecycle.js) —
+  // الشريك ماسك الفلوس أصلًا فلا نقد يتحرّك. الخروج هنا *قبل* فحص القيد
+  // الموجود عمدًا: لولاه لبحثنا عن قيد لا يُفترض وجوده أبدًا، ثم أنشأناه.
+  // computePartnerSettlement تحتسب هذه الصفوف من الجدول مباشرة لا من القيود.
+  if (type === 'ledger' && record.entry_type === 'تأكيد استلام') return;
 
   if (refMap[type] && record.id != null) {
     const ex = await apiGet('journal_entries', {
@@ -1986,6 +2026,13 @@ export async function _createApprovalJE(type, record, sys) {
     await je_expense({ sys, date:record.exp_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, desc:record.description||'مصروف', expType:record.exp_type||'أخرى', method:record.pay_method||'تحويل بنكي', paidBy:record.paid_by||null, paidBySplit:record.paid_by_split||null });
   } else if (type === 'payout') {
     await je_payout({ sys, date:record.pay_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, partner:record.partner||'', method:record.pay_method||'تحويل بنكي' });
+  } else if (type === 'ledger') {
+    // ✅ je_partnerLedger تقرأ الاتجاه من entry_type: "إيداع عام" تعكس الطرفين
+    //    (مدين نقد / دائن 2400) وباقي الأنواع بالعكس. fileNo=null للأنواع العامة
+    //    مقصود — postDoubleEntry تتعامل معه كقيد عام
+    await je_partnerLedger({ sys, date:record.pay_date||today(), entryType:record.entry_type,
+      amount:+record.amount||0, fileNo:record.file_no||null, refId:record.id||null,
+      partner:record.partner||'', method:record.pay_method||'تحويل بنكي' });
   } else if (type === 'collection') {
     // القيد يُولَّد فقط إذا كان مدفوعاً فعلاً (paid_date موجود) — لو مستحق فقط، لا قيد الآن
     if (record.paid_date) await je_collection({ sys, date:record.paid_date, amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, customer:record.customer||'', invNo:record.inv_no||'', method:record.pay_method||'تحويل بنكي' });
@@ -1999,7 +2046,7 @@ export async function _createApprovalJE(type, record, sys) {
 // ════════════════════════════════════════════════════════════
 export async function _ensureApprovalJE(r, sys) {
   const t = r._type;
-  if (t === 'payment' || t === 'expense' || t === 'payout' || t === 'collection' || t === 'purchase') {
+  if (t === 'payment' || t === 'expense' || t === 'payout' || t === 'ledger' || t === 'collection' || t === 'purchase') {
     await _createApprovalJE(t, r, sys);
   } else if (t === 'sale' && r.inv_no && r.file_no) {
     // ✅ نفس القفل المشترك المستخدم في approveItem — يمنع تكرار القيد لو نفس الفاتورة
@@ -2067,11 +2114,14 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
     // بالبيانات الحالية (بعد التعديل) — يضمن ظهور المبلغ على اسم المورد/العميل الجديد
     const refTableMap = {
       purchase_edit:'purchase_orders', payment_edit:'payments', expense_edit:'expenses',
-      collection_edit:'collections',   payout_edit:'partner_payouts',
+      collection_edit:'collections',   payout_edit:'partner_payouts',  ledger_edit:'partner_ledger',
       opex_edit:'operating_expenses',  sale_edit:'sales',
     };
     const refTable = refTableMap[type];
-    if (refTable && (item.file_no || type === 'opex_edit')) {
+    // ✅ 'ledger_edit' مستثنى من شرط file_no: الأنواع العامة (سحب/إيداع عام)
+    //    file_no = null بالتصميم (chk_file_link)، فبدون هذا الاستثناء كانت
+    //    كتلة إنشاء القيد تُتخطّى بالكامل ويُعتمد التعديل بلا قيد — بصمت
+    if (refTable && (item.file_no || type === 'opex_edit' || type === 'ledger_edit')) {
       // ✅ opex_edit: je_opex يخزن ref_id = ref_no (نص) وليس id الرقمي
       // ✅ sale_edit: je_sale لا يخزن ref_id أصلاً — نطابق عبر file_no + وصف يحتوي رقم الفاتورة
       let existingJE;
@@ -2110,6 +2160,12 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
           await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
         } else if (type === 'payout_edit') {
           await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, partner:item.partner||'', method:item.pay_method||'نقد' });
+        } else if (type === 'ledger_edit' && item.entry_type !== 'تأكيد استلام') {
+          // ✅ "تأكيد استلام" مستثنى: لا قيد له بالتصميم، فلا يُنشأ عند اعتماد
+          //    تعديله أيضًا — وإلا ظهر قيد نقدي لحركة لم يتحرّك فيها نقد
+          await je_partnerLedger({ sys:state.system, date:item.pay_date||today(), entryType:item.entry_type,
+            amount:+item.amount||0, fileNo:item.file_no||null, refId:item.id||null,
+            partner:item.partner||'', method:item.pay_method||'نقد' });
         } else if (type === 'opex_edit') {
           await je_opex({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, expType:item.exp_type||'أخرى', desc:item.description||'مصروف تشغيلي', method:item.pay_method||'نقد', refNo:item.ref_no||item.id });
         } else if (type === 'sale_edit' && item.inv_no && item.file_no) {
@@ -2260,14 +2316,17 @@ export async function approveAll() {
 export async function updateApprovalBadge() {
   try {
     const sys = state.system;
-    const [s,e,c,p,po] = await Promise.all([
+    const [s,e,c,p,po,pl] = await Promise.all([
       apiGetAll('sales',           { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
       apiGetAll('expenses',        { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
       apiGetAll('collections',     { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
       apiGetAll('payments',        { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
       apiGetAll('partner_payouts', { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
+      // ✅ بدونها يُظهر البادج عددًا أقل من الطابور الفعلي — المستخدم يرى
+      //    "لا شيء معلَّق" بينما معاملات شريك تنتظر اعتماده
+      apiGetAll('partner_ledger',  { select:'id', system_type:`eq.${sys}`, post_status:`eq.draft` }),
     ]);
-    const total = (s?.length||0)+(e?.length||0)+(c?.length||0)+(p?.length||0)+(po?.length||0);
+    const total = (s?.length||0)+(e?.length||0)+(c?.length||0)+(p?.length||0)+(po?.length||0)+(pl?.length||0);
     const badge = el('approval-badge');
     if (badge) { badge.textContent = total||''; badge.style.display = total?'':'none'; }
   } catch(e) { console.warn('updateApprovalBadge:', e.message); }
