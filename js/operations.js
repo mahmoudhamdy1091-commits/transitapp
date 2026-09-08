@@ -271,6 +271,7 @@ export async function submitEditOpex() {
       refTable: 'operating_expenses', refId: id,
       oldAmount: +old?.amount||0, newAmount: amount,
       newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ المصروف التشغيلي الجديد
+      oldMethod: old?.pay_method, newMethod: method,   // ✅ نقل سطر النقدية عند نقد↔بنك
     });
 
     // ✅ سجّل تعديل المصروف التشغيلي (كان غير مسجَّل — فجوة تتبّع)
@@ -1834,6 +1835,12 @@ export async function rejectItem(type, id) {
         oldAmount: newAmount, newAmount: oldAmount,
         contactPatch,
         newDate: _dateField ? (oldRow[_dateField] || null) : null,
+        // ✅ الاتجاه معكوس كباقي المعاملات هنا (oldAmount↔newAmount): نرجع
+        //    القيد من الطريقة الحالية إلى الأصلية. بدونه كان restoreData
+        //    يعيد pay_method في السجل بينما يبقى القيد على الحساب الجديد
+        //    ⇒ يتفرّق السجل عن الدفتر. آمن للجداول بلا pay_method:
+        //    undefined != null ترجع false فلا يتفعّل الشرط.
+        oldMethod: current.pay_method, newMethod: oldRow.pay_method,
       });
 
       await logAudit('EDIT_REJECTED', tbl, oldRow.file_no, current, oldRow, `رفض تعديل ${cfg.label} ${oldRow.ref_no||id}`);

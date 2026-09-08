@@ -114,7 +114,12 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
     // مسار احتياطي: بحث بالمبلغ ضمن آخر 40 قيد لهذا الملف — فقط لو ref_id غير موجود/غير مطابق
     // ✅ يعمل أيضاً عند تغيّر التاريخ فقط (قيود الشراء/البيع بلا ref_id) — يطابق بالمبلغ القديم
     // ✅ وأيضاً عند تغيّر التكلفة فقط (سيارات استُبدلت بنفس الإجمالي المالي) — نطابق عبر oldAmount (الإيراد) دائماً
-    if (!entryNo && (amountChanged || dateChanged || costChanged || methodChanged)) {
+    // ⚠️ لا يعمل المسار الاحتياطي بلا file_no — لأي نوع. أمانه كله قائم على
+    // حصر البحث في ملف واحد؛ بدونه يصير بحثًا عبر النظام كله بمطابقة مبلغ
+    // مجرّد ضمن آخر 40 قيدًا، فقد يلتقط قيد كيان آخر تمامًا ويعكسه بصمت.
+    // الأنواع بلا ملف (سحب/إيداع عام بالتصميم، والمصروف التشغيلي) تعتمد على
+    // ref_id وحده وتفشل صراحةً إن غاب — والفشل الظاهر أأمن من عكس قيد خطأ.
+    if (!entryNo && fileNo && (amountChanged || dateChanged || costChanged || methodChanged)) {
       const filter = {
         select: 'entry_no,dr_amount,cr_amount',
         system_type: `eq.${sys}`,
