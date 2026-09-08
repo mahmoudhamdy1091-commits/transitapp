@@ -10,7 +10,7 @@
 -- العادي لا السباق»، فالاكتفاء به يعيد فتح الثغرة التي أُغلقت على الخادم
 -- (partner_ledger_cap_both_tables.sql) من باب آخر.
 --
--- ⚠️ ثلاثة أشياء تفرّق هذه الدالة عن شقيقتها، كلٌّ منها مصدر عطل صامت
+-- ⚠️ خمسة أشياء تفرّق هذه الدالة عن شقيقتها، كلٌّ منها مصدر عطل صامت
 -- لو أُغفل:
 --
 -- (1) v_prior **تستثني الصف المُعدَّل نفسه**. الصف موجود بالفعل في الجدول،
@@ -21,7 +21,17 @@
 -- (2) تفحص **الحالة الحالية** لا المبلغ وحده. v_prior تعدّ
 --     ('posted','draft','pending_edit','pending_void') — فصفٌّ 'voided' أو
 --     'cancelled' لا يدخل السقف. تعديله يعيده فعليًا إلى الحساب بلا أن
---     يمرّ بأي فحص إنشاء ⇒ يُمنع صراحةً.
+--     يمرّ بأي فحص إنشاء ⇒ يُمنع صراحةً. و'pending_void' ممنوعة كذلك:
+--     طلب إلغاء قائم قرارٌ في الطريق بأن تُعكس المعاملة، فتعديلها تناقض
+--     ويترك الطلب معلّقًا على مبلغ لم يعد قائمًا.
+--
+-- (4) تضبط post_status داخل نفس الـtransaction (قاعدة statusAfterEdit):
+--     ضبطه بنداء تالٍ يجعل الفحص والتعديل ذرّيين والحالة لا — فلو فشل
+--     النداء الثاني بقي الصف معدَّلًا ومُرحَّلًا بلا موافقة، وهو ما تُوجد
+--     هذه الدالة لمنعه.
+--
+-- (5) دلالة الحقول موحَّدة: **استبدال لا دمج** — المُستدعي يرسل حالة
+--     النموذج كاملة، والفارغ يعني «مُسِح» لا «لم يُذكر». والتاريخ إلزامي.
 --
 -- (3) لا تسمح بتغيير entry_type ولا partner ولا file_no. النوع يحدّد شكل
 --     الصف كله (ارتباط الملف · تقسيم رأس المال/الربح · وجود القيد)، وتغيير
@@ -62,9 +72,18 @@ begin
   end if;
 
   -- (2) الحالة — قبل أي حساب
-  if v_cur.post_status in ('voided','cancelled') then
-    raise exception 'لا يمكن تعديل معاملة % — أعد إنشاءها بدل تعديلها',
-      case v_cur.post_status when 'voided' then 'ملغاة بقيد عكسي' else 'مرفوضة' end;
+  -- 'pending_void' ممنوعة كذلك: طلب إلغاء قائم يعني قرارًا في الطريق بأن
+  -- هذه المعاملة يجب أن تُعكس؛ تعديلها بدل ذلك تناقض، ويترك طلب الإلغاء
+  -- معلّقًا على مبلغ لم يعد قائمًا. تُرفض أولًا ثم تُعدَّل.
+  if v_cur.post_status in ('voided','cancelled','pending_void') then
+    raise exception 'لا يمكن تعديل معاملة % — %',
+      case v_cur.post_status
+        when 'voided'       then 'ملغاة بقيد عكسي'
+        when 'cancelled'    then 'مرفوضة'
+        else 'عليها طلب إلغاء قيد المراجعة' end,
+      case v_cur.post_status
+        when 'pending_void' then 'ارفض طلب الإلغاء أولًا ثم عدّلها'
+        else 'أعد إنشاءها بدل تعديلها' end;
   end if;
 
   v_linked := v_cur.entry_type in ('استرداد وتوزيع أرباح','تأكيد استلام');
@@ -77,6 +96,9 @@ begin
     v_capital := 0;
     v_profit  := 0;
     v_amount  := coalesce(p_amount, v_cur.amount);
+  end if;
+  if p_pay_date is null then
+    raise exception 'التاريخ مطلوب';
   end if;
   if v_amount <= 0 then
     raise exception 'يرجى إدخال مبلغ صحيح';
@@ -127,16 +149,30 @@ begin
 
   -- (3) entry_type وpartner وfile_no وref_no غير مذكورة هنا إطلاقًا —
   --     غير قابلة للتغيير بالتصميم لا بالإغفال.
+  -- ⚠️ دلالة موحَّدة عبر الحقول الأربعة: **استبدال لا دمج**. المُستدعي يرسل
+  -- حالة النموذج كاملة، فالقيمة الفارغة تعني «مسحها المستخدم» لا «لم يذكرها».
+  -- كانت pay_date/pay_method بـcoalesce (الفارغ = إبقاء) وdocument/notes بلا
+  -- (الفارغ = مسح) — نصفان بدلالتين في جملة واحدة، فأي تعديل جزئي كان يمسح
+  -- المستند والملاحظات بصمت. التاريخ صار إلزاميًا أعلاه فلا يُمحى بالخطأ.
+  --
+  -- ⚠️ post_status يُضبط **هنا داخل نفس الـtransaction** لا بنداء تالٍ:
+  -- ضبطه خارجًا يعني أن الفحص والتعديل ذرّيان بينما الحالة ليست كذلك — فلو
+  -- فشل النداء الثاني بقي الصف معدَّلًا ومُرحَّلًا **بلا موافقة**، وهو ما
+  -- تُوجد هذه الدالة أصلًا لمنعه. القاعدة مطابقة لـstatusAfterEdit
+  -- (js/lifecycle.js): ما كان posted/pending_edit يصير pending_edit،
+  -- والمسودة تبقى مسودة فتُعتمد مرة واحدة لا مرتين.
   update partner_ledger set
     amount         = v_amount,
     capital_amount = v_capital,
     profit_amount  = v_profit,
-    pay_date       = coalesce(p_pay_date, pay_date),
-    pay_method     = case when v_linked and v_cur.entry_type = 'تأكيد استلام'
+    pay_date       = p_pay_date,
+    pay_method     = case when v_cur.entry_type = 'تأكيد استلام'
                           then null                       -- لا حركة نقد لهذا النوع
-                          else coalesce(p_pay_method, pay_method) end,
+                          else p_pay_method end,
     document       = p_document,
-    notes          = p_notes
+    notes          = p_notes,
+    post_status    = case when v_cur.post_status in ('posted','pending_edit')
+                          then 'pending_edit' else v_cur.post_status end
   where id = p_id
   returning * into v_row;
 
@@ -148,11 +184,11 @@ grant execute on function update_partner_ledger_entry(
   uuid, date, numeric, numeric, numeric, text, text, text, numeric
 ) to authenticated;
 
--- تحقق
+-- تحقق — يقيس البنية لا النصّ (فحص النصّ السابق التقط مقارنة كأنها إسناد)
 select routine_name,
-       position('pl.id <> p_id'  in routine_definition) > 0 as excludes_self,
-       position('voided'         in routine_definition) > 0 as blocks_voided,
-       position('not exists'     in routine_definition) > 0 as dedup_present,
-       position('entry_type ='   in routine_definition) = 0 as type_not_assignable
+       position('pl.id <> p_id'   in routine_definition) > 0 as excludes_self,
+       position('pending_void'    in routine_definition) > 0 as blocks_pending_void,
+       position('post_status    = case' in routine_definition) > 0 as sets_status_atomically,
+       position('pay_date       = p_pay_date' in routine_definition) > 0 as replace_semantics
 from information_schema.routines
 where routine_name = 'update_partner_ledger_entry';
