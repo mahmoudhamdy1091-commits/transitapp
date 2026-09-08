@@ -82,12 +82,21 @@ export function updateAdminPostToggleUI() {
 // كل زوج بمبلغه الخاص فقط (مطابقة بالقيمة الفعلية، لا "أي سطر موجب") حتى لا يُكتب
 // مبلغ الإيراد فوق سطر التكلفة بالخطأ
 // ════════════════════════════════════════════════════════════════
-export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null, newDate = null, oldCost = null, newCost = null }) {
+export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null, newDate = null, oldCost = null, newCost = null, oldMethod = null, newMethod = null }) {
   const amountChanged  = oldAmount != null && Math.abs((+oldAmount||0) - (+newAmount||0)) > 0.001;
   const costChanged    = oldCost != null && newCost != null && Math.abs((+oldCost||0) - (+newCost||0)) > 0.001;
   const contactChanged = contactPatch != null;
   const dateChanged    = newDate != null && newDate !== '';   // ✅ مزامنة تاريخ القيد مع تاريخ العملية
-  if (!amountChanged && !costChanged && !contactChanged && !dateChanged) return;
+  // ✅ تغيّر حساب النقدية (نقد↔بنك). كان مفقودًا تمامًا: تعديل طريقة الدفع
+  // كان يُحدِّث السجل ويترك القيد على الحساب القديم ⇒ رصيد النقد أعلى من
+  // الحقيقة والبنك أقل بنفس المبلغ، بلا أي كاشف — القيد يبقى متوازنًا
+  // فميزان المراجعة يظل سليمًا. باج حيّ في تعديل الدفعات والمصاريف
+  // والتحصيلات وصرف الشريك. نقارن الحساب لا النصّ: 'تحويل بنكي'→'شيك'
+  // كلاهما 1120 فلا يستدعي إعادة ترحيل.
+  const _cashAccOf     = m => (m||'') === 'نقد' ? '1110' : '1120';
+  const methodChanged  = oldMethod != null && newMethod != null
+                       && _cashAccOf(oldMethod) !== _cashAccOf(newMethod);
+  if (!amountChanged && !costChanged && !contactChanged && !dateChanged && !methodChanged) return;
 
   {
     let entryNo = null;
@@ -105,7 +114,12 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
     // مسار احتياطي: بحث بالمبلغ ضمن آخر 40 قيد لهذا الملف — فقط لو ref_id غير موجود/غير مطابق
     // ✅ يعمل أيضاً عند تغيّر التاريخ فقط (قيود الشراء/البيع بلا ref_id) — يطابق بالمبلغ القديم
     // ✅ وأيضاً عند تغيّر التكلفة فقط (سيارات استُبدلت بنفس الإجمالي المالي) — نطابق عبر oldAmount (الإيراد) دائماً
-    if (!entryNo && (amountChanged || dateChanged || costChanged)) {
+    // ⚠️ لا يعمل المسار الاحتياطي بلا file_no — لأي نوع. أمانه كله قائم على
+    // حصر البحث في ملف واحد؛ بدونه يصير بحثًا عبر النظام كله بمطابقة مبلغ
+    // مجرّد ضمن آخر 40 قيدًا، فقد يلتقط قيد كيان آخر تمامًا ويعكسه بصمت.
+    // الأنواع بلا ملف (سحب/إيداع عام بالتصميم، والمصروف التشغيلي) تعتمد على
+    // ref_id وحده وتفشل صراحةً إن غاب — والفشل الظاهر أأمن من عكس قيد خطأ.
+    if (!entryNo && fileNo && (amountChanged || dateChanged || costChanged || methodChanged)) {
       const filter = {
         select: 'entry_no,dr_amount,cr_amount',
         system_type: `eq.${sys}`,
@@ -150,8 +164,17 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
         if (Math.abs(cr - (+oldCost||0)) < 0.001 && cr > 0) { newCr = +newCost; anyLineChanged = true; }
       }
       if (contactChanged && contactPatch && (line.contact_name || cr > 0)) { contact = contactPatch; anyLineChanged = true; }
+      // ✅ نقل سطر النقدية إلى حسابها الجديد. الشرط على 1110/1120 حصرًا
+      // مقصود: مصروف دفعه شريك من جيبه طرفه المقابل 2400 لا نقدية، وطريقة
+      // الدفع لا تعنيه — فلا يُلمس. وكذلك 2100/1200 وباقي الحسابات.
+      let accCode = line.account_code, accName = line.account_name;
+      if (methodChanged && (accCode === '1110' || accCode === '1120')) {
+        accCode = _cashAccOf(newMethod);
+        accName = accCode === '1110' ? 'النقد' : 'البنك';
+        anyLineChanged = true;
+      }
       return {
-        acc: line.account_code, name: line.account_name,
+        acc: accCode, name: accName,
         dr: newDr, cr: newCr, contact,
         desc: line.description || null,
       };

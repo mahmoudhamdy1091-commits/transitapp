@@ -619,10 +619,10 @@ export async function submitQuickPayout() {
   try {
     capChk = await checkPayoutCap(fileNo, partner, state.system, amount);
   } catch(e) {
-    showFieldErr('qsPoError', '⚠️ تعذّر التحقق من المستحق قبل الصرف — لم يُحفظ شيء. حاول مرة أخرى (' + e.message + ')');
+    showFieldErr('qsPoError', 'تعذّر التحقق من المستحق قبل الصرف — لم يُحفظ شيء. حاول مرة أخرى (' + e.message + ')');
     return;
   }
-  if (!capChk.ok) { showFieldErr('qsPoError', '⚠️ ' + capChk.message); return; }
+  if (!capChk.ok) { showFieldErr('qsPoError', capChk.message); return; }
   if (capChk.warning) {
     const go = await confirmAsync('⚠️ صرف يتجاوز النقد المحصَّل',
       capChk.warning + '\n\nهل تريد المتابعة؟', true, '⚠️ نعم، اصرف');

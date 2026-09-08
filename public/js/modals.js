@@ -110,6 +110,9 @@ export async function openNewFileModal(editFileNo = null) {
           paymentId: pay?.id || null,
           paymentAmount: +pay?.amount || 0,
           paymentPostStatus: pay?.post_status || null,
+          // ✅ لازمة لكشف تغيّر حساب النقدية عند الحفظ — بدونها كانت البوابة
+          //    تُفتح بينما oldMethod = undefined فلا يتحرّك القيد: عطل صامت
+          paymentMethod: pay?.pay_method || null,
         };
       });
 
@@ -801,13 +804,21 @@ export async function submitEditFileFull() {
           if (orig?.paymentPostStatus === 'posted') {
             const amountChanged  = Math.abs((+orig.paymentAmount||0) - (+p.paid||0)) > 0.001;
             const contactChanged = orig.name !== p.name;
-            if (amountChanged || contactChanged) {
+            // ✅ تغيّر طريقة الدفع مُطلِق ثالث. كانت البوابة تتجاهله تمامًا،
+            //    فتعديل الطريقة وحدها لم يكن يستدعي الدالة أصلًا — والقيد
+            //    يبقى على حساب النقدية القديم بينما السجل يقول غيره.
+            //    المقارنة على الحساب لا النصّ (نفس منطق updateJEInPlace).
+            const _acc = mm => (mm||'') === 'نقد' ? '1110' : '1120';
+            const newMethod_     = p.method || 'تحويل بنكي';
+            const methodChanged_ = _acc(orig.paymentMethod) !== _acc(newMethod_);
+            if (amountChanged || contactChanged || methodChanged_) {
               await updateJEInPlace({
                 sys: state.system, fileNo: oldFileNo,
                 refTable: 'payments', refId: p.paymentId,
                 oldAmount: orig.paymentAmount, newAmount: p.paid,
                 contactPatch: contactChanged ? p.name : null,
                 newDate: p.payDate || poDate || null,   // ✅ مزامنة تاريخ قيد دفعة الشريك
+                oldMethod: orig.paymentMethod, newMethod: newMethod_,
               });
             }
           }
@@ -2420,10 +2431,10 @@ export async function submitPayout() {
   try {
     capChk = await checkPayoutCap(fn, partner, state.system, amount);
   } catch(e) {
-    showFieldErr('poutError', '⚠️ تعذّر التحقق من المستحق قبل الصرف — لم يُحفظ شيء. حاول مرة أخرى (' + e.message + ')');
+    showFieldErr('poutError', 'تعذّر التحقق من المستحق قبل الصرف — لم يُحفظ شيء. حاول مرة أخرى (' + e.message + ')');
     return;
   }
-  if (!capChk.ok) { showFieldErr('poutError', '⚠️ ' + capChk.message); return; }
+  if (!capChk.ok) { showFieldErr('poutError', capChk.message); return; }
   // ✅ تحذير لا منع — الصرف فوق النقد المحصَّل مسموح بقرار المستخدم
   // (ملف مغلق بذمم على العملاء)، لكن لا يمر بصمت
   if (capChk.warning) {
@@ -2666,8 +2677,8 @@ export async function submitLedger() {
   if (spec.linkedToFile) {
     let chk;
     try { chk = await checkPayoutCap(fn, partner, state.system, amounts.amount); }
-    catch(e) { showFieldErr('lgError','⚠️ تعذّر التحقق من المستحق — لم يُحفظ شيء ('+e.message+')'); return; }
-    if (!chk.ok) { showFieldErr('lgError','⚠️ '+chk.message); return; }
+    catch(e) { showFieldErr('lgError','تعذّر التحقق من المستحق — لم يُحفظ شيء ('+e.message+')'); return; }
+    if (!chk.ok) { showFieldErr('lgError',chk.message); return; }
     if (chk.warning) {
       const go = await confirmAsync('⚠️ مبلغ يتجاوز النقد المحصَّل',
         chk.warning + '\n\nهل تريد المتابعة؟', true, '⚠️ نعم، سجّل');

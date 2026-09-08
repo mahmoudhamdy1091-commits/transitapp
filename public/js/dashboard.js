@@ -1609,6 +1609,7 @@ export async function openEditPayoutModal(payoutId) {
             oldAmount: +p.amount||0, newAmount,
             contactPatch: newPartner !== p.partner ? newPartner : null,
             newDate,   // ✅ مزامنة تاريخ قيد صرف الشريك مع تاريخه الجديد
+            oldMethod: p.pay_method, newMethod: newMethod,   // ✅ نقل سطر النقدية عند نقد↔بنك
           });
         }
 
