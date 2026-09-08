@@ -2420,10 +2420,10 @@ export async function submitPayout() {
   try {
     capChk = await checkPayoutCap(fn, partner, state.system, amount);
   } catch(e) {
-    showFieldErr('poutError', '⚠️ تعذّر التحقق من المستحق قبل الصرف — لم يُحفظ شيء. حاول مرة أخرى (' + e.message + ')');
+    showFieldErr('poutError', 'تعذّر التحقق من المستحق قبل الصرف — لم يُحفظ شيء. حاول مرة أخرى (' + e.message + ')');
     return;
   }
-  if (!capChk.ok) { showFieldErr('poutError', '⚠️ ' + capChk.message); return; }
+  if (!capChk.ok) { showFieldErr('poutError', capChk.message); return; }
   // ✅ تحذير لا منع — الصرف فوق النقد المحصَّل مسموح بقرار المستخدم
   // (ملف مغلق بذمم على العملاء)، لكن لا يمر بصمت
   if (capChk.warning) {
@@ -2666,8 +2666,8 @@ export async function submitLedger() {
   if (spec.linkedToFile) {
     let chk;
     try { chk = await checkPayoutCap(fn, partner, state.system, amounts.amount); }
-    catch(e) { showFieldErr('lgError','⚠️ تعذّر التحقق من المستحق — لم يُحفظ شيء ('+e.message+')'); return; }
-    if (!chk.ok) { showFieldErr('lgError','⚠️ '+chk.message); return; }
+    catch(e) { showFieldErr('lgError','تعذّر التحقق من المستحق — لم يُحفظ شيء ('+e.message+')'); return; }
+    if (!chk.ok) { showFieldErr('lgError',chk.message); return; }
     if (chk.warning) {
       const go = await confirmAsync('⚠️ مبلغ يتجاوز النقد المحصَّل',
         chk.warning + '\n\nهل تريد المتابعة؟', true, '⚠️ نعم، سجّل');
