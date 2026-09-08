@@ -851,7 +851,19 @@ export async function printDealSummary(fn) {
       const capitalIn   = isTreasury ? (x.capitalPaid || 0) : x.actualContribution;
       const expIn_      = isTreasury ? Math.max(0, (x.actualContribution||0) - (x.capitalPaid||0)) : 0;
       const liability    = x.fairShare;
-      const diff_       = liability - capitalIn;
+      // ✅ الحساب من actualContribution للجميع — لا من capitalIn.
+      // capitalIn مفهوم *عرضي* بحت (يفصل رأس مال الخزينة عن مصاريفها في
+      // السطرين المعروضين)، وللخزينة يساوي capitalPaid وحده. لكن capitalPaid
+      // للخزينة قد يكون صفرًا بالتصميم — الصندوق لا يُقيَّد على 2400 إطلاقًا،
+      // ومساهمته الحقيقية محسوبة بالمتبقي في actualContribution (نفس السبب
+      // الذي جعل accounting.js:1773 تكتب isTreasury ? 0 : capitalPaid).
+      // بناء diff_ على capitalIn كان يجعل الكشف المطبوع يقول إن الصندوق
+      // "متبقي عليه" بحجم حصته كاملة وهو مساهم بالكامل، ويمنع ظهور "دفع
+      // زيادة" له إطلاقًا. مقيس حيًّا 2026-09-07: BOX-132 يعرض 432,550 ⚠️
+      // والصحيح صفر ✅ · BOX-131 يعرض 412,587 · BOX-133 يعرض 206,047 ·
+      // BOX-138 يعرض 41,015 (capitalPaid=308,000 هناك، فالمبالغة جزئية).
+      // القاعدة العامة: لا يُبنى حساب على متغيّر أُنشئ للعرض.
+      const diff_       = liability - (x.actualContribution || 0);
       const remaining_  = Math.max(diff_, 0);
       const overpaid_   = Math.max(-diff_, 0);
       const profitShare = x.profitShare;

@@ -1124,6 +1124,92 @@ export async function getFileDefaultReceiver(fileNo, sys) {
 }
 
 /**
+ * فحص سقف "صرف شريك" المربوط بملف — نقطة واحدة يستدعيها كل مسار كتابة
+ * (submitPayout في modals.js، submitQuickPayout في viewer.js). لا تُكرَّر
+ * الصيغة في المستدعي: تكرارها يدويًا هو بالضبط نمط الأخطاء الذي عولج في
+ * 2026-09-06/07 (تسع مواضع netDue، ثم ثلاث نسخ يدوية لمعادلة الاستحقاق).
+ *
+ * ⚠️ سبب وجودها كإجراء مؤقت: قرار المستخدم 2026-09-07 أن الصرف المربوط بملف
+ * *له سقف* بالتصميم. الـRPC الجديدة (create_partner_ledger_entry) تفرضه
+ * ذرّيًا، لكن الزر القديم يكتب في partner_payouts مباشرة بلا أي فحص. وأسوأ:
+ * سقف الـRPC يحسب "الاستحقاق الإجمالي" من قيود الجدولين بينما يحسب "المسدَّد
+ * سابقًا" (v_prior) من partner_ledger وحدها — فأي صرف جديد بالزر القديم يرفع
+ * سقف الـRPC بمقدار نفسه، أي يصير المبلغ قابلًا للسحب مرتين. هذا الفحص يغلق
+ * النافذة حتى تنقل المرحلة ب-٢ مسار الكتابة إلى الـRPC، وعندها يصبح زائدًا
+ * (لا ضار) ويمكن إزالته مع الزر القديم.
+ *
+ * ليس بديلًا عن قفل الـRPC الذرّي: هذا فحص من طرف العميل، يمنع الخطأ العادي
+ * لا السباق المتزامن. القراءة طازجة عند الإرسال عمدًا (لا الرقم المعروض في
+ * النموذج) لأن النموذج قد يبقى مفتوحًا بعد تغيّر البيانات.
+ */
+export async function checkPayoutCap(fileNo, partner, sys, amount) {
+  const nm = (partner || '').trim();
+  const f2 = n => (+n || 0).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  // ✅ المسوّدات لازم تُطرح يدويًا — بلا هذا الفحص لا يعمل إطلاقًا للمستخدم
+  // العادي: entryStatus() (engine.js:58) ترجع 'draft' لغير المدير، وsubmitPayout
+  // لا تستدعي je_payout إلا لو 'posted' ⇒ صف المسودة بلا قيد ⇒ وpayableNow
+  // محسوبة من journal_entries بـpost_status=eq.posted وحدها ⇒ المسودة لا
+  // تُنقِص السقف ⇒ N مسودات كلها تمرّ بنفس الرقم، ثم يعتمدها الطابور كلها
+  // (مسارات الاعتماد لا تعيد الفحص). رصدته مراجعة مستقلة 2026-09-07.
+  //
+  // ⚠️ النطاق 'draft' وحدها عمدًا — لا 'pending_edit' رغم أن v_prior في الـRPC
+  // تعدّها. السببان مختلفان بنيويًا ولا يجوز نسخ نطاقها هنا:
+  //   • v_prior تُطرح من "الاستحقاق الإجمالي" (قبل أي سحب) فتعدّ كل الصفوف.
+  //   • payableNow هنا *صافية* أصلًا من كل سحب له قيد مُرحَّل.
+  // وpending_edit له قيد فعلًا: statusAfterEdit (lifecycle.js) تُرجع
+  // 'pending_edit' فقط لصف كان posted/pending_edit، وsubmitEditPayout تستدعي
+  // updateJEInPlace كلما wasAlreadyPosted ⇒ القيد موجود ومحدَّث بالمبلغ الجديد
+  // ⇒ مطروح أصلًا داخل payableNow. طرحه ثانيةً خصم مزدوج يمنع صرفًا مشروعًا.
+  // نفس المنطق لـpending_void (قيده قائم حتى يُعتمد العكس).
+  const [settlement, draftPayouts, draftLedger] = await Promise.all([
+    computePartnerSettlement(fileNo, sys),
+    apiGetAll('partner_payouts', { select:'amount', system_type:`eq.${sys}`,
+      file_no:`eq.${fileNo}`, partner:`eq.${nm}`, post_status:'eq.draft' }),
+    // partner_ledger كذلك: 'استرداد وتوزيع أرباح' لا قيد له قبل الاعتماد،
+    // و'تأكيد استلام' لا يُحتسب في core.js إلا بـposted (الاستعلام الرابع أعلى
+    // computePartnerSettlement) — فمسودتاهما غير مرئيتين لـpayableNow أيضًا
+    apiGetAll('partner_ledger', { select:'amount', system_type:`eq.${sys}`,
+      file_no:`eq.${fileNo}`, partner:`eq.${nm}`, post_status:'eq.draft' }),
+  ]);
+  const x = (settlement.partners || []).find(p => p.name === nm);
+  if (!x) {
+    return { ok:false, payableNow:0, pendingDraft:0,
+      message:`الشريك "${nm}" غير مسجَّل ضمن شركاء الملف ${fileNo} — لا يمكن تحديد مستحقه` };
+  }
+  const sum = rows => (rows || []).reduce((s, r) => s + (+r.amount || 0), 0);
+  const pendingDraft = sum(draftPayouts) + sum(draftLedger);
+  const gross = +x.payableNow || 0;
+  const cap   = Math.max(0, gross - pendingDraft);
+
+  // ✅ تحذير (لا منع) حين يتجاوز المبلغ النقد المحصَّل فعلًا — قرار المستخدم
+  // 2026-09-07 بعد قياس حي على BOX-126: ملف مغلق (كل السيارات بيعت) لكن
+  // 2,210 لسه ذمة على عميل. فرع الملف المغلق في payableNow بلا سقف نقدي
+  // بالتصميم، فيأذن بصرف مبلغ غير موجود في الخزينة. المنع كان سيرفض صرفًا
+  // مشروعًا في ملف انتهى فعلًا، فالقرار: نبّه ودع القرار للمستخدم.
+  // ملاحظة: لا ينطبق على الملف المفتوح — payableNow هناك مُقيَّدة بالنقد أصلًا
+  // فلا يمكن تجاوزه، والتحذير لن يظهر إلا في الحالة المغلقة ذات الذمم.
+  const cashAvailable = (+settlement.collectedCash || 0) * x.share
+                        - x.withdrawnViaPayout - x.collectionsHeld;
+  const overCash = amount > cashAvailable + 0.001;
+  const warning = overCash
+    ? `المبلغ ${f2(amount)} أكبر من النقد المحصَّل فعلًا لهذا الشريك على الملف (${f2(Math.max(0, cashAvailable))}). `
+      + `الفرق ${f2(amount - Math.max(0, cashAvailable))} ما زال ذمّة على العملاء ولم يدخل الخزينة بعد.`
+    : '';
+  // 0.001 — نفس هامش create_partner_ledger_entry بالضبط، حتى لا يقبل مسار
+  // ما يرفضه الآخر على نفس المبلغ
+  if (amount > cap + 0.001) {
+    // نذكر المسوّدات صراحةً — بدونها يرى المستخدم "مستحقه 10,000" على الشاشة
+    // ويُرفض له 10,000 بلا سبب مفهوم
+    const extra = pendingDraft > 0.001
+      ? ` (المستحق ${f2(gross)} ناقص ${f2(pendingDraft)} صرف مُسجَّل بانتظار الاعتماد)`
+      : '';
+    return { ok:false, payableNow:cap, pendingDraft, warning,
+      message:`المبلغ ${f2(amount)} يتجاوز المستحق المتبقي ${f2(cap)} للشريك ${nm} على الملف ${fileNo}${extra}` };
+  }
+  return { ok:true, payableNow:cap, pendingDraft, warning, message:'' };
+}
+
+/**
  * كتابة صف partner_ledger — عبر create_partner_ledger_entry (RPC، راجع
  * sql/partner_ledger_stage_a.sql). القفل + فحص السقف + الترقيم + الإدراج
  * كلهم في نفس الـtransaction بالضرورة: PostgREST ينفّذ كل نداء RPC في
@@ -1174,6 +1260,6 @@ Object.assign(window, {
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, computeFinancials, computePartnerSettlement, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
-  computePartnerGlobalBalance, getFileDefaultReceiver, createPartnerLedgerEntry,
+  computePartnerGlobalBalance, getFileDefaultReceiver, createPartnerLedgerEntry, checkPayoutCap,
   login, logout, state, SB_URL, SB_KEY,
 });

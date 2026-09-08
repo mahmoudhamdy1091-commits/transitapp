@@ -2318,15 +2318,27 @@ export async function loadPartnerAccountLedger() {
     let totalLiability = 0;   // إجمالي حصته في التكلفة الكاملة (ما عليه)
     let totalPaid      = 0;   // إجمالي ما دفعه للمورد
     let totalExpPaid   = 0;   // إجمالي مصاريف دفعها من جيبه (كانت غائبة تمامًا)
-    let totalCollHeld  = 0;   // إجمالي تحصيلات عملاء ممسوكة — تقلل المستحق
     let totalProfit    = 0;   // إجمالي حصته في الربح
+    // ⚠️ من partner_payouts وحدها (allPayouts أعلاه) — معروض في KPI "إجمالي
+    // الصرف السابق" فقط، لا يدخل أي معادلة استحقاق بعد اليوم. لكنه سيتجمّد
+    // عن عدّ أي صرف جديد بمجرد أن توجّه المرحلة ب الكتابة إلى partner_ledger
+    // — يلزم توسيعه هناك (بند مفتوح مقصود، غير مُصلَح هنا)
     let totalPayout    = 0;   // إجمالي ما استرده
+    // ✅ السقف النقدي القابل للصرف فعليًا، مجموعًا عبر الصفقات — من payableNow
+    // (core.js) مباشرة لا بإعادة اشتقاق محلي. يُخزَّن أيضًا لكل ملف على حدة
+    // حتى يعطي فلتر الصفقة في renderPartnerAccountLedger نفس الرقم بالضبط
+    let totalPayable   = 0;
+    const payableByFile = {};
 
     for (const fn of fileNos) {
       const share = shareMap[fn];
       const pct   = Math.round(share * 100);
       const x = (settleByFile[fn]?.partners||[]).find(p => p.name === partner)
-        || { fairShare:0, expPaid:0, collectionsHeld:0, profitShare:0 };
+        || { fairShare:0, expPaid:0, collectionsHeld:0, profitShare:0, payableNow:0 };
+      // ✅ payableNow يطرح المسحوبات والتحصيلات الممسوكة داخليًا، ويطبّق سقف
+      // النقد المحصَّل للملف المفتوح — فلا يُطرح أي منها مرة تانية هنا
+      payableByFile[fn] = +x.payableNow || 0;
+      totalPayable += payableByFile[fn];
 
       // 1. حصة الشريك في التكلفة الكاملة — شراء + مصاريف (مرجعي فقط)
       // ✅ _sign:0 عمدًا: ده رقم مرجعي (نصيبه العادل لو اتقسمت التكلفة بالتساوي)
@@ -2375,7 +2387,8 @@ export async function loadPartnerAccountLedger() {
 
       // 2.6 تحصيلات عملاء ممسوكة — فلوس في إيده فعليًا فتقلل المستحق له
       if (x.collectionsHeld > 0.01) {
-        totalCollHeld += x.collectionsHeld;
+        // (لا accumulator — payableNow تطرح التحصيلات الممسوكة داخليًا؛
+        //  الصف هنا للعرض في كشف الحركات فقط)
         allEntries.push({
           type: 'collection_held', file_no: fn,
           amount: x.collectionsHeld, entry_date: null,
@@ -2436,10 +2449,21 @@ export async function loadPartnerAccountLedger() {
 
     // ── حساب الأرصدة ──
     const netLiability = totalLiability - totalPaid - totalExpPaid; // المديونية المتبقية
-    // ✅ إجمالي المستحق = رأس مال مدفوع + مصاريف من جيبه + حصة الربح − مسحوبات − تحصيلات ممسوكة
-    // (نفس معادلة netDue الموحّدة في computePartnerSettlement — كانت هنا تتجاهل
-    // مصاريف الجيب والتحصيلات الممسوكة تمامًا، فيفضل رقم مختلف عن باقي الشاشات)
-    const totalDue     = totalPaid + totalExpPaid + totalProfit - totalPayout - totalCollHeld;
+    // ✅ إجمالي المستحق = مجموع payableNow عبر الصفقات — نفس مصدر ونفس معنى
+    // "💸 القابل للتحويل الآن" في كشف حساب الشريك (grandTransferable,
+    // accounting.js:1854). كانت هنا نسخة يدوية رابعة من معادلة الاستحقاق
+    // (totalPaid + totalExpPaid + totalProfit − totalPayout − totalCollHeld)
+    // لا تستخدم اسم netDue إطلاقًا ففاتت البحث الشامل (11241fd)، والتعليق
+    // القديم فوقها كان يدّعي أنها "نفس معادلة netDue" — ادّعاء خاطئ:
+    // netDue = fairShareDiff + profitShare، مختلفة عن الاثنين.
+    // العلل: بلا Math.max(0,…)، بلا سقف النقد المحصَّل للملف المفتوح،
+    // وtotalPayout من partner_payouts وحدها (كانت ستتجمّد بعد partner_ledger).
+    //
+    // ⚠️ فجوة قائمة مقصودة: السحب/الإيداع العام (بلا file_no) لا يدخل هنا —
+    // payableNow محسوبة لكل ملف على حدة، والحركات العامة لا تخص ملفًا. اليوم
+    // بلا أثر (partner_accounts بها صفر صفوف)، لكن المرحلة ب-٣ حين توجّه
+    // "سحب عام" إلى partner_ledger لازم تطرحها هنا صراحةً.
+    const totalDue     = totalPayable;
 
     // ── KPIs ──
     const liabilityColor = netLiability > 0.01 ? 'var(--red)' : 'var(--green)';
@@ -2463,16 +2487,19 @@ export async function loadPartnerAccountLedger() {
         <div class="j-kpi-val" style="color:var(--accent)">${fmt(totalPayout)}</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--purple);background:var(--purple-dim)">
-        <div class="j-kpi-label">إجمالي المستحق له</div>
+        <div class="j-kpi-label">القابل للتحويل الآن</div>
         <div class="j-kpi-val" style="color:${dueColor};font-size:20px;font-weight:900">${fmt(Math.abs(totalDue))}</div>
         <div style="font-size:12px;color:${dueColor};font-weight:700">
-          ${totalDue > 0.01 ? '← رأس مال + أرباح' : totalDue < -0.01 ? '← مدين عليه' : '← تسوية كاملة'}
+          ${totalDue > 0.01 ? '← قابل للتحويل الآن' : '← لا مستحق حاليًا'}
         </div>
       </div>`;
 
-    partnerAccountState.balance      = totalDue;
-    partnerAccountState.netLiability = netLiability;
-    partnerAccountState.totalPaid    = totalPaid;
+    partnerAccountState.balance       = totalDue;
+    partnerAccountState.netLiability  = netLiability;
+    partnerAccountState.totalPaid     = totalPaid;
+    // ✅ لكل ملف على حدة — يستخدمه renderPartnerAccountLedger عند فلترة صفقة
+    // بعينها، فيطابق الرقمان بالبناء بدل أن يُحسب كل منهما بمعادلة مختلفة
+    partnerAccountState.payableByFile = payableByFile;
 
     renderPartnerAccountLedger();
   } catch(e) {
@@ -2500,13 +2527,19 @@ export function renderPartnerAccountLedger() {
   const kpiLiability = entriesForKpi.filter(e=>e.type==='liability').reduce((s,e)=>s+(+e.amount||0),0);
   const kpiPaid      = entriesForKpi.filter(e=>e.type==='partner_payment').reduce((s,e)=>s+(+e.amount||0),0);
   const kpiExpPaid   = entriesForKpi.filter(e=>e.type==='partner_expense').reduce((s,e)=>s+(+e.amount||0),0);
-  const kpiCollHeld  = entriesForKpi.filter(e=>e.type==='collection_held').reduce((s,e)=>s+(+e.amount||0),0);
   const kpiProfit    = entriesForKpi.filter(e=>e.type==='profit_credit').reduce((s,e)=>s+(+e.amount||0),0)
                      - entriesForKpi.filter(e=>e.type==='loss_debit').reduce((s,e)=>s+(+e.amount||0),0);
   const kpiPayout    = entriesForKpi.filter(e=>e.type==='deal_payout'||e.type==='general_withdraw'||e.type==='advance').reduce((s,e)=>s+(+e.amount||0),0);
   const kpiNetLiab   = kpiLiability - kpiPaid - kpiExpPaid;
-  // ✅ إجمالي المستحق = ما دفع + مصاريف من جيبه + حصة الربح − ما استرده − تحصيلات ممسوكة
-  const kpiTotalDue  = kpiPaid + kpiExpPaid + kpiProfit - kpiPayout - kpiCollHeld;
+  // ✅ نفس مصدر totalDue في loadPartnerAccountLedger بالضبط (مجموع payableNow)،
+  // لا معادلة مستقلة. كانت هنا نسخة خامسة تحسب رقمًا *مختلفًا* وتعرضه في
+  // نفس عنصر الـDOM وتحت نفس اللافتة "إجمالي المستحق له" — تناقض داخلي
+  // حقيقي: هذه كانت تطرح kpiPayout (الذي يشمل general_withdraw/advance)
+  // بينما تلك تطرح totalPayout (partner_payouts وحدها).
+  const _payMap      = partnerAccountState.payableByFile || {};
+  const kpiTotalDue  = filterFile
+    ? (+_payMap[filterFile] || 0)
+    : Object.values(_payMap).reduce((s,v) => s + (+v||0), 0);
   const liabColor    = kpiNetLiab > 0.01 ? 'var(--red)' : 'var(--green)';
   const balColor     = kpiTotalDue > 0.01 ? 'var(--green)' : kpiTotalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
   const filterLabel  = filterFile ? ` — ${filterFile}` : ' — كل الصفقات';
@@ -2529,10 +2562,10 @@ export function renderPartnerAccountLedger() {
       <div class="j-kpi-val" style="color:var(--accent)">${fmt(kpiPayout)}</div>
     </div>
     <div class="j-kpi" style="border-right:3px solid var(--purple);background:var(--purple-dim)">
-      <div class="j-kpi-label">إجمالي المستحق له</div>
+      <div class="j-kpi-label">القابل للتحويل الآن</div>
       <div class="j-kpi-val" style="color:${balColor};font-size:20px;font-weight:900">${fmt(Math.abs(kpiTotalDue))}</div>
       <div style="font-size:12px;color:${balColor};font-weight:700">
-        ${kpiTotalDue > 0.01 ? '← رأس مال + أرباح' : kpiTotalDue < -0.01 ? '← مدين عليه' : '← تسوية كاملة'}
+        ${kpiTotalDue > 0.01 ? '← قابل للتحويل الآن' : '← لا مستحق حاليًا'}
       </div>
     </div>`;
 
@@ -2605,7 +2638,7 @@ export function renderPartnerAccountLedger() {
     <table class="data-table" style="font-size:12px">
       <thead><tr>
         <th>التاريخ</th><th>النوع</th><th>البيان</th>
-        <th>الملف</th><th>المبلغ</th><th>الرصيد</th><th>ملاحظات</th>
+        <th>الملف</th><th>المبلغ</th><th>الرصيد التراكمي</th><th>ملاحظات</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
