@@ -268,7 +268,11 @@ export async function submitEditOpex() {
     // 2. تحديث القيد في مكانه (المبلغ + التاريخ)
     await updateJEInPlace({
       sys: state.system, fileNo: old?.file_no || null,
-      refTable: 'operating_expenses', refId: id,
+      // ⚠️ je_opex تخزّن ref_id = ref_no (نصّ) لا id — نفس الاصطلاح الذي
+      //    يتبعه _processEditApproval. تمرير id كان يُفشل المسار الأساسي
+      //    ويعتمد ضمنًا على المسار الاحتياطي؛ وبعد تعطيله بلا file_no (وهو
+      //    الحال الغالب للمصروف التشغيلي) كان التعديل سيفشل صراحةً.
+      refTable: 'operating_expenses', refId: old?.ref_no || id,
       oldAmount: +old?.amount||0, newAmount: amount,
       newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ المصروف التشغيلي الجديد
       oldMethod: old?.pay_method, newMethod: method,   // ✅ نقل سطر النقدية عند نقد↔بنك
