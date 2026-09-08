@@ -1198,6 +1198,7 @@ export async function submitEditPayment() {
           oldAmount, newAmount: amount,
           contactPatch: payer !== oldPayer ? payer : null,
           newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ الدفعة الجديد
+          oldMethod: old.pay_method, newMethod: method,   // ✅ نقل سطر النقدية عند نقد↔بنك
         });
       }
 
@@ -1533,6 +1534,7 @@ export async function submitEditExpense() {
           refTable: 'expenses', refId: id,
           oldAmount, newAmount: amount,
           newDate: date,
+          oldMethod: old.pay_method, newMethod: method,
         });
       }
 
@@ -1645,6 +1647,7 @@ export async function submitEditCollection() {
           refTable: 'collections', refId: id,
           oldAmount, newAmount: amount,
           newDate: paid || old.paid_date,
+          oldMethod: old.pay_method, newMethod: method,
         });
       }
 
