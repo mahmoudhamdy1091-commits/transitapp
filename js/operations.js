@@ -1778,9 +1778,9 @@ export async function rejectItem(type, id) {
   if (!cfg) return;
 
   // ── رفض طلب التعديل — يرجع السجل والقيد للقيمة قبل التعديل ──
-  if (type === 'payment_edit' || type === 'expense_edit' || type === 'collection_edit' || type === 'ledger_edit') {
+  if (type === 'payment_edit' || type === 'expense_edit' || type === 'collection_edit' || type === 'ledger_edit' || type === 'payout_edit') {
     const srcType = type.replace('_edit','');
-    const tableMap = { payment:'payments', expense:'expenses', collection:'collections', ledger:'partner_ledger' };
+    const tableMap = { payment:'payments', expense:'expenses', collection:'collections', ledger:'partner_ledger', payout:'partner_payouts' };
     const tbl = tableMap[srcType];
     const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
 
@@ -1823,7 +1823,7 @@ export async function rejectItem(type, id) {
 
       // ✅ عكس القيد المحاسبي للقيمة الأصلية (وكذلك اسم الطرف لو تغيّر)
       const contactPatch = (srcType === 'payment' && oldRow.payer !== current.payer) ? oldRow.payer
-                         : (srcType === 'ledger' && oldRow.partner !== current.partner) ? oldRow.partner
+                         : ((srcType === 'ledger' || srcType === 'payout') && oldRow.partner !== current.partner) ? oldRow.partner
                          : null;
       // ✅ إرجاع تاريخ القيد لتاريخ العملية الأصلي (اتساقاً مع مزامنة التاريخ عند التعديل)
       const _dateField = { payments:'pay_date', expenses:'exp_date', collections:'paid_date', partner_payouts:'pay_date', partner_ledger:'pay_date', sales:'sale_date', purchase_orders:'po_date', operating_expenses:'exp_date' }[tbl];
@@ -1842,6 +1842,20 @@ export async function rejectItem(type, id) {
     return;
   }
 
+  // ⛔ ثلاثة أنواع لا يمكن رفض تعديلها بأمان بعد.
+  // العلة: submitEdit* تستدعي updateJEInPlace **وقت التعديل نفسه**، قبل أن
+  // يرى المدير الطلب — فالقيد يصير على المبلغ غير المعتمَد. واسترجاعه يحتاج
+  // بحثًا مخصَّصًا لكل نوع لأن قيودها غير قابلة للعنونة بـref_id الرقمي:
+  //   je_opex     تخزن ref_id = ref_no (نص) لا id
+  //   je_sale     لا تخزن ref_id إطلاقًا
+  //   je_purchase تاريخيًا لم تكتبه
+  // المسار العام تحتها كان يضع post_status='cancelled' على صف مُرحَّل ويترك
+  // الدفاتر على المبلغ المرفوض ⇒ الرفض يثبّت ما رفضه المدير ويمحو السجل، بصمت.
+  // المنع يحوّل الإفساد الصامت إلى رفض ظاهر حتى يُبنى لكل نوع مساره.
+  if (type === 'purchase_edit' || type === 'opex_edit' || type === 'sale_edit') {
+    toast('⚠️ رفض هذا التعديل غير متاح مؤقتًا — القيد المحاسبي حُدِّث بالفعل وقت التعديل، واسترجاعه لهذا النوع يحتاج مراجعة يدوية. اعتمد التعديل ثم سجّل تصحيحًا، أو راجع اليومية.', 'err');
+    return;
+  }
   // ── استرداد طلب الإلغاء (reversal) — يرجع للحالة posted ──
   if (type === 'reversal') {
     const item = approvalState.all.find(r => r._type === 'reversal' && String(r.id) === String(id));
