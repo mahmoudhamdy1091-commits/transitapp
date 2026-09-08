@@ -1778,9 +1778,9 @@ export async function rejectItem(type, id) {
   if (!cfg) return;
 
   // ── رفض طلب التعديل — يرجع السجل والقيد للقيمة قبل التعديل ──
-  if (type === 'payment_edit' || type === 'expense_edit' || type === 'collection_edit') {
+  if (type === 'payment_edit' || type === 'expense_edit' || type === 'collection_edit' || type === 'ledger_edit') {
     const srcType = type.replace('_edit','');
-    const tableMap = { payment:'payments', expense:'expenses', collection:'collections' };
+    const tableMap = { payment:'payments', expense:'expenses', collection:'collections', ledger:'partner_ledger' };
     const tbl = tableMap[srcType];
     const item = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
 
@@ -1822,9 +1822,11 @@ export async function rejectItem(type, id) {
       await apiPatch(tbl, { id:`eq.${id}` }, restoreData);
 
       // ✅ عكس القيد المحاسبي للقيمة الأصلية (وكذلك اسم الطرف لو تغيّر)
-      const contactPatch = (srcType === 'payment' && oldRow.payer !== current.payer) ? oldRow.payer : null;
+      const contactPatch = (srcType === 'payment' && oldRow.payer !== current.payer) ? oldRow.payer
+                         : (srcType === 'ledger' && oldRow.partner !== current.partner) ? oldRow.partner
+                         : null;
       // ✅ إرجاع تاريخ القيد لتاريخ العملية الأصلي (اتساقاً مع مزامنة التاريخ عند التعديل)
-      const _dateField = { payments:'pay_date', expenses:'exp_date', collections:'paid_date', partner_payouts:'pay_date', sales:'sale_date', purchase_orders:'po_date', operating_expenses:'exp_date' }[tbl];
+      const _dateField = { payments:'pay_date', expenses:'exp_date', collections:'paid_date', partner_payouts:'pay_date', partner_ledger:'pay_date', sales:'sale_date', purchase_orders:'po_date', operating_expenses:'exp_date' }[tbl];
       await updateJEInPlace({
         sys: state.system, fileNo: oldRow.file_no,
         refTable: tbl, refId: id,
