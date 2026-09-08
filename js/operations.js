@@ -2487,7 +2487,7 @@ export async function loadPartnerAccountLedger() {
         <div class="j-kpi-val" style="color:var(--accent)">${fmt(totalPayout)}</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--purple);background:var(--purple-dim)">
-        <div class="j-kpi-label">إجمالي المستحق له</div>
+        <div class="j-kpi-label">القابل للتحويل الآن</div>
         <div class="j-kpi-val" style="color:${dueColor};font-size:20px;font-weight:900">${fmt(Math.abs(totalDue))}</div>
         <div style="font-size:12px;color:${dueColor};font-weight:700">
           ${totalDue > 0.01 ? '← قابل للتحويل الآن' : '← لا مستحق حاليًا'}
@@ -2562,7 +2562,7 @@ export function renderPartnerAccountLedger() {
       <div class="j-kpi-val" style="color:var(--accent)">${fmt(kpiPayout)}</div>
     </div>
     <div class="j-kpi" style="border-right:3px solid var(--purple);background:var(--purple-dim)">
-      <div class="j-kpi-label">إجمالي المستحق له</div>
+      <div class="j-kpi-label">القابل للتحويل الآن</div>
       <div class="j-kpi-val" style="color:${balColor};font-size:20px;font-weight:900">${fmt(Math.abs(kpiTotalDue))}</div>
       <div style="font-size:12px;color:${balColor};font-weight:700">
         ${kpiTotalDue > 0.01 ? '← قابل للتحويل الآن' : '← لا مستحق حاليًا'}
@@ -2638,7 +2638,7 @@ export function renderPartnerAccountLedger() {
     <table class="data-table" style="font-size:12px">
       <thead><tr>
         <th>التاريخ</th><th>النوع</th><th>البيان</th>
-        <th>الملف</th><th>المبلغ</th><th>الرصيد</th><th>ملاحظات</th>
+        <th>الملف</th><th>المبلغ</th><th>الرصيد التراكمي</th><th>ملاحظات</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;

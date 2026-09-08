@@ -1180,6 +1180,21 @@ export async function checkPayoutCap(fileNo, partner, sys, amount) {
   const pendingDraft = sum(draftPayouts) + sum(draftLedger);
   const gross = +x.payableNow || 0;
   const cap   = Math.max(0, gross - pendingDraft);
+
+  // ✅ تحذير (لا منع) حين يتجاوز المبلغ النقد المحصَّل فعلًا — قرار المستخدم
+  // 2026-09-07 بعد قياس حي على BOX-126: ملف مغلق (كل السيارات بيعت) لكن
+  // 2,210 لسه ذمة على عميل. فرع الملف المغلق في payableNow بلا سقف نقدي
+  // بالتصميم، فيأذن بصرف مبلغ غير موجود في الخزينة. المنع كان سيرفض صرفًا
+  // مشروعًا في ملف انتهى فعلًا، فالقرار: نبّه ودع القرار للمستخدم.
+  // ملاحظة: لا ينطبق على الملف المفتوح — payableNow هناك مُقيَّدة بالنقد أصلًا
+  // فلا يمكن تجاوزه، والتحذير لن يظهر إلا في الحالة المغلقة ذات الذمم.
+  const cashAvailable = (+settlement.collectedCash || 0) * x.share
+                        - x.withdrawnViaPayout - x.collectionsHeld;
+  const overCash = amount > cashAvailable + 0.001;
+  const warning = overCash
+    ? `المبلغ ${f2(amount)} أكبر من النقد المحصَّل فعلًا لهذا الشريك على الملف (${f2(Math.max(0, cashAvailable))}). `
+      + `الفرق ${f2(amount - Math.max(0, cashAvailable))} ما زال ذمّة على العملاء ولم يدخل الخزينة بعد.`
+    : '';
   // 0.001 — نفس هامش create_partner_ledger_entry بالضبط، حتى لا يقبل مسار
   // ما يرفضه الآخر على نفس المبلغ
   if (amount > cap + 0.001) {
@@ -1188,10 +1203,10 @@ export async function checkPayoutCap(fileNo, partner, sys, amount) {
     const extra = pendingDraft > 0.001
       ? ` (المستحق ${f2(gross)} ناقص ${f2(pendingDraft)} صرف مُسجَّل بانتظار الاعتماد)`
       : '';
-    return { ok:false, payableNow:cap, pendingDraft,
+    return { ok:false, payableNow:cap, pendingDraft, warning,
       message:`المبلغ ${f2(amount)} يتجاوز المستحق المتبقي ${f2(cap)} للشريك ${nm} على الملف ${fileNo}${extra}` };
   }
-  return { ok:true, payableNow:cap, pendingDraft, message:'' };
+  return { ok:true, payableNow:cap, pendingDraft, warning, message:'' };
 }
 
 /**

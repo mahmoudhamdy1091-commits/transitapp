@@ -2416,12 +2416,20 @@ export async function submitPayout() {
   // الفحص في core.js (نقطة واحدة مشتركة مع الصرف السريع)، والقراءة طازجة هنا
   // لا من الرقم المعروض في النموذج. عند فشل الجلب نتوقف بدل أن نمرّر بصمت —
   // مبلغ بلا تحقق أخطر من رسالة خطأ
+  let capChk;
   try {
-    const capChk = await checkPayoutCap(fn, partner, state.system, amount);
-    if (!capChk.ok) { showFieldErr('poutError', '⚠️ ' + capChk.message); return; }
+    capChk = await checkPayoutCap(fn, partner, state.system, amount);
   } catch(e) {
     showFieldErr('poutError', '⚠️ تعذّر التحقق من المستحق قبل الصرف — لم يُحفظ شيء. حاول مرة أخرى (' + e.message + ')');
     return;
+  }
+  if (!capChk.ok) { showFieldErr('poutError', '⚠️ ' + capChk.message); return; }
+  // ✅ تحذير لا منع — الصرف فوق النقد المحصَّل مسموح بقرار المستخدم
+  // (ملف مغلق بذمم على العملاء)، لكن لا يمر بصمت
+  if (capChk.warning) {
+    const go = await confirmAsync('⚠️ صرف يتجاوز النقد المحصَّل',
+      capChk.warning + '\n\nهل تريد المتابعة؟', true, '⚠️ نعم، اصرف');
+    if (!go) return;
   }
 
   try {

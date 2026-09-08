@@ -615,12 +615,18 @@ export async function submitQuickPayout() {
 
   // ✅ نفس سقف "صرف شريك" بالضبط — checkPayoutCap في core.js، لا نسخة ثانية
   // من الصيغة هنا. راجع الشرح الكامل فوق الدالة هناك
+  let capChk;
   try {
-    const capChk = await checkPayoutCap(fileNo, partner, state.system, amount);
-    if (!capChk.ok) { showFieldErr('qsPoError', '⚠️ ' + capChk.message); return; }
+    capChk = await checkPayoutCap(fileNo, partner, state.system, amount);
   } catch(e) {
     showFieldErr('qsPoError', '⚠️ تعذّر التحقق من المستحق قبل الصرف — لم يُحفظ شيء. حاول مرة أخرى (' + e.message + ')');
     return;
+  }
+  if (!capChk.ok) { showFieldErr('qsPoError', '⚠️ ' + capChk.message); return; }
+  if (capChk.warning) {
+    const go = await confirmAsync('⚠️ صرف يتجاوز النقد المحصَّل',
+      capChk.warning + '\n\nهل تريد المتابعة؟', true, '⚠️ نعم، اصرف');
+    if (!go) return;
   }
 
   try {
