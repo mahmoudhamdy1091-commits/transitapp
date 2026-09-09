@@ -1353,7 +1353,10 @@ export async function editJournalEntry(type, sourceId, fileNo) {
     case 'collection': openCollectionModal(); break;
     case 'expense':    openExpenseModal(); break;
     case 'payment':    openPaymentModal(); break;
-    case 'payout':     openPayoutModal(); break;
+    // ⚠️ sourceId يُمرَّر null دائمًا من _jEdit (journal.js:695)، فلا يمكن
+    //    فتح صفٍّ بعينه — ضعف سابق. نفتح الموديل الجديد بنفس شكل السلوك
+    //    القائم (إنشاء على الملف الحالي) بدل الموديل القديم.
+    case 'payout':     openLedgerModal(); break;
     default: toast('لا يمكن تعديل هذا النوع مباشرة — ادخل الملف وعدّل من هناك','err');
   }
 }

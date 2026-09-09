@@ -559,7 +559,6 @@
             <div class="section-title">صرف الشركاء</div>
             <div class="section-actions">
               <button class="btn btn-primary btn-sm" onclick="openLedgerModal()">➕ معاملة شريك</button>
-              <button class="btn btn-secondary btn-sm" onclick="openModal('payoutModal')" title="الموديل القديم — للصفوف التاريخية">صرف (قديم)</button>
             </div>
           </div>
           <div class="data-table-wrap" id="payoutsTable"></div>
@@ -648,7 +647,7 @@
             <button class="btn btn-sm" onclick="openQuickModal('collection')" style="background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue)">💰 تحصيل</button>
             <button class="btn btn-sm" onclick="openQuickModal('payment')"    style="background:var(--cyan-dim);border:1px solid var(--cyan);color:var(--cyan)">💳 دفعة مورد</button>
             <button class="btn btn-sm" onclick="openExpenseModal()"           style="background:var(--red-dim);border:1px solid var(--red);color:var(--red)">💸 مصروف</button>
-            <button class="btn btn-sm" onclick="openQuickModal('payout')"     style="background:var(--purple-dim);border:1px solid var(--purple);color:var(--purple)">👥 صرف شريك</button>
+            <button class="btn btn-sm" onclick="openLedgerModal(null, {ignoreCurrentFile:true})"     style="background:var(--purple-dim);border:1px solid var(--purple);color:var(--purple)">👥 صرف شريك</button>
             <button class="btn btn-sm" onclick="showOpex()"                   style="background:var(--purple-dim);border:1px solid var(--purple);color:var(--purple)">💼 مصروف تشغيلي</button>
           </div>
         </div>
