@@ -740,7 +740,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Intercept collection/sale/payout modal buttons
   document.querySelector('[onclick="openModal(\'collectionModal\')"]')?.setAttribute('onclick','openCollectionModal()');
-  document.querySelector('[onclick="openModal(\'payoutModal\')"]')?.setAttribute('onclick','openPayoutModal()');
+  // ✅ أُزيل: كان يعيد ربط زر إنشاء الصرف القديم في تبويب الشركاء ليمرّر الملف.
+  //    الزر نفسه أُزيل عند تحويل مسارات الإنشاء إلى partner_ledger، فصار هذا
+  //    السطر لا يطابق شيئًا — لا يفشل، لا يفعل شيئًا. حذفه أوضح من تركه صامتًا.
 });
 
 
