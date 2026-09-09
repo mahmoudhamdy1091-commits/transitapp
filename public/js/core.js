@@ -1142,7 +1142,7 @@ export async function getFileDefaultReceiver(fileNo, sys) {
  * لا السباق المتزامن. القراءة طازجة عند الإرسال عمدًا (لا الرقم المعروض في
  * النموذج) لأن النموذج قد يبقى مفتوحًا بعد تغيّر البيانات.
  */
-export async function checkPayoutCap(fileNo, partner, sys, amount) {
+export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId = null) {
   const nm = (partner || '').trim();
   const f2 = n => (+n || 0).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
   // ✅ المسوّدات لازم تُطرح يدويًا — بلا هذا الفحص لا يعمل إطلاقًا للمستخدم
@@ -1177,8 +1177,31 @@ export async function checkPayoutCap(fileNo, partner, sys, amount) {
       message:`الشريك "${nm}" غير مسجَّل ضمن شركاء الملف ${fileNo} — لا يمكن تحديد مستحقه` };
   }
   const sum = rows => (rows || []).reduce((s, r) => s + (+r.amount || 0), 0);
-  const pendingDraft = sum(draftPayouts) + sum(draftLedger);
-  const gross = +x.payableNow || 0;
+  let pendingDraft = sum(draftPayouts) + sum(draftLedger);
+  let gross = +x.payableNow || 0;
+
+  // ✅ استثناء الصف الجاري تعديله — نظير pl.id <> p_id في
+  // update_partner_ledger_entry. بدونه يُخصم مبلغه مرتين: مرة كصف قائم
+  // ومرة كمبلغ جديد ⇒ يرفض العميل تعديلًا تقبله القاعدة، فيظهر تناقض
+  // بين طبقتين كلتاهما صحيحة.
+  //
+  // ⚠️ والاستثناء ليس واحدًا — يختلف بحالة الصف، وهذا موضع الخطأ السهل:
+  //   • draft        → لا قيد له، فمبلغه داخل pendingDraft ⇒ يُطرح منها
+  //   • posted/pending_edit/pending_void → له قيد مُرحَّل، فمبلغه مطروح
+  //     أصلًا داخل payableNow ⇒ يُضاف إلى gross
+  // خلطهما يعطي إما تشدّدًا يمنع تعديلًا مشروعًا أو تساهلًا يرفع السقف.
+  if (excludeRowId) {
+    const [cur] = await apiGetAll('partner_ledger', {
+      select: 'amount,post_status', id: `eq.${excludeRowId}` });
+    // ⚠️ يرمي بدل أن يمرّ: صفٌّ غير موجود يعني أن الاستثناء لم يُطبَّق، فيُخصم
+    // مبلغه مرتين ويُرفض تعديل مشروع — بلا أي أثر يدلّ على السبب. والصف لازم
+    // أن يكون موجودًا أصلًا حتى يُعدَّل، فوصولنا هنا بلا صف خللٌ لا حالة عادية.
+    if (!cur) throw new Error(`تعذّر إيجاد المعاملة ${excludeRowId} للتحقق من سقفها`);
+    const curAmt = +cur.amount || 0;
+    if (cur.post_status === 'draft') pendingDraft = Math.max(0, pendingDraft - curAmt);
+    else gross += curAmt;
+  }
+
   const cap   = Math.max(0, gross - pendingDraft);
 
   // ✅ تحذير (لا منع) حين يتجاوز المبلغ النقد المحصَّل فعلًا — قرار المستخدم
@@ -1241,6 +1264,37 @@ export async function createPartnerLedgerEntry({sys, partner, entryType, payDate
   });
 }
 
+/**
+ * تعديل صف partner_ledger — عبر update_partner_ledger_entry (RPC، راجع
+ * sql/partner_ledger_update_rpc.sql). القفل + فحص الحالة + فحص السقف +
+ * التحديث + ضبط post_status كلها في transaction واحدة.
+ *
+ * ⚠️ دلالة الحقول **استبدال لا دمج**: مرّر حالة النموذج كاملة في كل نداء.
+ * القيمة الفارغة تعني «مسحها المستخدم» لا «لم يذكرها» — فإرسال المبلغ وحده
+ * يمسح المستند والملاحظات. هذا مقصود وموحَّد عبر الحقول الأربعة، بعد أن
+ * كانت الدالة نصفين بدلالتين مختلفتين (رُصد في المراجعة 2026-09-08).
+ *
+ * ⚠️ settlementPartner إلزامي للأنواع المرتبطة بملف — نفس سبب
+ * createPartnerLedgerEntry: الاستحقاق الإجمالي يُحسب هنا من الكائن نفسه
+ * (payableNow + withdrawnViaPayout) لا يُمرَّر رقمًا مفصولًا عن حسابه.
+ * والـRPC تستثني الصف المُعدَّل من «المسدَّد سابقًا» بنفسها.
+ *
+ * لا تُمرَّر entry_type ولا partner ولا file_no: غير قابلة للتغيير بالتصميم.
+ */
+export async function updatePartnerLedgerEntry({ id, payDate, amount = null,
+  capital = 0, profit = 0, payMethod = null, document = null, notes = null,
+  settlementPartner = null }) {
+  const grossEntitlement = settlementPartner
+    ? settlementPartner.payableNow + settlementPartner.withdrawnViaPayout
+    : null;
+  return await apiRpc('update_partner_ledger_entry', {
+    p_id: id, p_pay_date: payDate, p_amount: amount,
+    p_capital: capital, p_profit: profit,
+    p_pay_method: payMethod, p_document: document, p_notes: notes,
+    p_gross_entitlement: grossEntitlement,
+  });
+}
+
 export function logout() {
   localStorage.removeItem('tm_token');
   localStorage.removeItem('tm_refresh');
@@ -1260,6 +1314,6 @@ Object.assign(window, {
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, computeFinancials, computePartnerSettlement, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
-  computePartnerGlobalBalance, getFileDefaultReceiver, createPartnerLedgerEntry, checkPayoutCap,
+  computePartnerGlobalBalance, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
   login, logout, state, SB_URL, SB_KEY,
 });
