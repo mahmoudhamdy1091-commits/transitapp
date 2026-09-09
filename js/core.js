@@ -1193,9 +1193,13 @@ export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId 
   if (excludeRowId) {
     const [cur] = await apiGetAll('partner_ledger', {
       select: 'amount,post_status', id: `eq.${excludeRowId}` });
-    const curAmt = +cur?.amount || 0;
-    if (cur?.post_status === 'draft') pendingDraft = Math.max(0, pendingDraft - curAmt);
-    else if (cur) gross += curAmt;
+    // ⚠️ يرمي بدل أن يمرّ: صفٌّ غير موجود يعني أن الاستثناء لم يُطبَّق، فيُخصم
+    // مبلغه مرتين ويُرفض تعديل مشروع — بلا أي أثر يدلّ على السبب. والصف لازم
+    // أن يكون موجودًا أصلًا حتى يُعدَّل، فوصولنا هنا بلا صف خللٌ لا حالة عادية.
+    if (!cur) throw new Error(`تعذّر إيجاد المعاملة ${excludeRowId} للتحقق من سقفها`);
+    const curAmt = +cur.amount || 0;
+    if (cur.post_status === 'draft') pendingDraft = Math.max(0, pendingDraft - curAmt);
+    else gross += curAmt;
   }
 
   const cap   = Math.max(0, gross - pendingDraft);
