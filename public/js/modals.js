@@ -2506,6 +2506,7 @@ export async function openLedgerModal(fileNo = null, opts = {}) {
   ledgerState.editOldStatus = null;
   ledgerState.editOldAmount = null;
   ledgerState.editOldMethod = null;
+  ledgerState.editOldRow = null;
   el('lg-partner').disabled = false;
   el('lgSubmitBtn').onclick = () => guardSubmit(el('lgSubmitBtn'), submitLedger);
 
@@ -2761,6 +2762,11 @@ export async function openLedgerEditModal(rowId) {
     ledgerState.editOldStatus = row.post_status;
     ledgerState.editOldAmount = +row.amount || 0;
     ledgerState.editOldMethod = row.pay_method || null;
+    // ⚠️ الصف كاملًا — لا حقوله المفردة فقط. كتلة استعادة الرفض
+    //    (operations.js) تبحث في audit_log عن old_value وتطابق parsed.id،
+    //    فبلا الصف الكامل لا تجد شيئًا وتكتفي بقلب الحالة إلى posted بلا
+    //    استعادة — يبدو الرفض ناجحًا وهو لم يفعل شيئًا.
+    ledgerState.editOldRow = row;
 
     el('lgModalTitle').textContent = `تعديل ${row.entry_type} — ${row.ref_no}`;
     el('lg-picker').style.display   = 'none';   // النوع غير قابل للتغيير
@@ -2850,7 +2856,7 @@ export async function submitLedgerEdit() {
       settlementPartner,
     });
     const row = Array.isArray(res) ? res[0] : res;
-    await logAudit('EDIT','partner_ledger', fn, null,
+    await logAudit('EDIT','partner_ledger', fn, ledgerState.editOldRow,
       { entry_type:type, amount:amounts.amount, pay_date:date, pay_method:method },
       `تعديل ${type} ${row?.ref_no || id}`);
 
