@@ -2500,6 +2500,14 @@ export async function openLedgerModal(fileNo = null, opts = {}) {
   ledgerState.fileNo     = fn;
   ledgerState.lockedFile = !!fn;
   ledgerState.settlement = null;
+  // ✅ إعادة ضبط ما يغيّره وضع التعديل — بدونها يفتح الإنشاء بعد تعديلٍ سابق
+  //    وزرّه ما زال موصولًا بمسار التعديل وقائمة الشريك مقفلة
+  ledgerState.editId = null;
+  ledgerState.editOldStatus = null;
+  ledgerState.editOldAmount = null;
+  ledgerState.editOldMethod = null;
+  el('lg-partner').disabled = false;
+  el('lgSubmitBtn').onclick = () => guardSubmit(el('lgSubmitBtn'), submitLedger);
 
   el('lgModalTitle').textContent = fn ? `معاملة شريك — ملف ${fn}` : 'معاملة شريك';
   el('lg-deal-file').textContent = fn ? `الملف مثبَّت: ${fn}` : '';
@@ -2722,8 +2730,160 @@ export async function submitLedger() {
   } catch(e) { showFieldErr('lgError','خطأ: '+e.message); }
 }
 
+// ── تعديل معاملة شريك (ب-٣) ──────────────────────────────────────────
+// نفس شاشة الإنشاء في وضع التعديل: بطاقة اختيار النوع تُخطّى (النوع غير
+// قابل للتغيير)، والملف والشريك يُعرضان للقراءة فقط. القابل للتعديل خمسة
+// حقول فقط — مطابق تمامًا لما تسمح به update_partner_ledger_entry، فلا
+// تعد الواجهة بما ترفضه القاعدة.
+export async function openLedgerEditModal(rowId) {
+  try {
+    const [row] = await apiGetAll('partner_ledger', { select:'*', id:`eq.${rowId}` });
+    if (!row) { toast('لم يُعثر على المعاملة','err'); return; }
+
+    // نفس الحارس الموجود في الـRPC — نمنعه هنا أيضًا حتى لا يملأ المستخدم
+    // نموذجًا كاملًا ثم يُرفض عند الحفظ
+    if (['voided','cancelled','pending_void'].includes(row.post_status)) {
+      const why = row.post_status === 'voided' ? 'ملغاة بقيد عكسي'
+                : row.post_status === 'cancelled' ? 'مرفوضة'
+                : 'عليها طلب إلغاء قيد المراجعة';
+      toast(`لا يمكن تعديل معاملة ${why}`,'err');
+      return;
+    }
+
+    const spec = LEDGER_TYPES[row.entry_type] || {};
+    ledgerState.type       = row.entry_type;
+    ledgerState.fileNo     = row.file_no;
+    ledgerState.lockedFile = !!row.file_no;
+    ledgerState.settlement = null;
+    ledgerState.editId     = rowId;
+    // القيم الأصلية — لازمة لتحديث القيد لاحقًا. تُلتقط قبل أي تعديل،
+    // فلا نستنتج الحالة السابقة من ناتج الـRPC بعد أن غيّرها
+    ledgerState.editOldStatus = row.post_status;
+    ledgerState.editOldAmount = +row.amount || 0;
+    ledgerState.editOldMethod = row.pay_method || null;
+
+    el('lgModalTitle').textContent = `تعديل ${row.entry_type} — ${row.ref_no}`;
+    el('lg-picker').style.display   = 'none';   // النوع غير قابل للتغيير
+    el('lg-form').style.display     = '';
+    el('lgSubmitBtn').style.display = '';
+    el('lgError').style.display     = 'none';
+    el('lg-type-label').textContent = `${row.entry_type} — ${row.ref_no}`;
+
+    el('lg-split-wrap').style.display  = spec.linkedToFile ? '' : 'none';
+    el('lg-amount-wrap').style.display = spec.linkedToFile ? 'none' : '';
+    el('lg-method-wrap').style.display = spec.needsJE ? '' : 'none';
+
+    // الملف والشريك للقراءة فقط — تغييرهما عمليتان لا تعديل (قرار المستخدم)
+    el('lg-file-wrap').innerHTML = row.file_no
+      ? `<div class="field" style="margin-bottom:10px">
+           <label>الملف / الصفقة</label>
+           <input type="text" value="${row.file_no}" disabled style="width:100%">
+         </div>`
+      : '';
+    el('lg-partner').innerHTML = `<option value="${row.partner}">${row.partner}</option>`;
+    el('lg-partner').disabled  = true;
+
+    el('lg-amount').value  = spec.linkedToFile ? '' : (row.amount || '');
+    el('lg-capital').value  = spec.linkedToFile ? (row.capital_amount || '') : '';
+    el('lg-profit').value   = spec.linkedToFile ? (row.profit_amount  || '') : '';
+    el('lg-date').value    = row.pay_date  || today();
+    el('lg-method').value  = row.pay_method || 'نقد';
+    el('lg-doc').value     = row.document  || '';
+    el('lg-notes').value   = row.notes     || '';
+    if (spec.linkedToFile) calcLedgerTotal();
+
+    await onLedgerPartnerChange();
+    // زر الحفظ يتحوّل لمسار التعديل — ويُعاد لمسار الإنشاء في openLedgerModal
+    el('lgSubmitBtn').onclick = () => guardSubmit(el('lgSubmitBtn'), submitLedgerEdit);
+    openModal('ledgerModal');
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
+export async function submitLedgerEdit() {
+  const errEl = el('lgError'); if (errEl) errEl.style.display = 'none';
+  const id   = ledgerState.editId;
+  const type = ledgerState.type;
+  const spec = LEDGER_TYPES[type];
+  if (!id || !spec) { showFieldErr('lgError','حالة التعديل غير صالحة — أعد فتح المعاملة'); return; }
+
+  const date   = el('lg-date').value;
+  const method = spec.needsJE ? el('lg-method').value : null;
+  const doc    = el('lg-doc').value.trim();
+  const notes  = el('lg-notes').value.trim();
+  const fn     = ledgerState.fileNo;
+  if (!date) { showFieldErr('lgError','يرجى إدخال التاريخ'); return; }
+
+  let amounts;
+  try {
+    amounts = buildLedgerAmounts(type, {
+      amount:  parseFloat(el('lg-amount').value)  || 0,
+      capital: parseFloat(el('lg-capital').value) || 0,
+      profit:  parseFloat(el('lg-profit').value)  || 0,
+    });
+  } catch(e) { showFieldErr('lgError', e.message); return; }
+
+  let settlementPartner = null;
+  if (spec.linkedToFile) {
+    const partner = el('lg-partner').value;
+    let chk;
+    // ⚠️ excludeRowId — نظير pl.id <> p_id في الـRPC. بدونه يُخصم مبلغ هذا
+    // الصف مرتين فيرفض العميل تعديلًا تقبله القاعدة
+    try { chk = await checkPayoutCap(fn, partner, state.system, amounts.amount, id); }
+    catch(e) { showFieldErr('lgError','تعذّر التحقق من المستحق — لم يُحفظ شيء ('+e.message+')'); return; }
+    if (!chk.ok) { showFieldErr('lgError', chk.message); return; }
+    if (chk.warning) {
+      const go = await confirmAsync('⚠️ مبلغ يتجاوز النقد المحصَّل',
+        chk.warning + '\n\nهل تريد المتابعة؟', true, '⚠️ نعم، عدّل');
+      if (!go) return;
+    }
+    const s = await computePartnerSettlement(fn, state.system);
+    settlementPartner = (s.partners||[]).find(p => p.name === partner.trim()) || null;
+  }
+
+  try {
+    // ⚠️ نرسل الحقول الأربعة كاملة في كل نداء — دلالة الـRPC استبدال لا دمج،
+    // فإرسال المبلغ وحده يمسح المستند والملاحظات
+    const res = await updatePartnerLedgerEntry({
+      id, payDate: date, amount: amounts.amount,
+      capital: amounts.capital_amount, profit: amounts.profit_amount,
+      payMethod: method, document: doc || null, notes: notes || null,
+      settlementPartner,
+    });
+    const row = Array.isArray(res) ? res[0] : res;
+    await logAudit('EDIT','partner_ledger', fn, null,
+      { entry_type:type, amount:amounts.amount, pay_date:date, pay_method:method },
+      `تعديل ${type} ${row?.ref_no || id}`);
+
+    // ✅ القيد: يُحدَّث في مكانه فقط لصفٍّ له قيد أصلًا. 'تأكيد استلام' بلا قيد
+    // بالتصميم، والمسودة لم يُنشأ قيدها بعد — كلاهما يتخطّى updateJEInPlace.
+    // الحالة بعد التعديل ضبطتها الـRPC ذرّيًا (pending_edit لما كان مُرحَّلًا).
+    const wasPosted = ['posted','pending_edit'].includes(ledgerState.editOldStatus);
+    if (spec.needsJE && wasPosted) {
+      try {
+        await updateJEInPlace({
+          sys: state.system, fileNo: fn || null,
+          refTable: 'partner_ledger', refId: id,
+          oldAmount: ledgerState.editOldAmount, newAmount: amounts.amount,
+          newDate: date,
+          oldMethod: ledgerState.editOldMethod, newMethod: method,
+        });
+      } catch(jeErr) {
+        toast(`⚠️ حُفظ التعديل لكن تعذّر تحديث قيده — راجع اليومية (${jeErr.message})`,'warn');
+      }
+    }
+
+    markSaving('ledgerModal'); await closeModal('ledgerModal');
+    toast(`✅ تم تعديل ${type}`,'ok');
+    invalidateCache();
+    if (typeof updateApprovalBadge === 'function') updateApprovalBadge();
+    if (state.currentTab === 6 && fn) loadPayoutsTab(fn, state.system);
+    if (state.currentTab === 0 && fn) loadSummaryTab(fn, state.system);
+  } catch(e) { showFieldErr('lgError','خطأ: '+e.message); }
+}
+
 // ── window bridge: تعريض الدوال للاستخدام من classic scripts وسمات onclick ──
 Object.assign(window, {
+  openLedgerEditModal, submitLedgerEdit,
   openLedgerModal, backToLedgerPicker, selectLedgerType, onLedgerFileChange,
   onLedgerPartnerChange, calcLedgerTotal, submitLedger,
   getNfEditFileNo, openNewFileModal, populatePartnersSelect, onVehicleCountChange,

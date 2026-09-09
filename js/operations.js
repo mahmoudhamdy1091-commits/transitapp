@@ -1644,6 +1644,11 @@ export async function editFromDetail() {
     openEditCollectionModal(id);
   } else if (baseType === 'payout') {
     openEditPayoutModal(id);
+  } else if (baseType === 'ledger') {
+    // ✅ بدونه كان يسقط على openViewer(file_no) — شاشة خطأ — أو على
+    //    toast('لا يمكن فتح هذا الأمر') للحركات العامة (file_no=null)،
+    //    فيوافق المعتمِد أو يرفض بلا أن يرى ما يعتمده.
+    openLedgerEditModal(id);
   } else if (baseType === 'opex') {
     openEditOpexModal(id);
   } else if (item?.file_no) {
