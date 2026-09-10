@@ -78,16 +78,22 @@ export async function loadJournal() {
       'payments':           { type:'payment',     sign:-1, icon:'💳', color:'var(--cyan)',    label:'دفعة مورد'      },
       'expenses':           { type:'expense',     sign:-1, icon:'💸', color:'var(--red)',     label:'مصروف'          },
       'partner_payouts':    { type:'payout',      sign:-1, icon:'👥', color:'var(--purple)',  label:'صرف شريك'       },
+      // ✅ الموديل الموحَّد (المرحلة ب) — بدونه كل معاملات الشركاء الجديدة تظهر
+      //    كلمة "manual" حرفيًّا مع 📌، وتخرج من كارت KPI ومن مسار التعديل
+      'partner_ledger':     { type:'payout',      sign:-1, icon:'👥', color:'var(--purple)',  label:'معاملة شريك'     },
       'operating_expenses': { type:'opex',        sign:-1, icon:'💼', color:'var(--purple)',  label:'مصروف تشغيلي'   },
       'manual':             { type:'manual',      sign: 0, icon:'✍️', color:'var(--text)',    label:'يدوي'           },
     };
     // خريطة عكسية type→cfg — تُستخدم لتصنيف قيود العكس (ref_table='reversal')
     // بنفس نوع العملية الأصلية بدل ما تقع كلها "يدوي" (غير محسوبة في أي كارت KPI)
     const TYPE_CFG = {};
-    Object.values(RT).forEach(cfg => { TYPE_CFG[cfg.type] = cfg; });
+    // الأول يكسب: partner_ledger يشارك type='payout' مع partner_payouts،
+    // وبدون هذا الشرط كان يستبدل تسمية عكوس الصرف القديمة
+    Object.values(RT).forEach(cfg => { if (!TYPE_CFG[cfg.type]) TYPE_CFG[cfg.type] = cfg; });
     const REVERSAL_TABLE_BY_NAME = {
       purchase_orders:'purchase', sales:'sale', collections:'collection',
       payments:'payment', expenses:'expense', partner_payouts:'payout', operating_expenses:'opex',
+      partner_ledger:'payout',
     };
     // قيود العكس لا نوع مصدر مباشر لها (ref_table='reversal' موحّد للكل) — نستنتج
     // نوعها الحقيقي من نص البيان بنفس الأنماط المستخدمة في _excludeReversalPairs
@@ -100,6 +106,10 @@ export async function loadJournal() {
       if (/^عكس دفعة/.test(d))     return 'payment';
       if (/^عكس مصروف/.test(d))    return 'expense';
       if (/^عكس صرف شريك/.test(d)) return 'payout';
+      // عكس إلغاء معاملة الموديل الموحَّد يحمل اسم النوع نفسه (engine.js:440) —
+      // نشتقّه من LEDGER_TYPES لا بنصٍّ منسوخ، فلا ينحرف إن تغيّرت الأسماء
+      const _lg = Object.keys(window.LEDGER_TYPES || {}).concat('معاملة شريك');
+      if (_lg.some(n => d.startsWith('عكس ' + n))) return 'payout';
       if (/^عكس شراء/.test(d))     return 'purchase';
       return 'manual'; // عكس قيد يدوي، أو نمط غير معروف — يبقى يدوي كما كان
     }
@@ -141,9 +151,17 @@ export async function loadJournal() {
         const netRev = g.lines.reduce((s,l) => s + ((l.account_code||'').startsWith('4') ? ((+l.cr_amount||0) - (+l.dr_amount||0)) : 0), 0);
         if (netRev !== 0) displayAmount = netRev;
       }
+      // ✅ إشارة الصفّ = اتجاه النقد الحقيقي، تُقرأ من بنية القيد لا من ref_table:
+      //    النقدية مدينة ⇒ مال داخل (+). تغطي الإيداع العام، وعكس السحب العام،
+      //    وعكس الصرف في الموديل القديم — كلها كانت تُعرض (−) والنقد داخل.
+      // ⚠️ ليست هي قاعدة الكارت: _netKpiAmount يقيس الأثر على إجمالي المصروف،
+      //    فعكس السحب يعطي هنا (+) وهناك (−). متعاكسان بالتصميم، وكلاهما صحيح —
+      //    توحيدهما ظنًّا أنهما شيء واحد يفسد الكارت.
+      let signOut = g.sign;
+      if (g.type === 'payout' && _cashSide(g.lines) === 'dr') signOut = +1;
       return {
         type:    g.type, date: g.date, postedAt: g.postedAt,
-        amount:  displayAmount, sign: g.sign,
+        amount:  displayAmount, sign: signOut,
         title:   g.desc || '—',
         entryNo: g.no,  fileNo: g.file_no, refId: g.ref_id,
         meta,   raw: g,
@@ -174,7 +192,37 @@ export async function loadJournal() {
 // 'sale': قيمتها أصلاً محسوبة بصافي (دائن-مدين) على حساب 4xxx (انظر loadJournal)
 // فتُعطي إشارة سالبة طبيعية لقيود عكس البيع من غير الحاجة لهذه المعالجة —
 // طرحها مرة تانية هنا كان هيقلب إشارتها غلط (طرح سالب = جمع).
+// اتجاه النقدية داخل قيد معاملة شريك — يُقرأ من بنية القيد لا من نصّ البيان:
+// 'cr' = النقدية دائنة ⇒ مال خارج، 'dr' = مدينة ⇒ مال داخل.
+// نمط أوصاف عكس معاملات الشريك — مشتقّ من LEDGER_TYPES لا منسوخ نصًّا.
+// يُبنى عند الاستدعاء لا عند تحميل الوحدة: window.LEDGER_TYPES يملؤه
+// lifecycle.js وترتيب التحميل بين ملفات js/*.js غير مضمون.
+// أسماء الأنواع عربية بلا رموز regex، فلا تحتاج هروبًا.
+function _ledgerRevRe() {
+  const names = Object.keys(window.LEDGER_TYPES || {}).concat('معاملة شريك');
+  return new RegExp('^عكس (' + names.join('|') + ')');
+}
+
+const CASH_ACCS = ['1110', '1120'];
+export function _cashSide(lines) {
+  let dr = 0, cr = 0;
+  (lines || []).forEach(l => {
+    if (!CASH_ACCS.includes(String(l.account_code || ''))) return;
+    dr += +l.dr_amount || 0; cr += +l.cr_amount || 0;
+  });
+  if (!dr && !cr) return null;
+  return dr > cr ? 'dr' : 'cr';
+}
+
 export function _netKpiAmount(e) {
+  // ✅ عائلة معاملات الشركاء — الاتجاه من موضع النقدية: دائنة ⇒ (+) خارج،
+  //    مدينة ⇒ (−) داخل. قاعدة واحدة تغطي السحب والإيداع وعكس كلٍّ منهما.
+  //    وهي مطابقة للسلوك السابق في الموديل القديم (صرف: نقدية دائنة ⇒ +،
+  //    وعكسه: نقدية مدينة ⇒ −) فلا تغيّر أي رقم قائم — تصحّح الإيداع فقط.
+  if (e.type === 'payout') {
+    const side = _cashSide(e.raw?.lines);
+    if (side) return side === 'cr' ? e.amount : -e.amount;
+  }
   if (e.type !== 'sale' && e.raw?.ref_table === 'reversal') return -e.amount;
   return e.amount;
 }
@@ -202,7 +250,7 @@ export function renderJournalKpis(entries) {
     { key:'expenses', label:'مصاريف',      icon:'💸', color:'var(--red)',    filterVal:'expense'    },
     { key:'collection', label:'تحصيلات',  icon:'💰', color:'var(--blue)',   filterVal:'collection' },
     { key:'payment',  label:'دفعات مورد', icon:'💳', color:'var(--cyan)',   filterVal:'payment'    },
-    { key:'payout',   label:'صرف شركاء',  icon:'👥', color:'var(--purple)', filterVal:'payout'     },
+    { key:'payout',   label:'معاملات الشركاء', icon:'👥', color:'var(--purple)', filterVal:'payout' },
   ];
 
   el('journalKpis').innerHTML = config.map(c => `
@@ -390,7 +438,7 @@ export function renderJournalEntries() {
     collection: { icon:'💰', bg:'var(--blue-dim)',    label:'تحصيل',          amountColor:'var(--blue)'   },
     expense:    { icon:'💸', bg:'var(--red-dim)',     label:'مصروف',          amountColor:'var(--red)'    },
     payment:    { icon:'💳', bg:'var(--cyan-dim)',    label:'دفعة مورد',      amountColor:'var(--cyan)'   },
-    payout:     { icon:'👥', bg:'var(--purple-dim)',  label:'صرف شريك',       amountColor:'var(--purple)' },
+    payout:     { icon:'👥', bg:'var(--purple-dim)',  label:'معاملة شريك',    amountColor:'var(--purple)' },
     opex:       { icon:'💼', bg:'var(--purple-dim)',  label:'مصروف عام',         amountColor:'var(--purple)' },
   };
 
@@ -494,6 +542,10 @@ export function _excludeReversalPairs(entries) {
     { re:/^عكس دفعة/,     type:'payment'    },
     { re:/^عكس مصروف/,    type:'expense'    },
     { re:/^عكس صرف شريك/, type:'payout'     },
+    // الموديل الموحَّد — احتياطي لو فشل جلب origId فلم يُكتب reverses (Tier -1).
+    // مشتقّ من LEDGER_TYPES كـ_resolveReversalType تمامًا: نسخ الأسماء نصًّا هنا
+    // كان سيجعل الاحتياطي ينحرف وحده لو تغيّر اسم نوع.
+    { re: _ledgerRevRe(), type:'payout' },
     { re:/^عكس شراء/,     type:'purchase'   },
   ];
 
@@ -561,7 +613,7 @@ export function _renderSingleJournalEntry(e) {
     collection: { icon:'💰', bg:'var(--blue-dim)',    label:'تحصيل',          amountColor:'var(--blue)'   },
     expense:    { icon:'💸', bg:'var(--red-dim)',     label:'مصروف',          amountColor:'var(--red)'    },
     payment:    { icon:'💳', bg:'var(--cyan-dim)',    label:'دفعة مورد',      amountColor:'var(--cyan)'   },
-    payout:     { icon:'👥', bg:'var(--purple-dim)',  label:'صرف شريك',       amountColor:'var(--purple)' },
+    payout:     { icon:'👥', bg:'var(--purple-dim)',  label:'معاملة شريك',    amountColor:'var(--purple)' },
     opex:       { icon:'💼', bg:'var(--purple-dim)',  label:'مصروف عام',         amountColor:'var(--purple)' },
   };
   const cfg = typeConfig[e.type] || { icon:'📌', bg:'var(--card2)', label:e.type, amountColor:'var(--text)' };
@@ -906,4 +958,5 @@ Object.assign(window, {
   filterJournalByType, renderJournalEntries, _extractInvToken, _renderSingleJournalEntry,
   _renderGroupedSaleEntries, genSeqRef, exportCSV, _jEdit, _jDelete, _loadJournalSalesDetail,
   _excludeReversalPairs, openJournalEntryDetail, openFullFileFromJEDetail, _netKpiAmount,
+  _cashSide,
 });

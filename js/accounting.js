@@ -1354,9 +1354,11 @@ export async function editJournalEntry(type, sourceId, fileNo) {
     case 'expense':    openExpenseModal(); break;
     case 'payment':    openPaymentModal(); break;
     // ⚠️ sourceId يُمرَّر null دائمًا من _jEdit (journal.js:695)، فلا يمكن
-    //    فتح صفٍّ بعينه — ضعف سابق. نفتح الموديل الجديد بنفس شكل السلوك
-    //    القائم (إنشاء على الملف الحالي) بدل الموديل القديم.
-    case 'payout':     openLedgerModal(); break;
+    //    فتح صفٍّ بعينه — ضعف سابق. نفتح الموديل الجديد بدل القديم.
+    // ⚠️ ignoreCurrentFile إلزامية حين لا يحمل القيد ملفًا: المعاملات العامة
+    //    (سحب/إيداع عام) file_no فيها null بالتصميم، وبدون هذه الراية كان
+    //    الموديل يُقفل على آخر ملف زاره المستخدم — ملف لا علاقة له بالقيد.
+    case 'payout':     openLedgerModal(fileNo || null, { ignoreCurrentFile: !fileNo }); break;
     default: toast('لا يمكن تعديل هذا النوع مباشرة — ادخل الملف وعدّل من هناك','err');
   }
 }
