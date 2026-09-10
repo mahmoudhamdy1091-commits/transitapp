@@ -941,7 +941,10 @@ export async function printDealSummary(fn) {
               })()
             + (totalOut > 0 ? '<div style="font-size:13px;color:#57534e;margin-bottom:8px">تم الصرف: <span style="font-family:monospace;color:#d97706;font-weight:600">' + f2(totalOut) + '</span></div>' : '')
             + '<div style="display:flex;justify-content:space-between;align-items:center">'
-            + '<span style="font-size:12px;font-weight:700;color:#1c1917">المستحق' + (isOpen?' (تقديري)':'') + ':</span>'
+            // "القابل للصرف الآن" لا "المستحق": الرقم payableNow، والمستحق هو
+            // gross في المعادلة أعلاه — تسميتهما بنفس الاسم برقمين مختلفين هي
+            // أصل الالتباس (نفس تصحيح dashboard.js)
+            + '<span style="font-size:12px;font-weight:700;color:#1c1917">القابل للصرف الآن' + (isOpen?' (تقديري)':'') + ':</span>'
             + '<span style="font-size:20px;font-weight:700;font-family:monospace;color:' + ((+x.payableNow||0)>0.01?'#15803d':'#78716c') + '">' + f2(+x.payableNow||0) + '</span>'
             + '</div>'
             + '</div>';
