@@ -975,11 +975,22 @@ export async function loadSummaryTab(fn, sys) {
               </div>`;
             })()}
           </div>
+          <!-- ✅ الرقم الكبير هو payableNow، فاسمه "القابل للصرف الآن" لا
+               "المستحق" — المستحق هو gross في المعادلة أعلاه، وتسمية الاثنين
+               بنفس الاسم برقمين مختلفين هي أصل الالتباس كله.
+               والوصف تحته كان يقرأ netDue (رقم تسوية بين الشركاء) فيقول
+               "لا يستحق حاليًا" لشريك مستحقّ 159,000 لم يتحصَّل نقده بعد. -->
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:12px;font-weight:700;color:var(--text)">المستحق${isOpen?' (تقديري)':''}:</span>
+            <span style="font-size:12px;font-weight:700;color:var(--text)">القابل للصرف الآن${isOpen?' (تقديري)':''}:</span>
             <div style="text-align:left">
               <div style="font-size:20px;font-weight:700;color:${(+x.payableNow||0)>0.01?'var(--green)':'var(--text2)'};font-family:var(--mono)">${fmt(+x.payableNow||0)}</div>
-              <div style="font-size:12px;color:var(--text2)">${(+x.payableNow||0)>0.01?'مستحق له':(x.netDue<-0.01?'لا يستحق حاليًا — رصيد تسوية سالب':'لا يوجد مستحق')}</div>
+              <div style="font-size:12px;color:var(--text2)">${(() => {
+                const g = +x.grossEntitlement||0, pn = +x.payableNow||0;
+                if (pn > 0.01)   return 'مستحق له';
+                if (g  > 0.01)   return 'مستحقّ له ' + fmt(g) + ' — لم يتحصَّل نقد كافٍ من الملف بعد';
+                if (g  < -0.01)  return 'سحب زيادة عن مستحقه بـ ' + fmt(Math.abs(g));
+                return 'لا يوجد مستحق';
+              })()}</div>
             </div>
           </div>
         </div>
