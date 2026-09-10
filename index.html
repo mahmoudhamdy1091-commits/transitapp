@@ -167,7 +167,7 @@
             <span class="ni-icon">💳</span><span>دفعات الموردين</span>
           </div>
           <div class="nav-item" onclick="showTransactions('payouts')">
-            <span class="ni-icon">👥</span><span>مسحوبات الشركاء</span>
+            <span class="ni-icon">👥</span><span>معاملات الشركاء</span>
           </div>
           <div class="nav-item" id="nav-opex" onclick="showOpex()">
             <span class="ni-icon">💼</span><span>مصروفات تشغيلية</span>
@@ -1433,6 +1433,8 @@
             <div style="font-size:12px;color:var(--text2)" id="tx-subtitle"></div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <!-- يظهر لشاشة معاملات الشركاء وحدها — showTransactions يتكفّل بإظهاره -->
+            <button class="btn btn-primary btn-sm" id="tx-add-ledger" style="display:none" onclick="openLedgerModal(null, {ignoreCurrentFile:true})">➕ معاملة شريك</button>
             <button class="btn btn-secondary btn-sm" onclick="exportTxPDF()">🖨️ PDF</button>
             <button class="btn btn-secondary btn-sm" onclick="exportTxExcel()">📊 Excel</button>
             <button class="btn btn-secondary btn-sm" onclick="loadTransactions()">🔄 تحديث</button>

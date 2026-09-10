@@ -7,7 +7,7 @@ export const TX_CONFIG = {
   expenses:    { title:'المصاريف',         icon:'💸', color:'var(--red)',    table:'expenses',        amountField:'amount',         dateField:'exp_date',  labelField:'description' },
   collections: { title:'التحصيلات',        icon:'💰', color:'var(--blue)',   table:'collections',     amountField:'amount',         dateField:'due_date',  labelField:'customer' },
   payments:    { title:'دفعات الموردين',   icon:'💳', color:'var(--cyan)',   table:'payments',        amountField:'amount',         dateField:'pay_date',  labelField:'payer' },
-  payouts:     { title:'مسحوبات الشركاء', icon:'👥', color:'var(--purple)', table:'partner_payouts', amountField:'amount',         dateField:'pay_date',  labelField:'partner' },
+  payouts:     { title:'معاملات الشركاء', icon:'👥', color:'var(--purple)', table:'partner_payouts', amountField:'amount',         dateField:'pay_date',  labelField:'partner' },
   opex:        { title:'مصروفات عامة',     icon:'💼', color:'var(--text2)',  table:'operating_expenses', amountField:'amount',    dateField:'exp_date',  labelField:'description' },
 };
 
@@ -27,6 +27,9 @@ export function showTransactions(type) {
   hideAllViews();
   el('transactionsView').style.display = 'block';
   el('topBarTitle').textContent = cfg.icon + ' ' + cfg.title;
+  // زر الإنشاء يخصّ معاملات الشركاء وحدها — باقي الأنواع تُنشأ من داخل الملف
+  const addBtn = el('tx-add-ledger');
+  if (addBtn) addBtn.style.display = (_txType === 'payouts') ? '' : 'none';
   navActive('');
 
   // التحصيلات تفتح على "هذه السنة" بدلاً من "هذا الشهر"
@@ -152,6 +155,15 @@ export async function loadTransactions() {
       rows = await fetchRows('operating_expenses', 'exp_date');
     } else if (type === 'collections') {
       rows = await fetchCollections();
+    } else if (type === 'payouts') {
+      // ✅ معاملات الشركاء = الموديلان معًا منزوعَي التكرار (core.js).
+      //    قراءة partner_payouts وحده كانت تُخفي كل ما أنشأته المرحلة ب.
+      const all = await fetchPartnerTransactions(sys);
+      rows = all.filter(r => {
+        const d = (r.__date || '').slice(0, 10);
+        if (!d) return true;              // بلا تاريخ — أظهره دائمًا
+        return d >= from && d <= to;
+      }).filter(r => pf === 'draft' ? isDraft(r) : pf === 'posted' ? isPosted(r) : true);
     } else {
       rows = await fetchRows(cfg.table, cfg.dateField);
     }
@@ -160,7 +172,15 @@ export async function loadTransactions() {
 
     // ✅ "بواسطة": من أنشأ كل سجل (من قيود INSERT في audit_log) — يملأ العمود الموجود
     let auditMap = {};
-    try { auditMap = await getCreatorsMap(cfg.table, null); } catch(_) {}
+    try {
+      // معاملات الشركاء تأتي من جدولين — ندمج خريطتَي المُنشئ معًا
+      auditMap = type === 'payouts'
+        ? Object.assign({}, ...(await Promise.all([
+            getCreatorsMap('partner_payouts', null).catch(() => ({})),
+            getCreatorsMap('partner_ledger',  null).catch(() => ({})),
+          ])))
+        : await getCreatorsMap(cfg.table, null);
+    } catch(_) {}
 
     // KPIs
     const total       = rows.reduce((s,r)=>s+(+r[cfg.amountField]||0), 0);
@@ -231,14 +251,19 @@ export function renderTxTable(rows, cfg, auditMap, type) {
     expenses:    [{k:'exp_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'ref_no',t:'المرجع'},{k:'description',t:'الوصف'},{k:'exp_type',t:'النوع'},{k:'amount',t:'المبلغ',mono:true}],
     collections: [{k:'due_date',t:'الاستحقاق'},{k:'paid_date',t:'تاريخ الدفع'},{k:'file_no',t:'الملف'},{k:'ref_no',t:'المرجع'},{k:'inv_no',t:'الفاتورة'},{k:'customer',t:'العميل'},{k:'amount',t:'إجمالي الفاتورة',mono:true}],
     payments:    [{k:'pay_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'ref_no',t:'المرجع'},{k:'payer',t:'الدافع'},{k:'pay_method',t:'الطريقة'},{k:'amount',t:'المبلغ',mono:true}],
-    payouts:     [{k:'pay_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'pay_id',t:'المرجع'},{k:'partner',t:'الشريك'},{k:'payout_type',t:'النوع'},{k:'amount',t:'المبلغ',mono:true}],
+    payouts:     [{k:'pay_date',t:'التاريخ'},{k:'file_no',t:'الملف'},{k:'__ref',t:'المرجع'},{k:'partner',t:'الشريك'},{k:'__type',t:'النوع'},{k:'amount',t:'المبلغ',mono:true}],
     opex:        [{k:'exp_date',t:'التاريخ'},{k:'ref_no',t:'المرجع'},{k:'description',t:'الوصف'},{k:'category',t:'الفئة'},{k:'amount',t:'المبلغ',mono:true}],
   };
 
   const typeCols = cols[type] || [];
 
   const statusBadge = r => {
-    if (!r.post_status || r.post_status==='posted') return '<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">✅ مرحَّل</span>';
+    const st = r.post_status;
+    if (!st || st === 'posted') return '<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">✅ مرحَّل</span>';
+    // ✅ الملغى/المرفوض كان يُعرض "معلق" — وصف خاطئ لسجل انتهى أمره.
+    //    الإجماليات لا تتأثر (تعتمد isEffective أصلًا)، الشارة فقط تصدق.
+    if (st === 'voided')    return '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">🚫 ملغى</span>';
+    if (st === 'cancelled') return '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">⊘ مرفوض</span>';
     return '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">⏳ معلق</span>';
   };
 
@@ -275,7 +300,7 @@ export function renderTxTable(rows, cfg, auditMap, type) {
     // زر ⋮ حسب النوع
     const fn = r.file_no || '';
     const ctxBtn = !isVoided && type !== 'deals' && type !== 'opex'
-      ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxTx(this,'${type}')" data-id="${r.id}" data-fn="${fn}" data-paid="${r.paid_date?'1':'0'}" title="إجراءات">⋮</button>`
+      ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxTx(this,'${type}')" data-id="${r.id}" data-src="${r.__src||''}" data-fn="${fn}" data-paid="${r.paid_date?'1':'0'}" title="إجراءات">⋮</button>`
       : (type === 'opex' ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxOpex(this)" data-id="${r.id}" title="إجراءات">⋮</button>` : '');
     return `<tr ${rowClick} style="${rowStyle}">${cells}<td style="font-size:13px;color:var(--text2)">${shortUser}</td><td>${statusCell}</td><td style="text-align:center">${ctxBtn}</td></tr>`;
   }).join('');

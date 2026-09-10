@@ -163,10 +163,23 @@ export function _ctxCollection(btn) {
 // صرف الشركاء (dashboard)
 export function _ctxPayout(btn) {
   const id = btn.dataset.id, fn = btn.dataset.fn;
+  // ⚠️ تبويب الملف صار يعرض الموديلين معًا. id partner_ledger وpartner_payouts
+  //    تسلسلان مستقلان — بلا هذا التفريع يُلغى سجل آخر تمامًا بقيد عكسي.
+  if (btn.dataset.src === 'ledger') {
+    const items = [
+      // لا "طباعة سند": printPayoutVoucher تقرأ partner_payouts وحده
+      {icon:'✏️', label:'تعديل', action:()=>openLedgerEditModal(id)},
+      {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'partner_ledger', fileNo:fn, id, title:'معاملة شريك'})},
+      'divider',
+    ];
+    if (can('delete')) items.push({icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>deleteLedgerEntry(id,fn)});
+    showCtxMenu(btn, items);
+    return;
+  }
   const items = [
     {icon:'🖨️', label:'طباعة سند', action:()=>printPayoutVoucher(id)},
     {icon:'✏️', label:'تعديل', action:()=>openEditPayoutModal(id)},
-    {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'partner_payouts', fileNo:fn, id, title:'صرف شريك'})},
+    {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'partner_payouts', fileNo:fn, id, title:'معاملة شريك (الموديل القديم)'})},
     'divider',
   ];
   if (can('delete')) items.push({icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء صرف شريك','سيتم إلغاء الصرف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePayoutEntry(id,fn))});
@@ -319,14 +332,27 @@ export function _ctxTx(btn, type) {
     case 'collections':
       _ctxCollection(btn);
       break;
+    // ⚠️ الشاشة تعرض الموديلين معًا (fetchPartnerTransactions). id الجدولين
+    //    تسلسلان مستقلان، فالتفريع على data-src إلزامي: نداء دالة الموديل
+    //    القديم على صفٍّ من partner_ledger يُلغي سجلًّا آخر تمامًا بقيد عكسي.
     case 'payouts':
-      showCtxMenu(btn, [
-        {icon:'🖨️', label:'طباعة سند', action:()=>printPayoutVoucher(id)},
-        {icon:'✏️', label:'تعديل', action:()=>openEditPayoutModal(id)},
-        {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'partner_payouts', fileNo:fn, id, title:'صرف شريك'})},
-        'divider',
-        {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء صرف شريك','سيتم إلغاء الصرف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePayoutEntry(id,fn))}
-      ]);
+      if (btn.dataset.src === 'ledger') {
+        showCtxMenu(btn, [
+          // لا "طباعة سند" هنا: printPayoutVoucher تقرأ partner_payouts وحده
+          {icon:'✏️', label:'تعديل', action:()=>openLedgerEditModal(id)},
+          {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'partner_ledger', fileNo:fn, id, title:'معاملة شريك'})},
+          'divider',
+          {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>deleteLedgerEntry(id,fn)}
+        ]);
+      } else {
+        showCtxMenu(btn, [
+          {icon:'🖨️', label:'طباعة سند', action:()=>printPayoutVoucher(id)},
+          {icon:'✏️', label:'تعديل', action:()=>openEditPayoutModal(id)},
+          {icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'partner_payouts', fileNo:fn, id, title:'معاملة شريك (الموديل القديم)'})},
+          'divider',
+          {icon:'🔄', label:'إلغاء بقيد عكسي', danger:true, action:()=>confirmAction('إلغاء صرف شريك','سيتم إلغاء الصرف بقيد عكسي محاسبي — هل أنت متأكد؟',()=>deletePayoutEntry(id,fn))}
+        ]);
+      }
       break;
     case 'sales': {
       // المبيعات في TX: data-inv موجود على الزر

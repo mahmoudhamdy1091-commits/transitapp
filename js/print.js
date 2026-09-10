@@ -1084,19 +1084,19 @@ export function printCollectionsTab(data, fn) {
 export function printPayoutsTab(data, fn) {
   const cols = [
     {label:'#',            w:0.4, align:'center', format:(_,i)=>i+1},
-    {label:'رقم الصرف',   w:2.0, mono:true, format:p=>p.pay_id||'—'},
+    {label:'المرجع',       w:2.0, mono:true, format:p=>p.__ref||p.pay_id||'—'},
     {label:'الشريك',       w:1.5, format:p=>p.partner||'—'},
-    {label:'نوع الصرف',   w:1.5, format:p=>p.payout_type||'—'},
+    {label:'النوع',        w:1.5, format:p=>p.__type||p.payout_type||'—'},
     {label:'المبلغ',       w:1.3, mono:true, align:'left', format:p=>(+p.amount||0).toLocaleString('en-US',{minimumFractionDigits:3})},
     {label:'طريقة الدفع', w:1.0, format:p=>p.pay_method||'—'},
     {label:'التاريخ',      w:1.0, mono:true, format:p=>p.pay_date||'—'},
     {label:'ملاحظات',      w:1.5, format:p=>p.notes||'—'},
   ];
   const total = (data||[]).reduce((s,p)=>s+(+p.amount||0),0);
-  renderPrint(buildPrintTable('صرف الشركاء', fn, cols, data||[],
+  renderPrint(buildPrintTable('معاملات الشركاء', fn, cols, data||[],
     ['', `الإجمالي (${(data||[]).length})`, '', '',
      total.toLocaleString('en-US',{minimumFractionDigits:3})+' KWD', '', '', '']),
-    `صرف الشركاء — ${fn}`);
+    `معاملات الشركاء — ${fn}`);
 }
 
 // ════════════════════════════════════════════════════════════
