@@ -1758,6 +1758,9 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
       const capitalPaid    = meX.isTreasury ? meX.actualContribution : jeCapitalPaid;
       const totalWithdrawn = jeWithdrawn;
       const netDue          = meX.netDue;
+      // ✅ المستحق على الورق — مُمرَّر من المصدر. بدونه كانت رقائق «الملخص
+      //    الشامل» والصندوق الإجمالي تصبغ netDue أحمر وتسمّيه مديونية.
+      const grossEntitlement = +meX.grossEntitlement || 0;
       const hasJEPartner    = meX.movements.length > 0;
       const jeMovements      = meX.movements.map(m => ({
         date: (m.date||'').split('T')[0], desc: m.desc||'—', ref: m.ref||'',
@@ -1833,7 +1836,7 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
         totalPurchase, totalExp, totalSales,
         fullCost: totalPurchase+totalExp, dealProfit,
         myPurchase, myExpenses, myFullCost, mySales, myProfit,
-        capitalPaid, capitalRet, profitTaken, advances, totalWithdrawn, netDue, jeCapitalPaid, jeWithdrawn,
+        capitalPaid, capitalRet, profitTaken, advances, totalWithdrawn, netDue, grossEntitlement, jeCapitalPaid, jeWithdrawn,
         status: poData.status || '—', supplier: poData.supplier || '—',
         poDate: poData.po_date || poData.created_at || '',
         partnerDebts, paidByPartner, shouldPayMap, partnerSettlement,
@@ -1847,6 +1850,9 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
     const grandMyProfit   = dealDetails.reduce((s,d)=>s+d.myProfit,      0);
     const grandWithdrawn  = dealDetails.reduce((s,d)=>s+d.totalWithdrawn,0);
     const grandNetDue     = dealDetails.reduce((s,d)=>s+d.netDue,        0);
+    // ✅ مجموع المستحق على الورق — هو ما يخصّ الشريك، بخلاف grandNetDue الذي
+    //    يطرح fairShare فيصلح للتسوية بين الشركاء لا لوصف حق الشريك.
+    const grandGross      = dealDetails.reduce((s,d)=>s+(+d.grossEntitlement||0), 0);
     const grandDealProfit = dealDetails.reduce((s,d)=>s+d.dealProfit,    0);
     // ✅ payableNow من core.js مباشرة — لا إعادة حساب للصيغة هنا. الصيغة كانت
     // مكرَّرة يدويًا (netDue للمغلق، totalColl×share للمفتوح) فبقيت على النسخة
@@ -2306,11 +2312,16 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
         <div style="font-size:13px;font-weight:700;margin-bottom:14px;opacity:.7;letter-spacing:.5px">الملخص الشامل — كل الصفقات</div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px">
           ${dealDetails.map(d=>`
-          <div style="background:#ffffff11;border-radius:8px;padding:10px;border-right:3px solid ${d.netDue>=0?'#4ade80':'#f87171'};flex:1 1 45%;min-width:200px">
+          <!-- ✅ الرقيقة تصف حقّ هذا الشريك على هذه الصفقة، فمقياسها
+               grossEntitlement لا netDue. قيس حيًّا: خمس رقائق كانت تُصبغ
+               أحمر بإشارة سالبة، ولا واحدة منها سحب زائد حقيقي — أربعة
+               مستحقّون (أكبرها 259,947.40 معروضة −37,750.10) وواحد متوازن.
+               اتهام باللون بدل النص. -->
+          <div style="background:#ffffff11;border-radius:8px;padding:10px;border-right:3px solid ${(+d.grossEntitlement||0)>=-0.01?'#4ade80':'#f87171'};flex:1 1 45%;min-width:200px">
             <div style="font-size:13px;opacity:.7;margin-bottom:4px">${d.fn} — ${d.supplier}</div>
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span style="font-size:13px;opacity:.6">حصة ${fmtP(d.share)}</span>
-              <span style="font-family:monospace;font-weight:700;color:${d.netDue>=0?'#4ade80':'#f87171'}">${d.netDue>=0?'+':''}${fmt2(d.netDue)}</span>
+              <span style="font-family:monospace;font-weight:700;color:${(+d.grossEntitlement||0)>=-0.01?'#4ade80':'#f87171'}">${(+d.grossEntitlement||0)>0.01?'+':''}${fmt2(+d.grossEntitlement||0)}</span>
             </div>
           </div>`).join('')}
         </div>
@@ -2361,14 +2372,19 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
         <!-- الإجراء الإجمالي النهائي -->
         <div style="margin-top:16px;border-top:2px solid #ffffff22;padding-top:16px;text-align:center">
           <div style="font-size:11px;opacity:.5;margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase">الإجراء الإجمالي — كل الصفقات</div>
-          <div style="font-size:20px;font-weight:900;color:${grandTransferable>0.01?'#4ade80':grandNetDue<-0.01?'#f87171':'#a3e635'}">
+          <!-- ✅ الحكم من grandGross لا grandNetDue. هذا السطر يطبع اسم الشريك
+               داخل الجملة، وكان يقول حرفيًّا «⚠️ قتيبه مدين بـ: 56,455.00»
+               وهو مستحقّ 159,000 — أشد صياغة في التطبيق، على كشفه هو. -->
+          <div style="font-size:20px;font-weight:900;color:${grandTransferable>0.01?'#4ade80':grandGross<-0.01?'#f87171':'#a3e635'}">
             ${grandTransferable > 0.01
               ? `💸 القابل للتحويل الآن لـ ${partnerName}: ${fmt2(grandTransferable)}`
-              : grandNetDue < -0.01
-              ? `⚠️ ${partnerName} مدين بـ: ${fmt2(Math.abs(grandNetDue))}`
+              : grandGross > 0.01
+              ? `⏳ مستحقّ له ${fmt2(grandGross)} — غير قابل للصرف الآن (لم يتحصَّل نقد كافٍ)`
+              : grandGross < -0.01
+              ? `⚠️ سحب زيادة عن مستحقه بـ ${fmt2(Math.abs(grandGross))}`
               : '✅ الحساب متوازن تماماً — لا يوجد تحويل'}
           </div>
-          ${Math.abs(grandNetDue - grandTransferable) > 0.01 ? `<div style="font-size:12px;opacity:.6;margin-top:6px">المستحق الإجمالي (عند إغلاق كل الصفقات): ${fmt2(grandNetDue)}</div>` : ''}
+          ${Math.abs(grandGross - grandTransferable) > 0.01 ? `<div style="font-size:12px;opacity:.6;margin-top:6px">المستحق على الورق (عند إغلاق كل الصفقات): ${fmt2(grandGross)}</div>` : ''}
         </div>
       </div>` : '';
 
