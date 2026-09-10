@@ -4,8 +4,8 @@
 // ╚══════════════════════════════════════════════════════════╝
 
 // ── خرائط تسميات وألوان مصادر القيود (موحّدة — كانت مكررة في عدة دوال) ──
-const SOURCE_LABELS = {purchase_orders:'شراء',sales:'بيع',collections:'تحصيل',payments:'دفعة مورد',expenses:'مصروف',partner_payouts:'صرف شريك',operating_expenses:'مصروف تشغيلي',manual:'يدوي',reversal:'🔄 قيد عكسي'};
-const SOURCE_COLORS = {purchase_orders:'var(--accent)',sales:'var(--green)',collections:'var(--blue)',payments:'var(--cyan)',expenses:'var(--red)',partner_payouts:'var(--purple)',operating_expenses:'var(--purple)',manual:'var(--text)',reversal:'var(--text2)'};
+const SOURCE_LABELS = {purchase_orders:'شراء',sales:'بيع',collections:'تحصيل',payments:'دفعة مورد',expenses:'مصروف',partner_payouts:'معاملة شريك',partner_ledger:'معاملة شريك',operating_expenses:'مصروف تشغيلي',manual:'يدوي',reversal:'🔄 قيد عكسي'};
+const SOURCE_COLORS = {purchase_orders:'var(--accent)',sales:'var(--green)',collections:'var(--blue)',payments:'var(--cyan)',expenses:'var(--red)',partner_payouts:'var(--purple)',partner_ledger:'var(--purple)',operating_expenses:'var(--purple)',manual:'var(--text)',reversal:'var(--text2)'};
 
 // ── State objects ──
 export const trialState  = { data:[], typeFilter:'all', from:null, to:null, period:'year' };
@@ -1307,7 +1307,7 @@ export async function loadJournalDrafts() {
       collection: { icon:'💰', label:'تحصيل',       color:'var(--blue)'    },
       expense:    { icon:'💸', label:'مصروف',       color:'var(--red)'     },
       payment:    { icon:'💳', label:'دفعة مورد',   color:'var(--cyan)'    },
-      payout:     { icon:'👥', label:'صرف شريك',   color:'var(--purple)'  },
+      payout:     { icon:'👥', label:'معاملة شريك', color:'var(--purple)'  },
     };
 
     list.innerHTML = drafts.map(d => {
@@ -1403,7 +1403,7 @@ export function showJournalReport() {
 
   const typeLabels = {
     sale:'مبيعات', collection:'تحصيلات', expense:'مصاريف',
-    payment:'دفعات مورد', payout:'صرف شركاء', purchase:'مشتريات'
+    payment:'دفعات مورد', payout:'معاملات الشركاء', purchase:'مشتريات'
   };
 
   // Group by type
