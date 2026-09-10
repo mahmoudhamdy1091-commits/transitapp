@@ -183,7 +183,11 @@ export async function loadTransactions() {
     } catch(_) {}
 
     // KPIs
-    const total       = rows.reduce((s,r)=>s+(+r[cfg.amountField]||0), 0);
+    // ✅ نفس أساس ذيل الجدول (isEffective) — كان الكارت يجمع كل شيء بما فيه
+    //    الملغى والمرفوض، فيعرض رقمًا أعلى من إجمالي الجدول تحته مباشرة.
+    //    isEffective هو أساس الإجماليات المعتمد في core.js (posted/pending_edit،
+    //    بلا voided ولا draft) — والمسودات لها عدّادها المنفصل أصلًا.
+    const total       = rows.filter(isEffective).reduce((s,r)=>s+(+r[cfg.amountField]||0), 0);
     const draftCount  = rows.filter(isDraft).length;
     const postedCount = rows.length - draftCount;
 
