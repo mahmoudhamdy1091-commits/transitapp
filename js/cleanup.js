@@ -317,7 +317,7 @@ export async function openDataCleanupTool() {
 // ── إجراءات التصحيح — كل واحدة تطلب تأكيداً صريحاً وتسجل في audit_log ──
 
 export async function _cleanupVoidRecord(tbl, id, btn) {
-  const typeMap = { payments:'payment', expenses:'expense', collections:'collection', partner_payouts:'payout' };
+  const typeMap = { payments:'payment', expenses:'expense', collections:'collection', partner_payouts:'payout', partner_ledger:'ledger' };
   const type = typeMap[tbl];
   if (!await confirmAsync('⚠️ عكس سجل', `سيتم عكس السجل #${id} من ${tbl} بقيد محاسبي عكسي (لن يُحذف). متابعة؟`, true)) return;
   try {
@@ -337,7 +337,7 @@ export async function _cleanupVoidRecord(tbl, id, btn) {
 
 export async function _cleanupApproveVoid(tbl, id, btn) {
   if (!await confirmAsync('⚠️ تنفيذ إلغاء معلّق', `سيتم تنفيذ طلب الإلغاء المعلّق للسجل #${id} في ${tbl} الآن (قيد عكسي + post_status=voided). متابعة؟`, true)) return;
-  const typeMap = { payments:'payment', expenses:'expense', collections:'collection', partner_payouts:'payout' };
+  const typeMap = { payments:'payment', expenses:'expense', collections:'collection', partner_payouts:'payout', partner_ledger:'ledger' };
   try {
     btn.disabled = true; btn.textContent = '...جارٍ التنفيذ';
     const rows = await apiGetAll(tbl, { select:'*', id:`eq.${id}` });

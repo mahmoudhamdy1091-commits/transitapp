@@ -4669,7 +4669,11 @@ export async function deleteJEEntry(entryNo, opts) {
   // القيد الأصلي، وبعض الأنواع (زي expense) بترجع لحساب افتراضي بصمت وتعمل
   // قيد عكسي يتيم بلا نظير — فرق حقيقي دايم في ميزان المراجعة (حصل فعلياً على
   // ملف BOX-138 يوم 2026-07-25). الحل: لو السجل لسه posted، امنعي ووجّهي لـ"إلغاء".
-  const reversibleTableMap = { payments:'payment', expenses:'expense', collections:'collection', partner_payouts:'payout' };
+  // ⚠️ partner_ledger إلزامي هنا: بدونه srcTable=null فيُتخطّى الحارس كليًّا،
+  //    ويصير حذف قيد معاملة شريك من اليومية ممكنًا والصف ما زال posted —
+  //    وهي بالضبط حالة BOX-138 الموصوفة أعلاه، صارت قابلة للتكرار من الموديل
+  //    الجديد. القيمة تسمية النوع في voidTransaction؛ المفتاح هو اسم الجدول.
+  const reversibleTableMap = { payments:'payment', expenses:'expense', collections:'collection', partner_payouts:'payout', partner_ledger:'ledger' };
   const srcTable = reversibleTableMap[group.ref_table] ? group.ref_table : null;
   if (srcTable) {
     const refId = group.lines[0]?.ref_id;
