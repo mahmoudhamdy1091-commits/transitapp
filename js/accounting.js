@@ -1788,6 +1788,9 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
           // (grandTransferable وكارت "الإجراء المطلوب") فبقيت على النسخة
           // القديمة الخاطئة بعد تصحيح core.js — راجع 48f280a و6d51a86
           payableNow: x.payableNow,
+          // ✅ نفس الحركة بالضبط: المستحق على الورق، مُمرَّر من المصدر لا
+          //    مُعاد حسابه. بدونه كانت هذه الشاشة تعرض netDue في موضعه.
+          grossEntitlement: x.grossEntitlement, cashAvailable: x.cashAvailable,
           // ✅ pCOGSShare = تكلفة البيع الفعلية (شراء + مصاريف مُرسملة، ما تخصمه
           // القيود فعليًا). pPurchaseShare/pExpenseShare توضيحيان بس (تفكيك نفس
           // الرقم لمعرفة قد إيه شراء وقد إيه مصاريف) — بلا أي خصم إضافي، عشان
@@ -2081,13 +2084,23 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                     </div>
 
                     <!-- الرصيد النهائي -->
-                    <div style="background:${ps.netDue>=0?'#dbeafe':'#fef2f2'};border-radius:8px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center">
+                    <!-- ✅ الرقم = grossEntitlement لا netDue. السطر التفسيري تحته
+                         (ما له + ربح − ما استلمه) يحسب gross بالضبط، فعرض netDue
+                         بجواره جعل الجملة تناقض رقمها في 30 من 30 صفًّا — قيس حيًّا
+                         على BOX. وnetDue رقم تسوية بين الشركاء، له موضعه المسمَّى
+                         "صافي التسوية" في dashboard.js:872. -->
+                    ${(() => {
+                      const g  = +ps.grossEntitlement || 0;
+                      const pos = g >= -0.01;
+                      const ttl = g > 0.01 ? '🔵 الرصيد المستحق له' : g < -0.01 ? '🔴 سحب زيادة عن مستحقه' : '✅ حساب متوازن';
+                      return `<div style="background:${pos?'#dbeafe':'#fef2f2'};border-radius:8px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center">
                       <div>
-                        <div style="font-weight:700;font-size:12px;color:${ps.netDue>=0?'#1d4ed8':'#dc2626'}">${ps.netDue>=0?'🔵 الرصيد المستحق له':'🔴 الرصيد المدين عليه'}</div>
+                        <div style="font-weight:700;font-size:12px;color:${pos?'#1d4ed8':'#dc2626'}">${ttl}</div>
                         <div style="font-size:10px;color:#94a3b8;margin-top:2px">ما له ${fmt2(maleTotal)} ${ps.profit>=0?'+ ربح':'− خسارة'} ${fmt2(Math.abs(ps.profit))} − ما استلمه ${fmt2(got)}</div>
                       </div>
-                      <div style="font-family:monospace;font-weight:900;font-size:20px;color:${ps.netDue>=0?'#1d4ed8':'#dc2626'}">${ps.netDue>=0?'+':''}${fmt2(ps.netDue)}</div>
-                    </div>
+                      <div style="font-family:monospace;font-weight:900;font-size:20px;color:${pos?'#1d4ed8':'#dc2626'}">${g>0.01?'+':''}${fmt2(g)}</div>
+                    </div>`;
+                    })()}
 
                     <!-- تنبيهات الفروق -->
                     ${(() => {
@@ -2126,12 +2139,12 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                           return '<div style="margin-top:10px;border:2px solid #3b82f6;border-radius:8px;padding:10px 12px;text-align:center;background:#eff6ff">'
                             + '<div style="font-size:10px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">الإجراء المطلوب — صفقة جارية</div>'
                             + '<div style="font-size:15px;font-weight:800;color:#1d4ed8">💸 القابل للتحويل الآن: ' + fmt2(tNow) + '</div>'
-                            + '<div style="font-size:11px;color:#64748b;margin-top:5px">المستحق الإجمالي (تقديري): ' + fmt2(ps.netDue) + '</div></div>';
+                            + '<div style="font-size:11px;color:#64748b;margin-top:5px">المستحق على الورق (تقديري): ' + fmt2(+ps.grossEntitlement||0) + '</div></div>';
                         } else {
                           return '<div style="margin-top:10px;border:2px solid #e2e8f0;border-radius:8px;padding:10px 12px;text-align:center;background:#f8fafc">'
                             + '<div style="font-size:10px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">الإجراء المطلوب — صفقة جارية</div>'
                             + '<div style="font-size:14px;font-weight:700;color:#64748b">✅ لا يوجد مبلغ إضافي للتحويل حالياً</div>'
-                            + '<div style="font-size:11px;color:#64748b;margin-top:5px">المستحق الإجمالي (تقديري): ' + fmt2(ps.netDue) + '</div></div>';
+                            + '<div style="font-size:11px;color:#64748b;margin-top:5px">المستحق على الورق (تقديري): ' + fmt2(+ps.grossEntitlement||0) + '</div></div>';
                         }
                       }
                       // ✅ ثلاث حالات لا اثنتان، والفرق ليس تجميليًا:
