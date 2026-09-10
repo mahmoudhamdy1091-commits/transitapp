@@ -820,7 +820,7 @@ export async function loadDealStatement(fn, sys) {
           // باج سابق في هذه الدالة بالذات (ec02ecf).
           const _st = (settlement?.partners||[]).find(sp => sp.name === (p.partner||'').trim())
             || { capitalPaid:0, expPaid:0, profitShare:0, withdrawnViaPayout:0, payableNow:0,
-                 isTreasury:false, actualContribution:0 };
+                 isTreasury:false, actualContribution:0, grossEntitlement:0 };
           // ✅ الخزينة لا تُقيَّد على 2400 إطلاقًا (مصاريفها تُدفع نقدًا مباشرة)،
           // فـcapitalPaid/expPaid عبر القيود يفضلان صفرًا رغم مساهمتها الفعلية.
           // نعرض actualContribution (المحسوبة بالمتبقي في core.js) تحت بند
@@ -831,11 +831,13 @@ export async function loadDealStatement(fn, sys) {
           const expCapital  = _st.isTreasury ? _st.actualContribution : _st.expPaid;
           const profitShare = _st.profitShare;
           const withdrawn   = _st.withdrawnViaPayout;
-          // المستحق = payableNow — السقف النقدي الفعلي، نفس الرقم
-          // المعروض في كشف حساب الشريك (grandTransferable, accounting.js:1854)
-          const totalDue    = _st.payableNow;
-          // payableNow لا تكون سالبة أبدًا (Math.max(0,…) في core.js)،
-          // ففرع الأحمر هنا مُحتفَظ به دفاعيًا لا أكثر
+          // ✅ الصف يعرض المكوّنات الأربعة ثم "المستحق". لو كان الأخير payableNow
+          //    (المقيَّدة بالسقف النقدي) لدعا القارئ لجمعٍ لا يصح — نفس عطل
+          //    المعادلة في dashboard.js/print.js بلا علامة "=" لكن بنفس الإيحاء.
+          //    فالمستحق = grossEntitlement، والقيد يظهر في سطر منفصل حين يلزم.
+          const totalDue    = +_st.grossEntitlement || 0;
+          const payableNow  = +_st.payableNow || 0;
+          const capped      = Math.abs(totalDue - payableNow) > 0.005;
           const dueColor    = totalDue > 0.01 ? 'var(--green)' : totalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
           return `<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
             <div style="flex:1;font-weight:700;min-width:100px">${p.partner}</div>
@@ -845,6 +847,7 @@ export async function loadDealStatement(fn, sys) {
             <div style="font-size:12px;color:var(--green)">ربح مستحق: <b>${fmt(profitShare)}</b></div>
             <div style="font-size:12px;color:var(--accent)">تم الصرف: <b>${fmt(withdrawn)}</b></div>
             <div style="font-size:12px;font-weight:700;color:${dueColor}">المستحق: <b>${fmt(totalDue)}</b></div>
+            ${capped ? `<div style="font-size:11px;font-weight:700;color:var(--amber,#d97706)">⏳ القابل للصرف الآن: <b>${fmt(payableNow)}</b></div>` : ''}
           </div>`;
         }).join('')}
       </div>` : '';
