@@ -896,6 +896,71 @@ export async function deletePayoutEntry(payoutId, fileNo, silent=false) {
 }
 
 
+/**
+ * نظير deletePayoutEntry للموديل الموحَّد — نفس القرار (resolveDeleteAction)
+ * ونفس المسار (voidTransaction) لكن على partner_ledger.
+ *
+ * ⚠️ سبب وجودها: id الجدولين تسلسلان مستقلان. تمرير id صفٍّ من partner_ledger
+ *    إلى deletePayoutEntry يُلغي صفًّا مختلفًا تمامًا من partner_payouts بقيد
+ *    عكسي — بلا خطأ ظاهر، ومال يتحرك.
+ *
+ * وvoidTransaction('ledger') تتكفّل بـ"تأكيد استلام" (لا قيد له بالتصميم):
+ * تُرحّل الحالة بلا قيد عكسي. لا نكرّر ذلك المنطق هنا.
+ */
+export async function deleteLedgerEntry(rowId, fileNo, silent = false) {
+  try {
+    const data = await apiGetAll('partner_ledger', { select:'*', id:`eq.${rowId}` });
+    const r = data?.[0];
+    if (!r) { if (!silent) toast('لم يُعثر على السجل','err'); return; }
+
+    const action = resolveDeleteAction(r.post_status);
+    const label  = r.entry_type || 'معاملة شريك';
+    const after  = async () => {
+      if (fileNo || r.file_no) await loadPayoutsTab(fileNo || r.file_no, state.system);
+      if (window._txType2 === 'payouts') await loadTransactions();
+    };
+
+    if (silent) {
+      if (action === 'void') await voidTransaction('ledger', r);
+      else if (action === 'delete') await apiDelete('partner_ledger', { id:`eq.${rowId}` });
+      else { toast(`⚠️ لا يمكن حذف سجل بحالة "${r.post_status}"`, 'err'); return; }
+      await after();
+      return;
+    }
+
+    if (action === 'void') {
+      showConfirm(
+        `🔄 إلغاء ${label} — ${r.partner||''}`,
+        `سيتم إلغاء هذه المعاملة بقيد عكسي محاسبي.
+السجل لن يُحذف — سيُعلَّم "ملغى".
+
+النوع: ${label}
+الشريك: ${r.partner||'—'}
+المبلغ: ${fmt(r.amount)}
+التاريخ: ${r.pay_date||'—'}`,
+        async () => {
+          try {
+            await voidTransaction('ledger', r);
+            toast(`✅ تم إلغاء ${label} ${r.ref_no||''}`, 'ok');
+            await after();
+          } catch(e) { toast('خطأ: '+e.message,'err'); }
+        }
+      );
+    } else if (action === 'delete') {
+      showConfirm(`مسح ${label}`, 'هل تريد مسح هذه المعاملة؟ (لم تُرحَّل — لا يوجد قيد)', async () => {
+        try {
+          await apiDelete('partner_ledger', { id:`eq.${rowId}` });
+          await logAudit('DELETE','partner_ledger', fileNo||r.file_no, r, null, `مسح ${label} draft ${r.ref_no||rowId}`);
+          await after();
+          toast('✅ تم المسح','ok');
+        } catch(e) { toast('خطأ: '+e.message,'err'); }
+      });
+    } else {
+      toast(`⚠️ لا يمكن حذف سجل بحالة "${r.post_status}"`, 'err');
+    }
+  } catch(e) { toast('خطأ: '+e.message,'err'); }
+}
+
 export function openRolesModal() {
   openModal('rolesModal');
   updateRoleUI(getCurrentRole());
@@ -1098,6 +1163,7 @@ Object.assign(window, {
   runCashFlowReport, runInventoryReport, filterInventoryByWarehouse, exportReportCSV,
   togglePassword, clearSavedLogin,
   showConfirm, showConfirmHtml, confirmDeleteDealFromModal, deleteDealCompletely, confirmDeleteVehicle, deletePayoutEntry,
+  deleteLedgerEntry,
   openRolesModal, getPendingRole, setPendingRole, updateRoleUI, applyRoleRestrictions,
   checkVinDuplicate, onVinBlur,
   sendWhatsappInvoice,

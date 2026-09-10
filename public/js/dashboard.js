@@ -1477,19 +1477,25 @@ export async function loadCollectionsTab(fn, sys) {
 
 export async function loadPayoutsTab(fn, sys) {
   try {
+    // ✅ الموديلان معًا منزوعَي التكرار (core.js). قراءة partner_payouts وحده
+    //    كانت تعني: تُنشئ معاملة من داخل الملف ثم لا تراها في نفس الملف.
     const [data, poArr] = await Promise.all([
-      apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.desc' }),
+      fetchPartnerTransactions(sys, { fileNo: fn }),
       apiGetAll('purchase_orders', { select:'supplier', system_type:`eq.${sys}`, file_no:`eq.${fn}`, limit:1 }),
     ]);
     const supplierName = poArr?.[0]?.supplier || '—';
-    if (!data?.length) { el('payoutsTable').innerHTML = emptyHTML('👥','لا توجد صرف للشركاء بعد'); return; }
+    if (!data?.length) { el('payoutsTable').innerHTML = emptyHTML('👥','لا توجد معاملات شركاء بعد'); return; }
     // ✅ الإجماليات تستثني الملغية
     const activePayouts = data.filter(isVisible);
     const total     = activePayouts.reduce((s,p)=>s+(+p.amount||0),0);
     const capTotal  = activePayouts.reduce((s,p)=>s+(+p.capital_amount||0),0);
     const profTotal = activePayouts.reduce((s,p)=>s+(+p.profit_amount||0),0);
     const advTotal  = activePayouts.reduce((s,p)=>s+(+p.advance_amount||0),0);
-    const creators = await getCreatorsMap('partner_payouts', fn); // عمود "بواسطة"
+    // عمود "بواسطة" — من الجدولين معًا
+    const creators = Object.assign({}, ...(await Promise.all([
+      getCreatorsMap('partner_payouts', fn).catch(() => ({})),
+      getCreatorsMap('partner_ledger',  fn).catch(() => ({})),
+    ])));
 
     const rows = data.map(p => {
       const hasSplit = (+p.capital_amount||0) + (+p.profit_amount||0) + (+p.advance_amount||0) > 0;
@@ -1501,10 +1507,10 @@ export async function loadPayoutsTab(fn, sys) {
         </div>` : '';
       return `<tr>
         <td style="text-align:center;font-size:13px;color:var(--text3);font-weight:700">${data.indexOf(p)+1}</td>
-        <td class="mono" style="color:var(--accent);font-weight:700;font-size:13px">${p.pay_id||'—'}</td>
+        <td class="mono" style="color:var(--accent);font-weight:700;font-size:13px">${p.__ref||p.pay_id||'—'}</td>
         <td><strong>${p.partner||'—'}</strong></td>
         <td>
-          <span class="chip">${p.payout_type||'—'}</span>
+          <span class="chip">${p.__type||p.payout_type||'—'}</span>
           ${splitInfo}
         </td>
         <td class="mono" style="color:var(--purple);font-weight:700">${fmt(p.amount)}</td>
@@ -1512,28 +1518,28 @@ export async function loadPayoutsTab(fn, sys) {
         <td>${p.pay_method||'—'}</td>
         <td class="mono text-muted">${p.document||'—'}</td>
         <td class="mono text-muted">${fmtDate(p.pay_date)}</td>
-        <td style="font-size:12px;color:var(--text2)">${((creators[p.pay_id]||creators[p.ref_no]||'').split('@')[0])||'—'}</td>
+        <td style="font-size:12px;color:var(--text2)">${((creators[p.__ref]||creators[p.pay_id]||creators[p.ref_no]||'').split('@')[0])||'—'}</td>
         <td style="text-align:center">
-          <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxPayout(this)" data-id="${p.id}" data-fn="${fn}" title="إجراءات">⋮</button>
+          <button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxPayout(this)" data-id="${p.id}" data-src="${p.__src||''}" data-fn="${fn}" title="إجراءات">⋮</button>
         </td>
       </tr>`;
     }).join('');
 
     el('payoutsTable').innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
-        <div class="j-kpi"><div class="j-kpi-label">إجمالي الصرف</div><div class="j-kpi-val" style="color:var(--purple)">${fmt(total)}</div></div>
+        <div class="j-kpi"><div class="j-kpi-label">إجمالي المعاملات</div><div class="j-kpi-val" style="color:var(--purple)">${fmt(total)}</div></div>
         <div class="j-kpi"><div class="j-kpi-label">رأس مال مُسترد</div><div class="j-kpi-val text-blue">${fmt(capTotal)}</div></div>
         <div class="j-kpi"><div class="j-kpi-label">أرباح موزعة</div><div class="j-kpi-val text-green">${fmt(profTotal)}</div></div>
         <div class="j-kpi"><div class="j-kpi-label">سلف</div><div class="j-kpi-val text-amber">${fmt(advTotal)}</div></div>
       </div>
       ${exportBtns(
-        () => exportCSV(['رقم الصرف','الشريك','نوع الصرف','المبلغ','طريقة الدفع','المستند','التاريخ'], data.map(p=>[p.pay_id||'—',p.partner||'—',p.payout_type||'—',+p.amount||0,p.pay_method||'—',p.document||'—',p.pay_date||'—']), 'صرف_شركاء_'+fn),
+        () => exportCSV(['المرجع','الشريك','النوع','المبلغ','طريقة الدفع','المستند','التاريخ'], data.map(p=>[p.__ref||p.pay_id||'—',p.partner||'—',p.__type||p.payout_type||'—',+p.amount||0,p.pay_method||'—',p.document||'—',p.pay_date||'—']), 'صرف_شركاء_'+fn),
         () => printPayoutsTab(data, fn)
       )}
       <table class="data-table">
         <thead><tr>
           <th style="width:36px;text-align:center">#</th>
-          <th>رقم الصرف</th><th>الشريك</th><th>نوع الصرف</th><th>المبلغ</th><th>دفع للمورد</th>
+          <th>المرجع</th><th>الشريك</th><th>النوع</th><th>المبلغ</th><th>دفع للمورد</th>
           <th>طريقة الدفع</th><th>المستند</th><th>التاريخ</th><th>بواسطة</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>

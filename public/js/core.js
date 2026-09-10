@@ -1307,6 +1307,50 @@ export function logout() {
   if (!localStorage.getItem('tm_remember')) document.getElementById('loginPass').value = '';
 }
 
+// ════════════════════════════════════════
+// PARTNER TRANSACTIONS — اتحاد الموديلين، نقطة واحدة
+// ════════════════════════════════════════
+/**
+ * كل معاملات الشركاء من الموديلين معًا، منزوعة التكرار.
+ *
+ * ⚠️ الهجرة نسخت ولم تنقل (sql/partner_ledger_stage_a.sql بلا delete)، فالصفوف
+ *    المهاجَرة موجودة في الجدولين. مفتاح المطابقة: partner_ledger.ref_no =
+ *    partner_payouts.pay_id — نُبقي نسخة الموديل الموحَّد ونُسقط نظيرتها القديمة.
+ *    اتحاد ساذج بلا هذا النزع يعرض كل صفٍّ مهاجَر مرتين ويضاعف الإجمالي.
+ *
+ * ⚠️ كل صف يحمل __src ('ledger' أو 'payout'): id الجدولين تسلسلان مستقلان،
+ *    فأي إجراء (تعديل/إلغاء/سجل) يجب أن يقرأ __src أولًا. الخلط بينهما يُلغي
+ *    سجلًّا آخر تمامًا بقيد عكسي — لا خطأ ظاهر، ومال يتحرك.
+ *
+ * ملاحظة: نجلب system_type المطابق و null معًا كما تفعل شاشة المعاملات —
+ * بيانات ما قبل فصل النظامين system_type فيها null.
+ */
+export async function fetchPartnerTransactions(sys, { fileNo = null } = {}) {
+  const scope = extra => ({ select:'*', ...(fileNo ? { file_no:`eq.${fileNo}` } : {}), ...extra });
+  const both = async table => {
+    const [a, n] = await Promise.all([
+      apiGetAll(table, scope({ system_type:`eq.${sys}` })),
+      apiGetAll(table, scope({ system_type:'is.null' })),
+    ]);
+    const seen = new Set(); const out = [];
+    [...(a||[]), ...(n||[])].forEach(r => { if (!seen.has(r.id)) { seen.add(r.id); out.push(r); } });
+    return out;
+  };
+  const [led, pay] = await Promise.all([both('partner_ledger'), both('partner_payouts')]);
+  const migrated = new Set((led||[]).map(r => r.ref_no).filter(Boolean));
+  const norm = (r, src) => ({
+    ...r,
+    __src:  src,
+    __ref:  (src === 'ledger' ? r.ref_no : r.pay_id) || '',
+    __type: (src === 'ledger' ? r.entry_type : r.payout_type) || '—',
+    __date: r.pay_date || '',
+  });
+  return [
+    ...(led||[]).map(r => norm(r, 'ledger')),
+    ...(pay||[]).filter(r => !migrated.has(r.pay_id)).map(r => norm(r, 'payout')),
+  ].sort((a, b) => (b.__date || '').localeCompare(a.__date || ''));
+}
+
 // ── window bridge: تعريض الدوال والحالة للاستخدام من classic scripts وسمات onclick ──
 Object.assign(window, {
   cacheStale, ensureCache, _doLoadCache, invalidateCache, isPosted,
@@ -1315,5 +1359,6 @@ Object.assign(window, {
   apiGetAll, fetchJEForPeriod, computeFinancials, computePartnerSettlement, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
   computePartnerGlobalBalance, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
+  fetchPartnerTransactions,
   login, logout, state, SB_URL, SB_KEY,
 });
