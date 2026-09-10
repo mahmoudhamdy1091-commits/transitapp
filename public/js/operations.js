@@ -1148,7 +1148,7 @@ export async function loadApprovalQueue() {
     // تحديث counts
     Object.keys(APPROVAL_CONFIG).forEach(type => {
       const cnt = el(`af-count-${type}`);
-      if (cnt) cnt.textContent = approvalState.all.filter(r=>r._type===type).length || '';
+      if (cnt) cnt.textContent = approvalState.all.filter(r=>_typesFor(type).includes(r._type)).length || '';
     });
     // reversal badge
     const revBtn = el('af-reversal');
@@ -1189,6 +1189,12 @@ export function _optimisticRemove(type, id) {
   if (cntAll) cntAll.textContent = total || '';
 }
 
+// «معاملات الشركاء» بند واحد يغطي الموديلين: payout (partner_payouts القديم)
+// وledger (partner_ledger الموحَّد). بدون هذا كان الفلتر يُظهر نصف المعاملات
+// فقط تحت لافتة تقول إنها كلها — والعدّاد يسقط صفوف الموديل الجديد.
+const _APPROVAL_FILTER_TYPES = { payout: ['payout', 'ledger'] };
+const _typesFor = t => _APPROVAL_FILTER_TYPES[t] || [t];
+
 export function filterApproval(type) {
   approvalState.currentType = type;
   document.querySelectorAll('.approval-filter-btn').forEach(b => b.classList.remove('active'));
@@ -1196,7 +1202,7 @@ export function filterApproval(type) {
 
   approvalState.filtered = type === 'all'
     ? approvalState.all.filter(r => r.post_status !== 'cancelled')
-    : approvalState.all.filter(r => r._type === type && r.post_status !== 'cancelled');
+    : approvalState.all.filter(r => _typesFor(type).includes(r._type) && r.post_status !== 'cancelled');
 
   renderApprovalList();
 }
