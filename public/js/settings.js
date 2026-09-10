@@ -157,7 +157,7 @@ const _ACT_BG = {
 };
 const _TBL_LABELS = {
   purchase_orders:'أوامر الشراء', sales:'المبيعات', expenses:'المصاريف',
-  payments:'دفعات المورد', collections:'التحصيلات', partner_payouts:'صرف الشركاء',
+  payments:'دفعات المورد', collections:'التحصيلات', partner_payouts:'معاملات الشركاء', partner_ledger:'معاملات الشركاء',
   vehicles:'السيارات', contacts:'جهات الاتصال', user_roles:'المستخدمين',
   operating_expenses:'المصاريف التشغيلية', journal_entries:'القيود المحاسبية',
   stock_locations:'مواقع المخزون', partners_master:'الشركاء',

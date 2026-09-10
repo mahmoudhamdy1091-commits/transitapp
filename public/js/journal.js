@@ -325,7 +325,7 @@ export function filterJournalByType(filterVal, key) {
     expenses:   { color:'var(--red)',     title:'💸 تفاصيل المصاريف' },
     collection: { color:'var(--blue)',    title:'💰 تفاصيل التحصيلات' },
     payment:    { color:'var(--cyan)',    title:'💳 تفاصيل دفعات المورد' },
-    payout:     { color:'var(--purple)',  title:'👥 تفاصيل صرف الشركاء' },
+    payout:     { color:'var(--purple)',  title:'👥 تفاصيل معاملات الشركاء' },
   };
   const cfg   = configs[key] || { color:'var(--text)', title:'تفاصيل' };
   const total = allEntries.reduce((s,e)=>s+_netKpiAmount(e),0);

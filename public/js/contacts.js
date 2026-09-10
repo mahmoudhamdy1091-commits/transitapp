@@ -206,7 +206,7 @@ export async function showLedger(contactId, contactName, contactType) {
 
     const srcLabels = {
       purchase_orders:'شراء', sales:'بيع', collections:'تحصيل',
-      payments:'دفعة مورد', expenses:'مصروف', partner_payouts:'صرف شريك',
+      payments:'دفعة مورد', expenses:'مصروف', partner_payouts:'معاملة شريك', partner_ledger:'معاملة شريك',
       operating_expenses:'مصروف تشغيلي', manual:'يدوي',
     };
 

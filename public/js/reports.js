@@ -375,12 +375,12 @@ export async function runCashFlowReport(from, to, sys, postFilter = 'posted') {
 
     const srcLabels = {
       collections:'تحصيلات العملاء', payments:'دفعات الموردين',
-      expenses:'مصاريف الصفقات', partner_payouts:'صرف الشركاء',
+      expenses:'مصاريف الصفقات', partner_payouts:'معاملات الشركاء', partner_ledger:'معاملات الشركاء',
       operating_expenses:'مصاريف تشغيلية', manual:'قيود يدوية', sales:'مبيعات',
     };
     const srcIcons = {
       collections:'💰', payments:'💳', expenses:'💸',
-      partner_payouts:'👥', operating_expenses:'💼', manual:'✍️', sales:'🤝',
+      partner_payouts:'👥', partner_ledger:'👥', operating_expenses:'💼', manual:'✍️', sales:'🤝',
     };
 
     el('reportKpis').innerHTML = `

@@ -4033,12 +4033,12 @@ export function renderJEManagerTable() {
 
   const srcLabels = {
     purchase_orders:'شراء', sales:'بيع', collections:'تحصيل',
-    payments:'دفعة مورد', expenses:'مصروف', partner_payouts:'صرف شريك',
+    payments:'دفعة مورد', expenses:'مصروف', partner_payouts:'معاملة شريك', partner_ledger:'معاملة شريك',
     operating_expenses:'مصروف تشغيلي', manual:'يدوي', reversal:'قيد عكسي',
   };
   const srcColors = {
     purchase_orders:'var(--accent)', sales:'var(--green)', collections:'var(--blue)',
-    payments:'var(--cyan)', expenses:'var(--red)', partner_payouts:'var(--purple)',
+    payments:'var(--cyan)', expenses:'var(--red)', partner_payouts:'var(--purple)', partner_ledger:'var(--purple)',
     operating_expenses:'var(--purple)', manual:'var(--text)', reversal:'var(--text2)',
   };
   const isAdmin = state.userRole === 'admin';
@@ -5549,12 +5549,12 @@ export async function loadContactStatement() {
       const srcLabels = {
         purchase_orders:'شراء', sales:'بيع', collections:'تحصيل',
         payments:'دفعة مورد', expenses:'مصروف',
-        partner_payouts:'صرف شريك', operating_expenses:'مصروف تشغيلي', manual:'يدوي',
+        partner_payouts:'معاملة شريك', partner_ledger:'معاملة شريك', operating_expenses:'مصروف تشغيلي', manual:'يدوي',
       };
       const srcColors = {
         purchase_orders:'var(--accent)', sales:'var(--green)',
         collections:'var(--blue)', payments:'var(--cyan)',
-        expenses:'var(--red)', partner_payouts:'var(--purple)',
+        expenses:'var(--red)', partner_payouts:'var(--purple)', partner_ledger:'var(--purple)',
         operating_expenses:'var(--purple)', manual:'var(--text)',
       };
       const src      = r.ref_table || 'manual';
