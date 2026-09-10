@@ -483,7 +483,7 @@
           <div class="tab" onclick="switchTab(3)">💸 المصاريف</div>
           <div class="tab" onclick="switchTab(4)">🤝 المبيعات</div>
           <div class="tab" onclick="switchTab(5)">💰 التحصيلات</div>
-          <div class="tab" onclick="switchTab(6)">👥 صرف الشركاء</div>
+          <div class="tab" onclick="switchTab(6)">👥 معاملات الشركاء</div>
           <div class="tab" onclick="switchTab(7)">📄 كشف الصفقة</div>
           <div class="tab" onclick="switchTab(8)">📝 الملاحظات</div>
         </div>
@@ -556,7 +556,7 @@
         <!-- Tab 6: Partner Payouts -->
         <div class="tab-content" id="tab-6">
           <div class="section-header">
-            <div class="section-title">صرف الشركاء</div>
+            <div class="section-title">معاملات الشركاء</div>
             <div class="section-actions">
               <button class="btn btn-primary btn-sm" onclick="openLedgerModal()">➕ معاملة شريك</button>
             </div>
@@ -647,7 +647,7 @@
             <button class="btn btn-sm" onclick="openQuickModal('collection')" style="background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue)">💰 تحصيل</button>
             <button class="btn btn-sm" onclick="openQuickModal('payment')"    style="background:var(--cyan-dim);border:1px solid var(--cyan);color:var(--cyan)">💳 دفعة مورد</button>
             <button class="btn btn-sm" onclick="openExpenseModal()"           style="background:var(--red-dim);border:1px solid var(--red);color:var(--red)">💸 مصروف</button>
-            <button class="btn btn-sm" onclick="openLedgerModal(null, {ignoreCurrentFile:true})"     style="background:var(--purple-dim);border:1px solid var(--purple);color:var(--purple)">👥 صرف شريك</button>
+            <button class="btn btn-sm" onclick="openLedgerModal(null, {ignoreCurrentFile:true})"     style="background:var(--purple-dim);border:1px solid var(--purple);color:var(--purple)">👥 معاملة شريك</button>
             <button class="btn btn-sm" onclick="showOpex()"                   style="background:var(--purple-dim);border:1px solid var(--purple);color:var(--purple)">💼 مصروف تشغيلي</button>
           </div>
         </div>
@@ -1081,7 +1081,7 @@
           <button class="btn btn-sm approval-filter-btn" id="af-expense"   onclick="filterApproval('expense')">💸 مصاريف <span id="af-count-expense" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
           <button class="btn btn-sm approval-filter-btn" id="af-collection" onclick="filterApproval('collection')">💰 تحصيلات <span id="af-count-collection" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
           <button class="btn btn-sm approval-filter-btn" id="af-payment"   onclick="filterApproval('payment')">💳 دفعات مورد <span id="af-count-payment" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
-          <button class="btn btn-sm approval-filter-btn" id="af-payout"    onclick="filterApproval('payout')">👥 صرف شركاء <span id="af-count-payout" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
+          <button class="btn btn-sm approval-filter-btn" id="af-payout"    onclick="filterApproval('payout')">👥 معاملات الشركاء <span id="af-count-payout" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
           <button class="btn btn-sm approval-filter-btn" id="af-reversal"  onclick="filterApproval('reversal')">🔄 إلغاءات <span id="af-count-reversal" style="background:var(--card2);padding:1px 6px;border-radius:10px;font-size:10px;margin-right:4px"></span></button>
         </div>
 
