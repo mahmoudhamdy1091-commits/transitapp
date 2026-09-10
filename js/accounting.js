@@ -2134,14 +2134,30 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                             + '<div style="font-size:11px;color:#64748b;margin-top:5px">المستحق الإجمالي (تقديري): ' + fmt2(ps.netDue) + '</div></div>';
                         }
                       }
-                      // ✅ مبلغ التحويل من payableNow (المبلغ النقدي الفعلي)،
-                      // بينما حالة "مدين للشركة" تظل من netDue (رقم التسوية بين
-                      // الشركاء — payableNow مقيَّدة بـmax(0,…) فلا تعبّر عن مديونية)
-                      const pn   = +ps.payableNow || 0;
-                      const bc  = pn>0.01?'#3b82f6':ps.netDue<-0.01?'#ef4444':'#22c55e';
-                      const bg  = pn>0.01?'#eff6ff':ps.netDue<-0.01?'#fef2f2':'#f0fdf4';
-                      const tc  = pn>0.01?'#1d4ed8':ps.netDue<-0.01?'#dc2626':'#16a34a';
-                      const lbl = pn>0.01?'💸 يُحوَّل له '+fmt2(pn):ps.netDue<-0.01?'⚠️ مدين للشركة بـ '+fmt2(Math.abs(ps.netDue)):'✅ حساب متوازن';
+                      // ✅ ثلاث حالات لا اثنتان، والفرق ليس تجميليًا:
+                      //    كانت اللافتة تسقط على netDue<0 كلما payableNow=0،
+                      //    فتصف شريكًا مستحقًّا بأنه مدين. قيس حيًّا على BOX:
+                      //    الثلاث لافتات الظاهرة كلها خاطئة — أبو سليم "مدين
+                      //    بـ605" وهو مستحقّ 10,000، وقتيبه "مدين بـ56,455"
+                      //    وهو مستحقّ 159,000، والصندوق gross=0 أي متوازن تمامًا.
+                      // ⚠️ الحكم من grossEntitlement لا netDue: netDue رقم تسوية
+                      //    بين الشركاء (يطرح fairShare)، لا دَين على الشركة.
+                      //    وشرط السحب الزائد < -0.01 لا ≤ 0، وإلا صار gross=0
+                      //    "سحب زيادة بـ0.00".
+                      const pn = +ps.payableNow || 0;
+                      const g  = +ps.grossEntitlement || 0;
+                      const st = pn > 0.01 ? 'pay' : g > 0.01 ? 'held' : g < -0.01 ? 'over' : 'even';
+                      const PAL = {
+                        pay:  { bc:'#3b82f6', bg:'#eff6ff', tc:'#1d4ed8' },
+                        held: { bc:'#f59e0b', bg:'#fef9ec', tc:'#b45309' },
+                        over: { bc:'#ef4444', bg:'#fef2f2', tc:'#dc2626' },
+                        even: { bc:'#22c55e', bg:'#f0fdf4', tc:'#16a34a' },
+                      };
+                      const bc = PAL[st].bc, bg = PAL[st].bg, tc = PAL[st].tc;
+                      const lbl = st === 'pay'  ? '💸 يُحوَّل له ' + fmt2(pn)
+                                : st === 'held' ? '⏳ مستحقّ له ' + fmt2(g) + ' — غير قابل للصرف الآن (لم يتحصَّل نقد كافٍ من الملف)'
+                                : st === 'over' ? '⚠️ سحب زيادة عن مستحقه بـ ' + fmt2(Math.abs(g))
+                                :                 '✅ حساب متوازن';
                       return '<div style="margin-top:10px;border:2px solid '+bc+';border-radius:8px;padding:10px 12px;text-align:center;background:'+bg+'">'
                         + '<div style="font-size:10px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">الإجراء المطلوب</div>'
                         + '<div style="font-size:15px;font-weight:800;color:'+tc+'">'+lbl+'</div></div>';

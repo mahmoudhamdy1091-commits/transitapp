@@ -832,6 +832,13 @@ export async function computePartnerSettlement(fileNo, sys) {
       capitalPaid, expPaid, collectionsHeld, withdrawnViaPayout, netJE2400,
       actualContribution, fairShare, fairShareDiff,
       profitShare, netDue, payableNow, movements: c.movements,
+      // ✅ مكشوفان لأن العرض يحتاجهما: payableNow وحدها لا تفسّر نفسها.
+      //    grossEntitlement = ما يستحقه على الورق، cashAvailable = سقف
+      //    النقد المتاح. الفرق بينهما هو ما كانت الشاشة تُخفيه فتعرض
+      //    معادلة طرفاها غير متساويين، وتصف شريكًا مستحقًّا بأنه مدين.
+      //    وكشفهما يمنع نسخة يدوية سادسة من الصيغة (checkPayoutCap تحت
+      //    كانت تعيد حساب cashAvailable بالحرف).
+      grossEntitlement, cashAvailable,
     };
   });
 
@@ -1211,8 +1218,9 @@ export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId 
   // مشروعًا في ملف انتهى فعلًا، فالقرار: نبّه ودع القرار للمستخدم.
   // ملاحظة: لا ينطبق على الملف المفتوح — payableNow هناك مُقيَّدة بالنقد أصلًا
   // فلا يمكن تجاوزه، والتحذير لن يظهر إلا في الحالة المغلقة ذات الذمم.
-  const cashAvailable = (+settlement.collectedCash || 0) * x.share
-                        - x.withdrawnViaPayout - x.collectionsHeld;
+  // ✅ من كائن الشريك مباشرة — كانت هنا نسخة حرفية من نفس الصيغة في
+  //    computePartnerSettlement؛ نسختان تنحرفان بصمت إن عُدِّلت إحداهما.
+  const cashAvailable = +x.cashAvailable || 0;
   const overCash = amount > cashAvailable + 0.001;
   const warning = overCash
     ? `المبلغ ${f2(amount)} أكبر من النقد المحصَّل فعلًا لهذا الشريك على الملف (${f2(Math.max(0, cashAvailable))}). `

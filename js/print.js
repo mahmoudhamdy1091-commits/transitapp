@@ -923,9 +923,22 @@ export async function printDealSummary(fn) {
       // (netJE2400 + profitShare) لا يتساوى طرفاها على الورق المطبوع
       html += '<div style="background:#f9f8f6;padding:12px 16px;border-top:1px solid #e4e0d8">'
             + '<div style="font-size:12px;color:#78716c;margin-bottom:6px">' + (x.isTreasury ? 'المستحق = مساهمته الفعلية + حصة الربح − ما استلمه' : 'المستحق = رأس ماله المدفوع فعلاً + حصة الربح − ما استلمه') + '</div>'
+            // ✅ طرف المعادلة = grossEntitlement لا payableNow — نفس تصحيح
+            //    dashboard.js. الورقة تصل الشريك، فطرفان غير متساويين عليها
+            //    أسوأ من الشاشة: لا يمكن تحديثها بعد الإرسال.
             + '<div style="font-size:13px;color:#57534e;font-family:monospace;margin-bottom:10px">'
-            + f2(x.actualContribution||0) + ' + (' + f2(profitShare) + ') − ' + f2(x.withdrawnViaPayout||0) + ' = <strong>' + f2(+x.payableNow||0) + '</strong>'
+            + f2(x.actualContribution||0) + ' + (' + f2(profitShare) + ') − ' + f2(x.withdrawnViaPayout||0) + ' = <strong>' + f2(+x.grossEntitlement||0) + '</strong>'
             + '</div>'
+            + (function(){
+                var g = +x.grossEntitlement||0, pn = +x.payableNow||0, ca = +x.cashAvailable||0;
+                if (Math.abs(g - pn) <= 0.005) return '';
+                var body = isOpen
+                  ? '🔒 المتاح نقدًا الآن: ' + f2(Math.max(0,ca)) + ' — لم يتحصَّل نقد كافٍ من الملف'
+                  : '⚠️ سحب زيادة عن مستحقه بـ ' + f2(Math.abs(g));
+                return '<div style="font-size:12px;color:#92400e;background:#fef9ec;border:1px solid #e4e0d8;'
+                     + 'border-radius:4px;padding:6px 9px;margin-bottom:10px">'
+                     + body + ' ⇒ القابل للصرف الآن: <strong style="font-family:monospace">' + f2(pn) + '</strong></div>';
+              })()
             + (totalOut > 0 ? '<div style="font-size:13px;color:#57534e;margin-bottom:8px">تم الصرف: <span style="font-family:monospace;color:#d97706;font-weight:600">' + f2(totalOut) + '</span></div>' : '')
             + '<div style="display:flex;justify-content:space-between;align-items:center">'
             + '<span style="font-size:12px;font-weight:700;color:#1c1917">المستحق' + (isOpen?' (تقديري)':'') + ':</span>'

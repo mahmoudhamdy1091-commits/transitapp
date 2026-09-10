@@ -958,8 +958,22 @@ export async function loadSummaryTab(fn, sys) {
           <div style="font-size:12px;color:var(--text2);margin-bottom:6px">
             ${x.isTreasury ? 'المستحق = مساهمته الفعلية + حصة الربح − ما استلمه' : 'المستحق = رأس ماله المدفوع فعلاً + حصة الربح − ما استلمه'}
           </div>
+          <!-- ✅ طرف المعادلة = grossEntitlement لا payableNow: الأخيرة مُقيَّدة
+               بـmax(0,min(gross,cash))، فكتابتها ناتجًا للجمع تجعل الطرفين غير
+               متساويين على الشاشة (قيس حيًّا: 24 من 30 صفًّا في BOX، أكبرها
+               424,265.31 = 0). سطر السقف يظهر فقط حين يلزم القيد فعلًا. -->
           <div style="font-size:13px;color:var(--text2);font-family:var(--mono);margin-bottom:10px">
-            ${fmt(x.actualContribution)} + (${fmt(x.profitShare)}) − ${fmt(x.withdrawnViaPayout)} = <strong>${fmt(+x.payableNow||0)}</strong>
+            ${fmt(x.actualContribution)} + (${fmt(x.profitShare)}) − ${fmt(x.withdrawnViaPayout)} = <strong>${fmt(+x.grossEntitlement||0)}</strong>
+            ${(() => {
+              const g = +x.grossEntitlement||0, pn = +x.payableNow||0, ca = +x.cashAvailable||0;
+              if (Math.abs(g - pn) <= 0.005) return '';
+              const body = isOpen
+                ? `🔒 المتاح نقدًا الآن: ${fmt(Math.max(0,ca))} — لم يتحصَّل نقد كافٍ من الملف`
+                : `⚠️ سحب زيادة عن مستحقه بـ ${fmt(Math.abs(g))}`;
+              return `<div style="margin-top:6px;font-family:var(--font);color:var(--amber,#d97706);font-size:12px">
+                ${body} ⇒ القابل للصرف الآن: <strong>${fmt(pn)}</strong>
+              </div>`;
+            })()}
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:12px;font-weight:700;color:var(--text)">المستحق${isOpen?' (تقديري)':''}:</span>
