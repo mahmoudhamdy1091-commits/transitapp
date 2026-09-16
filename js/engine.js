@@ -1119,7 +1119,7 @@ export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplier
     return await postDoubleEntry({sys,date,fileNo,refTable:'payments',refId,isPrimary,
       desc:`دفعة للمورد ${sup} بواسطة ${payerStr} — ملف ${fileNo}`,lines:[
       {acc:'2100',     name:`ذمم الموردين`, dr:amount, cr:0,     contact:sup      },
-      {acc:partnerAcc, name:partnerAccName, dr:0,      cr:amount, contact:payerStr },
+      {acc:partnerAcc, name:partnerAccName, dr:0,      cr:amount, contact:payerTrimmed },
     ]});
   } else {
     // الدفع مباشرة من نقدية الشركة
@@ -1248,7 +1248,7 @@ export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
   // ✅ Track B — نفس علة je_purchase/je_sale (return ناقصة). تأكدنا: كل الـ8
   // مواقع استدعاء حقيقية لا تلتقط القيمة المرجعة، فالإضافة دي إضافية بحتة
   return await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',refId,desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
-    {acc:partnerAcc, name:partnerAccName, dr:amount, cr:0,     contact:partner },
+    {acc:partnerAcc, name:partnerAccName, dr:amount, cr:0,     contact:partnerTrimmed },
     {acc:cashAcc,    name:cashNm,         dr:0,      cr:amount, contact:null    },
   ]});
 }
@@ -1290,10 +1290,10 @@ export async function je_partnerLedger({sys,date,entryType,amount,fileNo,refId,p
   }
   const desc = fileNo ? `${entryType} — ${partner} — ملف ${fileNo}` : `${entryType} — ${partner}`;
   return await postDoubleEntry({sys,date,fileNo:fileNo||null,refTable:'partner_ledger',refId,desc,lines: isDeposit
-    ? [ {acc:cashAcc,   name:cashNm,       dr:amount, cr:0,      contact:null    },
-        {acc:partnerAcc,name:partnerAccName,dr:0,      cr:amount, contact:partner } ]
-    : [ {acc:partnerAcc,name:partnerAccName,dr:amount, cr:0,      contact:partner },
-        {acc:cashAcc,   name:cashNm,       dr:0,      cr:amount, contact:null    } ],
+    ? [ {acc:cashAcc,   name:cashNm,       dr:amount, cr:0,      contact:null           },
+        {acc:partnerAcc,name:partnerAccName,dr:0,      cr:amount, contact:partnerTrimmed } ]
+    : [ {acc:partnerAcc,name:partnerAccName,dr:amount, cr:0,      contact:partnerTrimmed },
+        {acc:cashAcc,   name:cashNm,       dr:0,      cr:amount, contact:null           } ],
   });
 }
 

@@ -364,7 +364,11 @@ export async function addPartnerRow() {
   const sel = div.querySelector('select');
   sel.onchange = async function() {
     if (this.value === '__new__') {
-      const name = prompt('اسم الشريك الجديد:');
+      // ✅ trim إلزامي: القيمة الخام كانت تروح كما هي لـoption.value ومنها
+      // لـpartners_master.partner وpayments.payer، بينما ensureContact تشذّب
+      // (settings.js:1080/1086) ⇒ مسافة طرفية واحدة تولّد اسمين مختلفين لنفس
+      // الشريك. هذا هو المصدر الفعلي لحالة «شريك سوريا » (طول 11، BOX-124).
+      const name = (prompt('اسم الشريك الجديد:') || '').trim();
       if (name) {
         const opt = document.createElement('option');
         opt.value = name; opt.textContent = name;
