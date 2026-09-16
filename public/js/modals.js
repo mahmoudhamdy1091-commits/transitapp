@@ -1037,6 +1037,9 @@ export async function openExpenseModal() {
   // تُحفَظ بين فتحتين مختلفتين للمودال
   if (el('exp-splitMode')) el('exp-splitMode').checked = false;
   if (el('exp-splitPartners')) { el('exp-splitPartners').style.display = 'none'; el('exp-splitPartners').innerHTML = ''; }
+  // ✅ المرحلة ١ — ترانزيت: خيار التوزيع المتساوي مخفي للإدخال الجديد
+  // (isSplitAllowed، lifecycle.js). BOX بلا تغيير.
+  if (el('exp-splitModeWrap')) el('exp-splitModeWrap').style.display = isSplitAllowed(state.system) ? '' : 'none';
   if (el('exp-paidBy')) el('exp-paidBy').style.display = '';
   openModal('expenseModal');
   // ✅ اكتُشف حيًّا 2026-08-25: المودال ده بيتفتح من زراير عامة كمان (index.html
@@ -1174,7 +1177,8 @@ export async function submitExpense() {
   const docRef  = docEl?.value?.trim() || '';
   // ✅ وضع التوزيع المتساوي: إعداد واحد يُطبَّق على كل بنود المودال (نفس نمط
   // paid_by الفردي الحالي — لا اختيار مستقل لكل بند)
-  const splitMode = !!el('exp-splitMode')?.checked;
+  // ✅ المرحلة ١: حارس ثانٍ بعد إخفاء الخيار — لا توزيع جديد في ترانزيت مهما كانت حالة الـDOM
+  const splitMode = isSplitAllowed(state.system) && !!el('exp-splitMode')?.checked;
   const splitPartners = splitMode
     ? Array.from(el('exp-splitPartners')?.querySelectorAll('.exp-split-partner:checked') || []).map(c => c.value)
     : [];
@@ -2628,6 +2632,15 @@ export async function onLedgerPartnerChange() {
   const card    = el('lg-cap-card');
   if (!spec.linkedToFile || !partner || !fn) { card.style.display = 'none'; return; }
   card.style.display = '';
+  // ✅ المرحلة ١ — ترانزيت: الاسترداد من الملف يُحسب من الربح المُرحَّل لهذا
+  // الملف، لا من صافي حساب الشريك فيه: قيد الافتتاح JE-2026-01501 سُجّل بلا
+  // رقم ملف، فرأس مال الشركة المدوَّر ما زال داخل صافي كل ملف (TM-010 ≈ 22,642
+  // فكان السقف يسمح بـ24,450 مقابل نصيب ربح ≈1,808). وسجل الترحيل
+  // (profit_postings) لم يُنشأ بعد — المرحلة ٣ — فالمُرحَّل صفر والسقف صفر.
+  if (state.system === 'TM') {
+    card.innerHTML = '<span style="color:var(--orange,#c77)">⚠️ في ترانزيت: الاسترداد من الملف يُحسب من <b>الربح المُرحَّل</b> لهذا الملف، وترحيل الأرباح لم يبدأ بعد ⇒ <b>المتاح الآن صفر</b>. للصرف استخدم «سحب عام» من رصيد الشريك.</span>';
+    return;
+  }
   card.innerHTML = '<span style="color:var(--text2)">جاري حساب المستحق…</span>';
   try {
     const s = await computePartnerSettlement(fn, state.system);

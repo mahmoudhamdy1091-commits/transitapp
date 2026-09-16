@@ -1414,6 +1414,9 @@ export async function openEditExpenseModal(expenseId) {
     if (el('ee-splitMode'))      el('ee-splitMode').checked = hasSplit;
     if (el('ee-paidBy'))         el('ee-paidBy').style.display = hasSplit ? 'none' : '';
     if (el('ee-splitPartners'))  el('ee-splitPartners').style.display = hasSplit ? '' : 'none';
+    // ✅ المرحلة ١ — ترانزيت: لا توزيع جديد. والصف الموزَّع تاريخيًا يظل قابلاً
+    // للتعديل كما هو، حتى لا يعيد تعديلٌ لاحقٌ توجيه كامل مبلغه بصمت.
+    if (el('ee-splitModeWrap')) el('ee-splitModeWrap').style.display = (isSplitAllowed(state.system) || hasSplit) ? '' : 'none';
     openModal('editExpenseModal');
     // populate paid_by dropdown + قائمة شركاء التوزيع
     const paidByEl = el('ee-paidBy');
@@ -1470,6 +1473,13 @@ export async function submitEditExpense() {
     const oldData = await apiGetAll('expenses', { select:'*', id:`eq.${id}` });
     const old = oldData?.[0];
     if (!old) { showFieldErr('eeError','لم يُعثر على السجل'); return; }
+    // ✅ المرحلة ١ — ترانزيت: يُرفض صراحةً بدل التحويل الصامت إلى "دُفع بواسطة"،
+    // فالتحويل الصامت يعيد توجيه المبلغ كاملاً إلى طرف واحد بلا إشعار المستخدم.
+    const _oldHasSplit = Array.isArray(old.paid_by_split) && old.paid_by_split.length > 0;
+    if (splitMode && !isSplitAllowed(state.system) && !_oldHasSplit) {
+      showFieldErr('eeError','التوزيع المتساوي مقفول في ترانزيت — اختر «دُفع بواسطة»: «مازن الخلف» (يُحتسب له المبلغ كاملاً) أو «صندوق الترانزيت» (من الخزينة)');
+      return;
+    }
 
     // ✅ الحصص الجديدة (لو وضع التوزيع مفعّل) تُحسَب من الصفر دائمًا بالمبلغ
     // الجديد — لا يُعاد استخدام حصص قديمة أبدًا

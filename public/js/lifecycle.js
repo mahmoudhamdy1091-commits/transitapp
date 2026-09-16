@@ -176,8 +176,25 @@ export function buildLedgerAmounts(type, { amount = 0, capital = 0, profit = 0 }
   return out;
 }
 
+// ╔══════════════════════════════════════════════════════════╗
+// ║  المرحلة ١ — ترانزيت: قفل التوزيع المتساوي للإدخال الجديد  ║
+// ╚══════════════════════════════════════════════════════════╝
+// قرار المالك 2026-09-15: في ترانزيت رأس المال فلوس شركة مدوَّرة ومازن بيصرفها
+// نيابةً عنها. فتقسيم المصروف 50/50 يقيّد نصّه على حساب مازن ونصّه على النقدية،
+// وهو غلط في الحالتين: لو دفعه من العهدة يستحق المبلغ كاملًا، ولو دُفع من
+// الخزينة لا يستحق شيئًا. الصح: "دفعها مازن الخلف" (كامل على حسابه) أو
+// "دفعها صندوق الترانزيت" (كامل على النقد/البنك) — وكلاهما مدعوم أصلًا في
+// je_expense (engine.js:1125-1127) بلا أي تعديل.
+// BOX بلا تغيير: الشريك الخارجي يدفع من جيبه فعلاً.
+//
+// ⚠️ القفل في الشاشتين فقط، لا في je_expense: ستة مسارات اعتماد/إصلاح
+// (operations.js:2048/2180/4239/4346/4379/4931) تمرّر paid_by_split التاريخي
+// كما هو، ورفضه داخل الدالة يكسر اعتماد وإصلاح الحركات القديمة.
+export const SPLIT_LOCKED_SYSTEMS = new Set(['TM']);
+export function isSplitAllowed(sys) { return !SPLIT_LOCKED_SYSTEMS.has(sys); }
+
 // ════════════════════════════════════════
 // WINDOW BRIDGE — تعريض الرمز للسكريبتات الكلاسيكية (نفس نمط باقي الملفات —
 // لا imports حقيقية بين ملفات js/*.js في هذا المشروع، الاعتماد على globals)
 // ════════════════════════════════════════
-Object.assign(window, { wasAlreadyPosted, statusAfterEdit, resolveDeleteAction, computeEqualSplit, samePartnerSet, LEDGER_TYPES, buildLedgerAmounts });
+Object.assign(window, { wasAlreadyPosted, statusAfterEdit, resolveDeleteAction, computeEqualSplit, samePartnerSet, LEDGER_TYPES, buildLedgerAmounts, isSplitAllowed, SPLIT_LOCKED_SYSTEMS });

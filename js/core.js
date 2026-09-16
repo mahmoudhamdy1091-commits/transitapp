@@ -1152,6 +1152,38 @@ export async function getFileDefaultReceiver(fileNo, sys) {
 export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId = null) {
   const nm = (partner || '').trim();
   const f2 = n => (+n || 0).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+
+  // ✅ المرحلة ١ — ترانزيت: سقف "استرداد وتوزيع أرباح" = الربح المُرحَّل لهذا
+  // الملف ناقص الربح المسحوب منه، لا payableNow. السبب بنيوي لا تجميلي: قيد
+  // الافتتاح JE-2026-01501 سُجّل **بلا رقم ملف**، فرأس مال الشركة المدوَّر ما
+  // زال داخل صافي 2400 لكل ملف (TM-010 ≈ 22,642) — ومن هنا جاء السماح بصرف
+  // 24,450 لمازن على TM-010 مقابل نصيب ربح ≈1,808 (قياس حي 2026-09).
+  // سجل الترحيل profit_postings لم يُنشأ بعد (المرحلة ٣) ⇒ المُرحَّل = صفر.
+  // مُتحقَّق حيًّا 2026-09-16: ترانزيت بلا أي صف مرتبط بملف في الجدولين
+  // (98 صفًّا كلها "سحب عام"، وpartner_payouts فارغ) ⇒ صفر أثر على بيانات قائمة.
+  if (sys === 'TM') {
+    const postedProfit = 0;
+    const LIVE = ['posted','draft','pending_edit','pending_void'];
+    const [plRows, ppRows] = await Promise.all([
+      apiGetAll('partner_ledger',  { select:'profit_amount,ref_no,post_status', system_type:`eq.${sys}`,
+        file_no:`eq.${fileNo}`, partner:`eq.${nm}` }),
+      apiGetAll('partner_payouts', { select:'profit_amount,pay_id,post_status',  system_type:`eq.${sys}`,
+        file_no:`eq.${fileNo}`, partner:`eq.${nm}` }),
+    ]);
+    // نفس دلالة v_prior في create_partner_ledger_entry: الجدولان معًا مع إزالة
+    // تكرار صفوف الهجرة (partner_ledger.ref_no = partner_payouts.pay_id)
+    const migrated = new Set((plRows||[]).map(r => r.ref_no).filter(Boolean));
+    const withdrawnProfit =
+      (plRows||[]).filter(r => LIVE.includes(r.post_status)).reduce((s,r) => s + (+r.profit_amount||0), 0) +
+      (ppRows||[]).filter(r => LIVE.includes(r.post_status) && !migrated.has(r.pay_id))
+                  .reduce((s,r) => s + (+r.profit_amount||0), 0);
+    const capTM = Math.max(0, postedProfit - withdrawnProfit);
+    if (amount > capTM + 0.001) {
+      return { ok:false, payableNow:capTM, pendingDraft:0, warning:'',
+        message:`في ترانزيت يُحسب الاسترداد من الربح المُرحَّل للملف ${fileNo}: المُرحَّل ${f2(postedProfit)} والمسحوب منه ${f2(withdrawnProfit)} ⇒ المتاح ${f2(capTM)}. لصرف مبلغ للشريك استخدم «سحب عام» من رصيد حسابه.` };
+    }
+    return { ok:true, payableNow:capTM, pendingDraft:0, warning:'', message:'' };
+  }
   // ✅ المسوّدات لازم تُطرح يدويًا — بلا هذا الفحص لا يعمل إطلاقًا للمستخدم
   // العادي: entryStatus() (engine.js:58) ترجع 'draft' لغير المدير، وsubmitPayout
   // لا تستدعي je_payout إلا لو 'posted' ⇒ صف المسودة بلا قيد ⇒ وpayableNow
