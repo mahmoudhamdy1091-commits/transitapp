@@ -1078,10 +1078,29 @@ export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplier
     // الشريك يدفع للمورد نيابةً عن الصفقة:
     // DR ذمم الموردين (يُبرئ ذمة المورد)
     // CR حسابات الشركاء (الشريك يُقرض الصفقة)
+    // ✅ المرحلة ٢ (partner_account_links، 2026-09-16): payerIsPartner فوق أصلاً
+    // بتستبعد أسماء الخزينة (_isPartnerPocket بترجع false ليها) قبل ما نوصل
+    // هنا — فمفيش حاجة لفحص TREASURY_ALIASES تاني، اللوكاب هنا بس. حارس صريح
+    // يرفض أي payer مش شريك مسجَّل بدل ما يتقيد بصمت على 2400 باسمه الحرفي —
+    // ده تشديد سلوك مقصود (نفس هدف المشروع)، مش تراجع: أي payer غريب (خطأ
+    // إملائي، اسم موظف) كان بينجح بصمت قبل كده، ودلوقتي هيرفض صراحة.
+    const payerTrimmed = payerStr.trim();
+    const link = await apiGetAll('partner_account_links', {
+      select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${payerTrimmed}`,
+    });
+    if (!link?.length) {
+      throw new Error(`الدافع "${payerTrimmed}" ليس له حساب مربوط في partner_account_links — راجع sql/partner_account_links.sql قبل تسجيل دفعة باسمه`);
+    }
+    const partnerAcc = link[0].account_code;
+    let partnerAccName = 'حسابات الشركاء';
+    const acc = await apiGetAll('chart_of_accounts', {
+      select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
+    });
+    if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
     return await postDoubleEntry({sys,date,fileNo,refTable:'payments',refId,isPrimary,
       desc:`دفعة للمورد ${sup} بواسطة ${payerStr} — ملف ${fileNo}`,lines:[
-      {acc:'2100', name:`ذمم الموردين`,   dr:amount, cr:0,     contact:sup      },
-      {acc:'2400', name:`حسابات الشركاء`, dr:0,      cr:amount, contact:payerStr },
+      {acc:'2100',     name:`ذمم الموردين`, dr:amount, cr:0,     contact:sup      },
+      {acc:partnerAcc, name:partnerAccName, dr:0,      cr:amount, contact:payerStr },
     ]});
   } else {
     // الدفع مباشرة من نقدية الشركة
@@ -1337,9 +1356,29 @@ export async function simulateDraftJE(sys, from, to) {
       const cashAcc  = pmt.pay_method==='نقد'?'1110':'1120';
       const cashNm   = pmt.pay_method==='نقد'?'النقد':'البنك';
       if (payerStr && payerStr !== sup) {
+        // ✅ المرحلة ٢ (partner_account_links، 2026-09-16) — نفس نمط je_payment
+        // الحقيقية، عشان المعاينة لا تكذب عن الحساب اللي هيترحّل عليه فعليًا.
+        // best-effort (تقريب 2400 لو بلا رابط) زي معاينة payout — المعاينة
+        // تجميعية، والرفض الفعلي بيحصل في je_payment وقت الترحيل الحقيقي
+        const payerTrimmed = payerStr.trim();
+        let partnerAcc = '2400', partnerAccName = 'حسابات الشركاء';
+        if (!TREASURY_ALIASES.has(payerTrimmed)) {
+          try {
+            const link = await apiGetAll('partner_account_links', {
+              select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${payerTrimmed}`,
+            });
+            if (link?.length) {
+              partnerAcc = link[0].account_code;
+              const acc = await apiGetAll('chart_of_accounts', {
+                select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
+              });
+              if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
+            }
+          } catch(_) {}
+        }
         push([
-          {acc:'2100', name:'ذمم الموردين',   dr:+pmt.amount, cr:0, contact:sup},
-          {acc:'2400', name:'حسابات الشركاء', dr:0, cr:+pmt.amount, contact:payerStr},
+          {acc:'2100',     name:'ذمم الموردين', dr:+pmt.amount, cr:0, contact:sup},
+          {acc:partnerAcc, name:partnerAccName, dr:0, cr:+pmt.amount, contact:payerStr},
         ], pmt.file_no, 'payments', `دفعة للمورد ${sup} بواسطة ${payerStr} — ملف ${pmt.file_no} (معاينة)`, pmt.pay_date);
       } else {
         push([
