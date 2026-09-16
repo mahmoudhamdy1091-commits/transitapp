@@ -390,23 +390,32 @@ export async function voidTransaction(type, record, force=false) {
     ];
 
   } else if (type === 'payout') {
-    // القيد الأصلي: Dr 2400 حسابات شركاء / Cr 1110|1120
-    // العكس:        Dr 1110|1120 / Cr 2400
-    // ✅ جلب id الأصلي فقط للربط (reverses/reversed_by) — لا يُستخدم لحساب
-    // الحساب هنا (بيتحسب من record.pay_method مباشرة)، فأفضل مجهود لا يوقف العملية
+    // ✅ المرحلة ٢ (partner_account_links، 2026-09-16): نقرا سطري القيد الأصلي
+    // فعليًا (نفس نمط payment/expense/collection/ledger فوق) بدل بناء '2400'
+    // بالحرف — يحل مشكلة الحساب المخصَّص تلقائيًا بلا أي اعتماد على
+    // partner_account_links/TREASURY_ALIASES هنا.
+    let partnerAcc = null, partnerName = null, partnerContact = record.partner;
+    let cashAccFromJE = null, cashNameFromJE = null;
     try {
       const orig = await apiGetAll('journal_entries', {
-        select:'id', system_type:`eq.${sys}`, ref_table:'eq.partner_payouts', ref_id:`eq.${record.id}`,
-        post_status:'eq.posted', order:'id.desc', limit:1,
+        select:'id,account_code,account_name,contact_name',
+        system_type:`eq.${sys}`, ref_table:'eq.partner_payouts', ref_id:`eq.${record.id}`,
+        post_status:'eq.posted', order:'id.desc',
       });
-      if (orig?.[0]) origId = orig[0].id || null;
-    } catch(e) { console.warn('void payout: فشل جلب id الأصلي:', e.message); }
-    const cashAcc = (record.pay_method||'') === 'نقد' ? '1110' : '1120';
-    const cashNm  = (record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك';
+      const partnerLine = (orig||[]).find(l => l.contact_name);
+      const cashLine     = (orig||[]).find(l => !l.contact_name);
+      if (partnerLine) { partnerAcc = partnerLine.account_code; partnerName = partnerLine.account_name; partnerContact = partnerLine.contact_name; origId = partnerLine.id || null; }
+      if (cashLine)     { cashAccFromJE = cashLine.account_code; cashNameFromJE = cashLine.account_name; if (!origId) origId = cashLine.id || null; }
+    } catch(e) { console.warn('void payout: فشل جلب القيد الأصلي:', e.message); }
+    if (!partnerAcc) {
+      throw new Error(`تعذّر إيجاد القيد المحاسبي الأصلي لهذا الصرف (${record.pay_id||record.ref_no||record.id}) — على الأغلب اتحذف من اليومية مباشرة قبل الإلغاء. لا يمكن إلغاؤه بأمان بدون معرفة الحساب الأصلي؛ راجعي اليومية يدوياً أولاً أو أعيدي إدخال القيد.`);
+    }
+    const cashAcc = cashAccFromJE || ((record.pay_method||'') === 'نقد' ? '1110' : '1120');
+    const cashNm  = cashNameFromJE || ((record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك');
     reversalDesc  = `عكس صرف شريك ${record.pay_id||record.ref_no||''} — ${record.partner||''} — ملف ${record.file_no}`;
     reversalLines = [
-      { acc: cashAcc, name: cashNm,                dr: amount, cr: 0,      contact: null            },
-      { acc: '2400',  name: 'حسابات الشركاء',     dr: 0,      cr: amount, contact: record.partner  },
+      { acc: cashAcc,    name: cashNm,      dr: amount, cr: 0,      contact: null           },
+      { acc: partnerAcc, name: partnerName, dr: 0,      cr: amount, contact: partnerContact },
     ];
 
   } else if (type === 'ledger') {
@@ -1156,11 +1165,29 @@ export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
   if(!amount||amount<=0) throw new Error(`قيمة صرف شريك غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد الصرف`);
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
+  const partnerTrimmed = (partner||'').trim();
+  // ✅ المرحلة ٢ (partner_account_links، 2026-09-16) — نفس نمط je_partnerLedger
+  // بالحرف: الخزينة مُستثناة (تكتب 2400 كما هي)، أي شريك تاني لازم حساب
+  // مربوط وإلا رفض صريح، والاسم المخزَّن يُجلب حقيقيًا من chart_of_accounts.
+  let partnerAcc = '2400', partnerAccName = 'حسابات الشركاء';
+  if (!TREASURY_ALIASES.has(partnerTrimmed)) {
+    const link = await apiGetAll('partner_account_links', {
+      select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${partnerTrimmed}`,
+    });
+    if (!link?.length) {
+      throw new Error(`الشريك "${partnerTrimmed}" ليس له حساب مربوط في partner_account_links — راجع sql/partner_account_links.sql قبل تسجيل معاملة له`);
+    }
+    partnerAcc = link[0].account_code;
+    const acc = await apiGetAll('chart_of_accounts', {
+      select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
+    });
+    if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
+  }
   // ✅ Track B — نفس علة je_purchase/je_sale (return ناقصة). تأكدنا: كل الـ8
   // مواقع استدعاء حقيقية لا تلتقط القيمة المرجعة، فالإضافة دي إضافية بحتة
   return await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',refId,desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
-    {acc:'2400',  name:`حسابات الشركاء`, dr:amount, cr:0,     contact:partner },
-    {acc:cashAcc, name:cashNm,           dr:0,      cr:amount, contact:null    },
+    {acc:partnerAcc, name:partnerAccName, dr:amount, cr:0,     contact:partner },
+    {acc:cashAcc,    name:cashNm,         dr:0,      cr:amount, contact:null    },
   ]});
 }
 
@@ -1344,15 +1371,36 @@ export async function simulateDraftJE(sys, from, to) {
     const POuts = await apiGetAll('partner_payouts', {
       select:'id,pay_date,amount,file_no,partner,pay_method', system_type:`eq.${sys}`, post_status:'eq.draft',
     });
-    (POuts||[]).forEach(o => {
-      if (!inRange(o.pay_date) || !(+o.amount>0)) return;
+    for (const o of (POuts||[])) {
+      if (!inRange(o.pay_date) || !(+o.amount>0)) continue;
       const cashAcc = o.pay_method==='نقد'?'1110':'1120';
       const cashNm  = o.pay_method==='نقد'?'النقد':'البنك';
+      // ✅ المرحلة ٢ (partner_account_links، 2026-09-16) — نفس نمط je_payout
+      // الحقيقية، عشان المعاينة لا تكذب على المستخدم عن الحساب اللي هيترحّل عليه فعليًا
+      const partnerTrimmed = (o.partner||'').trim();
+      let partnerAcc = '2400', partnerAccName = 'حسابات الشركاء';
+      if (!TREASURY_ALIASES.has(partnerTrimmed)) {
+        try {
+          const link = await apiGetAll('partner_account_links', {
+            select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${partnerTrimmed}`,
+          });
+          if (link?.length) {
+            partnerAcc = link[0].account_code;
+            const acc = await apiGetAll('chart_of_accounts', {
+              select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
+            });
+            if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
+          }
+          // ✅ بلا شريك مربوط: المعاينة تسيبها 2400 (بدل رفض الحلقة كلها بـthrow
+          // زي الكاتب الحقيقي) — هي عرض تقريبي بس، والرفض الفعلي هيحصل عند
+          // الترحيل الحقيقي عبر je_payout نفسها
+        } catch(_) {}
+      }
       push([
-        {acc:'2400',  name:'حسابات الشركاء', dr:+o.amount, cr:0, contact:o.partner},
-        {acc:cashAcc, name:cashNm,           dr:0, cr:+o.amount, contact:null},
+        {acc:partnerAcc, name:partnerAccName, dr:+o.amount, cr:0, contact:o.partner},
+        {acc:cashAcc,    name:cashNm,         dr:0, cr:+o.amount, contact:null},
       ], o.file_no, 'partner_payouts', `صرف شريك ${o.partner} — ملف ${o.file_no} (معاينة)`, o.pay_date);
-    });
+    }
 
     // ── المبيعات draft — مجمّعة حسب الفاتورة لحساب COGS ──
     const Sales = await apiGetAll('sales', {
