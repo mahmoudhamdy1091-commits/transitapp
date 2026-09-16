@@ -425,24 +425,40 @@ export async function voidTransaction(type, record, force=false) {
       invalidateCache();
       return;
     }
-    // الاتجاه يعتمد النوع: "إيداع عام" قيده Dr نقد / Cr 2400، فعكسه معكوس
-    // كذلك. باقي الأنواع قيدها Dr 2400 / Cr نقد. نفس منطق je_partnerLedger.
+    // ✅ المرحلة ٢ (partner_account_links، 2026-09-16): نقرا سطري القيد الأصلي
+    // فعليًا (نفس نمط فروع payment/expense/collection فوق بالحرف) بدل بناء
+    // '2400' بالحرف. يحل مشكلة الحساب المخصَّص (24xx) تلقائيًا بلا أي حاجة
+    // لمعرفة partner_account_links أو TREASURY_ALIASES هنا — بنعكس أيًّا كان
+    // الحساب المكتوب فعليًا وقت الترحيل، شريك كان بحساب مخصَّص أو خزينة على
+    // 2400، فمينفعش نبني قيد عكسي على حساب غير اللي القيد الأصلي كان عليه
+    // فعلاً (كان هيسيب الحساب الجديد مختل للأبد — راجع تحذير المراجع).
+    let partnerAcc = null, partnerName = null, partnerContact = record.partner;
+    let cashAccFromJE = null, cashNameFromJE = null;
     try {
       const orig = await apiGetAll('journal_entries', {
-        select:'id', system_type:`eq.${sys}`, ref_table:'eq.partner_ledger', ref_id:`eq.${record.id}`,
-        post_status:'eq.posted', order:'id.desc', limit:1,
+        select:'id,account_code,account_name,contact_name',
+        system_type:`eq.${sys}`, ref_table:'eq.partner_ledger', ref_id:`eq.${record.id}`,
+        post_status:'eq.posted', order:'id.desc',
       });
-      if (orig?.[0]) origId = orig[0].id || null;
-    } catch(e) { console.warn('void ledger: فشل جلب id الأصلي:', e.message); }
-    const cashAcc = (record.pay_method||'') === 'نقد' ? '1110' : '1120';
-    const cashNm  = (record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك';
+      // خط الشريك = اللي عنده contact_name؛ خط النقد/البنك = اللي بلاه —
+      // نفس اتفاقية الكتابة في je_partnerLedger فوق بالحرف
+      const partnerLine = (orig||[]).find(l => l.contact_name);
+      const cashLine     = (orig||[]).find(l => !l.contact_name);
+      if (partnerLine) { partnerAcc = partnerLine.account_code; partnerName = partnerLine.account_name; partnerContact = partnerLine.contact_name; origId = partnerLine.id || null; }
+      if (cashLine)     { cashAccFromJE = cashLine.account_code; cashNameFromJE = cashLine.account_name; if (!origId) origId = cashLine.id || null; }
+    } catch(e) { console.warn('void ledger: فشل جلب القيد الأصلي:', e.message); }
+    if (!partnerAcc) {
+      throw new Error(`تعذّر إيجاد القيد المحاسبي الأصلي لهذه المعاملة (${record.ref_no||record.id}) — على الأغلب اتحذف من اليومية مباشرة قبل الإلغاء. لا يمكن إلغاؤها بأمان بدون معرفة الحساب الأصلي؛ راجعي اليومية يدوياً أولاً أو أعيدي إدخال القيد.`);
+    }
+    const cashAcc = cashAccFromJE || ((record.pay_method||'') === 'نقد' ? '1110' : '1120');
+    const cashNm  = cashNameFromJE || ((record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك');
     const isDeposit = record.entry_type === 'إيداع عام';
     reversalDesc  = `عكس ${record.entry_type||'معاملة شريك'} ${record.ref_no||''} — ${record.partner||''}${record.file_no ? ' — ملف '+record.file_no : ''}`;
     reversalLines = isDeposit
-      ? [ { acc: '2400',  name: 'حسابات الشركاء', dr: amount, cr: 0,      contact: record.partner },
-          { acc: cashAcc, name: cashNm,           dr: 0,      cr: amount, contact: null           } ]
-      : [ { acc: cashAcc, name: cashNm,           dr: amount, cr: 0,      contact: null           },
-          { acc: '2400',  name: 'حسابات الشركاء', dr: 0,      cr: amount, contact: record.partner } ];
+      ? [ { acc: partnerAcc, name: partnerName,      dr: amount, cr: 0,      contact: partnerContact },
+          { acc: cashAcc,    name: cashNm,           dr: 0,      cr: amount, contact: null           } ]
+      : [ { acc: cashAcc,    name: cashNm,           dr: amount, cr: 0,      contact: null           },
+          { acc: partnerAcc, name: partnerName,      dr: 0,      cr: amount, contact: partnerContact } ];
 
   } else {
     throw new Error(`نوع العملية "${type}" غير مدعوم في الإلغاء`);
@@ -1158,12 +1174,37 @@ export async function je_partnerLedger({sys,date,entryType,amount,fileNo,refId,p
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
   const isDeposit = entryType === 'إيداع عام';
+  const partnerTrimmed = (partner||'').trim();
+  // ✅ المرحلة ٢ (partner_account_links، 2026-09-16، قرار موثَّق في
+  // project_partner_current_account_model.md): الخزينة (TREASURY_ALIASES)
+  // مُستثناة بالكامل — تفضل تكتب 2400 بالحرف زي قبل كده، صفر تغيير سلوك
+  // (هي الشركة نفسها، مالهاش حساب مخصَّص بتصميم النظام). أي شريك حقيقي تاني
+  // لازم يكون له حساب مربوط، وإلا رفض صريح (الحارس) بدل كتابة صامتة على 2400
+  // تُفقِد حركته من computePartnerGlobalBalance/computePartnerSettlement.
+  let partnerAcc = '2400', partnerAccName = 'حسابات الشركاء';
+  if (!TREASURY_ALIASES.has(partnerTrimmed)) {
+    const link = await apiGetAll('partner_account_links', {
+      select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${partnerTrimmed}`,
+    });
+    if (!link?.length) {
+      throw new Error(`الشريك "${partnerTrimmed}" ليس له حساب مربوط في partner_account_links — راجع sql/partner_account_links.sql قبل تسجيل معاملة له`);
+    }
+    partnerAcc = link[0].account_code;
+    // ✅ الاسم الحقيقي المخزَّن لازم يطابق الحساب المرحَّل عليه فعليًا (2401
+    // "جاري الشريك أبو هادي" لا "حسابات الشركاء" — الاسم الأخير بتاع الأب 2400
+    // بس). باج رصده المراجع: بلا هذا الاستعلام كل معاملة جديدة على حساب
+    // مخصَّص كانت هتترحّل بالكود الصح والاسم المخزَّن الغلط.
+    const acc = await apiGetAll('chart_of_accounts', {
+      select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
+    });
+    if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
+  }
   const desc = fileNo ? `${entryType} — ${partner} — ملف ${fileNo}` : `${entryType} — ${partner}`;
   return await postDoubleEntry({sys,date,fileNo:fileNo||null,refTable:'partner_ledger',refId,desc,lines: isDeposit
-    ? [ {acc:cashAcc, name:cashNm,           dr:amount, cr:0,      contact:null    },
-        {acc:'2400',  name:'حسابات الشركاء', dr:0,      cr:amount, contact:partner } ]
-    : [ {acc:'2400',  name:'حسابات الشركاء', dr:amount, cr:0,      contact:partner },
-        {acc:cashAcc, name:cashNm,           dr:0,      cr:amount, contact:null    } ],
+    ? [ {acc:cashAcc,   name:cashNm,       dr:amount, cr:0,      contact:null    },
+        {acc:partnerAcc,name:partnerAccName,dr:0,      cr:amount, contact:partner } ]
+    : [ {acc:partnerAcc,name:partnerAccName,dr:amount, cr:0,      contact:partner },
+        {acc:cashAcc,   name:cashNm,       dr:0,      cr:amount, contact:null    } ],
   });
 }
 
