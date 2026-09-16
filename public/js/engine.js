@@ -1172,22 +1172,46 @@ export async function fileExpenseTarget(sys, fileNo, expType) {
 // تعديل لاحق على "مين دفع"، إعادة الاشتقاق كانت بتنقل المبلغ لحساب مختلف عن
 // الأصلي — ازدواج حقيقي في COGS (المبلغ مُحتسَب أصلاً جوّه قيد البيع المجمَّد،
 // ويُحسب تاني كقيد مباشر جديد). اكتُشف حيًّا 2026-08-02 على TM-004 (وكيل الشحن).
+// ✅ المرحلة ٢ (partner_account_links، 2026-09-16): سطر دائن واحد لطرف دفع
+// معيّن — شريك حقيقي (يبحث عن حسابه المخصَّص، حارس صريح لو بلا رابط) أو
+// خزينة/دفع مباشر (نقد/بنك ثابت، بلا لوكاب). مُستخرجة كدالة مستقلة لاستخدامها
+// في مسار التوزيع (N شريك) والمسار الفردي معًا بلا تكرار منطق.
+async function _expenseCreditLine(sys, name, amount, method) {
+  if (_isPartnerPocket(name)) {
+    const trimmed = name.trim();
+    const link = await apiGetAll('partner_account_links', {
+      select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${trimmed}`,
+    });
+    if (!link?.length) {
+      throw new Error(`الشريك "${trimmed}" ليس له حساب مربوط في partner_account_links — راجع sql/partner_account_links.sql قبل تسجيل مصروف باسمه`);
+    }
+    const partnerAcc = link[0].account_code;
+    let partnerAccName = 'حسابات الشركاء';
+    const acc = await apiGetAll('chart_of_accounts', {
+      select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
+    });
+    if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
+    return {acc:partnerAcc, name:partnerAccName, dr:0, cr:amount, contact:trimmed};
+  }
+  return {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null};
+}
+
 export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,paidBySplit=null,isPrimary=true,targetOverride=null}) {
   if(!amount||amount<=0) throw new Error(`قيمة مصروف غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
   const target = targetOverride || await fileExpenseTarget(sys, fileNo, expType);
   const hasSplit = Array.isArray(paidBySplit) && paidBySplit.length > 0;
   // الدائن: توزيع بالتساوي على شركاء مختارين (N سطر) لو hasSplit، وإلا الخزينة
-  // (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو دفعها من جيبه بمفرده.
+  // (نقد/بنك) افتراضياً، أو حساب الشريك المخصَّص لو دفعها من جيبه بمفرده.
   // ✅ داخل التوزيع نفسه، كل عنصر يُفحص بـ_isPartnerPocket مستقلاً — لو الصندوق/
   // صندوق الترانزيت مُختار ضمن مجموعة التوزيع، حصته تروح 1110/1120 زي الدفع
-  // الفردي العادي بالظبط (فلوس الشركة نفسها، مش دَين شخصي)، لا 2400 مطلقًا
+  // الفردي العادي بالظبط (فلوس الشركة نفسها، مش دَين شخصي)، لا حساب شريك مطلقًا.
+  // ⚠️ Promise.all إلزامي هنا لا .map() عادية: كولباك async جوّه .map() بيرجّع
+  // مصفوفة Promises لا كائنات حساب فعلية — postDoubleEntry كانت هتاخد lines
+  // فيها [Promise, Promise,...] بدل {acc,name,dr,cr,contact} (رصدها المراجع
+  // قبل الكتابة، مش بعد اكتشاف باج حي).
   const creditLines = hasSplit
-    ? paidBySplit.map(p => _isPartnerPocket(p.partner)
-        ? {acc:'2400', name:'حسابات الشركاء', dr:0, cr:+p.amount||0, contact:(p.partner||'').trim()}
-        : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:+p.amount||0, contact:null})
-    : [ _isPartnerPocket(paidBy)
-        ? {acc:'2400', name:'حسابات الشركاء', dr:0, cr:amount, contact:paidBy.trim()}
-        : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null} ];
+    ? await Promise.all(paidBySplit.map(p => _expenseCreditLine(sys, p.partner, +p.amount||0, method)))
+    : [ await _expenseCreditLine(sys, paidBy, amount, method) ];
   const tail = hasSplit
     ? ` — موزَّع بالتساوي على ${paidBySplit.map(p=>p.partner).join('، ')}`
     : (_isPartnerPocket(paidBy) ? ` — دفعها ${paidBy.trim()}` : '');
