@@ -646,6 +646,10 @@ const DEFAULT_ACCOUNTS=[
   {code:'2000',name:'الالتزامات',type:'liability',parent:null},
   {code:'2100',name:'ذمم الموردين',type:'liability',parent:'2000'},
   {code:'2200',name:'مصاريف مستحقة',type:'liability',parent:'2000'},
+  // ⚠️ بادئة 24xx محجوزة حصريًا لحسابات الشركاء المخصَّصة (2401-2408 BOX / 2401
+  // TM، partner_account_links، المرحلة ٢) — core.js isPartnerPocketAcc بتلتقط
+  // أي حساب `startsWith('24')` كـ"جيب شريك". لا تفتح 2410/2450/... لحاجة تانية
+  // من غير مراجعة الأثر على core.js أولاً.
   {code:'2400',name:'حسابات الشركاء',type:'liability',parent:'2000'},
   {code:'3000',name:'حقوق الملكية',type:'equity',parent:null},
   {code:'3100',name:'رأس المال',type:'equity',parent:'3000'},
