@@ -447,6 +447,69 @@ export async function submitNewFile() {
   }
 }
 
+/**
+ * ✅ يضمن أن كل شريك في سند الشراء له حساب مخصَّص مربوط قبل أي حفظ.
+ *
+ * الخلفية: حرّاس الكتّاب الخمسة (engine.js، المرحلة ٢) ترفض أي حركة لشريك بلا
+ * حساب مربوط. وتوضيح المالك 2026-09-16: في BOX كل ملف تقريبًا له شريك ثانٍ
+ * مختلف يُضاف من سند الشراء ⇒ بدون هذا الفحص، أول مصروف/دفعة على كل ملف جديد
+ * يُرفض بعد حفظ السند بوقت — الخطأ يظهر بعيدًا عن سببه.
+ *
+ * ⚠️ بموافقة صريحة لا إنشاء صامت: الاسم الجديد قد يكون خطأ إملائيًا لشريك
+ * قائم (فئة "مازن الخلف " بمسافة زائدة، sql/rename_partner.sql)، والإنشاء
+ * الصامت يترك حسابًا دائمًا في الشجرة يصعب إزالته بعد أول قيد عليه. فنعرض
+ * الأسماء القريبة (مقارنة مطبَّعة: مسافات + همزات + ة/ه + ى/ي) ونسأل.
+ *
+ * ⚠️ التخصيص والإنشاء والربط كلها في create_partner_account (SQL، security
+ * definer بقفل استشاري) — لا يُحسب "أول كود فاضٍ" هنا إطلاقًا: نداءان
+ * متزامنان من متصفحين يأخذان الكود نفسه.
+ *
+ * ترجع true لو كل الشركاء جاهزون، وfalse لو المستخدم رفض أو فشل الإنشاء
+ * (المستدعي يوقف الحفظ فورًا وقتها).
+ */
+export async function ensurePartnerAccounts(names, errElId = 'nfError') {
+  const sys = state.system;
+  const uniq = [...new Set((names || []).map(x => (x || '').trim()).filter(Boolean))]
+    .filter(x => !TREASURY_ALIASES.has(x));
+  if (!uniq.length) return true;
+
+  const links = await apiGetAll('partner_account_links', {
+    select: 'partner_name', system_type: `eq.${sys}`,
+  });
+  const linked = new Set((links || []).map(l => l.partner_name));
+  const missing = uniq.filter(x => !linked.has(x));
+  if (!missing.length) return true;
+
+  const norm = t => (t || '').replace(/\s+/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+  for (const name of missing) {
+    const near = [...linked].filter(l => {
+      const a = norm(l), b = norm(name);
+      return a === b || a.includes(b) || b.includes(a);
+    });
+    const nearTxt = near.length
+      ? `\n\n⚠️ فيه أسماء قريبة لها حسابات بالفعل: ${near.join(' · ')}\nلو واحد منهم هو المقصود، اقفل ده وصحّح الاسم في السند بدل ما تفتح حساب تاني.`
+      : '';
+    const go = await confirmAsync('شريك جديد بلا حساب',
+      `«${name}» مالوش حساب في شجرة الحسابات.\nتفتح له حساب جديد تحت «حسابات الشركاء»؟${nearTxt}`,
+      false, '✅ افتح الحساب');
+    if (!go) {
+      showFieldErr(errElId, `الشريك «${name}» مالوش حساب — افتح له حساب أو صحّح اسمه قبل الحفظ`);
+      return false;
+    }
+    try {
+      const code = await apiRpc('create_partner_account', { p_sys: sys, p_partner_name: name });
+      toast(`✅ اتفتح حساب ${code} للشريك ${name}`, 'ok');
+      await logAudit('INSERT', 'partner_account_links', null, null,
+        { partner_name: name, account_code: code, system_type: sys },
+        `فتح حساب شريك ${code} — ${name}`);
+    } catch (e) {
+      showFieldErr(errElId, `تعذّر فتح حساب للشريك «${name}»: ${e.message}`);
+      return false;
+    }
+  }
+  return true;
+}
+
 export async function _submitNewFileInner() {
   // Route to edit if in edit mode
   if (_nfEditMode) { await submitEditFileFull(); return; }
@@ -509,6 +572,10 @@ export async function _submitNewFileInner() {
   if (partners.length && Math.abs(shareTotal-100) > 0.01) {
     showFieldErr('nfError',`مجموع حصص الشركاء = ${shareTotal}% يجب أن يساوي 100%`); return;
   }
+
+  // ✅ قبل أي كتابة: كل شريك لازم يكون له حساب مربوط، وإلا أول مصروف/دفعة على
+  // الملف ده هتترفض بعدين بعيدًا عن سببها
+  if (!(await ensurePartnerAccounts(partners.map(p => p.name)))) return;
 
   const btn = el('nfSubmitBtn');
   btn.disabled = true; btn.textContent = '⏳ جاري الحفظ...';
@@ -700,6 +767,9 @@ export async function submitEditFileFull() {
   if (partners.length && Math.abs(shareTotal-100) > 0.01) {
     showFieldErr('nfError',`مجموع حصص الشركاء = ${shareTotal}% يجب أن يساوي 100%`); return;
   }
+
+  // ✅ نفس فحص submitPO — التعديل ممكن يضيف شريكًا جديدًا كمان
+  if (!(await ensurePartnerAccounts(partners.map(p => p.name)))) return;
 
   const finalTotal = totalAmount || totalPurchase;
   const btn = el('nfSubmitBtn');
