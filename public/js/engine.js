@@ -1041,10 +1041,29 @@ export function displayUser(email) {
 
 export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method,receivedBy,isPrimary=true}) {
   if(!amount||amount<=0) throw new Error(`قيمة تحصيل غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد التحصيل`);
-  // المدين: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك 2400 لو احتفظ بالمبلغ خارج الصندوق
-  const debit = _isPartnerPocket(receivedBy)
-    ? {acc:'2400', name:'حسابات الشركاء', dr:amount, cr:0, contact:receivedBy.trim()}
-    : {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:amount, cr:0, contact:null};
+  // المدين: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك المخصَّص لو احتفظ
+  // بالمبلغ خارج الصندوق. ✅ المرحلة ٢ (partner_account_links، 2026-09-16) —
+  // نفس نمط je_payment: _isPartnerPocket أصلاً بتستبعد الخزينة، فاللوكاب هنا
+  // بس. حارس صريح يرفض مُستلِم بلا حساب مربوط بدل التسجيل الصامت على 2400.
+  let debit;
+  if (_isPartnerPocket(receivedBy)) {
+    const receivedByTrimmed = receivedBy.trim();
+    const link = await apiGetAll('partner_account_links', {
+      select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${receivedByTrimmed}`,
+    });
+    if (!link?.length) {
+      throw new Error(`المُستلِم "${receivedByTrimmed}" ليس له حساب مربوط في partner_account_links — راجع sql/partner_account_links.sql قبل تسجيل تحصيل باسمه`);
+    }
+    const partnerAcc = link[0].account_code;
+    let partnerAccName = 'حسابات الشركاء';
+    const acc = await apiGetAll('chart_of_accounts', {
+      select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
+    });
+    if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
+    debit = {acc:partnerAcc, name:partnerAccName, dr:amount, cr:0, contact:receivedByTrimmed};
+  } else {
+    debit = {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:amount, cr:0, contact:null};
+  }
   const tail = _isPartnerPocket(receivedBy) ? ` — احتفظ بها ${receivedBy.trim()}` : '';
   return await postDoubleEntry({sys,date,fileNo,refTable:'collections',refId,isPrimary,desc:`تحصيل ${invNo} — ${customer} — ملف ${fileNo}${tail}`,lines:[
     debit,
