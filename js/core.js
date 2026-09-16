@@ -540,7 +540,13 @@ export function computeFinancials(jeRows) {
   (jeRows || []).forEach(r => {
     if (r.ref_table === 'expenses' && r.ref_id != null) expenseRefIds.add(r.ref_id);
   });
-  const EXPENSE_CREDIT_ACCS = new Set(['1110', '1120', '2400']);
+  // ✅ المرحلة ٢ (partner_account_links، 2026-09-16): حسابات الشركاء المخصَّصة
+  // (2401-2408 BOX / 2401 TM) كلها 24xx تحت الأب 2400 بقرار تصميم موثَّق
+  // (project_partner_current_account_model.md). isPartnerPocketAcc تلتقطها
+  // كلها برقم الحساب نفسه — بلا حاجة لجلب partner_account_links هنا (الدالة
+  // متزامنة sync وبلا معرفة بـsys، وهذا الرقم توضيحي فقط، لا يدخل الربح).
+  const EXPENSE_CREDIT_FIXED = new Set(['1110', '1120']);
+  const isPartnerPocketAcc = acc => EXPENSE_CREDIT_FIXED.has(acc) || acc.startsWith('24');
 
   // ✅ استبعاد قيود عكس أصلها بره نطاق الفترة المطلوبة (اكتُشف حيًّا 2026-08-09،
   // TM-004/BOX-141: -18,764/-7,107 في كارت المشتريات لآخر 30 يوم) — fetchJEForPeriod
@@ -592,13 +598,13 @@ export function computeFinancials(jeRows) {
       if (fn) { ensure(fn); byFile[fn].dealExp += dr; }
     }
     // ✅ إجمالي مبلغ مصاريف الصفقة الحقيقي — صافٍ (cr-dr) على حسابات الدفع فقط
-    // (1110/1120/2400 — الطرف الدائن الوحيد الذي يبنيه je_expense دائمًا، فردي
-    // أو موزَّع)، لا أي سطر بـref_table='expenses' كما كان. يشمل قيود عكس
-    // المصاريف (ref_table='reversal' بنفس ref_id ضمن expenseRefIds) فتُطرح
-    // تلقائيًا أي نسخة قديمة استُبدلت — بدل جمع القديم والجديد معًا بالغلط.
+    // (1110/1120/أي حساب شريك 24xx — الطرف الدائن الوحيد الذي يبنيه je_expense
+    // دائمًا، فردي أو موزَّع)، لا أي سطر بـref_table='expenses' كما كان. يشمل
+    // قيود عكس المصاريف (ref_table='reversal' بنفس ref_id ضمن expenseRefIds)
+    // فتُطرح تلقائيًا أي نسخة قديمة استُبدلت — بدل جمع القديم والجديد معًا بالغلط.
     // ثابت بغض النظر عن حساب الترسملة (1300/5100/6xxx للطرف المدين). توضيحي
     // فقط، لا يدخل في حساب الربح (مُحتسب بالفعل ضمن totCOGS عبر calcCOGS عند البيع)
-    const isExpenseCreditLine = EXPENSE_CREDIT_ACCS.has(acc) && (
+    const isExpenseCreditLine = isPartnerPocketAcc(acc) && (
       ref === 'expenses' || (ref === 'reversal' && r.ref_id != null && expenseRefIds.has(r.ref_id))
     );
     if (isExpenseCreditLine) {
@@ -635,7 +641,7 @@ export function computeFinancials(jeRows) {
  * فروق "العدالة" (fairShareDiff) عبر كل الشركاء = صفر دائمًا (تحقق ذاتي).
  */
 export async function computePartnerSettlement(fileNo, sys) {
-  const [partnersRaw, jeAll, poRow, confirmations] = await Promise.all([
+  const [partnersRaw, jeAll, poRow, confirmations, accountLinks] = await Promise.all([
     apiGetAll('partners_master', { select:'partner,share_percent', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
     apiGetAll('journal_entries', {
       select:'account_code,contact_name,dr_amount,cr_amount,ref_table,ref_id,entry_date,description,entry_no,file_no',
@@ -653,7 +659,15 @@ export async function computePartnerSettlement(fileNo, sys) {
       select:'partner,amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`,
       entry_type:'eq.تأكيد استلام', post_status:`eq.posted`,
     }),
+    // ✅ المرحلة ٢ (partner_account_links، 2026-09-16): دليل شريك→حساب مخصَّص.
+    // 9 صفوف إجمالاً في كل النظام — جلبها كاملة أرخص من فلترة بالشركاء. لسه
+    // صفر صف مكتوب على أي حساب مخصَّص فعليًا (الكتّاب لسه بيكتبوا 2400)، فهذا
+    // التغيير regression بحت اليوم: يجب أن يطابق الناتج القديم بالحرف.
+    apiGetAll('partner_account_links', { select:'partner_name,account_code', system_type:`eq.${sys}` }),
   ]);
+  // كود الحساب المخصَّص لكل شريك في هذا الملف (لو موجود) — يُستخدم تحت
+  // لتوسيع فلتر حساب الشركاء بدل الاقتصار على '2400' وحده
+  const linkedCodes = new Set((accountLinks||[]).map(r => r.account_code));
   const isClosed = (poRow?.[0]?.status || '') === 'CLOSED';
 
   const fin = computeFinancials(jeAll).byFile[fileNo] || { sales:0, cogs:0, dealExp:0, purchase:0, expenseAmount:0 };
@@ -693,7 +707,10 @@ export async function computePartnerSettlement(fileNo, sys) {
     else if (r.ref_table === 'partner_payouts' || r.ref_table === 'partner_ledger') payoutRefIds.add(r.ref_id);
   });
 
-  const je2400 = (jeAll||[]).filter(r => r.account_code === '2400');
+  // ✅ 2400 (القديم) + أي كود مخصَّص للشركاء (partner_account_links، المرحلة ٢)
+  // — contact_name يفضل مُتسجَّل صح على السطرين معًا (الكتّاب بيكتبوه دايمًا)
+  // فتجميع byContact تحت بالاسم يشتغل بلا أي تغيير إضافي
+  const je2400 = (jeAll||[]).filter(r => r.account_code === '2400' || linkedCodes.has(r.account_code));
   const byContact = {};
   je2400.forEach(r => {
     const name = (r.contact_name||'').trim();
@@ -1103,10 +1120,30 @@ export async function login() {
  * المهجورة) — يُعاد النظر بدليل أداء حقيقي لا افتراض مسبق.
  */
 export async function computePartnerGlobalBalance(partner, sys) {
-  const je2400 = await apiGetAll('journal_entries', {
-    select: 'dr_amount,cr_amount', system_type:`eq.${sys}`,
-    account_code:'eq.2400', contact_name:`eq.${partner.trim()}`, post_status:`eq.posted`,
+  const trimmed = partner.trim();
+  // ✅ المرحلة ٢ (partner_account_links، 2026-09-16): لو الشريك له حساب مخصَّص
+  // (24xx)، حركته دلوقتي ممكن تكون على 2400 (تاريخي، contact_name=الاسم) أو
+  // على حسابه (جديد). 🔴 القيود اليدوية الموجودة فعليًا على 2401/2402 كلها
+  // contact_name=null (مُتحقَّق حيًّا) — فاستعلام واحد بشرط
+  // `contact_name=eq.X AND account_code IN (...)` كان هيرفض صفوف الحساب
+  // الجديد كلها بصمت (باج رصده المراجع، مثال: أبو أسعد كان هيرجع 0 بدل
+  // +48,600). ⇒ استعلامان منفصلان: بالاسم على 2400 (كالسابق)، وبالحساب وحده
+  // على الأكواد المخصَّصة (الحساب نفسه يحدد الشريك، بلا شرط اسم) — union.
+  const link = await apiGetAll('partner_account_links', {
+    select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${trimmed}`,
   });
+  const linkedCodesOnly = (link||[]).map(r => r.account_code);
+  const [byName, byLinkedAccount] = await Promise.all([
+    apiGetAll('journal_entries', {
+      select:'dr_amount,cr_amount', system_type:`eq.${sys}`,
+      account_code:'eq.2400', contact_name:`eq.${trimmed}`, post_status:`eq.posted`,
+    }),
+    linkedCodesOnly.length ? apiGetAll('journal_entries', {
+      select:'dr_amount,cr_amount', system_type:`eq.${sys}`,
+      account_code:`in.(${linkedCodesOnly.join(',')})`, post_status:`eq.posted`,
+    }) : Promise.resolve([]),
+  ]);
+  const je2400 = [...byName, ...byLinkedAccount];
   return je2400.reduce((s,r) => s + (+r.cr_amount||0) - (+r.dr_amount||0), 0);
 }
 
