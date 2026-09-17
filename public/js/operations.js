@@ -4028,7 +4028,9 @@ export function renderJEManagerTable() {
       (g.no||'').toLowerCase().includes(search) ||
       (g.desc||'').toLowerCase().includes(search) ||
       (g.file_no||'').toLowerCase().includes(search) ||
-      g.lines.some(l => (l.account_name||'').toLowerCase().includes(search) || (l.account_code||'').toLowerCase().includes(search))
+      g.lines.some(l => (l.account_name||'').toLowerCase().includes(search)
+        || accountDisplayName(l.account_code, l.account_name).toLowerCase().includes(search)
+        || (l.account_code||'').toLowerCase().includes(search))
     );
   }
 
@@ -4060,7 +4062,7 @@ export function renderJEManagerTable() {
         <td style="padding:5px 12px 5px 28px;font-size:13px">
           <span class="mono" style="color:var(--text2)">${l.account_code||'—'}</span>
         </td>
-        <td style="padding:5px 12px;font-size:13px;color:var(--text2)">${l.account_name||'—'}</td>
+        <td style="padding:5px 12px;font-size:13px;color:var(--text2)">${accountDisplayName(l.account_code, l.account_name)}</td>
         <td style="padding:5px 12px;text-align:left;font-family:var(--mono);font-size:13px;color:var(--green)">${+l.dr_amount>0?fmt(l.dr_amount):'—'}</td>
         <td style="padding:5px 12px;text-align:left;font-family:var(--mono);font-size:13px;color:var(--red)">${+l.cr_amount>0?fmt(l.cr_amount):'—'}</td>
         <td></td>

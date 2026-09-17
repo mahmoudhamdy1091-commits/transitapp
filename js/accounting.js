@@ -570,7 +570,7 @@ export async function openJEDetail(entryNo) {
       </div>`;
     const lineRows=lines.map(l=>`<tr>
       <td class="mono" style="color:var(--accent)">${l.account_code||'—'}</td>
-      <td>${l.account_name||'—'}</td>
+      <td>${accountDisplayName(l.account_code, l.account_name)}</td>
       <td style="font-size:13px;color:var(--text2)">${l.contact_name||'—'}</td>
       <td class="mono text-green" style="text-align:left">${+l.dr_amount>0?fmt(l.dr_amount):'—'}</td>
       <td class="mono text-red"   style="text-align:left">${+l.cr_amount>0?fmt(l.cr_amount):'—'}</td>

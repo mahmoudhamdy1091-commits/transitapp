@@ -888,6 +888,23 @@ export function getAccountName(code) {
   return state.chartOfAccounts[code]?.name || code;
 }
 
+/**
+ * ✅ اسم الحساب للعرض: من شجرة الحسابات بالكود أولًا، والمخزَّن في سطر القيد
+ * احتياطيًا (قرار المالك العاشر 2026-09-16).
+ *
+ * كل سطر قيد بيخزّن اسم الحساب وقت ترحيله، فإعادة تسمية حساب كانت بتسيب القيود
+ * القديمة بالاسم القديم للأبد — وميزان المراجعة وحده كان بيعرض الاسم الجديد
+ * (accounting.js:139/156). ده بيوحّد السلوك: تغيّر الاسم في مكان واحد ويتغيّر
+ * في كل الشاشات، والأرقام ما تتحركش لأن كل الحسابات المالية بالكود لا بالاسم.
+ *
+ * ⚠️ الاحتياطي إلزامي لا تحسين: deleteAccount (accounting.js:771) بيحذف الحساب
+ * من الشجرة والقيود بتفضل، وloadChartOfAccounts بيجيب is_active=true بس —
+ * فالحساب المحذوف/المعطَّل لازم يرجع لاسمه المخزَّن بدل خانة فاضية.
+ */
+export function accountDisplayName(code, storedName) {
+  return state.chartOfAccounts[code]?.name || storedName || code || '—';
+}
+
 export function getAccountTypeCOA(code) {
   return state.chartOfAccounts[code]?.type || getAccountType(code);
 }
@@ -975,7 +992,7 @@ Object.assign(window, {
   TX_CONFIG, showTransactions, setTxPeriod, loadTransactions,
   renderTxTable, renderSalesInvoices, openInvoiceModal, downloadInvoicePDF,
   filterTxTable, exportTxPDF, exportTxExcel, initApp, approvalState,
-  loadChartOfAccounts, getAccountName, getAccountTypeCOA, switchSystem,
+  loadChartOfAccounts, getAccountName, accountDisplayName, getAccountTypeCOA, switchSystem,
   updateSystemUI, dashState, setDashPeriod, checkAppVersion, _showCompanyPickerOverlay, _renderHomeButton,
 });
 

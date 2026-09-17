@@ -635,7 +635,7 @@ export async function printJournalVoucher(entryNo, entryType, fileNo, amount, da
     const vDate  = date ? new Date(date).toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'}) : '—';
     const tDr    = (lines||[]).reduce((s,l)=>s+(+l.dr_amount||0),0);
     const tCr    = (lines||[]).reduce((s,l)=>s+(+l.cr_amount||0),0);
-    const linesHtml = (lines||[]).map((l,i) => `<tr><td style="text-align:center;color:#666;font-size:13px">${i+1}</td><td style="font-family:monospace;font-weight:700">${l.account_code||'—'}</td><td>${l.account_name||'—'}</td><td style="font-size:13px;color:#666">${l.description||'—'}</td><td class="num c-green">${+l.dr_amount>0?(+l.dr_amount).toLocaleString('en-US',{minimumFractionDigits:3}):'—'}</td><td class="num c-red">${+l.cr_amount>0?(+l.cr_amount).toLocaleString('en-US',{minimumFractionDigits:3}):'—'}</td></tr>`).join('');
+    const linesHtml = (lines||[]).map((l,i) => `<tr><td style="text-align:center;color:#666;font-size:13px">${i+1}</td><td style="font-family:monospace;font-weight:700">${l.account_code||'—'}</td><td>${accountDisplayName(l.account_code, l.account_name)}</td><td style="font-size:13px;color:#666">${l.description||'—'}</td><td class="num c-green">${+l.dr_amount>0?(+l.dr_amount).toLocaleString('en-US',{minimumFractionDigits:3}):'—'}</td><td class="num c-red">${+l.cr_amount>0?(+l.cr_amount).toLocaleString('en-US',{minimumFractionDigits:3}):'—'}</td></tr>`).join('');
     const fragment = `
     ${docHeader(vTitle, '', entryNo||'—')}
     <div class="info-grid">

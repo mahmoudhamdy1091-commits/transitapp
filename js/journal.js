@@ -141,7 +141,7 @@ export async function loadJournal() {
         const side = l.dr_amount > 0
           ? `<span style="color:var(--green)">مدين ${fmt(l.dr_amount)}</span>`
           : `<span style="color:var(--red)">دائن ${fmt(l.cr_amount)}</span>`;
-        return `<span style="font-size:12px;color:var(--text2);display:inline-block;margin-left:8px">${l.account_code||''} ${l.account_name||'—'}: ${side}</span>`;
+        return `<span style="font-size:12px;color:var(--text2);display:inline-block;margin-left:8px">${l.account_code||''} ${accountDisplayName(l.account_code, l.account_name)}: ${side}</span>`;
       });
       // ✅ قيمة سند البيع = صافي الإيراد على حسابات 4xxx: cr − dr
       // قيد البيع مركّب (إيراد + COGS) فمجموع المدين يضخّم القيمة وKPI المبيعات.
@@ -808,7 +808,7 @@ export function openJournalEntryDetail(entryNo) {
     return `
     <tr style="${i % 2 ? 'background:var(--card2)' : ''}">
       <td style="padding:9px 12px">
-        <div style="font-weight:700">${l.account_name||'—'}</div>
+        <div style="font-weight:700">${accountDisplayName(l.account_code, l.account_name)}</div>
         <div style="font-family:monospace;font-size:11px;color:var(--text2);margin-top:1px">${l.account_code||''}${l.contact_name?` · ${l.contact_name}`:''}</div>
       </td>
       <td style="padding:9px 12px;text-align:center;font-family:monospace;font-weight:700;color:var(--green)">${dr>0?fmt(dr):''}</td>
