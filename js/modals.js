@@ -2676,6 +2676,11 @@ async function _fillLedgerPartners() {
     const all = await getContactsByType('partner');
     partners = (all||[]).map(p => ({ partner: p.name }));
   }
+  // ✅ الخزينة (TREASURY_ALIASES) ليست شريكًا تُسحَب منه معاملات "جاري الشريك" —
+  // نفس فلتر ensurePartnerAccounts أعلى الملف (سطر 477). اكتشاف مراجعة خارجية
+  // 2026-09-17: "الصندوق"/"صندوق الترانزيت" مسجَّلان كـcontacts نوع شريك، وكانا
+  // بيظهروا هنا كخيار قابل للاختيار رغم إنه لا معنى لهما (مش شركاء ملفات).
+  partners = (partners||[]).filter(p => !TREASURY_ALIASES.has((p.partner||'').trim()));
   el('lg-partner').innerHTML = '<option value="">-- اختر الشريك --</option>' +
     (partners||[]).map(p=>`<option value="${p.partner}">${p.partner}</option>`).join('');
 
