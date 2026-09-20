@@ -335,8 +335,16 @@ export function renumberVehicles() {
   if (nfPriceMode === 'equal') applyEqualPrices();
 }
 
+// ✅ مشاري العميري وطلال العميري: تخصيص مستقل بعد صافي الربح، لا حصة في أي
+// ملف (قرار المالك 2026-09-17، خطة docs/PLAN-partner-accounts-2026-09-17.md
+// م٢) — يُستبعدان من قائمة شركاء الملف هنا فقط. لهما حسابان وقيود عادية،
+// وما زالا يظهران في باقي شاشات الصرف (getContactsByType('partner') بلا فلتر
+// في كل مكان تاني).
+const FILE_PARTNER_EXCLUDED = new Set(['مشاري العميري', 'طلال العميري']);
+
 export async function addPartnerRow() {
-  const partners = await getContactsByType('partner');
+  const partners = (await getContactsByType('partner'))
+    .filter(p => !FILE_PARTNER_EXCLUDED.has((p.name||'').trim()));
   const inp = (placeholder, type='text', extra='') =>
     `<input type="${type}" placeholder="${placeholder}" ${extra}
       style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px;width:100%">`;
