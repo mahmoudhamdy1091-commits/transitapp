@@ -2811,7 +2811,7 @@ export async function submitLedger() {
   let settlementPartner = null;
   if (spec.linkedToFile) {
     let chk;
-    try { chk = await checkPayoutCap(fn, partner, state.system, amounts.amount); }
+    try { chk = await checkPayoutCap(fn, partner, state.system, amounts.amount, null, type); }
     catch(e) { showFieldErr('lgError','تعذّر التحقق من المستحق — لم يُحفظ شيء ('+e.message+')'); return; }
     if (!chk.ok) { showFieldErr('lgError',chk.message); return; }
     if (chk.warning) {
@@ -2960,7 +2960,7 @@ export async function submitLedgerEdit() {
     let chk;
     // ⚠️ excludeRowId — نظير pl.id <> p_id في الـRPC. بدونه يُخصم مبلغ هذا
     // الصف مرتين فيرفض العميل تعديلًا تقبله القاعدة
-    try { chk = await checkPayoutCap(fn, partner, state.system, amounts.amount, id); }
+    try { chk = await checkPayoutCap(fn, partner, state.system, amounts.amount, id, type); }
     catch(e) { showFieldErr('lgError','تعذّر التحقق من المستحق — لم يُحفظ شيء ('+e.message+')'); return; }
     if (!chk.ok) { showFieldErr('lgError', chk.message); return; }
     if (chk.warning) {

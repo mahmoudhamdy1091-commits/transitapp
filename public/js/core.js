@@ -1186,7 +1186,7 @@ export async function getFileDefaultReceiver(fileNo, sys) {
  * لا السباق المتزامن. القراءة طازجة عند الإرسال عمدًا (لا الرقم المعروض في
  * النموذج) لأن النموذج قد يبقى مفتوحًا بعد تغيّر البيانات.
  */
-export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId = null) {
+export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId = null, ledgerType = null) {
   const nm = (partner || '').trim();
   const f2 = n => (+n || 0).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
 
@@ -1202,7 +1202,7 @@ export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId 
     const postedProfit = 0;
     const LIVE = ['posted','draft','pending_edit','pending_void'];
     const [plRows, ppRows] = await Promise.all([
-      apiGetAll('partner_ledger',  { select:'profit_amount,ref_no,post_status', system_type:`eq.${sys}`,
+      apiGetAll('partner_ledger',  { select:'id,profit_amount,ref_no,post_status', system_type:`eq.${sys}`,
         file_no:`eq.${fileNo}`, partner:`eq.${nm}` }),
       apiGetAll('partner_payouts', { select:'profit_amount,pay_id,post_status',  system_type:`eq.${sys}`,
         file_no:`eq.${fileNo}`, partner:`eq.${nm}` }),
@@ -1210,14 +1210,27 @@ export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId 
     // نفس دلالة v_prior في create_partner_ledger_entry: الجدولان معًا مع إزالة
     // تكرار صفوف الهجرة (partner_ledger.ref_no = partner_payouts.pay_id)
     const migrated = new Set((plRows||[]).map(r => r.ref_no).filter(Boolean));
-    const withdrawnProfit =
+    let withdrawnProfit =
       (plRows||[]).filter(r => LIVE.includes(r.post_status)).reduce((s,r) => s + (+r.profit_amount||0), 0) +
       (ppRows||[]).filter(r => LIVE.includes(r.post_status) && !migrated.has(r.pay_id))
                   .reduce((s,r) => s + (+r.profit_amount||0), 0);
+    // ✅ استثناء الصف الجاري تعديله (البند الكامن الأول من المرحلة ١، م٧) —
+    // كان هذا الفرع يتجاهل excludeRowId تمامًا بعكس فرع BOX تحت، فيُخصم مبلغ
+    // الصف مرتين عند تعديله. كامن حاليًا فقط لأن postedProfit=0 دائمًا (سجل
+    // profit_postings لم يُنشأ بعد، م٦) فالسقف صفر بغض النظر عن أي تعديل —
+    // سيظهر أثره الفعلي فور تفعيل م٦. راجع docs/PLAN-partner-accounts-2026-09-17.md
+    if (excludeRowId) {
+      const cur = (plRows||[]).find(r => String(r.id) === String(excludeRowId));
+      if (cur) withdrawnProfit = Math.max(0, withdrawnProfit - (+cur.profit_amount||0));
+    }
     const capTM = Math.max(0, postedProfit - withdrawnProfit);
     if (amount > capTM + 0.001) {
+      // ✅ البند الكامن الثاني من المرحلة ١ (م٧) — "تأكيد استلام" (needsJE:false،
+      // lifecycle.js) بلا أي حركة نقدية أصلًا، فنصيحة "استخدم سحب عام" (نوع
+      // بحركة نقدية) لا تنطبق عليه ومربكة. تظهر فقط للأنواع اللي فعلاً بتصرف نقدًا.
+      const suggestion = ledgerType === 'تأكيد استلام' ? '' : ' لصرف مبلغ للشريك استخدم «سحب عام» من رصيد حسابه.';
       return { ok:false, payableNow:capTM, pendingDraft:0, warning:'',
-        message:`في ترانزيت يُحسب الاسترداد من الربح المُرحَّل للملف ${fileNo}: المُرحَّل ${f2(postedProfit)} والمسحوب منه ${f2(withdrawnProfit)} ⇒ المتاح ${f2(capTM)}. لصرف مبلغ للشريك استخدم «سحب عام» من رصيد حسابه.` };
+        message:`في ترانزيت يُحسب الاسترداد من الربح المُرحَّل للملف ${fileNo}: المُرحَّل ${f2(postedProfit)} والمسحوب منه ${f2(withdrawnProfit)} ⇒ المتاح ${f2(capTM)}.${suggestion}` };
     }
     return { ok:true, payableNow:capTM, pendingDraft:0, warning:'', message:'' };
   }
