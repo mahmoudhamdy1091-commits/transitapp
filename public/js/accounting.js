@@ -1693,8 +1693,17 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
       ? allPartnerDeals.filter(d => d.file_no === fileNoFilter)
       : allPartnerDeals;
 
-    // ── 2. جلب بيانات كل صفقة بالتوازي ──
-    const dealDetails = await Promise.all(deals.map(async pm => {
+    // ── 2. جلب بيانات كل صفقة، على دفعات محدودة لا كلها معًا ──
+    // ✅ كان Promise.all واحد بيطلق ~9 طلبات لكل ملف الشريك مرتبط بيه، **لكل
+    // ملفاته مرة واحدة بلا حد أقصى** — شريك مرتبط بعدد كبير من الملفات كان
+    // بيطلق مئات الطلبات المتزامنة ويستنفد اتصالات المتصفح (ERR_INSUFFICIENT
+    // _RESOURCES، مُشاهَد حيًّا 2026-09-20 مع مازن الخلف: 500+ خطأ، فشل تام).
+    // راجع docs/BUG-report-ledger-and-partner-statement-2026-09-20.md
+    const _STATEMENT_BATCH_SIZE = 5;
+    const dealDetails = [];
+    for (let bi = 0; bi < deals.length; bi += _STATEMENT_BATCH_SIZE) {
+      const batch = deals.slice(bi, bi + _STATEMENT_BATCH_SIZE);
+      const batchResults = await Promise.all(batch.map(async pm => {
       const fn    = pm.file_no;
       const share = (pm.share_percent||0) / 100;
 
@@ -1839,7 +1848,9 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
         hasJEPartner, hasJEData, jeMovements,
         totalColl, uncollected, collPct, collByReceiver,
       };
-    }));
+      }));
+      dealDetails.push(...batchResults);
+    }
 
     // ── 3. الإجماليات الشاملة ──
     const grandCapital    = dealDetails.reduce((s,d)=>s+d.capitalPaid,   0);
@@ -2413,7 +2424,14 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
   } catch(e) {
     overlay.remove();
-    toast('خطأ في إعداد الكشف: '+e.message,'err');
+    // ✅ هذا التقرير قراءة فقط (بلا أي كتابة بيانات) — رسالة "قد تكون نجحت
+    // فعلاً... حتى لا يتكرر البند" (core.js NETWORK_UNCERTAIN_MSG) مكتوبة
+    // لعمليات كتابة، وظهورها هنا كانت بتوهم بخطر تكرار بيانات غير موجود.
+    // راجع docs/BUG-report-ledger-and-partner-statement-2026-09-20.md
+    const msg = /قد تكون نجحت فعلاً/.test(e.message||'')
+      ? '⚠️ تعذّر تحميل الكشف — الاتصال انقطع أثناء جلب البيانات (تقرير قراءة فقط، لا خطر تكرار). حاول مرة تانية.'
+      : 'خطأ في إعداد الكشف: '+e.message;
+    toast(msg,'err');
     console.error(e);
   }
 }
