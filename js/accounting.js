@@ -70,10 +70,12 @@ export async function loadTrialBalance() {
   try {
     const sys = state.system;
 
-    // بناء URL مع Range header لتجاوز حد 1000 صف الافتراضي في Supabase
+    // ✅ صفحات حقيقية عبر fetchAllPages (core.js) بدل طلب واحد بـRange كبير —
+    // كان بيقطع بصمت عند حد Supabase (1000 صف) لأي نظام/فترة نشاطها أكبر من
+    // كده، بلا أي رسالة تحذير. راجع docs/BUG-report-ledger-and-partner-statement-2026-09-20.md
     const buildUrl = (sysParam) => {
       let u = `${SB_URL}/rest/v1/journal_entries?${sysParam}`
-            + `&select=id,account_code,account_name,dr_amount,cr_amount,post_status&limit=49999`;
+            + `&select=id,account_code,account_name,dr_amount,cr_amount,post_status`;
       if (from) u += `&entry_date=gte.${encodeURIComponent(from)}`;
       if (to)   u += `&entry_date=lte.${encodeURIComponent(to + 'T23:59:59')}`;
       if (postF === 'posted') u += `&post_status=eq.posted`;
@@ -81,19 +83,11 @@ export async function loadTrialBalance() {
       return u;
     };
 
-    const rangeHeaders = { 'Range': '0-49999', 'Range-Unit': 'items' };
-
-    // جلب بيانات النظام الحالي
-    const res1 = await apiFetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: rangeHeaders });
-    if (!res1.ok && res1.status !== 206) throw new Error(await res1.text());
-    const rows1 = await res1.json();
-
-    // جلب البيانات ذات system_type=null (بيانات قديمة)
-    let rows2 = [];
-    try {
-      const res2 = await apiFetch(buildUrl('system_type=is.null'), { headers: rangeHeaders });
-      if (res2.ok || res2.status === 206) rows2 = await res2.json();
-    } catch(_) {}
+    // جلب بيانات النظام الحالي + البيانات ذات system_type=null (بيانات قديمة)
+    const [rows1, rows2] = await Promise.all([
+      fetchAllPages(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), 'loadTrialBalance'),
+      fetchAllPages(buildUrl('system_type=is.null'), 'loadTrialBalance'),
+    ]);
 
     // دمج مع إزالة المكررات
     const seen = new Set();
