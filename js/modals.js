@@ -581,6 +581,12 @@ export async function _submitNewFileInner() {
     if (name && share) { partners.push({ name, share, paid, payDate, method, doc }); shareTotal += share; }
   });
 
+  // ✅ م٧ — نفس تنبيه submitPayment/submitExpense، لأن هذا المسار (إنشاء ملف
+  // جديد بشركاء دافعين) بيستخدم je_payment بنفس الطريقة بالظبط
+  for (const p of partners) {
+    if (p.paid > 0 && !(await _confirmNonTreasuryPayerTM(state.system, p.name))) return;
+  }
+
   if (partners.length && Math.abs(shareTotal-100) > 0.01) {
     showFieldErr('nfError',`مجموع حصص الشركاء = ${shareTotal}% يجب أن يساوي 100%`); return;
   }
@@ -1250,6 +1256,23 @@ export function toggleExpenseModalSize() {
   }
 }
 
+// ✅ م٧ — تنبيه توضيحي عند اختيار شريك (لا الخزينة) كدافع/مستلم في TM: هذا
+// الاختيار يسجّل المبلغ كدَين شخصي على الشريك من جيبه، لا دفعة من نقدية
+// الشركة (راجع قرار المالك النهائي على ت١ في docs/PLAN-partner-accounts-
+// 2026-09-17.md). الافتراضي في الشاشتين "صندوق الترانزيت" أصلاً (آمن) —
+// التنبيه ده يظهر بس لو المستخدم غيّره يدويًا لاسم شريك. اكتُشف حيًّا
+// 2026-09-20: دفعتان حقيقيتان (TM-095/TM-096) اتسجّلوا سهوًا على حساب مازن
+// الشخصي رغم إنهم فلوس شركة، لأن حد اختار اسمه بدل "صندوق الترانزيت".
+async function _confirmNonTreasuryPayerTM(sys, payerName) {
+  const n = (payerName || '').trim();
+  if (sys !== 'TM' || !n || TREASURY_ALIASES.has(n)) return true;
+  return await confirmAsync(
+    '⚠️ تأكيد مصدر الفلوس',
+    `اخترت "${n}" بدل "صندوق الترانزيت". هذا معناه إن المبلغ هيتسجّل كدَين شخصي على ${n} من جيبه الخاص — مش دفعة من نقدية/بنك الشركة.\n\nهل الفلوس فعلاً من جيب ${n} الشخصي؟ (لو من نقدية الشركة، ألغِ واختر "صندوق الترانزيت")`,
+    true, '✅ نعم، من جيبه الشخصي'
+  );
+}
+
 export async function submitExpense() {
   const dateEl   = document.getElementById('exp-date');
   const methodEl = document.getElementById('exp-method');
@@ -1268,6 +1291,7 @@ export async function submitExpense() {
 
   if (!date) { showFieldErr('expError','يرجى إدخال التاريخ'); return; }
   if (splitMode && !splitPartners.length) { showFieldErr('expError','يرجى اختيار شريك واحد على الأقل للتوزيع المتساوي'); return; }
+  if (!splitMode && !(await _confirmNonTreasuryPayerTM(state.system, paidBy))) return;
 
   const rows = el('expenseRowsContainer')?.querySelectorAll('tr') || [];
   const expenses = [];
@@ -1369,6 +1393,8 @@ export async function submitPayment() {
 
   if (!fn)     { showFieldErr('payError','يرجى اختيار الملف/الصفقة'); return; }
   if (!payer || !amount || !date) { showFieldErr('payError','يرجى ملء الحقول المطلوبة'); return; }
+
+  if (!(await _confirmNonTreasuryPayerTM(state.system, payer))) return;
 
   // تحذير لو الدفعة أكبر من المتبقي
   const remainingText = el('pay-card-remaining')?.textContent?.replace(/,/g,'');
