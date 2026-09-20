@@ -1,0 +1,70 @@
+-- م٢ من خطة docs/PLAN-partner-accounts-2026-09-17.md — الحسابات الناقصة
+-- 2026-09-17/20، نُفِّذ بالفعل حيًّا (هذا الملف للسجل والتاريخ، ليس تعليمات تنفيذ).
+--
+-- ١) فتح 7 حسابات شريك عبر create_partner_account() (نفس الأداة المُختبَرة في
+--    e2033fd). لازم محاكاة جلسة مدير حقيقي داخل SQL Editor (auth.jwt() فاضية
+--    هناك أصلًا، بعكس التطبيق):
+--
+--   set local role authenticated;
+--   select set_config('request.jwt.claims', json_build_object('email','test.verify@transit.app')::text, true);
+--   select create_partner_account('BOX','عبدالله الجاحد');   -- => 2409
+--   select create_partner_account('TM','عبدالله الجاحد');    -- => 2402
+--   select create_partner_account('TM','عبد الرحيم الجاحد'); -- => 2403
+--   select create_partner_account('BOX','مشاري العميري');    -- => 2410
+--   select create_partner_account('TM','طلال العميري');      -- => 2404
+--   select create_partner_account('BOX','الصندوق — تاريخي'); -- => 2411
+--   select create_partner_account('TM','صندوق الترانزيت — تاريخي'); -- => 2405
+--
+--   ✅ الاسمان "— تاريخي" عدّيا فحص is_treasury_name() عادي (مطابقة تامة فقط
+--   على 'الصندوق'/'صندوق الترانزيت' بالحرف) — لم يلزم أي استثناء إضافي في
+--   الكود، عكس ما توقّعته الخطة.
+--
+--   مشاري → BOX بس، طلال → TM بس (قرار المالك 2026-09-20): الدليل الوحيد
+--   الموجود فعليًا لمشاري BOX (JE-2026-08545)، ولطلال الـ15% في سياق TM بس
+--   (كشف مازن). فتح حساب في نظام بلا دليل مسجَّل = تجهيز استباقي غير مبرر،
+--   يخالف مبدأ الأداة نفسها ("فتح عند الحاجة الفعلية").
+--
+-- ٢) ⚠️ اكتشاف حي أثناء التحقق البصري: create_partner_account() لا تكتب في
+--    جدول contacts إطلاقًا (بس chart_of_accounts + partner_account_links).
+--    وكل شاشات الدفع/المصاريف/السحب العام (getContactsByType('partner'))
+--    بتقرا من contacts. النتيجة: مشاري/طلال/عبدالله الجاحد ما كانوش هيظهروا
+--    في أي شاشة صرف عادية رغم وجود حساباتهم — عكس قصد الخطة بالحرف ("يفضلوا
+--    ظاهرين في شاشة السحب العام"). أُصلح بإضافة صفوف contacts للأربعة
+--    الحقيقيين فقط (مش لحسابي "— تاريخي"، اللي المفروض يفضلوا غير قابلين
+--    للاختيار في أي مكان عمدًا):
+--
+--   insert into contacts (system_type, name, type)
+--   select 'BOX', 'عبدالله الجاحد', 'partner'
+--   where not exists (select 1 from contacts where system_type='BOX' and name='عبدالله الجاحد')
+--   union all
+--   select 'TM', 'عبدالله الجاحد', 'partner'
+--   where not exists (select 1 from contacts where system_type='TM' and name='عبدالله الجاحد')
+--   union all
+--   select 'TM', 'عبد الرحيم الجاحد', 'partner'
+--   where not exists (select 1 from contacts where system_type='TM' and name='عبد الرحيم الجاحد')
+--   union all
+--   select 'BOX', 'مشاري العميري', 'partner'
+--   where not exists (select 1 from contacts where system_type='BOX' and name='مشاري العميري')
+--   union all
+--   select 'TM', 'طلال العميري', 'partner'
+--   where not exists (select 1 from contacts where system_type='TM' and name='طلال العميري');
+--
+-- ٣) إخفاء مشاري/طلال من قائمة "إضافة شريك لملف" (addPartnerRow، js/modals.js)
+--    وحدها — commit f85d9b5. فلتر بالاسم مباشرة (FILE_PARTNER_EXCLUDED)،
+--    مستقل عن وجود/غياب صف contacts، فيفضل شغّال حتى بعد إضافة الـcontacts
+--    في الخطوة ٢.
+--
+-- ٤) لم تُضَف الحسابات السبعة إلى DEFAULT_ACCOUNTS (accounting.js) ولا
+--    JE_ACCOUNT_SUGGESTIONS (operations.js) — بالفحص المباشر، حسابات المرحلة
+--    ٢ (2401-2408) نفسها لم تُضَف هناك من الأساس؛ القالبان يحملان الحساب
+--    الأب 2400 بس، والحسابات الفردية بيانات حية ديناميكية لا تُكرَّر في قوالب
+--    ثابتة (لا مستهلك فعلي يعتمد عليها هناك). أكّده باستقلالية مراجع خارجي.
+--
+-- التحقق الحي النهائي (بعد النشر f85d9b5 + إضافة contacts، 2026-09-20، بحساب
+-- مدير حقيقي، لا SQL فقط):
+--   شجرة الحسابات BOX: 2409/2410/2411 بأسمائهم الصحيحين، رصيد صفر للثلاثة.
+--   شجرة الحسابات TM: 2402/2403/2404/2405 بأسمائهم الصحيحين، رصيد صفر للأربعة.
+--   "إضافة شريك" (سند شراء جديد، BOX): تعرض عبدالله الجاحد، تستبعد مشاري
+--     العميري — إثبات إن الاستبعاد بالاسم فعليًا، لا غياب contact بالصدفة.
+--   "سحب عام" (معاملة شريك عامة، BOX): تعرض مشاري العميري بعد إضافة الـ
+--     contact، وتستبعد "الصندوق" (فلتر التاريخي، commit 65db271).
