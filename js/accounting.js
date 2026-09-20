@@ -137,7 +137,7 @@ export async function loadTrialBalance() {
     });
 
     // ✅ رصيد افتتاحي حقيقي — صافي كل القيود قبل بداية الفترة (لو حُدِّدت فترة)
-    const openingMap = await _computeOpeningBalances(sys, postF, from);
+    const { byAccount: openingMap } = await _computeOpeningBalances(sys, postF, from);
 
     // ✅ عرض كل حسابات الشجرة (حتى بلا نشاط بالفترة) + أي كود ظهر بالقيود فقط وغير موجود بالشجرة
     const allCodes = new Set([...Object.keys(coaMap), ...Object.keys(accMap), ...Object.keys(openingMap)]);
@@ -160,13 +160,20 @@ export async function loadTrialBalance() {
 // ✅ صافي حركة كل حساب لكل القيود السابقة لتاريخ معيّن (رصيد افتتاحي حقيقي)
 // يُستخدم في ميزان المراجعة وفي دفتر الأستاذ (نفس منطق الحساب لكلاهما)
 // ════════════════════════════════════════════════════════════
+// ✅ تُرجع { byAccount, byContact } — byAccount: {code: صافٍ} (زي القديم بالحرف).
+// byContact: {code: {contact_or_dash: صافٍ}} — أُضيفت لأن دفتر الأستاذ العام
+// كان بيجمّع حركات كل حساب بالجهة (شريك/عميل/مورد) لكنه بيحسب رصيد كل جهة من
+// حركة الفترة بس (cDr-cCr) بلا أي افتتاحي — فأي حساب بجهة واحدة (كل حسابات
+// الشركاء 24xx) كان رصيد الجهة المعروض تحت اسمها **غلط دايمًا** بعد أول فترة
+// (بيتجاهل كل الرصيد الافتتاحي بالكامل)، رغم إن رصيد الحساب نفسه فوقه صحيح.
+// اكتُشف حيًّا 2026-09-20 على 2401(TM) — راجع docs/PLAN-partner-accounts-2026-09-17.md
 export async function _computeOpeningBalances(sys, postF, beforeDate, accountCode = null) {
-  if (!beforeDate) return {};
+  if (!beforeDate) return { byAccount:{}, byContact:{} };
   // ✅ صفحات حقيقية عبر fetchAllPages بدل طلب واحد بـRange كبير — نفس إصلاح
   // loadNewLedger أعلاه، راجع docs/BUG-report-ledger-and-partner-statement-2026-09-20.md
   const buildUrl = (sysParam) => {
     let u = `${SB_URL}/rest/v1/journal_entries?${sysParam}`
-          + `&select=account_code,dr_amount,cr_amount`
+          + `&select=account_code,contact_name,dr_amount,cr_amount`
           + `&entry_date=lt.${encodeURIComponent(beforeDate)}`;
     if (accountCode) u += `&account_code=eq.${encodeURIComponent(accountCode)}`;
     if (postF === 'posted') u += `&post_status=eq.posted`;
@@ -178,13 +185,19 @@ export async function _computeOpeningBalances(sys, postF, beforeDate, accountCod
       fetchAllPages(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), '_computeOpeningBalances'),
       fetchAllPages(buildUrl('system_type=is.null'), '_computeOpeningBalances'),
     ]);
-    const map = {};
+    const byAccount = {}, byContact = {};
     [...(rows1||[]), ...(rows2||[])].forEach(r => {
       const code = r.account_code || 'XXX';
-      map[code] = (map[code]||0) + (+r.dr_amount||0) - (+r.cr_amount||0);
+      const net  = (+r.dr_amount||0) - (+r.cr_amount||0);
+      byAccount[code] = (byAccount[code]||0) + net;
+      // ✅ نفس مفتاح التجميع بالحرف المُستخدَم لحركة الفترة في _renderNlLeaf
+      // (e.contact_name || '— أخرى —') — لازم يتطابقوا حتى يلتقي الافتتاحي بحركته
+      const contact = r.contact_name || '— أخرى —';
+      if (!byContact[code]) byContact[code] = {};
+      byContact[code][contact] = (byContact[code][contact]||0) + net;
     });
-    return map;
-  } catch(e) { console.warn('_computeOpeningBalances:', e.message); return {}; }
+    return { byAccount, byContact };
+  } catch(e) { console.warn('_computeOpeningBalances:', e.message); return { byAccount:{}, byContact:{} }; }
 }
 
 export function filterTrial(type) {
@@ -441,7 +454,7 @@ export async function renderLedgerTable() {
   const openingKey = `${accountCode}|${from}|${postFilter}`;
   if (accountCode && ledgerState._openingKey !== openingKey) {
     ledgerState._openingKey = openingKey;
-    const map = await _computeOpeningBalances(state.system, postFilter, from, accountCode);
+    const { byAccount: map } = await _computeOpeningBalances(state.system, postFilter, from, accountCode);
     window._ledgerOpening = map[accountCode] || 0;
   }
 
@@ -2709,8 +2722,8 @@ export async function loadNewLedger() {
       if (!seen.has(k)) { seen.add(k); allEntries.push(r); }
     });
 
-    // 3. أرصدة افتتاحية
-    const openingMap = await _computeOpeningBalances(sys, postF, from);
+    // 3. أرصدة افتتاحية (بالحساب وبالجهة معًا — راجع _computeOpeningBalances)
+    const { byAccount: openingMap, byContact: openingByContact } = await _computeOpeningBalances(sys, postF, from);
 
     // 4. بناء هياكل البيانات
     const coaMap   = {};
@@ -2734,6 +2747,7 @@ export async function loadNewLedger() {
     window._nlByParent         = byParent;
     window._nlEntriesByAccount = entriesByAccount;
     window._nlOpeningMap       = openingMap;
+    window._nlOpeningByContact = openingByContact;
 
     // subtitle
     const sub = el('nl-subtitle');
@@ -2760,6 +2774,7 @@ export function renderNewLedger() {
   const byParent         = window._nlByParent         || {};
   const entriesByAccount = window._nlEntriesByAccount || {};
   const openingMap       = window._nlOpeningMap       || {};
+  const openingByContact = window._nlOpeningByContact || {};
 
   const roots = byParent['__root__'] || [];
   if (!roots.length) {
@@ -2843,7 +2858,7 @@ export function renderNewLedger() {
         </div>
       </div>
       <div class="nl-group-body" id="nl-body-${rCode}" style="display:${isExpanded?'block':'none'}">
-        ${leaves.map(lc => _renderNlLeaf(lc, coaMap, entriesByAccount, openingMap, search)).join('')}
+        ${leaves.map(lc => _renderNlLeaf(lc, coaMap, entriesByAccount, openingMap, search, openingByContact)).join('')}
       </div>
     </div>`;
   });
@@ -2886,7 +2901,7 @@ const _nlTableHeader = `<thead><tr>
   <th style="width:36px"></th>
 </tr></thead>`;
 
-export function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search) {
+export function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search, openingByContact = {}) {
   const acc     = coaMap[code] || {};
   const allEntries = (entriesByAccount[code] || []).filter(e => {
     if (!search) return true;
@@ -2951,12 +2966,23 @@ export function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search
     const contactRows = Object.entries(groups).map(([contact, entries]) => {
       const cDr  = entries.reduce((s,e) => s + (+e.dr_amount||0), 0);
       const cCr  = entries.reduce((s,e) => s + (+e.cr_amount||0), 0);
-      const cBal = cDr - cCr;
+      // ✅ الإصلاح الجذري — كان هنا `cDr - cCr` بلا أي رصيد افتتاحي، فأي حساب
+      // جهته الوحيدة (كل حسابات الشركاء 24xx) كان رصيده هنا مختلفًا عن رصيد
+      // الحساب الأب المعروض فوقه مباشرة. راجع openingByContact في core.js.
+      const cOpen = (openingByContact[code] || {})[contact] || 0;
+      const cBal  = cOpen + cDr - cCr;
       const cBC  = cBal > 0 ? 'var(--green)' : cBal < 0 ? 'var(--red)' : 'var(--text2)';
       const cKey = `${code}__${contact}`.replace(/[^a-zA-Z0-9_؀-ۿ]/g,'_');
       const cExp = nlState.expandedContacts.has(cKey);
       const safeContact = contact.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      const entryRows = _renderNlEntryRows(entries, 0);
+      const cOpeningRow = cOpen
+        ? `<tr style="background:var(--card2)">
+             <td colspan="4" style="padding:5px 10px;font-size:12px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
+             <td class="mono" style="padding:5px 10px;text-align:left;color:var(--green)">${cOpen>0?fmt(cOpen):'—'}</td>
+             <td class="mono" style="padding:5px 10px;text-align:left;color:var(--red)">${cOpen<0?fmt(Math.abs(cOpen)):'—'}</td>
+             <td class="mono" style="padding:5px 10px;text-align:left;font-weight:700">${fmt(Math.abs(cOpen))}</td>
+             <td></td></tr>` : '';
+      const entryRows = _renderNlEntryRows(entries, cOpen);
 
       return `
       <div class="nl-contact">
@@ -2983,7 +3009,7 @@ export function _renderNlLeaf(code, coaMap, entriesByAccount, openingMap, search
           <div class="data-table-wrap">
             <table class="data-table" style="font-size:12px;min-width:680px">
               ${_nlTableHeader}
-              <tbody>${entryRows}</tbody>
+              <tbody>${cOpeningRow}${entryRows}</tbody>
               <tfoot style="background:var(--card2)"><tr>
                 <td colspan="4" style="padding:5px 10px;font-weight:700">الإجمالي (${entries.length} حركة)</td>
                 <td class="mono text-green" style="text-align:left;font-weight:900;padding:5px 10px">${fmt(cDr)}</td>
