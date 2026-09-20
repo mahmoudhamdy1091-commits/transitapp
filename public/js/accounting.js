@@ -168,24 +168,22 @@ export async function loadTrialBalance() {
 // ════════════════════════════════════════════════════════════
 export async function _computeOpeningBalances(sys, postF, beforeDate, accountCode = null) {
   if (!beforeDate) return {};
+  // ✅ صفحات حقيقية عبر fetchAllPages بدل طلب واحد بـRange كبير — نفس إصلاح
+  // loadNewLedger أعلاه، راجع docs/BUG-report-ledger-and-partner-statement-2026-09-20.md
   const buildUrl = (sysParam) => {
     let u = `${SB_URL}/rest/v1/journal_entries?${sysParam}`
-          + `&select=account_code,dr_amount,cr_amount&limit=49999`
+          + `&select=account_code,dr_amount,cr_amount`
           + `&entry_date=lt.${encodeURIComponent(beforeDate)}`;
     if (accountCode) u += `&account_code=eq.${encodeURIComponent(accountCode)}`;
     if (postF === 'posted') u += `&post_status=eq.posted`;
     if (postF === 'draft')  u += `&post_status=eq.draft`;
     return u;
   };
-  const rangeHeaders = { 'Range': '0-49999', 'Range-Unit': 'items' };
   try {
-    const res1 = await apiFetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: rangeHeaders });
-    const rows1 = (res1.ok || res1.status === 206) ? await res1.json() : [];
-    let rows2 = [];
-    try {
-      const res2 = await apiFetch(buildUrl('system_type=is.null'), { headers: rangeHeaders });
-      if (res2.ok || res2.status === 206) rows2 = await res2.json();
-    } catch(_) {}
+    const [rows1, rows2] = await Promise.all([
+      fetchAllPages(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), '_computeOpeningBalances'),
+      fetchAllPages(buildUrl('system_type=is.null'), '_computeOpeningBalances'),
+    ]);
     const map = {};
     [...(rows1||[]), ...(rows2||[])].forEach(r => {
       const code = r.account_code || 'XXX';
@@ -2675,9 +2673,12 @@ export async function loadNewLedger() {
     });
 
     // 2. قيود الفترة
+    // ✅ صفحات حقيقية عبر fetchAllPages (core.js) بدل طلب واحد بـRange كبير —
+    // كان بيقطع بصمت عند حد Supabase (1000 صف) لأي نظام/فترة نشاطها أكبر من
+    // كده، بلا أي رسالة تحذير. راجع docs/BUG-report-ledger-and-partner-statement-2026-09-20.md
     const buildUrl = (sysParam) => {
       let u = `${SB_URL}/rest/v1/journal_entries?${sysParam}`
-            + `&select=id,account_code,dr_amount,cr_amount,entry_date,description,entry_no,ref_table,file_no,contact_name,post_status&limit=49999`
+            + `&select=id,account_code,dr_amount,cr_amount,entry_date,description,entry_no,ref_table,file_no,contact_name,post_status`
             + `&order=entry_date.asc,id.asc`;
       if (from)  u += `&entry_date=gte.${encodeURIComponent(from)}`;
       if (to)    u += `&entry_date=lte.${encodeURIComponent(to + 'T23:59:59')}`;
@@ -2685,14 +2686,10 @@ export async function loadNewLedger() {
       if (postF === 'draft')  u += `&post_status=eq.draft`;
       return u;
     };
-    const rangeHeaders = { 'Range': '0-49999', 'Range-Unit': 'items' };
-    const res1 = await apiFetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: rangeHeaders });
-    const rows1 = (res1.ok || res1.status === 206) ? await res1.json() : [];
-    let rows2 = [];
-    try {
-      const res2 = await apiFetch(buildUrl('system_type=is.null'), { headers: rangeHeaders });
-      if (res2.ok || res2.status === 206) rows2 = await res2.json();
-    } catch(_) {}
+    const [rows1, rows2] = await Promise.all([
+      fetchAllPages(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), 'loadNewLedger'),
+      fetchAllPages(buildUrl('system_type=is.null'), 'loadNewLedger'),
+    ]);
     const seen = new Set();
     const allEntries = [];
     [...(rows1||[]), ...(rows2||[])].forEach(r => {

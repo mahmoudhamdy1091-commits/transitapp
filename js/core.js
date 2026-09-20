@@ -449,14 +449,33 @@ export async function apiGetAll(table, params = {}) {
 // الهدف: ضمان تطابق "صافي الربح" وما شابه بين الشاشتين لنفس الفترة
 // ════════════════════════════════════════
 
+// ✅ استُخرجت من fetchJEForPeriod (كانت fetchOne محلية) عشان تتشارك مع أي
+// استهلاك تاني بيبني رابط journal_entries يدويًا ومحتاج صفحات حقيقية بدل
+// طلب واحد بـRange كبير (نفس سبب _API_PAGE_SIZE/_API_MAX_PAGES فوق: Supabase
+// بتقطع عند 1000 صف بغض النظر عن الـRange المطلوب). بلا &limit في الرابط
+// نفسه لنفس سبب apiGet — يتعارض مع صفحات الـRange المتتالية.
+export async function fetchAllPages(url, label = '') {
+  let out = [];
+  let offset = 0;
+  for (let page = 0; page < _API_MAX_PAGES; page++) {
+    const res = await apiFetch(url, {
+      headers: { 'Range': `${offset}-${offset + _API_PAGE_SIZE - 1}`, 'Range-Unit': 'items' },
+    });
+    if (!res.ok && res.status !== 206) return out; // نفس السلوك القديم: تجاهل الخطأ، رجّع اللي اتجمّع لحد كده
+    const body = await res.json();
+    out = out.concat(body);
+    if (body.length < _API_PAGE_SIZE) break;
+    offset += _API_PAGE_SIZE;
+    if (page === _API_MAX_PAGES - 1) {
+      console.warn(`[Transit] ⚠️ fetchAllPages${label ? '(' + label + ')' : ''}: وصلنا لسقف ${_API_MAX_PAGES} صفحة — البيانات ممكن تكون ناقصة.`);
+    }
+  }
+  return out;
+}
+
 /** جلب قيود journal_entries المرحّلة لفترة معيّنة (النظام الحالي + system_type=null) مع إزالة التكرار */
 export async function fetchJEForPeriod(sys, from, to) {
   const toEOD = to + 'T23:59:59';
-  // ✅ بلا &limit — كان بيتعارض مع الـpagination بالـRange تحت (PostgREST بيدّي
-  // أولوية لـlimit/offset في الـquery string لو موجودين، فكان بيرجّع نفس أول
-  // صفحة في كل تكرار بدل الصفحة التالية فعليًا). الحد الفعلي دلوقتي بالكامل
-  // عبر Range header في fetchOne — راجع نفس الإصلاح في apiGet أعلاه لنفس السبب
-  // (Supabase بتقطع عند 1000 صف بغض النظر عن Range الأكبر المطلوب).
   const buildUrl = (sysParam) =>
     `${SB_URL}/rest/v1/journal_entries?${sysParam}` +
     `&entry_date=gte.${encodeURIComponent(from)}` +
@@ -464,28 +483,9 @@ export async function fetchJEForPeriod(sys, from, to) {
     `&post_status=eq.posted` +
     `&select=id,entry_no,ref_id,account_code,account_name,dr_amount,cr_amount,ref_table,file_no,reverses`;
 
-  const fetchOne = async (url) => {
-    let out = [];
-    let offset = 0;
-    for (let page = 0; page < _API_MAX_PAGES; page++) {
-      const res = await apiFetch(url, {
-        headers: { 'Range': `${offset}-${offset + _API_PAGE_SIZE - 1}`, 'Range-Unit': 'items' },
-      });
-      if (!res.ok && res.status !== 206) return out; // نفس السلوك القديم: تجاهل الخطأ، رجّع اللي اتجمّع لحد كده
-      const body = await res.json();
-      out = out.concat(body);
-      if (body.length < _API_PAGE_SIZE) break;
-      offset += _API_PAGE_SIZE;
-      if (page === _API_MAX_PAGES - 1) {
-        console.warn(`[Transit] ⚠️ fetchJEForPeriod: وصلنا لسقف ${_API_MAX_PAGES} صفحة — البيانات ممكن تكون ناقصة.`);
-      }
-    }
-    return out;
-  };
-
   const [rows1, rows2] = await Promise.all([
-    fetchOne(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`)),
-    fetchOne(buildUrl('system_type=is.null')),
+    fetchAllPages(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), 'fetchJEForPeriod'),
+    fetchAllPages(buildUrl('system_type=is.null'), 'fetchJEForPeriod'),
   ]);
 
   const seen = new Set();
@@ -1433,7 +1433,7 @@ Object.assign(window, {
   cacheStale, ensureCache, _doLoadCache, invalidateCache, isPosted,
   isDraft, isActive, isEffective, isVisible, isOccupying, isPending,
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
-  apiGetAll, fetchJEForPeriod, computeFinancials, computePartnerSettlement, apiPost, apiPatch,
+  apiGetAll, fetchJEForPeriod, fetchAllPages, computeFinancials, computePartnerSettlement, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
   computePartnerGlobalBalance, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
   fetchPartnerTransactions,
