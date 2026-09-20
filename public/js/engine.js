@@ -1228,23 +1228,22 @@ export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
   const partnerTrimmed = (partner||'').trim();
-  // ✅ المرحلة ٢ (partner_account_links، 2026-09-16) — نفس نمط je_partnerLedger
-  // بالحرف: الخزينة مُستثناة (تكتب 2400 كما هي)، أي شريك تاني لازم حساب
-  // مربوط وإلا رفض صريح، والاسم المخزَّن يُجلب حقيقيًا من chart_of_accounts.
+  // ✅ م٣ (docs/PLAN-partner-accounts-2026-09-17.md، 2026-09-20): رُفع استثناء
+  // الخزينة — كانت تكتب 2400 بالحرف، ودلوقتي عندها حساب مخصَّص فريد
+  // (partner_account_links) زي أي شريك بالظبط، بعد ما اتأكد إنها مش هتظهر
+  // كخيار في أي شاشة صرف غلط (فلتر _fillLedgerPartners، commit 65db271).
   let partnerAcc = '2400', partnerAccName = 'حسابات الشركاء';
-  if (!TREASURY_ALIASES.has(partnerTrimmed)) {
-    const link = await apiGetAll('partner_account_links', {
-      select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${partnerTrimmed}`,
-    });
-    if (!link?.length) {
-      throw new Error(`الشريك "${partnerTrimmed}" ليس له حساب مربوط في partner_account_links — راجع sql/partner_account_links.sql قبل تسجيل معاملة له`);
-    }
-    partnerAcc = link[0].account_code;
-    const acc = await apiGetAll('chart_of_accounts', {
-      select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
-    });
-    if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
+  const link = await apiGetAll('partner_account_links', {
+    select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${partnerTrimmed}`,
+  });
+  if (!link?.length) {
+    throw new Error(`الشريك "${partnerTrimmed}" ليس له حساب مربوط في partner_account_links — راجع sql/partner_account_links.sql قبل تسجيل معاملة له`);
   }
+  partnerAcc = link[0].account_code;
+  const acc = await apiGetAll('chart_of_accounts', {
+    select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
+  });
+  if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
   // ✅ Track B — نفس علة je_purchase/je_sale (return ناقصة). تأكدنا: كل الـ8
   // مواقع استدعاء حقيقية لا تلتقط القيمة المرجعة، فالإضافة دي إضافية بحتة
   return await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',refId,desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
@@ -1264,30 +1263,27 @@ export async function je_partnerLedger({sys,date,entryType,amount,fileNo,refId,p
   const cashNm  = method==='نقد'?'النقد':'البنك';
   const isDeposit = entryType === 'إيداع عام';
   const partnerTrimmed = (partner||'').trim();
-  // ✅ المرحلة ٢ (partner_account_links، 2026-09-16، قرار موثَّق في
-  // project_partner_current_account_model.md): الخزينة (TREASURY_ALIASES)
-  // مُستثناة بالكامل — تفضل تكتب 2400 بالحرف زي قبل كده، صفر تغيير سلوك
-  // (هي الشركة نفسها، مالهاش حساب مخصَّص بتصميم النظام). أي شريك حقيقي تاني
-  // لازم يكون له حساب مربوط، وإلا رفض صريح (الحارس) بدل كتابة صامتة على 2400
-  // تُفقِد حركته من computePartnerGlobalBalance/computePartnerSettlement.
+  // ✅ م٣ (docs/PLAN-partner-accounts-2026-09-17.md، 2026-09-20): رُفع استثناء
+  // الخزينة (كان يكتب 2400 بالحرف، راجع project_partner_current_account_model.md)
+  // — الخزينة عندها حساب مخصَّص فريد دلوقتي (partner_account_links)، وأي شريك
+  // (بما فيهم الخزينة) لازم يكون له حساب مربوط، وإلا رفض صريح (الحارس) بدل
+  // كتابة صامتة على 2400 تُفقِد حركته من computePartnerGlobalBalance/computePartnerSettlement.
   let partnerAcc = '2400', partnerAccName = 'حسابات الشركاء';
-  if (!TREASURY_ALIASES.has(partnerTrimmed)) {
-    const link = await apiGetAll('partner_account_links', {
-      select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${partnerTrimmed}`,
-    });
-    if (!link?.length) {
-      throw new Error(`الشريك "${partnerTrimmed}" ليس له حساب مربوط في partner_account_links — راجع sql/partner_account_links.sql قبل تسجيل معاملة له`);
-    }
-    partnerAcc = link[0].account_code;
-    // ✅ الاسم الحقيقي المخزَّن لازم يطابق الحساب المرحَّل عليه فعليًا (2401
-    // "جاري الشريك أبو هادي" لا "حسابات الشركاء" — الاسم الأخير بتاع الأب 2400
-    // بس). باج رصده المراجع: بلا هذا الاستعلام كل معاملة جديدة على حساب
-    // مخصَّص كانت هتترحّل بالكود الصح والاسم المخزَّن الغلط.
-    const acc = await apiGetAll('chart_of_accounts', {
-      select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
-    });
-    if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
+  const link = await apiGetAll('partner_account_links', {
+    select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${partnerTrimmed}`,
+  });
+  if (!link?.length) {
+    throw new Error(`الشريك "${partnerTrimmed}" ليس له حساب مربوط في partner_account_links — راجع sql/partner_account_links.sql قبل تسجيل معاملة له`);
   }
+  partnerAcc = link[0].account_code;
+  // ✅ الاسم الحقيقي المخزَّن لازم يطابق الحساب المرحَّل عليه فعليًا (2401
+  // "جاري الشريك أبو هادي" لا "حسابات الشركاء" — الاسم الأخير بتاع الأب 2400
+  // بس). باج رصده المراجع: بلا هذا الاستعلام كل معاملة جديدة على حساب
+  // مخصَّص كانت هتترحّل بالكود الصح والاسم المخزَّن الغلط.
+  const acc = await apiGetAll('chart_of_accounts', {
+    select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
+  });
+  if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
   const desc = fileNo ? `${entryType} — ${partner} — ملف ${fileNo}` : `${entryType} — ${partner}`;
   return await postDoubleEntry({sys,date,fileNo:fileNo||null,refTable:'partner_ledger',refId,desc,lines: isDeposit
     ? [ {acc:cashAcc,   name:cashNm,       dr:amount, cr:0,      contact:null           },
@@ -1405,20 +1401,19 @@ export async function simulateDraftJE(sys, from, to) {
         // تجميعية، والرفض الفعلي بيحصل في je_payment وقت الترحيل الحقيقي
         const payerTrimmed = payerStr.trim();
         let partnerAcc = '2400', partnerAccName = 'حسابات الشركاء';
-        if (!TREASURY_ALIASES.has(payerTrimmed)) {
-          try {
-            const link = await apiGetAll('partner_account_links', {
-              select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${payerTrimmed}`,
+        // ✅ م٣: الخزينة بقت لها حساب مربوط زي أي شريك — نفس المسار للجميع
+        try {
+          const link = await apiGetAll('partner_account_links', {
+            select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${payerTrimmed}`,
+          });
+          if (link?.length) {
+            partnerAcc = link[0].account_code;
+            const acc = await apiGetAll('chart_of_accounts', {
+              select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
             });
-            if (link?.length) {
-              partnerAcc = link[0].account_code;
-              const acc = await apiGetAll('chart_of_accounts', {
-                select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
-              });
-              if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
-            }
-          } catch(_) {}
-        }
+            if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
+          }
+        } catch(_) {}
         push([
           {acc:'2100',     name:'ذمم الموردين', dr:+pmt.amount, cr:0, contact:sup},
           {acc:partnerAcc, name:partnerAccName, dr:0, cr:+pmt.amount, contact:payerStr},
@@ -1461,23 +1456,22 @@ export async function simulateDraftJE(sys, from, to) {
       // الحقيقية، عشان المعاينة لا تكذب على المستخدم عن الحساب اللي هيترحّل عليه فعليًا
       const partnerTrimmed = (o.partner||'').trim();
       let partnerAcc = '2400', partnerAccName = 'حسابات الشركاء';
-      if (!TREASURY_ALIASES.has(partnerTrimmed)) {
-        try {
-          const link = await apiGetAll('partner_account_links', {
-            select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${partnerTrimmed}`,
+      // ✅ م٣: الخزينة بقت لها حساب مربوط زي أي شريك — نفس المسار للجميع
+      try {
+        const link = await apiGetAll('partner_account_links', {
+          select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${partnerTrimmed}`,
+        });
+        if (link?.length) {
+          partnerAcc = link[0].account_code;
+          const acc = await apiGetAll('chart_of_accounts', {
+            select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
           });
-          if (link?.length) {
-            partnerAcc = link[0].account_code;
-            const acc = await apiGetAll('chart_of_accounts', {
-              select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
-            });
-            if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
-          }
-          // ✅ بلا شريك مربوط: المعاينة تسيبها 2400 (بدل رفض الحلقة كلها بـthrow
-          // زي الكاتب الحقيقي) — هي عرض تقريبي بس، والرفض الفعلي هيحصل عند
-          // الترحيل الحقيقي عبر je_payout نفسها
-        } catch(_) {}
-      }
+          if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
+        }
+        // ✅ بلا شريك مربوط: المعاينة تسيبها 2400 (بدل رفض الحلقة كلها بـthrow
+        // زي الكاتب الحقيقي) — هي عرض تقريبي بس، والرفض الفعلي هيحصل عند
+        // الترحيل الحقيقي عبر je_payout نفسها
+      } catch(_) {}
       push([
         {acc:partnerAcc, name:partnerAccName, dr:+o.amount, cr:0, contact:o.partner},
         {acc:cashAcc,    name:cashNm,         dr:0, cr:+o.amount, contact:null},
