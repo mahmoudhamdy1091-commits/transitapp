@@ -4450,7 +4450,10 @@ export function renderJELines() {
   const tbody = el('je-lines-body');
   if (!tbody) return;
   tbody.innerHTML = _jeLines.map((line, i) => {
-    const suggestions = _jeAccountOptions.map(s =>
+    // ✅ م٥ — لا تُقترَح الحسابات الأب أصلًا في القيد اليدوي (نفس الحارس
+    // المُطبَّق عند الحفظ في submitJE، هنا وقائيًا قبل أي محاولة اختيار)
+    const _parentCodes = new Set(_jeAccountOptions.map(s => s.parent).filter(Boolean));
+    const suggestions = _jeAccountOptions.filter(s => !_parentCodes.has(s.code)).map(s =>
       `<option value="${s.code}">${s.parent ? '↳ ' : ''}${s.code} — ${s.name}</option>`
     ).join('');
     const match = _jeAccountOptions.find(s => s.code === (line.acc||'').trim());
@@ -4574,6 +4577,13 @@ export async function submitJE() {
 
   const unlinked = validLines.find(l => !_jeAccountOptions.find(s => s.code === (l.acc||'').trim()));
   if (unlinked) { showFieldErr('jeError',`❌ رقم الحساب "${unlinked.acc||'—'}" غير موجود في شجرة الحسابات — اختر رقمًا من القائمة أو أضِفه أولاً من شجرة الحسابات`); return; }
+
+  // ✅ م٥ — قفل الحسابات الأب (docs/PLAN-partner-accounts-2026-09-17.md): أي
+  // حساب له أولاد (حساب تاني بـparent_code = كوده) لا يقبل قيدًا مباشرًا —
+  // حارس الواجهة (الأول من حارسين، الثاني قاعدة البيانات نفسها). الشاشة كانت
+  // تسمح باختيار أي كود موجود في الشجرة بلا تمييز أب/فرعي.
+  const onParent = validLines.find(l => _jeAccountOptions.some(s => s.parent === (l.acc||'').trim()));
+  if (onParent) { showFieldErr('jeError',`❌ الحساب "${onParent.acc}" حساب أب وله حسابات فرعية — اختر الحساب الفرعي المحدَّد بدلاً منه (مثال: بدل 2400 اختر حساب الشريك نفسه)`); return; }
 
   const totalDr = validLines.reduce((s,l)=>s+(+l.dr||0),0);
   const totalCr = validLines.reduce((s,l)=>s+(+l.cr||0),0);
