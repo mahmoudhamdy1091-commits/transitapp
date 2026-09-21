@@ -443,6 +443,17 @@ export async function apiGetAll(table, params = {}) {
   return out;
 }
 
+// ✅ بناء قيمة فلتر PostgREST "in.(...)" بأمان لقيم نصية حرة (أرقام ملفات
+// تحتوي مسافات/أقواس/فواصل — مثال حي: "BOX-138 - ( LOT 1 OLD 2024 )").
+// بلا اقتباس، القوس الداخلي يكسر تحليل PostgREST للقائمة بصمت (يرجع صفوفًا
+// فاضية بلا أي خطأ HTTP ظاهر) بمجرد أكتر من قيمة واحدة في القائمة — اكتُشف
+// حيًّا 2026-09-21 أثناء التحقق من computePartnerSettlementBatch: ملف واحد
+// كان يعمل صح والدُفعة (٣ ملفات معًا) ترجع صفرًا للكل. راجع PostgREST docs:
+// قيمة تحتوي حروفًا خاصة تُكتب بين علامتَي اقتباس مزدوجتين، وأي " داخلها تُهرَّب بـ\".
+export function pgIn(values) {
+  return `in.(${(values||[]).map(v => `"${String(v).replace(/"/g, '\\"')}"`).join(',')})`;
+}
+
 // ════════════════════════════════════════
 // FINANCIALS — مصدر موحّد لحساب أرقام الربح/التكاليف
 // مستخدم في: dashboard.js (KPIs) و reports.js (تقرير الأرباح والخسائر)
@@ -665,6 +676,19 @@ export async function computePartnerSettlement(fileNo, sys) {
     // التغيير regression بحت اليوم: يجب أن يطابق الناتج القديم بالحرف.
     apiGetAll('partner_account_links', { select:'partner_name,account_code', system_type:`eq.${sys}` }),
   ]);
+  return _settlePartnerRows(fileNo, partnersRaw, jeAll, poRow, confirmations, accountLinks);
+}
+
+/**
+ * ✅ استُخرجت من computePartnerSettlement بلا أي تغيير في المنطق (نفس الأسطر
+ * بالحرف) — تسمح لدالة دفعية (computePartnerSettlementBatch تحت) تستخدم نفس
+ * الحساب بالضبط بعد جلب دفعة ملفات الشريك مرة واحدة بدل استعلام لكل ملف على
+ * حدة (كان يسبب ~45 ثانية لكشف حساب شريك بـ95 ملف — راجع
+ * docs/PLAN-partner-statement-restructure-2026-09-20.md قسم ٤).
+ * لا تُعدَّل هذه الدالة بمعزل عن توثيق computePartnerSettlement أعلاه — أي
+ * انحراف هنا ينحرف في الاستخدامين معًا (الفردي والدفعي) في آنٍ واحد.
+ */
+function _settlePartnerRows(fileNo, partnersRaw, jeAll, poRow, confirmations, accountLinks) {
   // كود الحساب المخصَّص لكل شريك في هذا الملف (لو موجود) — يُستخدم تحت
   // لتوسيع فلتر حساب الشركاء بدل الاقتصار على '2400' وحده
   const linkedCodes = new Set((accountLinks||[]).map(r => r.account_code));
@@ -862,6 +886,77 @@ export async function computePartnerSettlement(fileNo, sys) {
   // isClosed/collectedCash مُصدَّران عشان الواجهة تقدر تشرح للمستخدم ليه السقف
   // بالرقم ده، بدل ما يظهر رقم بلا مبرر
   return { fullCost, totalPurchase, totalExpenseAmount, totalSales: fin.sales, profit, hasJEData, isClosed, collectedCash, partners };
+}
+
+/**
+ * نسخة دفعية من computePartnerSettlement — نفس الحساب بالحرف (عبر
+ * _settlePartnerRows الموحّدة)، لكن بجلب واحد للجداول الخمسة مقيَّد بـ
+ * file_no IN (كل الملفات)، بدل استعلام لكل ملف على حدة. الهدف: كشف حساب
+ * شريك بعشرات الملفات (showPartnerStatement) بلا ~14×N طلب متزامن.
+ *
+ * ⚠️ partner_account_links وحده لا يُفلتَر بـfile_no (نفس سلوك النسخة
+ * المفردة أصلًا — 9 صفوف إجمالاً في كل النظام، أرخص جلبها كاملة).
+ *
+ * يرجع خريطة { file_no: <نفس ناتج computePartnerSettlement لهذا الملف> }.
+ * ملف مطلوب بلا أي صف مطابق (بيانات ناقصة، لا خطأ) يرجع بنفس شكل النتيجة
+ * الفارغة التي كانت ستُبنى من مصفوفات فارغة في النسخة المفردة.
+ */
+export async function computePartnerSettlementBatch(fileNos, sys) {
+  const files = [...new Set((fileNos||[]).filter(Boolean))];
+  if (!files.length) return {};
+  const inList = pgIn(files);
+
+  const [partnersRaw, jeAll, poRows, confirmations, accountLinks] = await Promise.all([
+    apiGetAll('partners_master', { select:'partner,share_percent,file_no', system_type:`eq.${sys}`, file_no:inList }),
+    apiGetAll('journal_entries', {
+      select:'account_code,contact_name,dr_amount,cr_amount,ref_table,ref_id,entry_date,description,entry_no,file_no',
+      system_type:`eq.${sys}`, file_no:inList, post_status:`eq.posted`,
+      order:'entry_date.asc,id.asc',
+    }),
+    apiGetAll('purchase_orders', { select:'status,file_no', system_type:`eq.${sys}`, file_no:inList }),
+    apiGetAll('partner_ledger', {
+      select:'partner,amount,file_no', system_type:`eq.${sys}`, file_no:inList,
+      entry_type:'eq.تأكيد استلام', post_status:`eq.posted`,
+    }),
+    apiGetAll('partner_account_links', { select:'partner_name,account_code', system_type:`eq.${sys}` }),
+  ]);
+
+  const groupByFile = rows => {
+    const m = {};
+    (rows||[]).forEach(r => { (m[r.file_no] ||= []).push(r); });
+    return m;
+  };
+  const partnersByFile = groupByFile(partnersRaw);
+  const jeByFile       = groupByFile(jeAll);
+  const poByFile       = groupByFile(poRows);
+  const confByFile     = groupByFile(confirmations);
+
+  const out = {};
+  files.forEach(fn => {
+    out[fn] = _settlePartnerRows(
+      fn, partnersByFile[fn]||[], jeByFile[fn]||[], poByFile[fn]||[], confByFile[fn]||[], accountLinks
+    );
+  });
+  return out;
+}
+
+/**
+ * صفة الشريك: دائم أم خارجي — انعكاس حرفي لدالة is_permanent_partner()
+ * (sql/m_is_permanent_only.sql) بالكود، بلا استدعاء RPC. الخزينة (بأي اسم في
+ * TREASURY_ALIASES) دائمًا true بلا صف ربط، زي الدالة تمامًا. `accountLinks`
+ * لازم يحمل عمود is_permanent في الـselect (بعكس النسخة المُستخدَمة داخل
+ * computePartnerSettlementBatch فوق، اللي بتجيب partner_name/account_code بس
+ * — لا تُستخدم هنا لأنها ناقصة العمود). true=دائم · false=خارجي · null=غير
+ * مصنَّف (أو بلا صف ربط أصلًا) — القارئ يتعامل معه بالرفض/الافتراضي الآمن،
+ * لا بافتراض دائم أو خارجي. راجع docs/PLAN-partner-statement-restructure-2026-09-20.md قسم ٥.
+ */
+export function isPermanentPartner(sys, partnerName, accountLinksWithFlag) {
+  const name = (partnerName||'').trim();
+  if (TREASURY_ALIASES.has(name)) return true;
+  const row = (accountLinksWithFlag||[]).find(r => r.partner_name === name);
+  // ⚠️ لا تحوّل row.is_permanent === null إلى false هنا — نفس فخ الافتراض
+  // الصامت اللي الدالة الأصلية اتصمّمت عشان تمنعه (راجع التعليق فوق)
+  return row ? row.is_permanent : null;
 }
 
 // ✅ تصنيف مركزي لأخطاء "قيد فريد" (unique constraint) — مُعمَّم لأي اسم قيد،
@@ -1145,6 +1240,49 @@ export async function computePartnerGlobalBalance(partner, sys) {
   ]);
   const je2400 = [...byName, ...byLinkedAccount];
   return je2400.reduce((s,r) => s + (+r.cr_amount||0) - (+r.dr_amount||0), 0);
+}
+
+/**
+ * كل حركات حساب الشريك (2400 التاريخي بالاسم ∪ حسابه المخصَّص لو موجود) —
+ * بلا أي فلتر ملف، بعكس settlement.partners[].movements في
+ * computePartnerSettlement (مربوطة بـfile_no واحد، فبتفوّت أي قيد بلا ملف —
+ * زي القيد الافتتاحي أو حركة أُعيد تصنيفها لاحقًا). اكتُشف حيًّا 2026-09-21:
+ * تجميع movements عبر كل ملفات الشريك (خطوة ٣، showPartnerStatement) أعطى
+ * حركة واحدة بس لمازن من أصل 95 ملف — تاريخه الحقيقي (القيد الافتتاحي +871
+ * سطر أُعيدت تصنيفها في م٤) بلا file_no أو على حساب تاني أصلًا، فمستحيل
+ * يظهر من مصدر مربوط بملف مهما كان القالب. نفس منطق
+ * computePartnerGlobalBalance بالضبط (فوق) — union لا شرط واحد، لنفس السبب
+ * الموثَّق هناك — لكن صفوف كاملة للعرض لا مجموع فقط.
+ */
+export async function fetchPartnerLedgerMovements(sys, partner) {
+  const trimmed = (partner||'').trim();
+  const link = await apiGetAll('partner_account_links', {
+    select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${trimmed}`,
+  });
+  const linkedCodesOnly = (link||[]).map(r => r.account_code);
+  const selectCols = 'id,entry_date,description,entry_no,dr_amount,cr_amount,file_no';
+  const [byName, byLinkedAccount] = await Promise.all([
+    apiGetAll('journal_entries', {
+      select:selectCols, system_type:`eq.${sys}`,
+      account_code:'eq.2400', contact_name:`eq.${trimmed}`, post_status:`eq.posted`,
+    }),
+    linkedCodesOnly.length ? apiGetAll('journal_entries', {
+      select:selectCols, system_type:`eq.${sys}`,
+      account_code:`in.(${linkedCodesOnly.join(',')})`, post_status:`eq.posted`,
+    }) : Promise.resolve([]),
+  ]);
+  const seen = new Set();
+  const rows = [];
+  [...byName, ...byLinkedAccount].forEach(r => {
+    if (seen.has(r.id)) return;
+    seen.add(r.id);
+    rows.push(r);
+  });
+  rows.sort((a,b) => (a.entry_date||'').localeCompare(b.entry_date||'') || (a.id - b.id));
+  return rows.map(r => ({
+    date: (r.entry_date||'').split('T')[0], desc: r.description||'—', ref: r.entry_no||'',
+    debit: +r.dr_amount||0, credit: +r.cr_amount||0, fileNo: r.file_no||'',
+  }));
 }
 
 /**
@@ -1446,9 +1584,9 @@ Object.assign(window, {
   cacheStale, ensureCache, _doLoadCache, invalidateCache, isPosted,
   isDraft, isActive, isEffective, isVisible, isOccupying, isPending,
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
-  apiGetAll, fetchJEForPeriod, fetchAllPages, computeFinancials, computePartnerSettlement, apiPost, apiPatch,
+  apiGetAll, fetchJEForPeriod, fetchAllPages, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
-  computePartnerGlobalBalance, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
+  computePartnerGlobalBalance, fetchPartnerLedgerMovements, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
   fetchPartnerTransactions,
   login, logout, state, SB_URL, SB_KEY,
 });

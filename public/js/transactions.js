@@ -195,6 +195,15 @@ export async function loadTransactions() {
     const colPaidAmt    = type==='collections' ? rows.filter(r=>r.paid_date && isPosted(r)).reduce((s,r)=>s+(+r.amount||0),0) : 0;
     const colPendingAmt = type==='collections' ? rows.filter(r=>!r.paid_date && isPosted(r)).reduce((s,r)=>s+(+r.amount||0),0) : 0;
 
+    // ✅ خطوة ٣ (كشف حساب شريك من داخل معاملات الشركاء) — راجع
+    // docs/PLAN-partner-statement-restructure-2026-09-20.md قسم ٣ب. قائمة
+    // الشركاء الفريدة لهذا النظام، بنفس مصدر "تقرير الشركاء" القديم
+    // (partners_master) — يُستبدَل هذا التبويب في خطوة ٤ فيصير هنا مصدرها
+    // الوحيد. جلب مستقل صغير، لا يبطّئ باقي الشاشة (بلا await قبله).
+    const partnerNames = type === 'payouts'
+      ? [...new Set((await apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}` }) || []).map(p=>p.partner))].filter(Boolean).sort()
+      : [];
+
     el('tx-subtitle').textContent = `${rows.length} سجل · ${from} — ${to}`;
     el('tx-kpis').innerHTML = `
       <div class="j-kpi" style="border-right:3px solid ${cfg.color}">
@@ -205,6 +214,17 @@ export async function loadTransactions() {
         <div class="j-kpi-label">عدد السجلات</div>
         <div class="j-kpi-val">${rows.length}</div>
       </div>
+      ${type==='payouts' ? `
+      <div class="j-kpi" style="border-right:3px solid var(--accent)">
+        <div class="j-kpi-label">📖 كشف حساب شامل لشريك</div>
+        <div style="margin-top:6px">
+          <select id="tx-partner-select" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:100%">
+            <option value="">اختر شريكاً...</option>
+            ${partnerNames.map(p=>`<option value="${p}">${p}</option>`).join('')}
+          </select>
+          <button onclick="openPartnerStatementFromTx()" class="btn btn-primary btn-sm" style="margin-top:6px;width:100%">📋 عرض الكشف</button>
+        </div>
+      </div>` : ''}
       ${type==='collections' ? `
       <div class="j-kpi" style="border-right:3px solid var(--green)">
         <div class="j-kpi-label">✅ محصّل فعلاً</div>
@@ -988,11 +1008,21 @@ export function setDashPeriod(days) {
   loadDashboard();
 }
 
+// ✅ خطوة ٣ — نفس openPartnerStatementFromReport (accounting.js) بالحرف، لكن
+// من select شاشة معاملات الشركاء (tx-partner-select) بدل تقرير الشركاء
+// المؤجَّل حذفه في خطوة ٤. راجع docs/PLAN-partner-statement-restructure-2026-09-20.md
+export function openPartnerStatementFromTx() {
+  const partner = el('tx-partner-select')?.value;
+  if (!partner) { toast('اختر شريكاً أولاً','err'); return; }
+  showPartnerStatement(partner);
+}
+
 Object.assign(window, {
   TX_CONFIG, showTransactions, setTxPeriod, loadTransactions,
   renderTxTable, renderSalesInvoices, openInvoiceModal, downloadInvoicePDF,
   filterTxTable, exportTxPDF, exportTxExcel, initApp, approvalState,
   loadChartOfAccounts, getAccountName, accountDisplayName, getAccountTypeCOA, switchSystem,
   updateSystemUI, dashState, setDashPeriod, checkAppVersion, _showCompanyPickerOverlay, _renderHomeButton,
+  openPartnerStatementFromTx,
 });
 
