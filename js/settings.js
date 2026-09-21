@@ -1210,8 +1210,11 @@ export async function submitEditPayment() {
       markSaving('editPaymentModal'); await closeModal('editPaymentModal');
       toast('⚠️ تم تعديل الدفعة والقيد — في انتظار الموافقة', 'warn');
     } else {
-      // ── السجل draft: تعديل مباشر ──
-      await apiPatch('payments', { id:`eq.${id}` }, { payer, amount, pay_method:method, pay_date:date, document:doc||null, notes:notes||null });
+      // ── السجل draft أو cancelled/voided: تعديل مباشر ──
+      // ✅ statusAfterEdit تُرجع draft لأي حالة غير posted/pending_edit — بما
+      // فيها cancelled/voided، فتُعيد السجل لقائمة الانتظار بدل ما يفضل عالقًا
+      // ميتًا للأبد رغم التعديل (نفس باج TM-005 المكتشَف في submitEditFileFull)
+      await apiPatch('payments', { id:`eq.${id}` }, { payer, amount, pay_method:method, pay_date:date, document:doc||null, notes:notes||null, post_status: statusAfterEdit(old.post_status) });
       markSaving('editPaymentModal'); await closeModal('editPaymentModal');
       toast('✅ تم تعديل الدفعة', 'ok');
     }
@@ -1556,7 +1559,9 @@ export async function submitEditExpense() {
       markSaving('editExpenseModal'); await closeModal('editExpenseModal');
       toast('⚠️ تم تعديل المصروف والقيد — في انتظار الموافقة', 'warn');
     } else {
-      await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null, paid_by:paidBy||null, paid_by_split:paidBySplit });
+      // ✅ statusAfterEdit تُرجع draft لأي حالة غير posted/pending_edit — بما
+      // فيها cancelled/voided (نفس باج TM-005 المكتشَف في submitEditFileFull)
+      await apiPatch('expenses', { id:`eq.${id}` }, { description:desc, exp_type:type, amount, exp_date:date, pay_method:method, document:doc||null, notes:notes||null, paid_by:paidBy||null, paid_by_split:paidBySplit, post_status: statusAfterEdit(old.post_status) });
       markSaving('editExpenseModal'); await closeModal('editExpenseModal');
       toast('✅ تم تعديل المصروف','ok');
     }
@@ -1674,13 +1679,15 @@ export async function submitEditCollection() {
       return;
     }
 
-    // ── draft أو غير مدفوع: تعديل مباشر ──
+    // ── draft أو غير مدفوع أو cancelled/voided: تعديل مباشر ──
     const wasUnpaid = !old.paid_date;
     const nowPaid   = !!paid;
     const isPostedRecord = old.post_status !== 'draft';
     const effectivePaidDate = (paid && isPostedRecord) ? paid : null;
 
-    await apiPatch('collections', { id:`eq.${id}` }, { amount, pay_method:method, due_date:due||null, paid_date:effectivePaidDate, document:doc||null, notes:notes||null, received_by:receivedBy||null });
+    // ✅ statusAfterEdit تُرجع draft لأي حالة غير posted/pending_edit — بما
+    // فيها cancelled/voided (نفس باج TM-005 المكتشَف في submitEditFileFull)
+    await apiPatch('collections', { id:`eq.${id}` }, { amount, pay_method:method, due_date:due||null, paid_date:effectivePaidDate, document:doc||null, notes:notes||null, received_by:receivedBy||null, post_status: statusAfterEdit(old.post_status) });
 
     // إذا كانت غير مدفوعة وأصبحت مدفوعة الآن → أنشئ قيد تحصيل
     if (wasUnpaid && nowPaid && isPostedRecord) {

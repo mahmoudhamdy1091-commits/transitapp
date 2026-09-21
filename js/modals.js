@@ -884,10 +884,16 @@ export async function submitEditFileFull() {
         const orig = (_originalPartners||[]).find(op => op.paymentId === p.paymentId);
         if (p.paid > 0) {
           // تعديل الدفعة في مكانها — نفس id فيبقى ref_id في القيد صحيحاً
+          // ✅ لو الدفعة مش posted أصلاً (draft/cancelled/voided من رفض أو
+          // إلغاء سابق) لازم نرجّع post_status عبر statusAfterEdit، وإلا
+          // تفضل عالقة على حالتها الميتة للأبد رغم إن السند نفسه رجع draft
+          // ويقبل موافقة من جديد (باج حقيقي مكتشَف على TM-005 — كانت الدفعة
+          // cancelled من 2026-07-30 وفضلت كده حتى بعد تعديل وحفظ السند مرات)
           await apiPatch('payments', { id:`eq.${p.paymentId}` }, {
             payer:p.name, amount:p.paid, pay_method:p.method||'تحويل بنكي',
             document:p.doc||null, pay_date:p.payDate||poDate||null,
-            file_no:newFileNo, notes:`حصة ${p.share}%`
+            file_no:newFileNo, notes:`حصة ${p.share}%`,
+            ...(orig?.paymentPostStatus === 'posted' ? {} : { post_status: statusAfterEdit(orig?.paymentPostStatus) }),
           });
           if (orig?.paymentPostStatus === 'posted') {
             const amountChanged  = Math.abs((+orig.paymentAmount||0) - (+p.paid||0)) > 0.001;
