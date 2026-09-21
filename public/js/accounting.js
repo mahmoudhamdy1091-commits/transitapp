@@ -2621,12 +2621,9 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
 // للطباعة
 // printPartnerStatement → js/print.js
 
-
-export function openPartnerStatementFromReport() {
-  const partner = el('report-partner-select')?.value;
-  if (!partner) { toast('اختر شريكاً أولاً','err'); return; }
-  showPartnerStatement(partner);
-}
+// openPartnerStatementFromReport → حُذفت (خطوة ٤) — كانت غلاف رفيع فوق
+// showPartnerStatement لصالح select في تقرير الشركاء المحذوف؛ نظيرها في
+// معاملات الشركاء هو openPartnerStatementFromTx (transactions.js)
 
 // Backward compat
 export async function showPartnerDealStatement(fileNo, partner, sys) {
@@ -3293,7 +3290,7 @@ Object.assign(window, {
   readLicenseIntoRow, readMultipleLicenses, extractLicenseData, fillRowFromLicense, saveDraft,
   postEntry, loadJournalDrafts, postDraftEntry, deleteDraftEntry, editJournalEntry,
   showJournalReport, showVehiclesReport, loadVehiclesReport, filterVehiclesReport,
-  exportVehiclesExcel, loadViewerKpis, showPartnerStatement, openPartnerStatementFromReport,
+  exportVehiclesExcel, loadViewerKpis, showPartnerStatement,
   showPartnerDealStatement, showContactsByType, showAllSales, loadAllSales, showAllCollections,
   loadAllCollections, apiGetDateRange, _renderInventoryTable, _reportDates, _noData,
   showNewLedger, setNewLedgerPeriod, loadNewLedger, renderNewLedger, _renderNlEntryRows,

@@ -12,7 +12,7 @@ export function showReport(type) {
   sessionStorage.setItem('tm_last_view','report:'+type);
   hideAllViews();
   el('reportsView').style.display = 'block';
-  const _rt={profit:'الأرباح والخسائر',cashflow:'التدفقات النقدية',inventory:'تقرير المخزون',sales:'المبيعات',expenses:'المصاريف',partners:'الشركاء',opex:'التشغيلية'};
+  const _rt={profit:'الأرباح والخسائر',cashflow:'التدفقات النقدية',inventory:'تقرير المخزون',opex:'التشغيلية'};
   el('topBarTitle').textContent = _rt[type]||'التقارير';
   navActive('');
   setReportPeriod(reportState.period || 'year', false); // بدون run — setReportType هتشغل
@@ -213,99 +213,13 @@ export async function runReport() {
         renderDealsTable(rows_data, 'reportDealsTable', { showSales: true, totalRow: true });
       }
 
-    } else if (type === 'sales') {
-      await ensureCache();
-      const data = state.allSales.filter(s => {
-        if (!passesPostFilter(s, postFilter)) return false;
-        const d = s.sale_date || s.created_at?.split('T')[0] || '';
-        return d >= from && d <= to;
-      }).sort((a,b)=>(b.sale_date||'').localeCompare(a.sale_date||''));
-      const total = data.reduce((s,r)=>s+(+r.sale_price||0),0);
-      const draftCount = data.filter(isDraft).length;
-      reportState.data = data;
-      el('reportKpis').innerHTML = `
-        <div class="j-kpi"><div class="j-kpi-label">عدد المبيعات</div><div class="j-kpi-val">${data.length}</div></div>
-        <div class="j-kpi"><div class="j-kpi-label">إجمالي</div><div class="j-kpi-val text-green">${fmt(total)}</div></div>`;
-      const rows = data.map(s=>`<tr onclick="openViewer('${s.file_no}')" style="cursor:pointer${isDraft(s)?';opacity:.6':''}">
-        <td class="mono text-muted">${fmtDate(s.sale_date)}</td><td class="mono text-amber">${s.file_no}</td>
-        <td class="mono" style="direction:ltr">${s.vin||'—'}</td><td>${s.customer||'—'}${isDraft(s)?' <span style="font-size:11px;color:#f59e0b">⏳ معلّق</span>':''}</td>
-        <td class="mono text-green">${fmt(s.sale_price)}</td></tr>`).join('');
-      el('reportTable').innerHTML =
-        (postFilter !== 'posted' && draftCount ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400e">🔍 يشمل ${draftCount} عملية بيع معلّقة (لم تُعتمد بعد)</div>` : '') +
-        (rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>VIN</th><th>العميل</th><th>السعر</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('💹','لا توجد مبيعات'));
-
-    } else if (type === 'expenses') {
-      await ensureCache();
-      const data = state.allExpenses.filter(e => {
-        if (!passesPostFilter(e, postFilter)) return false;
-        const d = e.exp_date || e.expense_date || e.created_at?.split('T')[0] || '';
-        return d >= from && d <= to;
-      }).sort((a,b)=>(b.exp_date||'').localeCompare(a.exp_date||''));
-      const total = data.reduce((s,r)=>s+(+r.amount||0),0);
-      const draftCount = data.filter(isDraft).length;
-      reportState.data = data;
-      el('reportKpis').innerHTML = `
-        <div class="j-kpi"><div class="j-kpi-label">عدد المصاريف</div><div class="j-kpi-val">${data.length}</div></div>
-        <div class="j-kpi"><div class="j-kpi-label">إجمالي</div><div class="j-kpi-val text-red">${fmt(total)}</div></div>`;
-      const rows = data.map(e=>`<tr style="${isDraft(e)?'opacity:.6':''}">
-        <td class="mono text-muted">${fmtDate(e.exp_date||e.expense_date)}</td><td class="mono text-amber">${e.file_no||'—'}</td>
-        <td>${e.description||'—'}${isDraft(e)?' <span style="font-size:11px;color:#f59e0b">⏳ معلّق</span>':''}</td><td>${e.exp_type||e.category||'—'}</td>
-        <td class="mono text-red">${fmt(e.amount)}</td></tr>`).join('');
-      el('reportTable').innerHTML =
-        (postFilter !== 'posted' && draftCount ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400e">🔍 يشمل ${draftCount} مصروف معلّق (لم يُعتمد بعد)</div>` : '') +
-        (rows ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>البيان</th><th>النوع</th><th>المبلغ</th></tr></thead><tbody>${rows}</tbody></table>` : emptyHTML('💸','لا توجد مصاريف'));
-
-    } else if (type === 'partners') {
-      await ensureCache();
-      const [payoutsRaw, allPartnerDeals] = await Promise.all([
-        apiGetDateRange('partner_payouts','pay_date',from,to,{order:'pay_date.desc'}),
-        apiGetAll('partners_master', { select:'partner', system_type:`eq.${sys}` }),
-      ]);
-      // payments من الـ cache مع فلتر تاريخ
-      const paymentsRaw = state.allPayments
-        ? state.allPayments.filter(p => { const d = p.pay_date||''; return d >= from && d <= to; })
-        : await apiGetDateRange('payments','pay_date',from,to);
-
-      // ── فلتر العرض الموحّد (مرحّل/معلّق/الكل) ──
-      const payouts  = (payoutsRaw||[]).filter(p => passesPostFilter(p, postFilter));
-      const payments = (paymentsRaw||[]).filter(p => passesPostFilter(p, postFilter));
-      const draftCount = payouts.filter(isDraft).length + payments.filter(isDraft).length;
-
-      // قائمة الشركاء الفريدة
-      const uniquePartners = [...new Set((allPartnerDeals||[]).map(p=>p.partner))].filter(Boolean);
-
-      const tp  = (payments||[]).reduce((s,r)=>s+(+r.amount||0),0);
-      const tpo = (payouts||[]).reduce((s,r)=>s+(+r.amount||0),0);
-      reportState.data = payouts||[];
-
-      el('reportKpis').innerHTML = `
-        <div class="j-kpi"><div class="j-kpi-label">دفعات للموردين</div><div class="j-kpi-val text-cyan">${fmt(tp)}</div></div>
-        <div class="j-kpi"><div class="j-kpi-label">صرف للشركاء</div><div class="j-kpi-val text-purple">${fmt(tpo)}</div></div>
-        <div class="j-kpi" style="border-right:3px solid var(--accent)">
-          <div class="j-kpi-label">كشف شامل لشريك</div>
-          <div style="margin-top:6px">
-            <select id="report-partner-select" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;width:100%">
-              <option value="">اختر شريكاً...</option>
-              ${uniquePartners.map(p=>`<option value="${p}">${p}</option>`).join('')}
-            </select>
-            <button onclick="openPartnerStatementFromReport()" class="btn btn-primary btn-sm" style="margin-top:6px;width:100%">📋 عرض الكشف</button>
-          </div>
-        </div>`;
-
-      const rows = (payouts||[]).map(p=>`<tr style="${isDraft(p)?'opacity:.6':''}">
-        <td class="mono text-muted">${fmtDate(p.pay_date)}</td>
-        <td class="mono text-amber">${p.file_no||'—'}</td>
-        <td>${p.partner||'—'}${isDraft(p)?' <span style="font-size:11px;color:#f59e0b">⏳ معلّق</span>':''}</td>
-        <td>${p.payout_type||'—'}</td>
-        <td class="mono text-purple">${fmt(p.amount)}</td>
-        <td><button class="btn btn-secondary btn-sm" onclick="showPartnerStatement('${p.partner}')">📋 كشف شامل</button></td>
-      </tr>`).join('');
-      el('reportTable').innerHTML =
-        (postFilter !== 'posted' && draftCount ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400e">🔍 يشمل ${draftCount} عملية معلّقة (لم تُعتمد بعد)</div>` : '') +
-        (rows
-          ? `<table class="data-table"><thead><tr><th>التاريخ</th><th>الملف</th><th>الشريك</th><th>النوع</th><th>المبلغ</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-          : emptyHTML('👥','لا توجد بيانات'));
     }
+    // ✅ تقارير المبيعات/المصاريف/الشركاء ('sales'/'expenses'/'partners') حُذفت
+    // بالكامل (خطوة ٤، docs/PLAN-partner-statement-restructure-2026-09-20.md
+    // قسم أ) — انتقلت وظيفتها لشاشة "👥 معاملات الشركاء" (showPartnerStatement
+    // عبر openPartnerStatementFromTx، transactions.js) بلا عطل partner_ledger
+    // المفقودة اللي كانت هنا. تأكَّد بـgrep قبل الحذف: صفر مستهلك آخر
+    // لـshowReport/setReportType بهذه القيم الثلاثة في كل الكود.
     if (type === 'inventory') {
       await runInventoryReport(sys);
       return;
