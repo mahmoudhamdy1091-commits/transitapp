@@ -1764,6 +1764,26 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
     // مشتركة _settlePartnerRows)، بجلب دفعي بدل استعلام لكل ملف ──
     const settlementsByFile = await computePartnerSettlementBatch(fileNos, sys);
 
+    // ✅ صفة الشريك (دائم/خارجي) — خطوة ٣، راجع
+    // docs/PLAN-partner-statement-restructure-2026-09-20.md قسم ٣ب. استعلام
+    // صغير مستقل (لا يُستخدم داخل computePartnerSettlementBatch فوق لأن
+    // select هناك بلا عمود is_permanent أصلًا). true=دائم (قالب حركات مُدمَجة)
+    // · false/null=خارجي أو غير مصنَّف (القالب الحالي بالملف — الافتراضي
+    // الآمن، لا يُخفي أي تفصيل حتى لو التصنيف غير مؤكَّد بعد)
+    const accountLinksForClass = await apiGetAll('partner_account_links', { select:'partner_name,is_permanent', system_type:`eq.${sys}` });
+    const isPermanent = isPermanentPartner(sys, partnerName, accountLinksForClass);
+
+    // ✅ مصدر حركات القالب الدائم — fetchPartnerLedgerMovements (core.js)،
+    // مش dealDetails/jeMovements (مربوطة بـfile_no). اكتُشف حيًّا: تجميع
+    // الحركات عبر ملفات الشريك أعطى حركة واحدة بس لمازن من أصل 95 ملف —
+    // تاريخه الحقيقي بلا file_no أو على حساب تاني بعد إعادة التصنيف (م٤).
+    // fetchPartnerLedgerMovements بيجيب كل حساب الشريك مباشرة (بلا حدود ملف)،
+    // بنفس منطق computePartnerGlobalBalance المُتحقَّق منه أصلًا. تُجلب فقط
+    // لو دائم — لا تكلفة إضافية على المسار الخارجي (الأغلبية).
+    const permanentLedgerMovements = isPermanent === true
+      ? await fetchPartnerLedgerMovements(sys, partnerName)
+      : [];
+
     const dealDetails = deals.map(pm => {
       const fn    = pm.file_no;
       const share = (pm.share_percent||0) / 100;
@@ -1931,7 +1951,7 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
     const statusColor = s => s==='CLOSED'?'#16a34a':s==='IN PROGRESS'?'#d97706':'#2563eb';
     const statusLabel = s => s==='CLOSED'?'مغلقة':s==='IN PROGRESS'?'جارية':s==='OPEN'?'مفتوحة':s;
 
-    const dealBlocks = dealDetails.map(d => `
+    const _externalDealBlocks = dealDetails.map(d => `
       <!-- ══ صفقة ${d.fn} ══ -->
       <div style="border:1.5px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:24px;page-break-inside:avoid">
 
@@ -2350,6 +2370,66 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
         </div>
       </div>`).join('');
 
+    // ✅ خطوة ٣ — قالب الشريك الدائم: حركات مُدمَجة زمنيًا من حساب الشريك
+    // مباشرة (permanentLedgerMovements، fetchPartnerLedgerMovements فوق)،
+    // لا من dealDetails/jeMovements — تلك مربوطة بـfile_no فتفوّت أي قيد
+    // بلا ملف (اكتُشف حيًّا مع مازن، راجع تعليق permanentLedgerMovements فوق
+    // وdocs/PLAN-partner-statement-restructure-2026-09-20.md قسم ٣ب).
+    let _runningBal = 0;
+    const _permanentRows = permanentLedgerMovements.map(m => {
+      _runningBal += (m.credit||0) - (m.debit||0);
+      const bal = _runningBal;
+      return { ...m, bal };
+    });
+
+    const dealBlocks = isPermanent === true ? `
+      <div style="border:1.5px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:24px">
+        <div style="background:#1a1a2e;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div style="font-size:14px;font-weight:800">📖 الحركات المُدمَجة — كل الملفات مرتَّبة بالتاريخ</div>
+          <span style="font-size:11px;opacity:.7">${_permanentRows.length} حركة عبر ${dealDetails.length} ملف</span>
+        </div>
+        <div style="padding:16px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:#1e293b;color:#fff">
+                <th style="padding:8px 10px;text-align:right">التاريخ</th>
+                <th style="padding:8px 10px;text-align:right">البيان</th>
+                <th style="padding:8px 10px;text-align:right">الملف</th>
+                <th style="padding:8px 10px;text-align:right">رقم القيد</th>
+                <th style="padding:8px 10px;text-align:center">مدين (سحب)</th>
+                <th style="padding:8px 10px;text-align:center">دائن (إضافة)</th>
+                <th style="padding:8px 10px;text-align:center">الرصيد الجاري</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="background:#f8fafc;font-style:italic">
+                <td colspan="6" style="padding:6px 10px;color:#64748b">الرصيد الافتتاحي</td>
+                <td style="padding:6px 10px;text-align:center;font-family:monospace;color:#64748b">0.000</td>
+              </tr>
+              ${_permanentRows.length ? _permanentRows.map(m => {
+                const posBal = m.bal >= -0.01;
+                return `
+              <tr style="border-bottom:1px solid #f1f5f9;background:${m.credit>0?'#eff6ff':m.debit>0?'#fff7ed':'#fff'}">
+                <td style="padding:7px 10px;color:#64748b">${m.date||'—'}</td>
+                <td style="padding:7px 10px;font-weight:600">${m.desc}</td>
+                <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#94a3b8">${m.fileNo||'—'}</td>
+                <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#94a3b8">${m.ref||'—'}</td>
+                <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${m.debit>0?'#dc2626':'#94a3b8'}">${m.debit>0?fmt2(m.debit):'—'}</td>
+                <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${m.credit>0?'#2563eb':'#94a3b8'};font-weight:${m.credit>0?'700':'400'}">${m.credit>0?fmt2(m.credit):'—'}</td>
+                <td style="padding:7px 10px;text-align:center;font-family:monospace;font-weight:700;color:${posBal?'#1d4ed8':'#dc2626'}">${fmt2(Math.abs(m.bal))} ${posBal?'دائن':'مدين'}</td>
+              </tr>`;
+              }).join('') : `<tr><td colspan="7" style="padding:12px;text-align:center;color:#94a3b8">لا توجد حركات مسجّلة</td></tr>`}
+            </tbody>
+            <tfoot>
+              <tr style="background:#1e293b;color:#fff;font-weight:700">
+                <td colspan="6" style="padding:8px 10px">الرصيد الختامي</td>
+                <td style="padding:8px 10px;text-align:center;font-family:monospace;color:${_runningBal>=-0.01?'#60a5fa':'#f87171'}">${fmt2(Math.abs(_runningBal))} ${_runningBal>=-0.01?'دائن':'مدين'}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>` : _externalDealBlocks;
+
     // حساب إجمالي الديون للشريك المطلوب عبر كل الصفقات
     const totalOverpaid  = dealDetails.reduce((s,d) => {
       const diff = (d.paidByPartner?.[partnerName]||0) - (d.shouldPayMap?.[partnerName]||0);
@@ -2360,8 +2440,54 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
       return s + (diff < 0 ? Math.abs(diff) : 0);
     }, 0);
 
+    // ✅ خطوة ٣ — بطاقة ملخص تسوية للشريك الدائم: نفس صف الـKPIs والسطر
+    // الختامي المستخدَمين في الملخص الخارجي (grandCapital/grandMyProfit/
+    // grandWithdrawn/grandTransferable/grandGross — نفس الحساب بالحرف، مصدر
+    // واحد لا نسخة موازية)، بلا شبكة الرقائق لكل ملف (لا معنى لها هنا — راجع
+    // قسم ٣ب المُصحَّح: استحقاقه غير مرتبط بملف بعينه) وبلا قسم "وضع التسوية"
+    // (خاص بمشاركة الشراء لكل ملف، لا بجاري حساب مستمر).
+    const _permanentSummaryBlock = `
+      <div style="background:#1a1a2e;color:#fff;border-radius:12px;padding:20px;margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <span style="background:#3b82f633;color:#93c5fd;border:1px solid #3b82f655;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700">🔵 شريك دائم — جاري حساب مستمر</span>
+          <span style="font-size:11px;opacity:.6">رأس ماله مدوَّر داخل الشركة — العمود يظهر صفرًا إلا لو دفع من جيبه شخصيًا</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;border-top:1px solid #ffffff22;padding-top:14px">
+          <div style="text-align:center;flex:1 1 22%;min-width:140px">
+            <div style="font-size:12px;opacity:.6;margin-bottom:4px">ما دفعه من جيبه شخصيًا</div>
+            <div style="font-family:monospace;font-size:16px;font-weight:700;color:#60a5fa">${fmt2(grandCapital)}</div>
+          </div>
+          <div style="text-align:center;flex:1 1 22%;min-width:140px">
+            <div style="font-size:12px;opacity:.6;margin-bottom:4px">إجمالي الأرباح</div>
+            <div style="font-family:monospace;font-size:16px;font-weight:700;color:${grandMyProfit>=0?'#4ade80':'#f87171'}">${fmt2(grandMyProfit)}</div>
+          </div>
+          <div style="text-align:center;flex:1 1 22%;min-width:140px">
+            <div style="font-size:12px;opacity:.6;margin-bottom:4px">إجمالي المسحوبات</div>
+            <div style="font-family:monospace;font-size:16px;font-weight:700;color:#fbbf24">${fmt2(grandWithdrawn)}</div>
+          </div>
+          <div style="text-align:center;flex:1 1 22%;min-width:140px;background:${grandTransferable>0.01?'#16a34a33':'#dc262633'};border-radius:8px;padding:8px">
+            <div style="font-size:12px;opacity:.8;margin-bottom:4px">الرصيد الكلي المستحق</div>
+            <div style="font-family:monospace;font-size:20px;font-weight:900;color:${grandTransferable>0.01?'#4ade80':'#f87171'}">${fmt2(grandTransferable)}</div>
+          </div>
+        </div>
+        <!-- الإجراء الإجمالي النهائي — نفس منطق الملخص الخارجي بالحرف -->
+        <div style="margin-top:16px;border-top:2px solid #ffffff22;padding-top:16px;text-align:center">
+          <div style="font-size:11px;opacity:.5;margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase">الإجراء الإجمالي — كل الملفات</div>
+          <div style="font-size:20px;font-weight:900;color:${grandTransferable>0.01?'#4ade80':grandGross<-0.01?'#f87171':'#a3e635'}">
+            ${grandTransferable > 0.01
+              ? `💸 القابل للتحويل الآن لـ ${partnerName}: ${fmt2(grandTransferable)}`
+              : grandGross > 0.01
+              ? `⏳ مستحقّ له ${fmt2(grandGross)} — غير قابل للصرف الآن (لم يتحصَّل نقد كافٍ)`
+              : grandGross < -0.01
+              ? `⚠️ سحب زيادة عن مستحقه بـ ${fmt2(Math.abs(grandGross))}`
+              : '✅ الحساب متوازن تماماً — لا يوجد تحويل'}
+          </div>
+          ${Math.abs(grandGross - grandTransferable) > 0.01 ? `<div style="font-size:12px;opacity:.6;margin-top:6px">المستحق على الورق (عند إغلاق كل الملفات): ${fmt2(grandGross)}</div>` : ''}
+        </div>
+      </div>`;
+
     // ── الملخص الشامل (لو أكثر من صفقة) ──
-    const summaryBlock = dealDetails.length > 1 ? `
+    const _externalSummaryBlock = dealDetails.length > 1 ? `
       <div style="background:#1a1a2e;color:#fff;border-radius:12px;padding:20px;margin-bottom:24px">
         <div style="font-size:13px;font-weight:700;margin-bottom:14px;opacity:.7;letter-spacing:.5px">الملخص الشامل — كل الصفقات</div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px">
@@ -2445,6 +2571,8 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
           ${Math.abs(grandGross - grandTransferable) > 0.01 ? `<div style="font-size:12px;opacity:.6;margin-top:6px">المستحق على الورق (عند إغلاق كل الصفقات): ${fmt2(grandGross)}</div>` : ''}
         </div>
       </div>` : '';
+
+    const summaryBlock = isPermanent === true ? _permanentSummaryBlock : _externalSummaryBlock;
 
     // ── التجميع الكامل ──
     const fullHTML = `

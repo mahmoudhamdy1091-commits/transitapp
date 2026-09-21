@@ -940,6 +940,25 @@ export async function computePartnerSettlementBatch(fileNos, sys) {
   return out;
 }
 
+/**
+ * صفة الشريك: دائم أم خارجي — انعكاس حرفي لدالة is_permanent_partner()
+ * (sql/m_is_permanent_only.sql) بالكود، بلا استدعاء RPC. الخزينة (بأي اسم في
+ * TREASURY_ALIASES) دائمًا true بلا صف ربط، زي الدالة تمامًا. `accountLinks`
+ * لازم يحمل عمود is_permanent في الـselect (بعكس النسخة المُستخدَمة داخل
+ * computePartnerSettlementBatch فوق، اللي بتجيب partner_name/account_code بس
+ * — لا تُستخدم هنا لأنها ناقصة العمود). true=دائم · false=خارجي · null=غير
+ * مصنَّف (أو بلا صف ربط أصلًا) — القارئ يتعامل معه بالرفض/الافتراضي الآمن،
+ * لا بافتراض دائم أو خارجي. راجع docs/PLAN-partner-statement-restructure-2026-09-20.md قسم ٥.
+ */
+export function isPermanentPartner(sys, partnerName, accountLinksWithFlag) {
+  const name = (partnerName||'').trim();
+  if (TREASURY_ALIASES.has(name)) return true;
+  const row = (accountLinksWithFlag||[]).find(r => r.partner_name === name);
+  // ⚠️ لا تحوّل row.is_permanent === null إلى false هنا — نفس فخ الافتراض
+  // الصامت اللي الدالة الأصلية اتصمّمت عشان تمنعه (راجع التعليق فوق)
+  return row ? row.is_permanent : null;
+}
+
 // ✅ تصنيف مركزي لأخطاء "قيد فريد" (unique constraint) — مُعمَّم لأي اسم قيد،
 // مش بس uniq_expense_active/uniq_payment_active الأصليين. قيد فريد يعني الصف
 // اللي إنت بتحاول تكتبه (أو نسخة مطابقة منه) موجود بالفعل — غالبًا لأن محاولة
@@ -1221,6 +1240,49 @@ export async function computePartnerGlobalBalance(partner, sys) {
   ]);
   const je2400 = [...byName, ...byLinkedAccount];
   return je2400.reduce((s,r) => s + (+r.cr_amount||0) - (+r.dr_amount||0), 0);
+}
+
+/**
+ * كل حركات حساب الشريك (2400 التاريخي بالاسم ∪ حسابه المخصَّص لو موجود) —
+ * بلا أي فلتر ملف، بعكس settlement.partners[].movements في
+ * computePartnerSettlement (مربوطة بـfile_no واحد، فبتفوّت أي قيد بلا ملف —
+ * زي القيد الافتتاحي أو حركة أُعيد تصنيفها لاحقًا). اكتُشف حيًّا 2026-09-21:
+ * تجميع movements عبر كل ملفات الشريك (خطوة ٣، showPartnerStatement) أعطى
+ * حركة واحدة بس لمازن من أصل 95 ملف — تاريخه الحقيقي (القيد الافتتاحي +871
+ * سطر أُعيدت تصنيفها في م٤) بلا file_no أو على حساب تاني أصلًا، فمستحيل
+ * يظهر من مصدر مربوط بملف مهما كان القالب. نفس منطق
+ * computePartnerGlobalBalance بالضبط (فوق) — union لا شرط واحد، لنفس السبب
+ * الموثَّق هناك — لكن صفوف كاملة للعرض لا مجموع فقط.
+ */
+export async function fetchPartnerLedgerMovements(sys, partner) {
+  const trimmed = (partner||'').trim();
+  const link = await apiGetAll('partner_account_links', {
+    select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${trimmed}`,
+  });
+  const linkedCodesOnly = (link||[]).map(r => r.account_code);
+  const selectCols = 'id,entry_date,description,entry_no,dr_amount,cr_amount,file_no';
+  const [byName, byLinkedAccount] = await Promise.all([
+    apiGetAll('journal_entries', {
+      select:selectCols, system_type:`eq.${sys}`,
+      account_code:'eq.2400', contact_name:`eq.${trimmed}`, post_status:`eq.posted`,
+    }),
+    linkedCodesOnly.length ? apiGetAll('journal_entries', {
+      select:selectCols, system_type:`eq.${sys}`,
+      account_code:`in.(${linkedCodesOnly.join(',')})`, post_status:`eq.posted`,
+    }) : Promise.resolve([]),
+  ]);
+  const seen = new Set();
+  const rows = [];
+  [...byName, ...byLinkedAccount].forEach(r => {
+    if (seen.has(r.id)) return;
+    seen.add(r.id);
+    rows.push(r);
+  });
+  rows.sort((a,b) => (a.entry_date||'').localeCompare(b.entry_date||'') || (a.id - b.id));
+  return rows.map(r => ({
+    date: (r.entry_date||'').split('T')[0], desc: r.description||'—', ref: r.entry_no||'',
+    debit: +r.dr_amount||0, credit: +r.cr_amount||0, fileNo: r.file_no||'',
+  }));
 }
 
 /**
@@ -1522,9 +1584,9 @@ Object.assign(window, {
   cacheStale, ensureCache, _doLoadCache, invalidateCache, isPosted,
   isDraft, isActive, isEffective, isVisible, isOccupying, isPending,
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
-  apiGetAll, fetchJEForPeriod, fetchAllPages, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, pgIn, apiPost, apiPatch,
+  apiGetAll, fetchJEForPeriod, fetchAllPages, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
-  computePartnerGlobalBalance, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
+  computePartnerGlobalBalance, fetchPartnerLedgerMovements, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
   fetchPartnerTransactions,
   login, logout, state, SB_URL, SB_KEY,
 });
