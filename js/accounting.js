@@ -2396,15 +2396,15 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                 <th style="padding:8px 10px;text-align:right">البيان</th>
                 <th style="padding:8px 10px;text-align:right">الملف</th>
                 <th style="padding:8px 10px;text-align:right">رقم القيد</th>
-                <th style="padding:8px 10px;text-align:center">مدين (سحب)</th>
-                <th style="padding:8px 10px;text-align:center">دائن (إضافة)</th>
-                <th style="padding:8px 10px;text-align:center">الرصيد الجاري</th>
+                <th style="padding:8px 10px;text-align:left">مدين (سحب)</th>
+                <th style="padding:8px 10px;text-align:left">دائن (إضافة)</th>
+                <th style="padding:8px 10px;text-align:left">الرصيد الجاري</th>
               </tr>
             </thead>
             <tbody>
               <tr style="background:#f8fafc;font-style:italic">
                 <td colspan="6" style="padding:6px 10px;color:#64748b">الرصيد الافتتاحي</td>
-                <td style="padding:6px 10px;text-align:center;font-family:monospace;color:#64748b">0.000</td>
+                <td style="padding:6px 10px;text-align:left;font-family:monospace;color:#64748b">0.000</td>
               </tr>
               ${_permanentRows.length ? _permanentRows.map(m => {
                 const posBal = m.bal >= -0.01;
@@ -2414,16 +2414,16 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                 <td style="padding:7px 10px;font-weight:600">${m.desc}</td>
                 <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#94a3b8">${m.fileNo||'—'}</td>
                 <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#94a3b8">${m.ref||'—'}</td>
-                <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${m.debit>0?'#dc2626':'#94a3b8'}">${m.debit>0?fmt2(m.debit):'—'}</td>
-                <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${m.credit>0?'#2563eb':'#94a3b8'};font-weight:${m.credit>0?'700':'400'}">${m.credit>0?fmt2(m.credit):'—'}</td>
-                <td style="padding:7px 10px;text-align:center;font-family:monospace;font-weight:700;color:${posBal?'#1d4ed8':'#dc2626'}">${fmt2(Math.abs(m.bal))} ${posBal?'دائن':'مدين'}</td>
+                <td style="padding:7px 10px;text-align:left;font-family:monospace;color:${m.debit>0?'#dc2626':'#94a3b8'}">${m.debit>0?fmt2(m.debit):'—'}</td>
+                <td style="padding:7px 10px;text-align:left;font-family:monospace;color:${m.credit>0?'#2563eb':'#94a3b8'};font-weight:${m.credit>0?'700':'400'}">${m.credit>0?fmt2(m.credit):'—'}</td>
+                <td style="padding:7px 10px;text-align:left;font-family:monospace;font-weight:700;color:${posBal?'#1d4ed8':'#dc2626'}">${fmt2(Math.abs(m.bal))} ${posBal?'دائن':'مدين'}</td>
               </tr>`;
               }).join('') : `<tr><td colspan="7" style="padding:12px;text-align:center;color:#94a3b8">لا توجد حركات مسجّلة</td></tr>`}
             </tbody>
             <tfoot>
               <tr style="background:#1e293b;color:#fff;font-weight:700">
                 <td colspan="6" style="padding:8px 10px">الرصيد الختامي</td>
-                <td style="padding:8px 10px;text-align:center;font-family:monospace;color:${_runningBal>=-0.01?'#60a5fa':'#f87171'}">${fmt2(Math.abs(_runningBal))} ${_runningBal>=-0.01?'دائن':'مدين'}</td>
+                <td style="padding:8px 10px;text-align:left;font-family:monospace;color:${_runningBal>=-0.01?'#60a5fa':'#f87171'}">${fmt2(Math.abs(_runningBal))} ${_runningBal>=-0.01?'دائن':'مدين'}</td>
               </tr>
             </tfoot>
           </table>
