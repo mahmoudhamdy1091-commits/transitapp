@@ -1260,7 +1260,7 @@ export async function fetchPartnerLedgerMovements(sys, partner) {
     select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${trimmed}`,
   });
   const linkedCodesOnly = (link||[]).map(r => r.account_code);
-  const selectCols = 'id,entry_date,description,entry_no,dr_amount,cr_amount,file_no';
+  const selectCols = 'id,entry_date,description,entry_no,dr_amount,cr_amount,file_no,ref_table,ref_id';
   const [byName, byLinkedAccount] = await Promise.all([
     apiGetAll('journal_entries', {
       select:selectCols, system_type:`eq.${sys}`,
@@ -1279,10 +1279,27 @@ export async function fetchPartnerLedgerMovements(sys, partner) {
     rows.push(r);
   });
   rows.sort((a,b) => (a.entry_date||'').localeCompare(b.entry_date||'') || (a.id - b.id));
-  return rows.map(r => ({
-    date: (r.entry_date||'').split('T')[0], desc: r.description||'—', ref: r.entry_no||'',
-    debit: +r.dr_amount||0, credit: +r.cr_amount||0, fileNo: r.file_no||'',
-  }));
+
+  // ✅ اكتُشف حيًّا 2026-09-22: وصف قيود "سحب عام"/"إيداع عام" (ref_table=
+  // 'partner_ledger') ثابت عام دايمًا ("سحب عام — مازن الخلف" بلا أي تفصيل)
+  // — لكن سبب العملية الحقيقي مكتوب فعلًا في partner_ledger.notes وقت
+  // التسجيل (فحصت 98 صف حي لمازن — كلها ملاحظات حقيقية ومفصَّلة)، ومجرد
+  // معزول عن journal_entries.description من وقت الإنشاء (je_partnerLedger،
+  // engine.js). نجيبها هنا للعرض بدل ما نلمس قيودًا مُرحَّلة فعليًا.
+  const ledgerRefIds = [...new Set(rows.filter(r => r.ref_table === 'partner_ledger' && r.ref_id != null).map(r => r.ref_id))];
+  const notesById = {};
+  if (ledgerRefIds.length) {
+    const notesRows = await apiGetAll('partner_ledger', { select:`id,notes`, id:`in.(${ledgerRefIds.join(',')})` });
+    (notesRows||[]).forEach(n => { if (n.notes && n.notes.trim()) notesById[n.id] = n.notes.trim(); });
+  }
+
+  return rows.map(r => {
+    const extraNote = r.ref_table === 'partner_ledger' ? notesById[r.ref_id] : null;
+    return {
+      date: (r.entry_date||'').split('T')[0], desc: extraNote ? `${r.description||'—'} — ${extraNote}` : (r.description||'—'),
+      ref: r.entry_no||'', debit: +r.dr_amount||0, credit: +r.cr_amount||0, fileNo: r.file_no||'',
+    };
+  });
 }
 
 /**

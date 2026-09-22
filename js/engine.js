@@ -1257,7 +1257,7 @@ export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
 // في LEDGER_TYPES) لا تستدعي هذه الدالة إطلاقًا — الفرع يُقرَّر عند الكتابة،
 // لا هنا. سحب عام/إيداع عام: fileNo=null (postDoubleEntry تتعامل معه كقيد
 // عام، computeFinancials تتجاهله تلقائياً لأنه بلا ملف — راجع core.js:92).
-export async function je_partnerLedger({sys,date,entryType,amount,fileNo,refId,partner,method}) {
+export async function je_partnerLedger({sys,date,entryType,amount,fileNo,refId,partner,method,notes}) {
   if(!amount||amount<=0) throw new Error(`قيمة غير صالحة (${amount}) — لن يُسجَّل القيد`);
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
@@ -1284,7 +1284,14 @@ export async function je_partnerLedger({sys,date,entryType,amount,fileNo,refId,p
     select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${partnerAcc}`,
   });
   if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
-  const desc = fileNo ? `${entryType} — ${partner} — ملف ${fileNo}` : `${entryType} — ${partner}`;
+  // ✅ اكتُشف حيًّا 2026-09-22: الوصف كان ثابتًا عامًا دايمًا ("سحب عام —
+  // الشريك") رغم إن المستخدم بيكتب سبب العملية فعليًا في حقل الملاحظات وقت
+  // التسجيل (partner_ledger.notes) — الملاحظة محفوظة في القاعدة لكن معزولة
+  // عن وصف القيد نفسه، فأي شاشة (بما فيها كشف حساب الشريك) بتعرض نصًّا عامًا
+  // بلا تفسير. نضيفها هنا لكل قيد جديد من الآن فصاعدًا.
+  const notesTrimmed = (notes||'').trim();
+  const baseDesc = fileNo ? `${entryType} — ${partner} — ملف ${fileNo}` : `${entryType} — ${partner}`;
+  const desc = notesTrimmed ? `${baseDesc} — ${notesTrimmed}` : baseDesc;
   return await postDoubleEntry({sys,date,fileNo:fileNo||null,refTable:'partner_ledger',refId,desc,lines: isDeposit
     ? [ {acc:cashAcc,   name:cashNm,       dr:amount, cr:0,      contact:null           },
         {acc:partnerAcc,name:partnerAccName,dr:0,      cr:amount, contact:partnerTrimmed } ]

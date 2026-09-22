@@ -2064,7 +2064,7 @@ export async function _createApprovalJE(type, record, sys) {
     //    مقصود — postDoubleEntry تتعامل معه كقيد عام
     await je_partnerLedger({ sys, date:record.pay_date||today(), entryType:record.entry_type,
       amount:+record.amount||0, fileNo:record.file_no||null, refId:record.id||null,
-      partner:record.partner||'', method:record.pay_method||'تحويل بنكي' });
+      partner:record.partner||'', method:record.pay_method||'تحويل بنكي', notes:record.notes||null });
   } else if (type === 'collection') {
     // القيد يُولَّد فقط إذا كان مدفوعاً فعلاً (paid_date موجود) — لو مستحق فقط، لا قيد الآن
     if (record.paid_date) await je_collection({ sys, date:record.paid_date, amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, customer:record.customer||'', invNo:record.inv_no||'', method:record.pay_method||'تحويل بنكي' });
@@ -2197,7 +2197,7 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
           //    تعديله أيضًا — وإلا ظهر قيد نقدي لحركة لم يتحرّك فيها نقد
           await je_partnerLedger({ sys:state.system, date:item.pay_date||today(), entryType:item.entry_type,
             amount:+item.amount||0, fileNo:item.file_no||null, refId:item.id||null,
-            partner:item.partner||'', method:item.pay_method||'نقد' });
+            partner:item.partner||'', method:item.pay_method||'نقد', notes:item.notes||null });
         } else if (type === 'opex_edit') {
           await je_opex({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, expType:item.exp_type||'أخرى', desc:item.description||'مصروف تشغيلي', method:item.pay_method||'نقد', refNo:item.ref_no||item.id });
         } else if (type === 'sale_edit' && item.inv_no && item.file_no) {

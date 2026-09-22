@@ -2852,7 +2852,7 @@ export async function submitLedger() {
     if (postStatus === 'posted' && spec.needsJE && rowId) {
       try {
         await je_partnerLedger({ sys:state.system, date, entryType:type,
-          amount:amounts.amount, fileNo:fn, refId:rowId, partner, method });
+          amount:amounts.amount, fileNo:fn, refId:rowId, partner, method, notes });
       } catch(jeErr) {
         await apiPatch('partner_ledger', { id:`eq.${rowId}` }, { post_status:'draft' });
         toast(`⚠️ حُفظت ${type} بدون ترحيل قيدها — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
