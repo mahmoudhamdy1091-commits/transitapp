@@ -2449,49 +2449,25 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
       return s + (diff < 0 ? Math.abs(diff) : 0);
     }, 0);
 
-    // ✅ خطوة ٣ — بطاقة ملخص تسوية للشريك الدائم: نفس صف الـKPIs والسطر
-    // الختامي المستخدَمين في الملخص الخارجي (grandCapital/grandMyProfit/
-    // grandWithdrawn/grandTransferable/grandGross — نفس الحساب بالحرف، مصدر
-    // واحد لا نسخة موازية)، بلا شبكة الرقائق لكل ملف (لا معنى لها هنا — راجع
-    // قسم ٣ب المُصحَّح: استحقاقه غير مرتبط بملف بعينه) وبلا قسم "وضع التسوية"
-    // (خاص بمشاركة الشراء لكل ملف، لا بجاري حساب مستمر).
+    // ✅ بطاقة ملخص الشريك الدائم — أُعيدت كتابتها بالكامل بطلب صريح من
+    // المالك 2026-09-22: النسخة الأولى كانت تعرض grandCapital/grandMyProfit/
+    // grandWithdrawn/grandTransferable (من computePartnerSettlement، حساب
+    // "استحقاق لكل ملف مقفول" منفصل تمامًا عن السجل الفعلي) جنب جدول الحركات
+    // (مصدره fetchPartnerLedgerMovements، السجل التاريخي الحقيقي) — نفس
+    // ازدواج المصدرين اللي سبَّب لغط "الكشف بيقول عليه 42 ألف وبرضه يقدر
+    // يسحب 29 ألف" سابقًا في نفس الجلسة. كمان "القابل للتحويل" بلا معنى
+    // محاسبي لو الرصيد الفعلي مدين أصلًا (ساحب أكتر من ربحه). الحل: رقم واحد
+    // بس، من نفس مصدر جدول الحركات (_runningBal) — لا حساب مواز ثانٍ.
+    const _permBalPositive = _runningBal >= -0.01;
     const _permanentSummaryBlock = `
       <div style="background:#1a1a2e;color:#fff;border-radius:12px;padding:20px;margin-bottom:24px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
           <span style="background:#3b82f633;color:#93c5fd;border:1px solid #3b82f655;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700">🔵 شريك دائم — جاري حساب مستمر</span>
-          <span style="font-size:11px;opacity:.6">رأس ماله مدوَّر داخل الشركة — العمود يظهر صفرًا إلا لو دفع من جيبه شخصيًا</span>
+          <span style="font-size:11px;opacity:.6">رأس ماله مدوَّر داخل الشركة — حركاته الشخصية بس هي اللي تُحسب</span>
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:10px;border-top:1px solid #ffffff22;padding-top:14px">
-          <div style="text-align:center;flex:1 1 22%;min-width:140px">
-            <div style="font-size:12px;opacity:.6;margin-bottom:4px">ما دفعه من جيبه شخصيًا</div>
-            <div style="font-family:monospace;font-size:16px;font-weight:700;color:#60a5fa">${fmt2(grandCapital)}</div>
-          </div>
-          <div style="text-align:center;flex:1 1 22%;min-width:140px">
-            <div style="font-size:12px;opacity:.6;margin-bottom:4px">إجمالي الأرباح</div>
-            <div style="font-family:monospace;font-size:16px;font-weight:700;color:${grandMyProfit>=0?'#4ade80':'#f87171'}">${fmt2(grandMyProfit)}</div>
-          </div>
-          <div style="text-align:center;flex:1 1 22%;min-width:140px">
-            <div style="font-size:12px;opacity:.6;margin-bottom:4px">إجمالي المسحوبات</div>
-            <div style="font-family:monospace;font-size:16px;font-weight:700;color:#fbbf24">${fmt2(grandWithdrawn)}</div>
-          </div>
-          <div style="text-align:center;flex:1 1 22%;min-width:140px;background:${grandTransferable>0.01?'#16a34a33':'#dc262633'};border-radius:8px;padding:8px">
-            <div style="font-size:12px;opacity:.8;margin-bottom:4px">الرصيد الكلي المستحق</div>
-            <div style="font-family:monospace;font-size:20px;font-weight:900;color:${grandTransferable>0.01?'#4ade80':'#f87171'}">${fmt2(grandTransferable)}</div>
-          </div>
-        </div>
-        <!-- الإجراء الإجمالي النهائي — نفس منطق الملخص الخارجي بالحرف -->
-        <div style="margin-top:16px;border-top:2px solid #ffffff22;padding-top:16px;text-align:center">
-          <div style="font-size:11px;opacity:.5;margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase">الإجراء الإجمالي — كل الملفات</div>
-          <div style="font-size:20px;font-weight:900;color:${grandTransferable>0.01?'#4ade80':grandGross<-0.01?'#f87171':'#a3e635'}">
-            ${grandTransferable > 0.01
-              ? `💸 القابل للتحويل الآن لـ ${partnerName}: ${fmt2(grandTransferable)}`
-              : grandGross > 0.01
-              ? `⏳ مستحقّ له ${fmt2(grandGross)} — غير قابل للصرف الآن (لم يتحصَّل نقد كافٍ)`
-              : grandGross < -0.01
-              ? `⚠️ سحب زيادة عن مستحقه بـ ${fmt2(Math.abs(grandGross))}`
-              : '✅ الحساب متوازن تماماً — لا يوجد تحويل'}
-          </div>
-          ${Math.abs(grandGross - grandTransferable) > 0.01 ? `<div style="font-size:12px;opacity:.6;margin-top:6px">المستحق على الورق (عند إغلاق كل الملفات): ${fmt2(grandGross)}</div>` : ''}
+        <div style="text-align:center;border-top:1px solid #ffffff22;padding-top:16px">
+          <div style="font-size:12px;opacity:.6;margin-bottom:6px">صافي الرصيد</div>
+          <div style="font-family:monospace;font-size:28px;font-weight:900;color:${_permBalPositive?'#4ade80':'#f87171'}">${fmt2(Math.abs(_runningBal))} ${_permBalPositive?'دائن — مستحقّ له':'مدين — ساحب أكثر من رصيده'}</div>
         </div>
       </div>`;
 
