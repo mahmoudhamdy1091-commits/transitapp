@@ -1342,6 +1342,49 @@ export async function postFileProfit(sys, fileNo, partner) {
 }
 
 /**
+ * ت٢ (توزيع ربح الصندوق) — غلاف حول RPC post_treasury_profit_for_file
+ * (sql/m6_treasury_profit_distribution_phase2.sql). عكس postFileProfit تمامًا:
+ * partner هنا لازم يكون الخزينة، والنتيجة صفوف متعددة (عمولات اختيارية +
+ * الملّاك الأربعة/الثلاثة) من قيد واحد.
+ *
+ * commissions: [{account_code, amount}, ...] — اختياري، مبلغ لا نسبة.
+ *
+ * ✅ نفس تحقّق انحراف الصيغة (JS مقابل SQL) — بس هنا المقارنة على مجموع
+ * أنصبة الملّاك فقط (بعد خصم العمولات المُدخَلة)، لأن العمولات مبلغ يدوي
+ * مش جزء من صيغة الربح نفسها.
+ */
+export async function postTreasuryProfit(sys, fileNo, treasuryPartner, commissions = []) {
+  const rows = await apiRpc('post_treasury_profit_for_file', {
+    p_sys: sys, p_file_no: fileNo, p_partner: treasuryPartner,
+    p_commissions: commissions || [],
+  });
+  if (!rows || !rows.length) return rows;
+
+  try {
+    const jeAll = await apiGetAll('journal_entries', {
+      select: 'account_code,dr_amount,cr_amount,ref_table,file_no',
+      system_type: `eq.${sys}`, file_no: `eq.${fileNo}`, post_status: `eq.posted`,
+    });
+    const fin = computeFinancials(jeAll).byFile[fileNo] || { sales:0, cogs:0, dealExp:0 };
+    const jsProfit = fin.sales - fin.cogs - fin.dealExp;
+    const treasuryLinks = await apiGetAll('partners_master', {
+      select: 'share_percent', system_type: `eq.${sys}`, file_no: `eq.${fileNo}`, partner: `eq.${treasuryPartner}`,
+    });
+    const treasuryShare = +(treasuryLinks?.[0]?.share_percent || 0);
+    const jsTreasuryAmount = jsProfit * treasuryShare / 100;
+    const commissionSum = (commissions || []).reduce((s, c) => s + (+c.amount || 0), 0);
+    const ownersSum = rows.filter(r => r.recipient_kind === 'مالك').reduce((s, r) => s + (+r.amount || 0), 0);
+    const drift = Math.abs(jsTreasuryAmount - commissionSum - ownersSum);
+    if (drift > 0.01) {
+      console.error(`⚠️ انحراف صيغة توزيع ربح الصندوق! نصيب الصندوق JS=${jsTreasuryAmount.toFixed(2)} − عمولات=${commissionSum.toFixed(2)} ≠ مجموع الملّاك SQL=${ownersSum.toFixed(2)} فرق=${drift.toFixed(2)} — ملف ${fileNo} — راجع فورًا`);
+      toast(`⚠️ تحذير: مجموع توزيع أرباح الصندوق يختلف عن الحساب المحلي — راجع الصيغتين فورًا`, 'err');
+    }
+  } catch(e) { console.warn('postTreasuryProfit: فشل التحقق التلقائي من انحراف الصيغة:', e.message); }
+
+  return rows;
+}
+
+/**
  * "المرشَّح" الافتراضي لـ"تأكيد استلام" ملف معيّن — من تحصيلاته الفعلية
  * (collections.received_by)، لا افتراض ثابت باسم الخزينة. الأكبر مبلغًا هو
  * top (يُستخدم كتحديد مسبق في الواجهة)؛ isMixed=true يعني الملف فيه أكتر
@@ -1642,7 +1685,7 @@ Object.assign(window, {
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, fetchAllPages, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
-  computePartnerGlobalBalance, fetchPartnerLedgerMovements, postFileProfit, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
+  computePartnerGlobalBalance, fetchPartnerLedgerMovements, postFileProfit, postTreasuryProfit, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
   fetchPartnerTransactions,
   login, logout, state, SB_URL, SB_KEY,
 });
