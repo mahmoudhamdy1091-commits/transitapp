@@ -1225,12 +1225,22 @@ export function renderApprovalList() {
       ? 'سيتم تنفيذ القيد العكسي وإلغاء العملية نهائياً — هل أنت متأكد؟'
       : 'هل تريد الموافقة على هذه العملية وترحيلها؟';
     const rejectLabel  = isReversal ? '↩ استرداد' : null;
+    // ✅ اكتشاف "إحياء" — سجل كان مرفوض/ملغى فعلاً وبعدين رجع للقائمة عبر
+    // statusAfterEdit() (إصلاح باج 2026-09-21، راجع TM-005). ملاحظات الرفض/
+    // الإلغاء دايمًا بتتسجّل في notes نفسه (voidTransaction/voidPurchaseOrder
+    // وrejectItem) فمفيش حاجة لاستعلام audit_log إضافي — العلامة موجودة
+    // بالفعل في السجل نفسه. الموافقة التانية هي الحاجز الأمني الوحيد هنا،
+    // فلازم تبقى واعية للسبب لا عمياء (اقتراح المالك عبر جلسة إعادة الهيكلة).
+    const revivedFromDead = !isReversal && /مرفوض بتاريخ|مُلغى بتاريخ/.test(r.notes || '');
+    const revivedBadge = revivedFromDead
+      ? '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700;margin-inline-start:6px;white-space:nowrap">⚠️ كان ملغى سابقًا — راجع السبب قبل الموافقة</span>'
+      : '';
     return `
     <div class="approval-row" onclick="openApprovalDetail('${r._type}','${r.id}')" style="${isReversal?'border-right:3px solid #f97316':''}">
       <div class="approval-row-icon" style="background:${color}22;color:${color}">${cfg.icon}</div>
       <div class="approval-row-body">
         <div class="approval-row-title" style="${isReversal?'color:#f97316':''}">
-          ${isReversal ? '🔄 طلب إلغاء — ' : ''}${r._desc}
+          ${isReversal ? '🔄 طلب إلغاء — ' : ''}${r._desc}${revivedBadge}
         </div>
         <div class="approval-row-meta">
           ${fmtDate(r._date)}
