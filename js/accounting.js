@@ -2382,10 +2382,19 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
       return { ...m, bal };
     });
 
+    // ✅ سطر الفترة الصريح — طلب المالك 2026-09-22 أثناء مراجعة توافق كشف
+    // الشريك الدائم مع معايير كشوف الحسابات (من أول حركة فعلية لآخرها،
+    // بلا فلتر تاريخ على الكشف نفسه — الفترة الكاملة المتاحة دائمًا)
+    const _permPeriodFrom = _permanentRows.length ? _permanentRows[0].date : null;
+    const _permPeriodTo   = _permanentRows.length ? _permanentRows[_permanentRows.length-1].date : null;
+
     const dealBlocks = isPermanent === true ? `
       <div style="border:1.5px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:24px">
         <div style="background:#1a1a2e;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-          <div style="font-size:14px;font-weight:800">📖 الحركات المُدمَجة — كل الملفات مرتَّبة بالتاريخ</div>
+          <div>
+            <div style="font-size:14px;font-weight:800">📖 الحركات المُدمَجة — كل الملفات مرتَّبة بالتاريخ</div>
+            <div style="font-size:11px;opacity:.6;margin-top:2px">الفترة: ${_permPeriodFrom ? `${_permPeriodFrom} — ${_permPeriodTo}` : 'لا توجد حركات بعد'}</div>
+          </div>
           <span style="font-size:11px;opacity:.7">${_permanentRows.length} حركة عبر ${dealDetails.length} ملف</span>
         </div>
         <div style="padding:16px">
