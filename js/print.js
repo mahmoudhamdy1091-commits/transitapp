@@ -847,6 +847,11 @@ export async function printDealSummary(fn) {
       const x = settlementPartners.find(sp => sp.name === (p.partner||'').trim())
         || { actualContribution:0, fairShare:0, profitShare: profit*(share/100), withdrawnViaPayout:0, collectionsHeld:0, netDue:0, isTreasury:false };
       const isTreasury  = x.isTreasury || false;
+      // ✅ اكتُشف حيًّا 2026-09-22 (اختبار م٦ على TM-042) — راجع نفس الإصلاح
+      // في dashboard.js: شريك دائم مالوش مطالبة رأس مال أصلًا (قرار ت١)،
+      // فـ"المتبقي عليه" لا معنى له. d.accountLinks تُجلب في loadSummaryTab
+      // (dashboard.js) وتُخزَّن في state.currentDealData — نفس مصدر الشاشة
+      const isPerm      = isTreasury || window.isPermanentPartner(d.sys, p.partner, d.accountLinks||[]) === true;
       // للصندوق: افصل رأس المال (دفعات) عن المصاريف (باقي المساهمة)
       const capitalIn   = isTreasury ? (x.capitalPaid || 0) : x.actualContribution;
       const expIn_      = isTreasury ? Math.max(0, (x.actualContribution||0) - (x.capitalPaid||0)) : 0;
@@ -891,13 +896,15 @@ export async function printDealSummary(fn) {
       // رأس المال
       html += '<div style="padding:12px 14px;border-left:1px solid #e4e0d8;border-bottom:1px solid #e4e0d8">'
             + '<div style="font-size:12px;color:#78716c;font-weight:700;margin-bottom:8px;letter-spacing:1px">رأس المال</div>'
-            + rows('حصته في التكلفة', f2(liability),  false, '#1d4ed8')
+            + rows('حصته في التكلفة', isPerm ? 'لا ينطبق — شريك دائم' : f2(liability),  false, '#1d4ed8')
             + rows('رأس المال المدفوع', f2(capitalIn), false, '#15803d')
             + (isTreasury && expIn_ > 0.01 ? rows('مصاريف من جيبه', f2(expIn_), false, '#0369a1') : '')
             + rows('ساهم فعلاً',       f2(isTreasury ? x.actualContribution : capitalIn), false, '#15803d')
-            + (overpaid_ > 0.01
-                ? rows('دفع زيادة',    '+' + f2(overpaid_) + ' ↑', true, '#0369a1')
-                : rows('المتبقي عليه', remaining_ > 0.01 ? f2(remaining_) + ' ⚠️' : 'صفر ✅', true, remaining_ > 0.01 ? '#c0392b' : '#15803d'))
+            + (isPerm
+                ? rows('المتبقي عليه', 'لا ينطبق — شريك دائم', true, '#1d4ed8')
+                : (overpaid_ > 0.01
+                    ? rows('دفع زيادة',    '+' + f2(overpaid_) + ' ↑', true, '#0369a1')
+                    : rows('المتبقي عليه', remaining_ > 0.01 ? f2(remaining_) + ' ⚠️' : 'صفر ✅', true, remaining_ > 0.01 ? '#c0392b' : '#15803d')))
             + '</div>';
 
       // الربح
