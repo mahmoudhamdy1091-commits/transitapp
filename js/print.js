@@ -985,7 +985,16 @@ export async function printDealSummary(fn) {
       </tbody>
     </table>`;
 
+    // ✅ تنبيه استخدام داخلي — هذا الكشف يعرض أرقام كل الشركاء معًا (خطر
+    // خصوصية لو اتدّى لشريك واحد بالغلط)؛ الأداة الوحيدة المفروض تتطبع
+    // لشريك معيّن هي showPartnerStatement/showPartnerDealStatement (accounting.js)
+    const internalUseBanner = `
+    <div style="background:#fef3c7;border:1px solid #d97706;border-radius:6px;padding:8px 14px;margin:10px 0;font-size:12px;font-weight:700;color:#92400e;text-align:center">
+      ⚠️ للاستخدام الداخلي — يعرض بيانات كل الشركاء، لا يُشارَك مع شريك واحد
+    </div>`;
+
     const html = `${docHeader('ملخص الصفقة', '', fn)}
+    ${internalUseBanner}
     ${dealInfo}
     ${kpis}
     ${finTable}

@@ -690,11 +690,7 @@ export async function loadDealStatement(fn, sys) {
   const wrap = el('dealStatementWrap');
   wrap.innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   try {
-    // ✅ settlement — المصدر الموحّد لأرقام الشركاء (computePartnerSettlement,
-    // core.js). مجلوب بالتوازي مع الباقي فبلا أي زيادة في زمن الاستجابة.
-    // راجع كتلة "توزيع الأرباح على الشركاء" تحت: كانت تعيد اشتقاق كل حد من
-    // الجداول الخام بنسخة يدوية ثالثة من معادلة الاستحقاق.
-    const [po, vehicles, payments, expenses, sales, collections, partners, payouts, settlement] = await Promise.all([
+    const [po, vehicles, payments, expenses, sales, collections, partners, payouts] = await Promise.all([
       apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
@@ -703,7 +699,6 @@ export async function loadDealStatement(fn, sys) {
       apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'paid_date.asc' }),
       apiGetAll('partners_master', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'pay_date.asc' }),
-      computePartnerSettlement(fn, sys),
     ]);
 
     const deal = po?.[0] || {};
@@ -804,54 +799,9 @@ export async function loadDealStatement(fn, sys) {
       </tr>`;
     }).join('');
 
-    const partnersHtml = (partners||[]).length ? `
-      <div style="margin-top:16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
-        <div style="font-weight:700;margin-bottom:12px;font-size:13px">👥 توزيع الأرباح على الشركاء</div>
-        ${(partners||[]).map(p=>{
-          // ✅ كل أرقام الشريك من computePartnerSettlement (core.js) مباشرة — لا إعادة
-          // اشتقاق محلي. كانت هنا نسخة يدوية ثالثة من معادلة الاستحقاق
-          // (capitalPaid + expCapital + profitShare - withdrawn) لا تستخدم اسم
-          // netDue إطلاقًا، ففاتت البحث الشامل الذي وحّد التسعة مواضع (11241fd).
-          // ثلاث علل مجتمعة فيها: (١) بلا Math.max(0,…) وبلا سقف النقد
-          // المحصَّل للملف المفتوح — تطابق فرع المغلق وحده (راجع 6d51a86)؛
-          // (٢) withdrawn من partner_payouts وحدها — فكانت ستتجمّد عن عدّ
-          // أي سحب جديد بمجرد انتقال الكتابة إلى partner_ledger؛
-          // (٣) تكرار منطق paid_by_split وTREASURY_ALIASES — وهو نفسه موضع
-          // باج سابق في هذه الدالة بالذات (ec02ecf).
-          const _st = (settlement?.partners||[]).find(sp => sp.name === (p.partner||'').trim())
-            || { capitalPaid:0, expPaid:0, profitShare:0, withdrawnViaPayout:0, payableNow:0,
-                 isTreasury:false, actualContribution:0, grossEntitlement:0 };
-          // ✅ الخزينة لا تُقيَّد على 2400 إطلاقًا (مصاريفها تُدفع نقدًا مباشرة)،
-          // فـcapitalPaid/expPaid عبر القيود يفضلان صفرًا رغم مساهمتها الفعلية.
-          // نعرض actualContribution (المحسوبة بالمتبقي في core.js) تحت بند
-          // المصروفات بدل أن تختفي المساهمة كلها من الصف — نفس المعالجة
-          // الحرفية في كشف حساب الشريك (accounting.js:1772-1774)، فيتطابق
-          // الصفّان بدل أن يتناقضا
-          const capitalPaid = _st.isTreasury ? 0 : _st.capitalPaid;
-          const expCapital  = _st.isTreasury ? _st.actualContribution : _st.expPaid;
-          const profitShare = _st.profitShare;
-          const withdrawn   = _st.withdrawnViaPayout;
-          // ✅ الصف يعرض المكوّنات الأربعة ثم "المستحق". لو كان الأخير payableNow
-          //    (المقيَّدة بالسقف النقدي) لدعا القارئ لجمعٍ لا يصح — نفس عطل
-          //    المعادلة في dashboard.js/print.js بلا علامة "=" لكن بنفس الإيحاء.
-          //    فالمستحق = grossEntitlement، والقيد يظهر في سطر منفصل حين يلزم.
-          const totalDue    = +_st.grossEntitlement || 0;
-          const payableNow  = +_st.payableNow || 0;
-          const capped      = Math.abs(totalDue - payableNow) > 0.005;
-          const dueColor    = totalDue > 0.01 ? 'var(--green)' : totalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
-          return `<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
-            <div style="flex:1;font-weight:700;min-width:100px">${p.partner}</div>
-            <div style="font-size:12px;color:var(--text2)">حصة: <b>${p.share_percent}%</b></div>
-            <div style="font-size:12px;color:var(--blue)">رأس المال المدفوع: <b>${fmt(capitalPaid)}</b></div>
-            ${expCapital > 0 ? `<div style="font-size:12px;color:var(--cyan)">مصروفات من جيبه: <b>${fmt(expCapital)}</b></div>` : ''}
-            <div style="font-size:12px;color:var(--green)">ربح مستحق: <b>${fmt(profitShare)}</b></div>
-            <div style="font-size:12px;color:var(--accent)">تم الصرف: <b>${fmt(withdrawn)}</b></div>
-            <div style="font-size:12px;font-weight:700;color:${dueColor}">المستحق: <b>${fmt(totalDue)}</b></div>
-            ${capped ? `<div style="font-size:11px;font-weight:700;color:var(--amber,#d97706)">⏳ القابل للصرف الآن: <b>${fmt(payableNow)}</b></div>` : ''}
-          </div>`;
-        }).join('')}
-      </div>` : '';
-
+    // عرض توزيع الأرباح على الشركاء اتشال من هنا 2026-09-22 (تمايز الأدوات
+    // بالجمهور) — تكرار أقل تفصيلًا لـ"ملخص الصفقة الكامل" (printDealSummary,
+    // js/print.js)؛ لكشف شريك واحد استخدم showPartnerDealStatement (accounting.js).
     wrap.innerHTML = kpis + `
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <div style="padding:8px 14px;background:var(--card2);border-bottom:1px solid var(--border);font-size:13px;color:var(--text2)">
@@ -863,7 +813,7 @@ export async function loadDealStatement(fn, sys) {
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
-      </div>` + partnersHtml;
+      </div>`;
 
   } catch(e) { el('dealStatementWrap').innerHTML = errHTML('خطأ: '+e.message); }
 }

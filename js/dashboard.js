@@ -627,7 +627,7 @@ export async function openViewer(fileNo) {
     </div>
     <div class="vh-print-group">
       <button class="btn btn-secondary btn-sm" onclick="printPurchaseOrder('${fileNo}')">🖨️ سند</button>
-      <button class="btn btn-secondary btn-sm" onclick="printDealStatement('${fileNo}')">🖨️ كشف</button>
+      <button class="btn btn-secondary btn-sm" onclick="printDealStatement('${fileNo}')">📋 سجل حركات الملف</button>
       <button class="btn btn-secondary btn-sm" onclick="exportDealExcel('${fileNo}')">📊 Excel</button>
       <button class="btn btn-secondary btn-sm" onclick="exportPurchaseOrderExcel('${fileNo}')">📋 Excel PO</button>
     </div>
@@ -791,7 +791,7 @@ export async function loadSummaryTab(fn, sys) {
     el('sum-financial').innerHTML = `
       <div class="no-print" style="display:flex;justify-content:flex-end;margin-bottom:10px">
         <button class="btn btn-secondary btn-sm" onclick="printDealSummary('${fn}')" style="color:var(--blue)">
-          🖨️ طباعة ملخص الصفقة
+          📊 ملخص إداري (كل الشركاء)
         </button>
       </div>` + draftBanner + cogsBanner + `
       <div id="kpiGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
