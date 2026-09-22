@@ -1028,6 +1028,14 @@ export async function loadSummaryTab(fn, sys) {
             style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);border-radius:6px;padding:4px 10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
             📒 جاري الشريك
           </button>
+          <!-- ✅ م٦ المرحلة الأولى — زر ترحيل ربح، يظهر فقط لشريك دائم
+               مُسمَّى (لا الخزينة، محجوزة لمرحلة تانية — راجع
+               sql/m6_profit_postings_phase1.sql) على ملف مقفول -->
+          ${(isPerm && !x.isTreasury && poArr?.[0]?.status === 'CLOSED') ? `
+          <button onclick="event.stopPropagation();postFileProfitUI('${fn}','${p.partner}','${sys}')"
+            style="background:var(--green-dim,#dcfce7);color:var(--green,#16a34a);border:1px solid var(--green,#16a34a);border-radius:6px;padding:4px 10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+            💰 ترحيل ربح هذا الملف
+          </button>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -1041,6 +1049,33 @@ export async function loadSummaryTab(fn, sys) {
     el('sum-payments').innerHTML = '';
 
   } catch(e) { console.error('Summary error:', e); el('sum-financial').innerHTML = errHTML('خطأ في تحميل الملخص: ' + e.message); }
+}
+
+/**
+ * م٦ المرحلة الأولى — زرار "ترحيل ربح هذا الملف" (بطاقة الشريك، loadSummaryTab
+ * فوق). تأكيد صريح قبل الكتابة (postFileProfit بيكتب قيد حقيقي فورًا، بلا
+ * رجوع)، ثم إعادة تحميل التبويب ليعرض الرقم الجديد فورًا.
+ */
+export async function postFileProfitUI(fn, partner, sys) {
+  const ok = await confirmAsync(
+    '💰 ترحيل ربح الملف',
+    `هل تريد ترحيل نصيب "${partner}" من ربح الملف "${fn}" فعليًا؟\nسيُكتب قيد محاسبي حقيقي فورًا (مدين الأرباح المبقاة / دائن حساب الشريك)، ولا يمكن التراجع عنه إلا بإلغاء يدوي لاحقًا.`,
+    true, 'ترحيل الآن'
+  );
+  if (!ok) return;
+
+  try {
+    const result = await postFileProfit(sys, fn, partner);
+    if (result.already_posted) {
+      toast(`ℹ️ ربح هذا الملف مُرحَّل بالفعل لـ${partner} — ${fmt(result.amount)}`, 'warn');
+    } else {
+      toast(`✅ تم ترحيل ${fmt(result.amount)} لحساب ${partner} (نصيبه من ربح الملف ${fmt(result.file_profit)})`, 'ok');
+    }
+    await loadSummaryTab(fn, sys);
+  } catch(e) {
+    toast('❌ فشل الترحيل: ' + e.message, 'err');
+    console.error('postFileProfitUI error:', e);
+  }
 }
 
 export function summRow(label, cls, val, bold=false, color='') {
@@ -1751,6 +1786,6 @@ Object.assign(window, {
   filterDeals, openViewer, switchTab, loadViewerTab, loadSummaryTab, summRow,
   loadPaymentsTab, loadExpensesTab, loadSalesTab, voidSaleInvoice, deleteSaleInvoice,
   loadCollectionsTab, loadPayoutsTab, openEditPayoutModal, addVehicleRowWithData,
-  addPartnerRowWithData,
+  addPartnerRowWithData, postFileProfitUI,
 });
 
