@@ -627,7 +627,7 @@ export async function openViewer(fileNo) {
     </div>
     <div class="vh-print-group">
       <button class="btn btn-secondary btn-sm" onclick="printPurchaseOrder('${fileNo}')">🖨️ سند</button>
-      <button class="btn btn-secondary btn-sm" onclick="printDealStatement('${fileNo}')">🖨️ كشف</button>
+      <button class="btn btn-secondary btn-sm" onclick="printDealStatement('${fileNo}')">📋 سجل حركات الملف</button>
       <button class="btn btn-secondary btn-sm" onclick="exportDealExcel('${fileNo}')">📊 Excel</button>
       <button class="btn btn-secondary btn-sm" onclick="exportPurchaseOrderExcel('${fileNo}')">📋 Excel PO</button>
     </div>
@@ -791,7 +791,7 @@ export async function loadSummaryTab(fn, sys) {
     el('sum-financial').innerHTML = `
       <div class="no-print" style="display:flex;justify-content:flex-end;margin-bottom:10px">
         <button class="btn btn-secondary btn-sm" onclick="printDealSummary('${fn}')" style="color:var(--blue)">
-          🖨️ طباعة ملخص الصفقة
+          📊 ملخص إداري (كل الشركاء)
         </button>
       </div>` + draftBanner + cogsBanner + `
       <div id="kpiGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
@@ -1028,27 +1028,27 @@ export async function loadSummaryTab(fn, sys) {
             style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);border-radius:6px;padding:4px 10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
             📒 جاري الشريك
           </button>
-          <!-- ✅ م٦ المرحلة الأولى — زر ترحيل ربح، يظهر فقط لشريك دائم
-               مُسمَّى (لا الخزينة، محجوزة لمرحلة تانية — راجع
-               sql/m6_profit_postings_phase1.sql) على ملف مقفول -->
-          ${(isPerm && !x.isTreasury && poArr?.[0]?.status === 'CLOSED') ? `
-          <button onclick="event.stopPropagation();postFileProfitUI('${fn}','${p.partner}','${sys}')"
-            style="background:var(--green-dim,#dcfce7);color:var(--green,#16a34a);border:1px solid var(--green,#16a34a);border-radius:6px;padding:4px 10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
-            💰 ترحيل ربح هذا الملف
-          </button>` : ''}
-          <!-- ✅ ت٢ — توزيع ربح الصندوق على الملّاك، يظهر فقط لصف الخزينة
-               على ملف مقفول — راجع sql/m6_treasury_profit_distribution_phase2.sql -->
-          ${(x.isTreasury && poArr?.[0]?.status === 'CLOSED') ? `
-          <button onclick="event.stopPropagation();openTreasuryDistributionModal('${fn}','${p.partner}','${sys}',${(+x.profitShare||0)})"
-            style="background:var(--green-dim,#dcfce7);color:var(--green,#16a34a);border:1px solid var(--green,#16a34a);border-radius:6px;padding:4px 10px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
-            💰 توزيع ربح الصندوق
-          </button>` : ''}
+          <!-- ✅ م٦ (2026-09-22): زرّا الترحيل المنفصلان (شريك دائم · خزينة)
+               اتشالوا من بطاقات الشركاء واتدمجوا في زر واحد على مستوى الملف
+               فوق — قرار مالك: "توزيع الأرباح يكون على إجمالي الربح مش على
+               شخص معيّن". راجع openFileProfitDistributionModal تحت. -->
         </div>
       </div>`;
     }).join('');
 
+    // ✅ م٦ (2026-09-22) — زر واحد على مستوى الملف بدل زر لكل بطاقة شريك.
+    // مكانه هنا مش داخل بطاقة، لأن العملية نفسها بقت للملف كله: قيد واحد
+    // ذرّي يوزّع الربح على كل مستفيقيه معًا. يظهر للملف المقفول فقط.
+    const canDistribute = poArr?.[0]?.status === 'CLOSED';
     el('sum-partners').innerHTML = `
-      <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">👥 الشركاء</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px;font-weight:700;color:var(--text2)">👥 الشركاء</span>
+        ${canDistribute ? `
+        <button onclick="openFileProfitDistributionModal('${fn}','${sys}')"
+          style="background:var(--green-dim,#dcfce7);color:var(--green,#16a34a);border:1px solid var(--green,#16a34a);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+          💰 توزيع أرباح هذا الملف
+        </button>` : ''}
+      </div>
       ${settlementTableHtml}
       ${partnersHtml || '<div style="color:var(--text2);padding:8px;font-size:13px">لا يوجد شركاء</div>'}`;
 
@@ -1058,195 +1058,171 @@ export async function loadSummaryTab(fn, sys) {
   } catch(e) { console.error('Summary error:', e); el('sum-financial').innerHTML = errHTML('خطأ في تحميل الملخص: ' + e.message); }
 }
 
-/**
- * م٦ المرحلة الأولى — زرار "ترحيل ربح هذا الملف" (بطاقة الشريك، loadSummaryTab
- * فوق). تأكيد صريح قبل الكتابة (postFileProfit بيكتب قيد حقيقي فورًا، بلا
- * رجوع)، ثم إعادة تحميل التبويب ليعرض الرقم الجديد فورًا.
- */
-export async function postFileProfitUI(fn, partner, sys) {
-  const ok = await confirmAsync(
-    '💰 ترحيل ربح الملف',
-    `هل تريد ترحيل نصيب "${partner}" من ربح الملف "${fn}" فعليًا؟\nسيُكتب قيد محاسبي حقيقي فورًا (مدين الأرباح المبقاة / دائن حساب الشريك)، ولا يمكن التراجع عنه إلا بإلغاء يدوي لاحقًا.`,
-    true, 'ترحيل الآن'
-  );
-  if (!ok) return;
-
-  try {
-    const result = await postFileProfit(sys, fn, partner);
-    if (result.already_posted) {
-      toast(`ℹ️ ربح هذا الملف مُرحَّل بالفعل لـ${partner} — ${fmt(result.amount)}`, 'warn');
-    } else {
-      toast(`✅ تم ترحيل ${fmt(result.amount)} لحساب ${partner} (نصيبه من ربح الملف ${fmt(result.file_profit)})`, 'ok');
-    }
-    await loadSummaryTab(fn, sys);
-  } catch(e) {
-    toast('❌ فشل الترحيل: ' + e.message, 'err');
-    console.error('postFileProfitUI error:', e);
-  }
-}
-
-// ✅ ت٢ — نسب توزيع ربح الصندوق على الملّاك (قرار مالك صريح 2026-09-22،
-// مطابقة لـsql/m6_treasury_profit_distribution_phase2.sql بالحرف — أي
-// تعديل هنا لازم تعديل مطابق هناك، وإلا المعاينة هنا تكذب على الرقم الحقيقي)
+// ✅ م٦ — نسب توزيع نصيب الخزينة على الملّاك (قرار مالك صريح 2026-09-22،
+// مطابقة لـsql/m6_unified_file_profit_distribution.sql بالحرف — أي تعديل
+// هنا لازم تعديل مطابق هناك، وإلا المعاينة هنا تكذب على الرقم الحقيقي)
 const TREASURY_OWNER_SPLIT = {
   BOX: [['علي أسعد ديمو', 1/3], ['سامر الخلف', 1/3], ['عبدالله الجاحد', 1/6], ['عبد الرحيم الجاحد', 1/6]],
   TM:  [['مازن الخلف', 0.5], ['عبدالله الجاحد', 0.25], ['عبد الرحيم الجاحد', 0.25]],
 };
 
 /**
- * ت٢ — نافذة "توزيع ربح الصندوق" (بطاقة الخزينة، loadSummaryTab فوق).
- * عمولات اختيارية (صفر أو أكتر، مبلغ يدوي لا نسبة) تُخصَم أولًا، والباقي
- * يتوزّع على الملّاك الأربعة/الثلاثة بنسب TREASURY_OWNER_SPLIT. نافذة
- * مبنية ديناميكيًا (بلا markup ثابت في index.html) — تُحذف بالكامل عند
- * الإغلاق، زي أي مودال تأكيد بسيط، بس بحقول أكتر.
+ * م٦ — نافذة "توزيع أرباح هذا الملف" (زر واحد على مستوى الملف، loadSummaryTab).
+ *
+ * تحل محل الزرَّين المنفصلين (ترحيل ربح شريك دائم · توزيع ربح الصندوق) بقرار
+ * مالك صريح 2026-09-22. السبب مش تجميلي: بزرَّين، ترتيب الضغط كان بيغيّر
+ * الأرقام — الزر الأول بيحسب نصيبه على ربح قبل ما تتسجّل عمولة، فيترحّل رقم
+ * غلط بلا مسار تصحيح غير قيد تسوية يدوي.
+ *
+ * ⚠️ بلا أي حقل عمولة بالتصميم: العمولة بقت مصروفًا على الصفقة (وضع "عمولة
+ * مستحقة لمستفيد" في نموذج المصروف) فبتنزل في تكلفة الملف وبتقلّل الربح
+ * تلقائيًا قبل التوزيع ⇒ كل شريك بيتحمّل نصيبه منها بنسبته.
+ * راجع project_m6_commission_as_deal_expense في الذاكرة.
+ *
+ * المعاينة هنا **حساب محلي للعرض فقط** — الأرقام اللي تُكتب فعليًا بتتحسب
+ * على السيرفر من القيود مباشرة (postFileProfitAll بيقارن الاتنين ويصرخ لو
+ * اختلفوا).
  */
-export async function openTreasuryDistributionModal(fn, treasuryPartner, sys, treasuryProfitShare) {
+export async function openFileProfitDistributionModal(fn, sys) {
   const owners = TREASURY_OWNER_SPLIT[sys] || [];
-  const ownerNames = owners.map(o => o[0]);
 
-  let commissionAccounts = [];
+  let profit = 0, partners = [], links = [];
   try {
-    const links = await apiGet('partner_account_links', { select:'account_code,partner_name', system_type:`eq.${sys}` });
-    commissionAccounts = (links || []).filter(l =>
-      !ownerNames.includes(l.partner_name) && !/الصندوق|صندوق الترانزيت/.test(l.partner_name || ''));
-  } catch(e) { console.warn('openTreasuryDistributionModal: فشل جلب حسابات العمولات:', e.message); }
+    const [jeAll, pm, al] = await Promise.all([
+      apiGetAll('journal_entries', {
+        select: 'account_code,dr_amount,cr_amount,ref_table,file_no',
+        system_type: `eq.${sys}`, file_no: `eq.${fn}`, post_status: 'eq.posted',
+      }),
+      apiGetAll('partners_master', { select:'partner,share_percent', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('partner_account_links', { select:'partner_name,is_permanent', system_type:`eq.${sys}` }),
+    ]);
+    const fin = computeFinancials(jeAll).byFile[fn] || { sales:0, cogs:0, dealExp:0 };
+    profit   = fin.sales - fin.cogs - fin.dealExp;
+    partners = pm || [];
+    links    = al || [];
+  } catch(e) {
+    toast('❌ تعذّر تحميل بيانات الملف: ' + e.message, 'err');
+    console.error('openFileProfitDistributionModal load error:', e);
+    return;
+  }
 
-  const existing = document.getElementById('trdist-overlay');
+  // ── تصنيف كل شريك: خزينة / دائم / خارجي (أو غير مُصنَّف) ──
+  // نفس ترتيب منطق الدالة على السيرفر بالحرف
+  const toPost = [];      // {name, kind, share, amount}
+  const notPosted = [];   // {name, share, amount, why}
+  let treasuryShare = 0, treasuryFound = false;
+
+  for (const p of partners) {
+    const name  = (p.partner||'').trim();
+    const share = +p.share_percent || 0;
+    if (!name) continue;
+    if (TREASURY_ALIASES.has(name)) { treasuryFound = true; treasuryShare += share; continue; }
+    const perm = isPermanentPartner(sys, name, links);
+    if (perm === true) {
+      toPost.push({ name, kind:'شريك دائم', share, amount: profit * share / 100 });
+    } else {
+      notPosted.push({
+        name, share, amount: profit * share / 100,
+        why: perm === null ? 'غير مُصنَّف' : 'شريك خارجي',
+      });
+    }
+  }
+
+  const treasuryAmount = treasuryFound ? profit * treasuryShare / 100 : 0;
+  if (treasuryFound && Math.abs(treasuryAmount) > 0.005) {
+    owners.forEach(([nm, ratio]) =>
+      toPost.push({ name: nm, kind:'مالك (من نصيب الصندوق)', share: ratio*100, amount: treasuryAmount * ratio }));
+  }
+
+  const totalPosted = toPost.reduce((s, x) => s + x.amount, 0);
+
+  const existing = document.getElementById('fpdist-overlay');
   if (existing) existing.remove();
 
+  const rowHtml = (label, sub, val, color) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <div>
+        <div style="color:var(--text);font-weight:600">${label}</div>
+        ${sub ? `<div style="font-size:11px;color:var(--text2)">${sub}</div>` : ''}
+      </div>
+      <div style="font-family:var(--mono);font-weight:700;color:${color}">${fmt(val)}</div>
+    </div>`;
+
   const overlay = document.createElement('div');
-  overlay.id = 'trdist-overlay';
+  overlay.id = 'fpdist-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   overlay.innerHTML = `
-    <div style="background:var(--card,#fff);border-radius:12px;padding:20px;max-width:460px;width:100%;max-height:88vh;overflow:auto;font-family:'Cairo',sans-serif;direction:rtl">
+    <div style="background:var(--card,#fff);border-radius:12px;padding:20px;max-width:480px;width:100%;max-height:88vh;overflow:auto;font-family:'Cairo',sans-serif;direction:rtl">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <div style="font-size:16px;font-weight:700;color:var(--text)">💰 توزيع ربح الصندوق — ملف ${fn}</div>
-        <button id="trdist-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text2)">×</button>
+        <div style="font-size:16px;font-weight:700;color:var(--text)">💰 توزيع أرباح الملف — ${fn}</div>
+        <button id="fpdist-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text2)">×</button>
       </div>
+
       <div style="background:var(--card2,#f4f4f5);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--text2)">
-        نصيب الصندوق من ربح هذا الملف: <strong style="font-family:var(--mono);color:var(--text)">${fmt(treasuryProfitShare)}</strong>
+        صافي ربح الملف (بعد كل المصاريف والعمولات):
+        <strong style="font-family:var(--mono);color:${profit>=0?'var(--green,#16a34a)':'var(--red,#dc2626)'}">${fmt(profit)}</strong>
       </div>
 
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">عمولات اختيارية (لو موجودة)</div>
-      <div id="trdist-commission-rows"></div>
-      <button id="trdist-add-commission" type="button"
-        style="background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:14px">
-        + إضافة عمولة
-      </button>
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">سيُرحَّل الآن</div>
+      ${toPost.length
+        ? toPost.map(x => rowHtml(x.name, `${x.kind} — ${(+x.share).toFixed(2)}%`, x.amount,
+            x.amount>=0?'var(--green,#16a34a)':'var(--red,#dc2626)')).join('')
+        : '<div style="font-size:12px;color:var(--text3);padding:6px 0">لا يوجد مستفيد قابل للترحيل في هذا الملف</div>'}
+      ${toPost.length ? `
+      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;font-weight:700;border-top:2px solid var(--border);margin-top:4px">
+        <span>الإجمالي</span>
+        <span style="font-family:var(--mono)">${fmt(totalPosted)}</span>
+      </div>` : ''}
 
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">الباقي يتوزّع على الملّاك</div>
-      <div id="trdist-owners-preview" style="font-size:13px;color:var(--text2);margin-bottom:10px"></div>
+      ${notPosted.length ? `
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin:14px 0 6px">لن يُرحَّل (يُسوَّى بآليته الحالية)</div>
+      ${notPosted.map(x => rowHtml(x.name, `${x.why} — ${(+x.share).toFixed(2)}%`, x.amount, 'var(--text2)')).join('')}
+      <div style="font-size:11px;color:var(--text2);margin-top:6px;line-height:1.6">
+        مستحقّ الشريك الخارجي محسوب أصلًا في كشوف الاستحقاق — ترحيله هنا كمان كان هيحسبه مرتين.
+        نصيبه نزل تلقائيًا بحصته من أي عمولة مسجَّلة على الملف.
+      </div>` : ''}
 
-      <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;border-top:1px solid var(--border);padding-top:10px;margin-bottom:16px">
-        <span>الباقي للملّاك:</span>
-        <span id="trdist-remaining" style="font-family:var(--mono);color:var(--green,#16a34a)">${fmt(treasuryProfitShare)}</span>
-      </div>
-
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button id="trdist-cancel" type="button"
-          style="background:var(--card2);color:var(--text2);border:1px solid var(--border);border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">إلغاء</button>
-        <button id="trdist-confirm" type="button"
-          style="background:var(--green,#16a34a);color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">تأكيد التوزيع</button>
+      <div style="display:flex;gap:8px;margin-top:18px">
+        <button id="fpdist-confirm" ${toPost.length?'':'disabled'}
+          style="flex:1;background:var(--green,#16a34a);color:#fff;border:none;border-radius:8px;padding:9px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif;opacity:${toPost.length?1:.5}">
+          توزيع الآن
+        </button>
+        <button id="fpdist-cancel"
+          style="flex:1;background:var(--card2,#f4f4f5);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
+          إلغاء
+        </button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  document.body.style.overflow = 'hidden';
 
-  const closeModal_ = () => { overlay.remove(); document.body.style.overflow = ''; };
+  const closeModal_ = () => overlay.remove();
+  document.getElementById('fpdist-close').onclick  = closeModal_;
+  document.getElementById('fpdist-cancel').onclick = closeModal_;
   overlay.addEventListener('click', e => { if (e.target === overlay) closeModal_(); });
-  document.getElementById('trdist-close').onclick = closeModal_;
-  document.getElementById('trdist-cancel').onclick = closeModal_;
 
-  const optionsHtml = commissionAccounts.map(a =>
-    `<option value="${a.account_code}">${a.partner_name} (${a.account_code})</option>`).join('');
-
-  function currentCommissions() {
-    return Array.from(document.querySelectorAll('.trdist-row')).map(row => ({
-      account_code: row.querySelector('.trdist-comm-acc').value,
-      amount: +row.querySelector('.trdist-comm-amt').value || 0,
-    })).filter(c => c.account_code && c.amount > 0);
-  }
-
-  function renderOwnersPreview(remaining) {
-    const rows = owners.map(([name, ratio], i) => {
-      const amt = i < owners.length - 1 ? Math.round(remaining * ratio * 100) / 100 : null;
-      return { name, ratio, amt };
-    });
-    let running = 0;
-    rows.forEach((r, i) => { if (i < rows.length - 1) running += r.amt; });
-    if (rows.length) rows[rows.length - 1].amt = Math.round((remaining - running) * 100) / 100;
-    document.getElementById('trdist-owners-preview').innerHTML = rows.map(r =>
-      `<div style="display:flex;justify-content:space-between;padding:3px 0">
-         <span>${r.name} (${Math.round(r.ratio*10000)/100}%)</span>
-         <span style="font-family:var(--mono)">${fmt(r.amt)}</span>
-       </div>`).join('');
-  }
-
-  function recompute() {
-    const commSum = currentCommissions().reduce((s, c) => s + c.amount, 0);
-    const remaining = Math.round((treasuryProfitShare - commSum) * 100) / 100;
-    const remEl = document.getElementById('trdist-remaining');
-    remEl.textContent = fmt(remaining);
-    remEl.style.color = remaining >= 0 ? 'var(--green,#16a34a)' : 'var(--red,#dc2626)';
-    renderOwnersPreview(remaining);
-  }
-
-  function addCommissionRow() {
-    const row = document.createElement('div');
-    row.className = 'trdist-row';
-    row.style.cssText = 'display:flex;gap:6px;margin-bottom:8px;align-items:center';
-    row.innerHTML = `
-      <select class="trdist-comm-acc" style="flex:2;padding:6px;border:1px solid var(--border);border-radius:6px;font-family:'Cairo',sans-serif;font-size:12px">
-        <option value="">اختر حساب العمولة…</option>
-        ${optionsHtml}
-      </select>
-      <input class="trdist-comm-amt" type="number" step="0.01" min="0" placeholder="المبلغ"
-        style="flex:1;padding:6px;border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:12px">
-      <button type="button" class="trdist-remove-row" style="background:none;border:none;color:var(--red,#dc2626);font-size:16px;cursor:pointer">×</button>`;
-    row.querySelector('.trdist-comm-acc').addEventListener('change', recompute);
-    row.querySelector('.trdist-comm-amt').addEventListener('input', recompute);
-    row.querySelector('.trdist-remove-row').addEventListener('click', () => { row.remove(); recompute(); });
-    document.getElementById('trdist-commission-rows').appendChild(row);
-  }
-
-  document.getElementById('trdist-add-commission').onclick = addCommissionRow;
-  if (!commissionAccounts.length) {
-    document.getElementById('trdist-add-commission').disabled = true;
-    document.getElementById('trdist-add-commission').title = 'لا يوجد حساب متاح للعمولات في هذا النظام';
-  }
-
-  recompute();
-
-  document.getElementById('trdist-confirm').onclick = async () => {
-    const commissions = currentCommissions();
-    const commSum = commissions.reduce((s, c) => s + c.amount, 0);
-    if (commSum > treasuryProfitShare + 0.005) {
-      toast('❌ إجمالي العمولات أكبر من نصيب الصندوق', 'err'); return;
-    }
-    const remaining = treasuryProfitShare - commSum;
+  document.getElementById('fpdist-confirm').onclick = async () => {
     const ok = await confirmAsync(
-      '💰 توزيع ربح الصندوق',
-      `هل تريد توزيع ربح الصندوق لملف "${fn}" فعليًا؟\n` +
-      (commissions.length ? `عمولات: ${fmt(commSum)}\n` : '') +
-      `الباقي للملّاك (${owners.map(o=>o[0]).join(' · ')}): ${fmt(remaining)}\n` +
+      '💰 توزيع أرباح الملف',
+      `هل تريد توزيع أرباح ملف "${fn}" فعليًا؟\n` +
+      `الإجمالي: ${fmt(totalPosted)} على ${toPost.length} مستفيد.\n` +
       `سيُكتب قيد محاسبي واحد فورًا (مدين الأرباح المبقاة / دائن كل مستفيد بنصيبه)، ولا يمكن التراجع عنه إلا بإلغاء يدوي لاحقًا.`,
       true, 'توزيع الآن'
     );
     if (!ok) return;
 
     try {
-      const rows = await postTreasuryProfit(sys, fn, treasuryPartner, commissions);
+      const rows = await postFileProfitAll(sys, fn);
       if (rows?.[0]?.already_posted) {
-        toast('ℹ️ ربح الصندوق لهذا الملف مُوزَّع بالفعل', 'warn');
+        toast('ℹ️ أرباح هذا الملف مُوزَّعة بالفعل', 'warn');
       } else {
-        const total = rows.reduce((s, r) => s + (+r.amount || 0), 0);
+        const total = (rows||[]).reduce((s, r) => s + (+r.amount || 0), 0);
         toast(`✅ تم توزيع ${fmt(total)} على ${rows.length} مستفيد`, 'ok');
       }
       closeModal_();
       await loadSummaryTab(fn, sys);
     } catch(e) {
       toast('❌ فشل التوزيع: ' + e.message, 'err');
-      console.error('openTreasuryDistributionModal confirm error:', e);
+      console.error('openFileProfitDistributionModal confirm error:', e);
     }
   };
 }
@@ -1959,6 +1935,6 @@ Object.assign(window, {
   filterDeals, openViewer, switchTab, loadViewerTab, loadSummaryTab, summRow,
   loadPaymentsTab, loadExpensesTab, loadSalesTab, voidSaleInvoice, deleteSaleInvoice,
   loadCollectionsTab, loadPayoutsTab, openEditPayoutModal, addVehicleRowWithData,
-  addPartnerRowWithData, postFileProfitUI, openTreasuryDistributionModal,
+  addPartnerRowWithData, openFileProfitDistributionModal,
 });
 

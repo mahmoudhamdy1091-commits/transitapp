@@ -516,7 +516,7 @@ export async function fetchJEForPeriod(sys, from, to) {
  * أيضًا داخل sql/m6_profit_postings_phase1.sql (post_profit_for_file، قسم ٢)
  * — مقصودة (السيرفر مصدر الحقيقة لترحيل الأرباح، لا يثق برقم من المتصفح)، لا
  * تكرار سهو. أي تعديل هنا يمس معادلة الربح لازم يُنعكس هناك بالمثل، وإلا
- * postFileProfit (تحته، غلاف postFileProfit في نفس الملف) هيكتشف الانحراف
+ * postFileProfitAll (تحته، غلاف الـRPC في نفس الملف) هيكتشف الانحراف
  * ويُظهر تحذيرًا فور أي ترحيل فعلي — لكن الأفضل مطابقتهما يدويًا وقت التعديل.
  */
 export function computeFinancials(jeRows) {
@@ -1310,54 +1310,31 @@ export async function fetchPartnerLedgerMovements(sys, partner) {
 }
 
 /**
- * م٦ (سجل ترحيل الأرباح) — المرحلة الأولى: غلاف حول RPC
- * post_profit_for_file (sql/m6_profit_postings_phase1.sql) — شريك دائم
- * مُسمَّى يرحّل ربح ملفه هو (لا الخزينة، مؤجَّل لمرحلة تانية).
+ * م٦ — غلاف حول RPC post_file_profit_all
+ * (sql/m6_unified_file_profit_distribution.sql): **عملية واحدة ذرّية** تُوزِّع
+ * ربح الملف كله في قيد واحد — نصيب كل شريك دائم مُسمَّى لحسابه هو، ونصيب
+ * الخزينة موزَّعًا على الملّاك بنسبهم الثابتة.
  *
- * ✅ تحقّق حي فوري ضد انحراف صيغتَي الربح (JS/SQL) — راجع التعليق المقابل
- * في الملف SQL قسم ٢. الدالة السيرفر (لا هذا التحقق) هي مصدر الحقيقة اللي
- * كُتب فعليًا في 3200/حساب الشريك — رقمها لا يُستبدَل هنا مهما كانت النتيجة.
+ * تحل محل postFileProfit + postTreasuryProfit المنفصلتين (قرار مالك
+ * 2026-09-22). التوزيع على زرَّين كان بيخلّي ترتيب الضغط يغيّر الأرقام:
+ * الزر الأول بيحسب نصيبه على ربح قبل ما تتسجّل عمولة، فيترحّل رقم غلط بلا
+ * مسار تصحيح. راجع project_m6_commission_as_deal_expense في الذاكرة.
+ *
+ * ⚠️ العمولات مش باراميتر هنا بالتصميم: بقت مصروفًا على الصفقة (تنزل في
+ * تكلفة الملف) فبتقلّل ربح الملف تلقائيًا قبل التوزيع ⇒ كل شريك، دائم
+ * وخارجي، بيتحمّل نصيبه منها بنسبته.
+ *
+ * ⚠️ الشريك الخارجي لا يُرحَّل له شيء — مستحقّه محسوب أصلًا في
+ * computePartnerSettlement؛ ترحيله كمان = احتساب مرتين.
+ *
+ * ✅ تحقّق حي فوري ضد انحراف صيغتَي الربح (JS/SQL) — راجع التعليق المقابل في
+ * الملف SQL. الدالة على السيرفر (لا هذا التحقق) هي مصدر الحقيقة اللي كُتب
+ * فعليًا في 3200/حسابات الشركاء — رقمها لا يُستبدَل هنا مهما كانت النتيجة.
  * لكن أي فرق عن computeFinancials المحلية (نفس المعادلة، مصدر مختلف) لازم
  * يظهر فورًا وصارخًا، لا سكريبت دوري لازم حد يفتكر يشغّله.
  */
-export async function postFileProfit(sys, fileNo, partner) {
-  const [result] = await apiRpc('post_profit_for_file', { p_sys: sys, p_file_no: fileNo, p_partner: partner });
-  if (!result) return result;
-
-  try {
-    const jeAll = await apiGetAll('journal_entries', {
-      select: 'account_code,dr_amount,cr_amount,ref_table,file_no',
-      system_type: `eq.${sys}`, file_no: `eq.${fileNo}`, post_status: `eq.posted`,
-    });
-    const fin = computeFinancials(jeAll).byFile[fileNo] || { sales:0, cogs:0, dealExp:0 };
-    const jsProfit = fin.sales - fin.cogs - fin.dealExp;
-    const drift = Math.abs(jsProfit - (+result.file_profit || 0));
-    if (drift > 0.01) {
-      console.error(`⚠️ انحراف صيغة الربح! SQL=${result.file_profit} JS=${jsProfit.toFixed(2)} فرق=${drift.toFixed(2)} — ملف ${fileNo} — راجع فورًا`);
-      toast(`⚠️ تحذير: رقم الربح المُرحَّل (${result.file_profit}) يختلف عن الحساب المحلي (${jsProfit.toFixed(2)}) — راجع الصيغتين فورًا`, 'err');
-    }
-  } catch(e) { console.warn('postFileProfit: فشل التحقق التلقائي من انحراف الصيغة:', e.message); }
-
-  return result;
-}
-
-/**
- * ت٢ (توزيع ربح الصندوق) — غلاف حول RPC post_treasury_profit_for_file
- * (sql/m6_treasury_profit_distribution_phase2.sql). عكس postFileProfit تمامًا:
- * partner هنا لازم يكون الخزينة، والنتيجة صفوف متعددة (عمولات اختيارية +
- * الملّاك الأربعة/الثلاثة) من قيد واحد.
- *
- * commissions: [{account_code, amount}, ...] — اختياري، مبلغ لا نسبة.
- *
- * ✅ نفس تحقّق انحراف الصيغة (JS مقابل SQL) — بس هنا المقارنة على مجموع
- * أنصبة الملّاك فقط (بعد خصم العمولات المُدخَلة)، لأن العمولات مبلغ يدوي
- * مش جزء من صيغة الربح نفسها.
- */
-export async function postTreasuryProfit(sys, fileNo, treasuryPartner, commissions = []) {
-  const rows = await apiRpc('post_treasury_profit_for_file', {
-    p_sys: sys, p_file_no: fileNo, p_partner: treasuryPartner,
-    p_commissions: commissions || [],
-  });
+export async function postFileProfitAll(sys, fileNo) {
+  const rows = await apiRpc('post_file_profit_all', { p_sys: sys, p_file_no: fileNo });
   if (!rows || !rows.length) return rows;
 
   try {
@@ -1367,19 +1344,13 @@ export async function postTreasuryProfit(sys, fileNo, treasuryPartner, commissio
     });
     const fin = computeFinancials(jeAll).byFile[fileNo] || { sales:0, cogs:0, dealExp:0 };
     const jsProfit = fin.sales - fin.cogs - fin.dealExp;
-    const treasuryLinks = await apiGetAll('partners_master', {
-      select: 'share_percent', system_type: `eq.${sys}`, file_no: `eq.${fileNo}`, partner: `eq.${treasuryPartner}`,
-    });
-    const treasuryShare = +(treasuryLinks?.[0]?.share_percent || 0);
-    const jsTreasuryAmount = jsProfit * treasuryShare / 100;
-    const commissionSum = (commissions || []).reduce((s, c) => s + (+c.amount || 0), 0);
-    const ownersSum = rows.filter(r => r.recipient_kind === 'مالك').reduce((s, r) => s + (+r.amount || 0), 0);
-    const drift = Math.abs(jsTreasuryAmount - commissionSum - ownersSum);
+    const sqlProfit = +rows[0].file_profit || 0;
+    const drift = Math.abs(jsProfit - sqlProfit);
     if (drift > 0.01) {
-      console.error(`⚠️ انحراف صيغة توزيع ربح الصندوق! نصيب الصندوق JS=${jsTreasuryAmount.toFixed(2)} − عمولات=${commissionSum.toFixed(2)} ≠ مجموع الملّاك SQL=${ownersSum.toFixed(2)} فرق=${drift.toFixed(2)} — ملف ${fileNo} — راجع فورًا`);
-      toast(`⚠️ تحذير: مجموع توزيع أرباح الصندوق يختلف عن الحساب المحلي — راجع الصيغتين فورًا`, 'err');
+      console.error(`⚠️ انحراف صيغة الربح! SQL=${sqlProfit} JS=${jsProfit.toFixed(2)} فرق=${drift.toFixed(2)} — ملف ${fileNo} — راجع فورًا`);
+      toast(`⚠️ تحذير: رقم الربح المُوزَّع (${sqlProfit}) يختلف عن الحساب المحلي (${jsProfit.toFixed(2)}) — راجع الصيغتين فورًا`, 'err');
     }
-  } catch(e) { console.warn('postTreasuryProfit: فشل التحقق التلقائي من انحراف الصيغة:', e.message); }
+  } catch(e) { console.warn('postFileProfitAll: فشل التحقق التلقائي من انحراف الصيغة:', e.message); }
 
   return rows;
 }
@@ -1685,7 +1656,7 @@ Object.assign(window, {
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, fetchAllPages, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
-  computePartnerGlobalBalance, fetchPartnerLedgerMovements, postFileProfit, postTreasuryProfit, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
+  computePartnerGlobalBalance, fetchPartnerLedgerMovements, postFileProfitAll, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
   fetchPartnerTransactions,
   login, logout, state, SB_URL, SB_KEY,
 });

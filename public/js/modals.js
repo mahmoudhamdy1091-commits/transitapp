@@ -1134,6 +1134,10 @@ export async function openExpenseModal() {
   // ✅ المرحلة ١ — ترانزيت: خيار التوزيع المتساوي مخفي للإدخال الجديد
   // (isSplitAllowed، lifecycle.js). BOX بلا تغيير.
   if (el('exp-splitModeWrap')) el('exp-splitModeWrap').style.display = isSplitAllowed(state.system) ? '' : 'none';
+  // ✅ م٦ — وضع العمولة يفتح دايمًا مقفولًا، زي التوزيع المتساوي بالظبط: مفيش
+  // حالة تُحفَظ بين فتحتين مختلفتين للمودال
+  if (el('exp-commissionMode')) el('exp-commissionMode').checked = false;
+  if (el('exp-paidByLabel')) el('exp-paidByLabel').textContent = 'دُفع بواسطة';
   if (el('exp-paidBy')) el('exp-paidBy').style.display = '';
   openModal('expenseModal');
   // ✅ اكتُشف حيًّا 2026-08-25: المودال ده بيتفتح من زراير عامة كمان (index.html
@@ -1152,6 +1156,29 @@ export async function openExpenseModal() {
 export async function loadExpensePartnerOptions(fn) {
   const paidByEl = el('exp-paidBy');
   if (!paidByEl) return;
+  // ✅ م٦ (2026-09-22) — وضع العمولة: المستفيد مش لازم يكون شريكًا في الملف
+  // (مشاري/طلال مستبعَدان عمدًا من partners_master عبر FILE_PARTNER_EXCLUDED)،
+  // فالقائمة هنا مصدرها حسابات الشركاء المربوطة كلها لا شركاء الملف.
+  // الخزينة مستبعَدة: عمولة لها = الشركة تدفع لنفسها (الحارس في je_expense
+  // بيرفضها صراحةً كمان). القائمة مستقلة تمامًا عن الملف فبتشتغل حتى بلا ملف
+  // مُختار بعد.
+  if (el('exp-commissionMode')?.checked) {
+    try {
+      const links = await apiGetAll('partner_account_links', {
+        select: 'partner_name', system_type: `eq.${state.system}`,
+      });
+      const names = (links || []).map(l => (l.partner_name||'').trim())
+        .filter(n => n && !TREASURY_ALIASES.has(n));
+      paidByEl.innerHTML = names.length
+        ? names.map(n => `<option value="${n}">${n}</option>`).join('')
+        : `<option value="">لا يوجد مستفيدون — أضف حساب شريك أولًا</option>`;
+    } catch(e) {
+      console.warn('loadExpensePartnerOptions (عمولة):', e.message);
+      paidByEl.innerHTML = `<option value="">تعذّر تحميل المستفيدين</option>`;
+    }
+    if (el('exp-splitPartners')) el('exp-splitPartners').innerHTML = '';
+    return;
+  }
   if (!fn) {
     paidByEl.innerHTML = `<option value="${TREASURY_PARTNER}">${TREASURY_PARTNER}</option>`;
     if (el('exp-splitPartners')) el('exp-splitPartners').innerHTML = '';
@@ -1196,6 +1223,38 @@ export function toggleExpenseSplitMode() {
   const on = !!el('exp-splitMode')?.checked;
   if (el('exp-paidBy'))        el('exp-paidBy').style.display        = on ? 'none' : '';
   if (el('exp-splitPartners')) el('exp-splitPartners').style.display = on ? '' : 'none';
+  // ✅ الوضعان متنافيان: توزيع متساوٍ يعني عدة أطراف دفعوا، والعمولة طرف
+  // مستفيد واحد — je_expense بترفض الجمع بينهما، فالواجهة تمنعه قبل الوصول لها
+  if (on && el('exp-commissionMode')?.checked) {
+    el('exp-commissionMode').checked = false;
+    toggleExpenseCommissionMode();
+  }
+}
+
+/**
+ * ✅ م٦ (2026-09-22، قرار مالك صريح) — وضع "عمولة مستحقة لمستفيد".
+ * العمولة بقت مصروفًا عاديًا على الصفقة (مدين 5100/1300 عبر fileExpenseTarget)
+ * دائنًا حساب المستفيد، بدل ما تتخصم من نصيب طرف معيّن وقت توزيع الأرباح.
+ * الأثر: ربح الملف نفسه بينزل مرة واحدة قبل التوزيع، فكل شريك — دائم وخارجي —
+ * بيتحمّل نسبته تلقائيًا بلا أي تعديل في معادلة ربح. راجع
+ * project_m6_commission_as_deal_expense في الذاكرة.
+ */
+export async function toggleExpenseCommissionMode() {
+  const on = !!el('exp-commissionMode')?.checked;
+  if (on && el('exp-splitMode')?.checked) {
+    el('exp-splitMode').checked = false;
+    toggleExpenseSplitMode();
+  }
+  if (el('exp-paidByLabel')) el('exp-paidByLabel').textContent = on ? 'المستفيد من العمولة' : 'دُفع بواسطة';
+  if (el('exp-splitModeWrap')) {
+    el('exp-splitModeWrap').style.display =
+      (on || !isSplitAllowed(state.system)) ? 'none' : '';
+  }
+  if (el('exp-paidBy')) el('exp-paidBy').style.display = '';
+  if (el('exp-splitPartners')) el('exp-splitPartners').style.display = 'none';
+  const fn = el('expenseRowsContainer')?.querySelector('[name="er-file"]')?.value
+          || state.currentFileNo || '';
+  await loadExpensePartnerOptions(fn);
 }
 
 export function addExpenseRow(prefill={}) {
@@ -1269,9 +1328,20 @@ export function toggleExpenseModalSize() {
 // التنبيه ده يظهر بس لو المستخدم غيّره يدويًا لاسم شريك. اكتُشف حيًّا
 // 2026-09-20: دفعتان حقيقيتان (TM-095/TM-096) اتسجّلوا سهوًا على حساب مازن
 // الشخصي رغم إنهم فلوس شركة، لأن حد اختار اسمه بدل "صندوق الترانزيت".
-async function _confirmNonTreasuryPayerTM(sys, payerName) {
+async function _confirmNonTreasuryPayerTM(sys, payerName, isCommission=false) {
   const n = (payerName || '').trim();
   if (sys !== 'TM' || !n || TREASURY_ALIASES.has(n)) return true;
+  // ✅ م٦ — في وضع العمولة الرسالة دي عكس المعنى تمامًا: الطرف ما دفعش من
+  // جيبه، الشركة هي اللي عليها فلوس له. التحذير الأصلي غرضه إمساك اختيار
+  // شريك بالغلط بدل الخزينة (م٧)، وده مش وارد هنا أصلًا لأن الخزينة مستبعَدة
+  // من القائمة بالتصميم — فالتأكيد هنا يوضّح الأثر لا يحذّر من خطأ.
+  if (isCommission) {
+    return await confirmAsync(
+      '🏷️ تأكيد عمولة مستحقة',
+      `هتتسجّل عمولة باسم "${n}" كمصروف على الصفقة.\n\nالأثر: ربح الملف بينزل بمقدار العمولة قبل أي توزيع — فكل الشركاء (الدائمين والخارجيين) بيتحمّلوا نصيبهم منها بنسبهم. والمبلغ بيظهر في كشف حساب ${n} كمستحق له يقدر يسحبه.\n\nتمام؟`,
+      false, '✅ نعم، سجّل العمولة'
+    );
+  }
   return await confirmAsync(
     '⚠️ تأكيد مصدر الفلوس',
     `اخترت "${n}" بدل "صندوق الترانزيت". هذا معناه إن المبلغ هيتسجّل كدَين شخصي على ${n} من جيبه الخاص — مش دفعة من نقدية/بنك الشركة.\n\nهل الفلوس فعلاً من جيب ${n} الشخصي؟ (لو من نقدية الشركة، ألغِ واختر "صندوق الترانزيت")`,
@@ -1294,10 +1364,15 @@ export async function submitExpense() {
     ? Array.from(el('exp-splitPartners')?.querySelectorAll('.exp-split-partner:checked') || []).map(c => c.value)
     : [];
   const paidBy  = splitMode ? null : (el('exp-paidBy')?.value?.trim() || null);
+  // ✅ م٦ — وضع العمولة: إعداد على مستوى المودال زي splitMode بالظبط (لا اختيار
+  // مستقل لكل بند)، عشان ميحصلش خلط بند عمولة مع بند مصروف عادي تحت نفس الطرف
+  const commissionMode = !splitMode && !!el('exp-commissionMode')?.checked;
 
   if (!date) { showFieldErr('expError','يرجى إدخال التاريخ'); return; }
   if (splitMode && !splitPartners.length) { showFieldErr('expError','يرجى اختيار شريك واحد على الأقل للتوزيع المتساوي'); return; }
-  if (!splitMode && !(await _confirmNonTreasuryPayerTM(state.system, paidBy))) return;
+  if (commissionMode && !paidBy) { showFieldErr('expError','يرجى اختيار المستفيد من العمولة'); return; }
+  if (commissionMode && TREASURY_ALIASES.has(paidBy)) { showFieldErr('expError','لا يمكن تسجيل عمولة باسم الخزينة — اختر مستفيدًا حقيقيًا'); return; }
+  if (!splitMode && !(await _confirmNonTreasuryPayerTM(state.system, paidBy, commissionMode))) return;
 
   const rows = el('expenseRowsContainer')?.querySelectorAll('tr') || [];
   const expenses = [];
@@ -1309,7 +1384,13 @@ export async function submitExpense() {
     const doc    = r.querySelector('[name="er-doc"]')?.value.trim()   || docRef || '';
     const notes  = r.querySelector('[name="er-notes"]')?.value.trim() || '';
     const idemKey = r.dataset.idemKey || newIdemKey();
-    if (amount > 0) expenses.push({ fileNo, desc:desc||'مصروف', type, amount, doc, notes, idemKey });
+    // ✅ م٦ — في وضع العمولة النوع يُثبَّت على "عمولة وسيط" مهما اختار المستخدم
+    // في الصف: الوضع على مستوى المودال، فخلط نوع تاني معاه يخلّي صف جدول
+    // expenses يكذب على القيد. (النوع لا يؤثر على الحساب المدين أصلًا —
+    // fileExpenseTarget بترجّع 1300/5100 لأي مصروف عليه ملف — لكنه بيتخزَّن
+    // في exp_type/category ويظهر في التقارير.)
+    const finalType = commissionMode ? 'عمولة وسيط' : type;
+    if (amount > 0) expenses.push({ fileNo, desc:desc||'مصروف', type:finalType, amount, doc, notes, idemKey });
   });
 
   if (!expenses.length) { showFieldErr('expError','يرجى إضافة بند واحد على الأقل مع المبلغ'); return; }
@@ -1351,15 +1432,34 @@ export async function submitExpense() {
         ref_no:      refNo,
         paid_by:     paidBy    || null,
         paid_by_split: paidBySplit,
+        // ✅ م٦ — الراية تُخزَّن عشان كل موضع إعادة ترحيل (اعتماد/تعديل/إصلاح)
+        // يعرف المعنى؛ الاشتقاق من النوع وحده بيخلط العمولة المستحقة بعمولة
+        // دفعها شريك من جيبه. راجع sql/m6_expenses_is_commission.sql
+        // ⚠️ تُضاف **فقط لو العمولة مفعَّلة**، لا دايمًا: لو اتنشر الكود قبل
+        // ما المالك يشغّل الـmigration، إرسال عمود غير موجود بيخلّي PostgREST
+        // يرفض الـinsert ⇒ **كل إدخال مصروف في التطبيق يقف**. بالشرط ده،
+        // المسار العادي بيفضل شغّال حرفيًا زي قبل التعديل مهما كان ترتيب
+        // النشر، والعمولة وحدها هي اللي بتفشل (برسالة واضحة تحت).
+        ...(commissionMode ? { is_commission: true } : {}),
         idempotency_key: exp.idemKey,
         post_status: entryStatus()};
-      const expIns = await apiPost('expenses', data);
+      // ✅ م٦ — رسالة صريحة لو العمود لسه ما اتضافش (migration ما اتشغّلش):
+      // بدل خطأ PostgREST خام مش مفهوم عن عمود مش موجود
+      let expIns;
+      try {
+        expIns = await apiPost('expenses', data);
+      } catch (insErr) {
+        if (commissionMode && /is_commission/.test(insErr.message || '')) {
+          throw new Error('تسجيل العمولة يتطلب تشغيل sql/m6_expenses_is_commission.sql في قاعدة البيانات أولًا — المصاريف العادية تعمل بدونه');
+        }
+        throw insErr;
+      }
       await logAudit('INSERT','expenses', expFileNo, null, data);
       savedCount++;
       if (entryStatus()==='posted') {
         const expId = expIns?.[0]?.id || null;
         try {
-          await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,refId:expId,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method,paidBy,paidBySplit});
+          await je_expense({sys:state.system,date,amount:exp.amount,fileNo:expFileNo,refId:expId,desc:exp.desc||'مصروف',expType:exp.type||'أخرى',method,paidBy,paidBySplit,isCommission:commissionMode});
         } catch(jeErr) {
           console.error('je_expense failed:', jeErr.message);
           if (expId) await apiPatch('expenses', { id:`eq.${expId}` }, { post_status:'draft' });
@@ -3035,7 +3135,7 @@ Object.assign(window, {
   updatePartnerSummary, checkShareTotal, _assignPartVins, submitNewFile, _submitNewFileInner,
   voidOrDeleteOldPayment, submitEditFileFull, openPaymentModal, onPayFileSelectorChange,
   _loadPaymentModalData, openExpenseModal, loadExpensePartnerOptions, onExpenseRowFileChange, addExpenseRow, updateExpenseTotal,
-  toggleExpenseModalSize, submitExpense, toggleExpenseSplitMode, submitPayment, _proceedSubmitPayment, openSaleModal,
+  toggleExpenseModalSize, submitExpense, toggleExpenseSplitMode, toggleExpenseCommissionMode, submitPayment, _proceedSubmitPayment, openSaleModal,
   onSaleFileChange, loadAvailableVehicles, renderSaleVehiclePicker, filterSaleVehiclesByVin,
   clearSaleVinSearch, onSaleVehicleCheck, saleToggleAll, addSaleVehicleRow,
   onSaleRowVehicleChange, onSaleVehicleChange, updateSaleTotal, addExtraChargeRow,
