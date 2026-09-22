@@ -1394,6 +1394,21 @@ export async function getFileDefaultReceiver(fileNo, sys) {
  * لا السباق المتزامن. القراءة طازجة عند الإرسال عمدًا (لا الرقم المعروض في
  * النموذج) لأن النموذج قد يبقى مفتوحًا بعد تغيّر البيانات.
  */
+// ✅ اكتُشفت 2026-09-22 (جلستان مستقلتان): checkPayoutCap ما كانتش بتقرا
+// profit_postings إطلاقًا — post_file_profit_all بيقيّد رصيد الشريك فعليًا
+// لكن السقف يفضل يحسبها صفر (TM) أو ياخد payableNow القديم بلا أي أثر
+// للترحيل (BOX، عبر computePartnerSettlement اللي برضه ما بتقراش الجدول
+// ده). helper واحد لتفادي تكرار نفس الاستعلام في الفرعين (نفس مبدأ توثيق
+// الدالة أعلاه: "لا تُكرَّر الصيغة في المستدعي")
+async function _postedProfitForPartner(sys, fileNo, partner) {
+  const rows = await apiGetAll('profit_postings', {
+    select: 'amount', system_type: `eq.${sys}`, file_no: `eq.${fileNo}`,
+    partner: `eq.${partner}`, kind: pgIn(['ترحيل','توزيع أرباح الصندوق']),
+    post_status: 'eq.مُرحَّل',
+  });
+  return (rows || []).reduce((s, r) => s + (+r.amount || 0), 0);
+}
+
 export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId = null, ledgerType = null) {
   const nm = (partner || '').trim();
   const f2 = n => (+n || 0).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
@@ -1403,11 +1418,13 @@ export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId 
   // الافتتاح JE-2026-01501 سُجّل **بلا رقم ملف**، فرأس مال الشركة المدوَّر ما
   // زال داخل صافي 2400 لكل ملف (TM-010 ≈ 22,642) — ومن هنا جاء السماح بصرف
   // 24,450 لمازن على TM-010 مقابل نصيب ربح ≈1,808 (قياس حي 2026-09).
-  // سجل الترحيل profit_postings لم يُنشأ بعد (المرحلة ٣) ⇒ المُرحَّل = صفر.
-  // مُتحقَّق حيًّا 2026-09-16: ترانزيت بلا أي صف مرتبط بملف في الجدولين
-  // (98 صفًّا كلها "سحب عام"، وpartner_payouts فارغ) ⇒ صفر أثر على بيانات قائمة.
+  // ✅ المُرحَّل الآن = مجموع profit_postings الفعلي (post_file_profit_all،
+  // م٦) بدل صفر ثابت — كان `const postedProfit = 0` مُقفَلًا بتعليق "سجل
+  // الترحيل لم يُنشأ بعد"، وده بقى غير دقيق فور نشر م٦ الموحَّد. الشريك ممكن
+  // يظهر له صفّان (ترحيل نصيبه الشخصي + توزيع أرباح الصندوق كأحد الملّاك) —
+  // helper بيجمعهم صح.
   if (sys === 'TM') {
-    const postedProfit = 0;
+    const postedProfit = await _postedProfitForPartner(sys, fileNo, nm);
     const LIVE = ['posted','draft','pending_edit','pending_void'];
     const [plRows, ppRows] = await Promise.all([
       apiGetAll('partner_ledger',  { select:'id,profit_amount,ref_no,post_status', system_type:`eq.${sys}`,
@@ -1424,9 +1441,9 @@ export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId 
                   .reduce((s,r) => s + (+r.profit_amount||0), 0);
     // ✅ استثناء الصف الجاري تعديله (البند الكامن الأول من المرحلة ١، م٧) —
     // كان هذا الفرع يتجاهل excludeRowId تمامًا بعكس فرع BOX تحت، فيُخصم مبلغ
-    // الصف مرتين عند تعديله. كامن حاليًا فقط لأن postedProfit=0 دائمًا (سجل
-    // profit_postings لم يُنشأ بعد، م٦) فالسقف صفر بغض النظر عن أي تعديل —
-    // سيظهر أثره الفعلي فور تفعيل م٦. راجع docs/PLAN-partner-accounts-2026-09-17.md
+    // الصف مرتين عند تعديله. كان كامنًا فقط طالما postedProfit=0 دائمًا؛ بعد
+    // تفعيل postedProfit الحقيقي فوق، الحماية هنا **أصبحت فعّالة فعليًا** لا
+    // كامنة — راجع docs/PLAN-partner-accounts-2026-09-17.md
     if (excludeRowId) {
       const cur = (plRows||[]).find(r => String(r.id) === String(excludeRowId));
       if (cur) withdrawnProfit = Math.max(0, withdrawnProfit - (+cur.profit_amount||0));
@@ -1458,7 +1475,7 @@ export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId 
   // updateJEInPlace كلما wasAlreadyPosted ⇒ القيد موجود ومحدَّث بالمبلغ الجديد
   // ⇒ مطروح أصلًا داخل payableNow. طرحه ثانيةً خصم مزدوج يمنع صرفًا مشروعًا.
   // نفس المنطق لـpending_void (قيده قائم حتى يُعتمد العكس).
-  const [settlement, draftPayouts, draftLedger] = await Promise.all([
+  const [settlement, draftPayouts, draftLedger, postedProfitBox] = await Promise.all([
     computePartnerSettlement(fileNo, sys),
     apiGetAll('partner_payouts', { select:'amount', system_type:`eq.${sys}`,
       file_no:`eq.${fileNo}`, partner:`eq.${nm}`, post_status:'eq.draft' }),
@@ -1467,6 +1484,11 @@ export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId 
     // computePartnerSettlement) — فمسودتاهما غير مرئيتين لـpayableNow أيضًا
     apiGetAll('partner_ledger', { select:'amount', system_type:`eq.${sys}`,
       file_no:`eq.${fileNo}`, partner:`eq.${nm}`, post_status:'eq.draft' }),
+    // ✅ نفس فجوة فرع TM بالحرف، مُتحقَّق منها 2026-09-22: computePartnerSettlement
+    // (ومنها payableNow) ما بتقراش profit_postings إطلاقًا — post_file_profit_all
+    // بيقيّد رصيد شريك دائم/مالك فعليًا بلا أي أثر هنا قبل هذا السطر. صفر أثر
+    // على الشريك الخارجي (مالوش صف في الجدول أصلًا بتصميم م٦).
+    _postedProfitForPartner(sys, fileNo, nm),
   ]);
   const x = (settlement.partners || []).find(p => p.name === nm);
   if (!x) {
@@ -1475,7 +1497,7 @@ export async function checkPayoutCap(fileNo, partner, sys, amount, excludeRowId 
   }
   const sum = rows => (rows || []).reduce((s, r) => s + (+r.amount || 0), 0);
   let pendingDraft = sum(draftPayouts) + sum(draftLedger);
-  let gross = +x.payableNow || 0;
+  let gross = (+x.payableNow || 0) + postedProfitBox;
 
   // ✅ استثناء الصف الجاري تعديله — نظير pl.id <> p_id في
   // update_partner_ledger_entry. بدونه يُخصم مبلغه مرتين: مرة كصف قائم

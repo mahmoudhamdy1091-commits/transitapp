@@ -898,7 +898,11 @@ export async function loadSummaryTab(fn, sys) {
                   ${isPermSettled(x) ? '—' : (x.fairShareDiff>0?'+':'')+fmt(x.fairShareDiff)}
                 </td>
                 <td style="text-align:left;padding:8px;font-family:var(--mono)">${fmt(x.profitShare)}</td>
-                <td style="text-align:left;padding:8px;font-family:var(--mono);font-weight:700;color:${x.netDue>=0?'var(--green)':'var(--red)'}">${fmt(x.netDue)}</td>
+                <!-- ✅ نفس حماية isPermSettled بتاعة عمود "الفرق" جنبها — netDue
+                     رقم تسوية رأس مال زي fairShareDiff بالضبط، وشريك دائم مالوش
+                     مطالبة رأس مال أصلًا (اكتُشف عدم اتساق 2026-09-22: هذا العمود
+                     كان بيلوّن أحمر لمازن بلا الفحص رغم وجوده جنبه بالظبط) -->
+                <td style="text-align:left;padding:8px;font-family:var(--mono);font-weight:700;color:${isPermSettled(x)?'var(--text2)':(x.netDue>=0?'var(--green)':'var(--red)')}">${isPermSettled(x) ? '—' : fmt(x.netDue)}</td>
               </tr>`).join('')}
           </tbody>
         </table>
