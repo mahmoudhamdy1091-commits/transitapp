@@ -1167,8 +1167,13 @@ export async function loadExpensePartnerOptions(fn) {
       const links = await apiGetAll('partner_account_links', {
         select: 'partner_name', system_type: `eq.${state.system}`,
       });
+      // ⚠️ تطابق **احتواء** لا تطابق تام: `partner_account_links` فيها حساب
+      // باسم "صندوق الترانزيت — تاريخي" (اتكشف حيًّا وقت بناء ت٢) — اسم
+      // بيحتوي مرادف الخزينة بس مش مساوي له، فـTREASURY_ALIASES.has() وحدها
+      // بتسيبه يعدّي وهو خزينة فعلًا. عمولة على حساب الخزينة = الشركة بتدفع
+      // لنفسها. الحارس المقابل في je_expense بيمسكها كمان (دفاع بطبقتين).
       const names = (links || []).map(l => (l.partner_name||'').trim())
-        .filter(n => n && !TREASURY_ALIASES.has(n));
+        .filter(n => n && ![...TREASURY_ALIASES].some(a => n.includes(a)));
       paidByEl.innerHTML = names.length
         ? names.map(n => `<option value="${n}">${n}</option>`).join('')
         : `<option value="">لا يوجد مستفيدون — أضف حساب شريك أولًا</option>`;

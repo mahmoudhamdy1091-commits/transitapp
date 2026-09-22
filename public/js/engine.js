@@ -1211,6 +1211,13 @@ export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,meth
   if (isCommission && (hasSplit || !_isPartnerPocket(paidBy))) {
     throw new Error('عمولة مستحقة لازم يكون لها مستفيد واحد محدَّد له حساب شريك — لا خزينة ولا توزيع متساوٍ');
   }
+  // ⚠️ طبقة تانية: _isPartnerPocket بتقارن تطابقًا تامًّا، وفيه حساب حقيقي
+  // اسمه "صندوق الترانزيت — تاريخي" بيعدّي منها وهو خزينة فعلًا. مقصورة على
+  // العمولة عمدًا — توسيع _isPartnerPocket نفسها كان هيعيد توجيه مصاريف
+  // قائمة، وده تغيير محاسبي مالوش داعي هنا.
+  if (isCommission && [...TREASURY_ALIASES].some(a => (paidBy||'').includes(a))) {
+    throw new Error(`"${(paidBy||'').trim()}" حساب خزينة — العمولة لازم تروح لمستفيد حقيقي، لا للشركة نفسها`);
+  }
   const target = targetOverride || await fileExpenseTarget(sys, fileNo, expType);
   // الدائن: توزيع بالتساوي على شركاء مختارين (N سطر) لو hasSplit، وإلا الخزينة
   // (نقد/بنك) افتراضياً، أو حساب الشريك المخصَّص لو دفعها من جيبه بمفرده.
