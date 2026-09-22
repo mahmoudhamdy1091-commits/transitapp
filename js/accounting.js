@@ -2328,39 +2328,56 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
 
           <!-- الحركات المالية للشريك -->
           <div>
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:2px">
               <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px">الحركات المالية</div>
               ${d.hasJEPartner
                 ? `<span style="font-size:11px;background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:20px;font-weight:700">✅ من القيود المحاسبية</span>`
                 : `<span style="font-size:11px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:20px;font-weight:700">⚠️ بيانات قديمة — الجداول المصدرية</span>`
               }
             </div>
+            <!-- ✅ سطر الفترة الصريح — نفس الفحص المطبَّق على كشف الشريك
+                 الدائن (مازن)، بطلب المالك 2026-09-22 -->
+            <div style="font-size:11px;color:#94a3b8;margin-bottom:8px">الفترة: ${d.jeMovements.length ? `${d.jeMovements[0].date||'—'} — ${d.jeMovements[d.jeMovements.length-1].date||'—'}` : 'لا توجد حركات'}</div>
             <table style="width:100%;border-collapse:collapse;font-size:12px">
               <thead>
                 <tr style="background:#1e293b;color:#fff">
                   <th style="padding:8px 10px;text-align:right">التاريخ</th>
                   <th style="padding:8px 10px;text-align:right">البيان</th>
                   <th style="padding:8px 10px;text-align:right">رقم القيد</th>
-                  <th style="padding:8px 10px;text-align:center">مدين (سحب)</th>
-                  <th style="padding:8px 10px;text-align:center">دائن (إضافة)</th>
+                  <th style="padding:8px 10px;text-align:left">مدين (سحب)</th>
+                  <th style="padding:8px 10px;text-align:left">دائن (إضافة)</th>
+                  <th style="padding:8px 10px;text-align:left">الرصيد الجاري</th>
                 </tr>
               </thead>
               <tbody>
-                ${d.jeMovements.length ? d.jeMovements.map(m=>`
+                <tr style="background:#f8fafc;font-style:italic">
+                  <td colspan="4" style="padding:6px 10px;color:#64748b">الرصيد الافتتاحي</td>
+                  <td style="padding:6px 10px;text-align:left;font-family:monospace;color:#64748b">0.000</td>
+                </tr>
+                ${d.jeMovements.length ? (() => {
+                  let _fileBal = 0;
+                  return d.jeMovements.map(m=>{
+                    _fileBal += (m.credit||0) - (m.debit||0);
+                    const posBal = _fileBal >= -0.01;
+                    return `
                 <tr style="border-bottom:1px solid #f1f5f9;background:${m.credit>0?'#eff6ff':'#fff7ed'}">
                   <td style="padding:7px 10px;color:#64748b">${m.date||'—'}</td>
                   <td style="padding:7px 10px;font-weight:600">${m.desc}</td>
                   <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:#94a3b8">${m.ref||'—'}</td>
-                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${m.debit>0?'#dc2626':'#94a3b8'}">${m.debit>0?fmt2(m.debit):'—'}</td>
-                  <td style="padding:7px 10px;text-align:center;font-family:monospace;color:${m.credit>0?'#2563eb':'#94a3b8'};font-weight:${m.credit>0?'700':'400'}">${m.credit>0?fmt2(m.credit):'—'}</td>
-                </tr>`).join('')
-                : `<tr><td colspan="5" style="padding:12px;text-align:center;color:#94a3b8">لا توجد حركات مسجّلة</td></tr>`}
+                  <td style="padding:7px 10px;text-align:left;font-family:monospace;color:${m.debit>0?'#dc2626':'#94a3b8'}">${m.debit>0?fmt2(m.debit):'—'}</td>
+                  <td style="padding:7px 10px;text-align:left;font-family:monospace;color:${m.credit>0?'#2563eb':'#94a3b8'};font-weight:${m.credit>0?'700':'400'}">${m.credit>0?fmt2(m.credit):'—'}</td>
+                  <td style="padding:7px 10px;text-align:left;font-family:monospace;font-weight:700;color:${posBal?'#1d4ed8':'#dc2626'}">${fmt2(Math.abs(_fileBal))} ${posBal?'دائن':'مدين'}</td>
+                </tr>`;
+                  }).join('');
+                })()
+                : `<tr><td colspan="6" style="padding:12px;text-align:center;color:#94a3b8">لا توجد حركات مسجّلة</td></tr>`}
               </tbody>
               <tfoot>
                 <tr style="background:#1e293b;color:#fff;font-weight:700">
-                  <td colspan="3" style="padding:8px 10px">الإجمالي</td>
-                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#fbbf24">${fmt2(d.jeWithdrawn)}</td>
-                  <td style="padding:8px 10px;text-align:center;font-family:monospace;color:#60a5fa">${fmt2(d.jeCapitalPaid)}</td>
+                  <td colspan="3" style="padding:8px 10px">الرصيد الختامي</td>
+                  <td style="padding:8px 10px;text-align:left;font-family:monospace;color:#fbbf24">${fmt2(d.jeWithdrawn)}</td>
+                  <td style="padding:8px 10px;text-align:left;font-family:monospace;color:#60a5fa">${fmt2(d.jeCapitalPaid)}</td>
+                  <td style="padding:8px 10px;text-align:left;font-family:monospace;color:${(d.jeCapitalPaid-d.jeWithdrawn)>=-0.01?'#60a5fa':'#f87171'}">${fmt2(Math.abs(d.jeCapitalPaid-d.jeWithdrawn))} ${(d.jeCapitalPaid-d.jeWithdrawn)>=-0.01?'دائن':'مدين'}</td>
                 </tr>
               </tfoot>
             </table>
