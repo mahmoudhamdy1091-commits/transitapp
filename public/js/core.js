@@ -511,6 +511,13 @@ export async function fetchJEForPeriod(sys, from, to) {
 /**
  * حساب أرقام الربح/التكاليف من قيود journal_entries — معادلة موحّدة
  * تُستخدم في لوحة التحكم وتقرير الأرباح والخسائر لضمان تطابق الأرقام بينهما
+ *
+ * ⚠️ نسخة موازية من نفس معادلة byFile[fn] (مبيعات−COGS−مصاريف الصفقة) موجودة
+ * أيضًا داخل sql/m6_profit_postings_phase1.sql (post_profit_for_file، قسم ٢)
+ * — مقصودة (السيرفر مصدر الحقيقة لترحيل الأرباح، لا يثق برقم من المتصفح)، لا
+ * تكرار سهو. أي تعديل هنا يمس معادلة الربح لازم يُنعكس هناك بالمثل، وإلا
+ * postFileProfit (تحته، غلاف postFileProfit في نفس الملف) هيكتشف الانحراف
+ * ويُظهر تحذيرًا فور أي ترحيل فعلي — لكن الأفضل مطابقتهما يدويًا وقت التعديل.
  */
 export function computeFinancials(jeRows) {
   let totSales = 0, totCOGS = 0, totDealExp = 0, totOpex = 0, totPurchase = 0, totExpenseAmount = 0;
@@ -1303,6 +1310,38 @@ export async function fetchPartnerLedgerMovements(sys, partner) {
 }
 
 /**
+ * م٦ (سجل ترحيل الأرباح) — المرحلة الأولى: غلاف حول RPC
+ * post_profit_for_file (sql/m6_profit_postings_phase1.sql) — شريك دائم
+ * مُسمَّى يرحّل ربح ملفه هو (لا الخزينة، مؤجَّل لمرحلة تانية).
+ *
+ * ✅ تحقّق حي فوري ضد انحراف صيغتَي الربح (JS/SQL) — راجع التعليق المقابل
+ * في الملف SQL قسم ٢. الدالة السيرفر (لا هذا التحقق) هي مصدر الحقيقة اللي
+ * كُتب فعليًا في 3200/حساب الشريك — رقمها لا يُستبدَل هنا مهما كانت النتيجة.
+ * لكن أي فرق عن computeFinancials المحلية (نفس المعادلة، مصدر مختلف) لازم
+ * يظهر فورًا وصارخًا، لا سكريبت دوري لازم حد يفتكر يشغّله.
+ */
+export async function postFileProfit(sys, fileNo, partner) {
+  const [result] = await apiRpc('post_profit_for_file', { p_sys: sys, p_file_no: fileNo, p_partner: partner });
+  if (!result) return result;
+
+  try {
+    const jeAll = await apiGetAll('journal_entries', {
+      select: 'account_code,dr_amount,cr_amount,ref_table,file_no',
+      system_type: `eq.${sys}`, file_no: `eq.${fileNo}`, post_status: `eq.posted`,
+    });
+    const fin = computeFinancials(jeAll).byFile[fileNo] || { sales:0, cogs:0, dealExp:0 };
+    const jsProfit = fin.sales - fin.cogs - fin.dealExp;
+    const drift = Math.abs(jsProfit - (+result.file_profit || 0));
+    if (drift > 0.01) {
+      console.error(`⚠️ انحراف صيغة الربح! SQL=${result.file_profit} JS=${jsProfit.toFixed(2)} فرق=${drift.toFixed(2)} — ملف ${fileNo} — راجع فورًا`);
+      toast(`⚠️ تحذير: رقم الربح المُرحَّل (${result.file_profit}) يختلف عن الحساب المحلي (${jsProfit.toFixed(2)}) — راجع الصيغتين فورًا`, 'err');
+    }
+  } catch(e) { console.warn('postFileProfit: فشل التحقق التلقائي من انحراف الصيغة:', e.message); }
+
+  return result;
+}
+
+/**
  * "المرشَّح" الافتراضي لـ"تأكيد استلام" ملف معيّن — من تحصيلاته الفعلية
  * (collections.received_by)، لا افتراض ثابت باسم الخزينة. الأكبر مبلغًا هو
  * top (يُستخدم كتحديد مسبق في الواجهة)؛ isMixed=true يعني الملف فيه أكتر
@@ -1603,7 +1642,7 @@ Object.assign(window, {
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, fetchAllPages, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
-  computePartnerGlobalBalance, fetchPartnerLedgerMovements, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
+  computePartnerGlobalBalance, fetchPartnerLedgerMovements, postFileProfit, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
   fetchPartnerTransactions,
   login, logout, state, SB_URL, SB_KEY,
 });

@@ -669,7 +669,7 @@ export async function loadViewerTab(idx) {
 
 export async function loadSummaryTab(fn, sys) {
   try {
-    const [vehicles, payments, expenses, sales, collections, partners, payouts, poArr, jeAll, settlement] = await Promise.all([
+    const [vehicles, payments, expenses, sales, collections, partners, payouts, poArr, jeAll, settlement, accountLinks] = await Promise.all([
       apiGetAll('vehicles',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('payments',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('expenses',        { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
@@ -680,6 +680,14 @@ export async function loadSummaryTab(fn, sys) {
       apiGetAll('purchase_orders', { select:'total_purchase,supplier,po_date,status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
       apiGetAll('journal_entries', { select:'account_code,dr_amount,cr_amount,ref_table,file_no', system_type:`eq.${sys}`, file_no:`eq.${fn}`, post_status:'eq.posted' }),
       computePartnerSettlement(fn, sys),
+      // ✅ اكتُشف حيًّا 2026-09-22 (اختبار م٦ على TM-042): بطاقة الشريك تحت
+      // كانت بتحسب "المتبقي عليه" (رأس مال) لكل الشركاء بلا تفريق دائم/خارجي
+      // — شريك دائم (isPermanent=true) مالوش مطالبة رأس مال أصلًا (قرار ت١)،
+      // فـactualContribution=0 الطبيعي ليه كان بيظهر كتحذير "⚠️ مدين". جلب
+      // التصنيف هنا (لا تعديل computePartnerSettlement نفسها — محمية، ومنادَاة
+      // لكل ملف بلا batching في أماكن كتير؛ استعلام إضافي هناك خطر N+1 حقيقي،
+      // راجع showPartnerStatement قبل إصلاحها اليوم) ضمن نفس الدفعة الحالية.
+      apiGetAll('partner_account_links', { select:'partner_name,is_permanent', system_type:`eq.${sys}` }),
     ]);
 
     state.currentVehicles = vehicles || [];
@@ -697,6 +705,7 @@ export async function loadSummaryTab(fn, sys) {
       payouts:     payouts     || [],
       po:          poArr?.[0]  || {},
       settlement,
+      accountLinks: accountLinks || [],
     };
 
     const totalPurchase  = +(poArr?.[0]?.total_purchase) || (vehicles||[]).reduce((s,v)=>s+(+v.purchase_price||0),0);
@@ -856,6 +865,9 @@ export async function loadSummaryTab(fn, sys) {
     const isOpen = (totalV - soldV) > 0;
     const sp = settlement?.partners || [];
     const diffSum = sp.reduce((s,x)=>s+(x.fairShareDiff||0),0);
+    // ✅ راجع تعليق جلب accountLinks فوق — isPermanentPartner (core.js) نفس
+    // منطق is_permanent_partner() في SQL بالحرف، بلا أسماء مجمَّدة بالكود
+    const isPermSettled = x => window.isPermanentPartner(sys, x.name, accountLinks) === true || x.isTreasury;
 
     const settlementTableHtml = sp.length ? `
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;overflow-x:auto">
@@ -882,8 +894,8 @@ export async function loadSummaryTab(fn, sys) {
                 <td style="text-align:center;padding:8px;color:var(--text2)">${x.sharePercent}%</td>
                 <td style="text-align:left;padding:8px;font-family:var(--mono)">${fmt(x.actualContribution)}</td>
                 <td style="text-align:left;padding:8px;font-family:var(--mono);color:var(--text2)">${fmt(x.fairShare)}</td>
-                <td style="text-align:left;padding:8px;font-family:var(--mono);font-weight:700;color:${Math.abs(x.fairShareDiff)<0.01?'var(--text2)':(x.fairShareDiff>0?'var(--green)':'var(--red)')}">
-                  ${x.fairShareDiff>0?'+':''}${fmt(x.fairShareDiff)}
+                <td style="text-align:left;padding:8px;font-family:var(--mono);font-weight:700;color:${isPermSettled(x)?'var(--text2)':(Math.abs(x.fairShareDiff)<0.01?'var(--text2)':(x.fairShareDiff>0?'var(--green)':'var(--red)'))}">
+                  ${isPermSettled(x) ? '—' : (x.fairShareDiff>0?'+':'')+fmt(x.fairShareDiff)}
                 </td>
                 <td style="text-align:left;padding:8px;font-family:var(--mono)">${fmt(x.profitShare)}</td>
                 <td style="text-align:left;padding:8px;font-family:var(--mono);font-weight:700;color:${x.netDue>=0?'var(--green)':'var(--red)'}">${fmt(x.netDue)}</td>
@@ -904,6 +916,9 @@ export async function loadSummaryTab(fn, sys) {
       const share        = x.sharePercent;
       const liability     = fullCost * x.share;
       const remainingLiab = Math.max(liability - x.actualContribution, 0);
+      // ✅ راجع تعليق جلب accountLinks أعلى الدالة — شريك دائم مالوش مطالبة
+      // رأس مال أصلًا (قرار ت١)، فـ"المتبقي عليه" لا معنى له إطلاقًا هنا
+      const isPerm       = isPermSettled(x);
       const pc           = x.profitShare >= 0 ? 'var(--green)' : 'var(--red)';
       const nc           = x.netDue >= 0 ? 'var(--green)' : 'var(--red)';
 
@@ -927,11 +942,15 @@ export async function loadSummaryTab(fn, sys) {
           <!-- رأس المال -->
           <div style="padding:12px 14px;border-left:1px solid var(--border);border-bottom:1px solid var(--border)">
             <div style="font-size:12px;color:var(--text2);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">رأس المال</div>
-            ${summRow('حصته في التكلفة الكاملة','text-blue',fmt(liability))}
+            ${isPerm
+              ? summRow('حصته في التكلفة الكاملة','text-blue','لا ينطبق — شريك دائم')
+              : summRow('حصته في التكلفة الكاملة','text-blue',fmt(liability))}
             ${summRow('ساهم فعلاً (رأس مال+مصاريف)','text-green',fmt(x.actualContribution))}
-            ${remainingLiab > 0.01
-              ? summRow('المتبقي عليه','text-red',fmt(remainingLiab)+' ⚠️',true)
-              : summRow('المتبقي عليه','text-green','صفر ✅',true)}
+            ${isPerm
+              ? summRow('المتبقي عليه','text-blue','لا ينطبق — شريك دائم',true)
+              : (remainingLiab > 0.01
+                ? summRow('المتبقي عليه','text-red',fmt(remainingLiab)+' ⚠️',true)
+                : summRow('المتبقي عليه','text-green','صفر ✅',true))}
           </div>
 
           <!-- الربح / الخسارة -->
