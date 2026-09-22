@@ -2080,10 +2080,17 @@
           <input type="text" id="exp-doc" placeholder="رقم الفاتورة">
         </div>
         <div class="field">
-          <label>دُفع بواسطة</label>
+          <label id="exp-paidByLabel">دُفع بواسطة</label>
           <select id="exp-paidBy">
             <option value="الصندوق">الصندوق</option>
           </select>
+          <!-- ✅ م٦ (2026-09-22): العمولة مصروف على الصفقة باسم مستفيدها، مش
+               خصم من نصيب طرف معيّن وقت توزيع الأرباح. مستفيدو العمولة (طلال/
+               مشاري) مستبعَدون عمدًا من شركاء الملفات (FILE_PARTNER_EXCLUDED)
+               فما كانوش يظهروا في قائمة "دُفع بواسطة" أصلًا. -->
+          <label id="exp-commissionModeWrap" style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400;font-size:12px;cursor:pointer">
+            <input type="checkbox" id="exp-commissionMode" onchange="toggleExpenseCommissionMode()"> 🏷️ عمولة مستحقة لمستفيد
+          </label>
           <label id="exp-splitModeWrap" style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400;font-size:12px;cursor:pointer">
             <input type="checkbox" id="exp-splitMode" onchange="toggleExpenseSplitMode()"> توزيع متساوٍ بين شركاء
           </label>

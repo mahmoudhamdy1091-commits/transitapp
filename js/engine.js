@@ -1196,10 +1196,22 @@ async function _expenseCreditLine(sys, name, amount, method) {
   return {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null};
 }
 
-export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,paidBySplit=null,isPrimary=true,targetOverride=null}) {
+export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,paidBySplit=null,isPrimary=true,targetOverride=null,isCommission=false}) {
   if(!amount||amount<=0) throw new Error(`قيمة مصروف غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
-  const target = targetOverride || await fileExpenseTarget(sys, fileNo, expType);
   const hasSplit = Array.isArray(paidBySplit) && paidBySplit.length > 0;
+  // ✅ م٦ (2026-09-22، قرار مالك) — "عمولة مستحقة لمستفيد": نفس القيد بالحرف
+  // (مدين تكلفة الملف / دائن حساب الطرف)، الفرق في المعنى فقط ⇒ في الوصف فقط.
+  // مصروف عادي: الشريك دفع من جيبه فالشركة مدينة له. عمولة: الشركة مدينة له
+  // مقابل خدمته. الاتنان "الشركة عليها فلوس له"، فالمحاسبة واحدة — لكن كشف
+  // حسابه كان هيكذب لو قال "دفعها" عن عمولة. راجع
+  // project_m6_commission_as_deal_expense في الذاكرة.
+  // ⚠️ حارس fail-closed قبل أي نداء شبكة: عمولة لطرف غير شريك (خزينة/نقد)
+  // بتدائن 1110/1120 — يعني الشركة بتدفع لنفسها، رقم بلا معنى بلا مستفيد.
+  // يُرفض صراحةً لا بصمت.
+  if (isCommission && (hasSplit || !_isPartnerPocket(paidBy))) {
+    throw new Error('عمولة مستحقة لازم يكون لها مستفيد واحد محدَّد له حساب شريك — لا خزينة ولا توزيع متساوٍ');
+  }
+  const target = targetOverride || await fileExpenseTarget(sys, fileNo, expType);
   // الدائن: توزيع بالتساوي على شركاء مختارين (N سطر) لو hasSplit، وإلا الخزينة
   // (نقد/بنك) افتراضياً، أو حساب الشريك المخصَّص لو دفعها من جيبه بمفرده.
   // ✅ داخل التوزيع نفسه، كل عنصر يُفحص بـ_isPartnerPocket مستقلاً — لو الصندوق/
@@ -1214,7 +1226,9 @@ export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,meth
     : [ await _expenseCreditLine(sys, paidBy, amount, method) ];
   const tail = hasSplit
     ? ` — موزَّع بالتساوي على ${paidBySplit.map(p=>p.partner).join('، ')}`
-    : (_isPartnerPocket(paidBy) ? ` — دفعها ${paidBy.trim()}` : '');
+    : (_isPartnerPocket(paidBy)
+        ? (isCommission ? ` — عمولة مستحقة لـ${paidBy.trim()}` : ` — دفعها ${paidBy.trim()}`)
+        : '');
   return await postDoubleEntry({sys,date,fileNo,refTable:'expenses',refId,isPrimary,desc:`${desc} — ملف ${fileNo||'عام'}${tail}`,lines:[
     {acc:target.acc, name:target.name, dr:amount, cr:0, contact:null},
     ...creditLines,

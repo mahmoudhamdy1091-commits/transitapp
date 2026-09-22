@@ -1485,8 +1485,13 @@ export async function submitEditExpense() {
         await voidTransaction('expense', old, true);
         // 2b. إنشاء قيد جديد بالتوجيه الجديد — isPrimary:false لحد ما نتأكد
         // إن العكس فوق نجح فعلاً، بعدين نسلّم الـslot صراحة تحت
+        // ✅ م٦ — الراية تُحفَظ من السجل القديم لا تُشتَق ولا تُصفَّر: نموذج
+        // التعديل مالوش وضع عمولة، فتركها تسقط كان هيحوّل عمولة مستحقة لمصروف
+        // عادي بصمت عند أول تعديل تاريخ/مبلغ، ويكذب وصف القيد في كشف المستفيد.
+        // (تغيير الراية نفسها يحتاج مسار تعديل صريح — غير مبني عمدًا.)
         const newJE = await je_expense({ sys:state.system, date, amount, fileNo:old.file_no, refId:id,
           desc, expType:type||old.exp_type||'أخرى', method, paidBy: paidBy||null, paidBySplit, isPrimary:false,
+          isCommission: !!old.is_commission,
           targetOverride: oldDebitLine ? { acc: oldDebitLine.account_code, name: oldDebitLine.account_name } : null });
         if (newJE?.ids?.length) {
           await _handoffPrimaryLine({ sys: state.system, oldIds: (oldJELines||[]).map(l=>l.id), newIds: newJE.ids });
