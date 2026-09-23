@@ -1853,6 +1853,14 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
           expPaid, expShould: settlement.totalExpenseAmount * x.share,
           expDiff: expPaid - (settlement.totalExpenseAmount * x.share),
           profit: x.profitShare, withdrawn: x.withdrawnViaPayout, collectedDirect: x.collectionsHeld, netDue: x.netDue,
+          // ✅ 2026-09-23 — بلاها هذا القسم ("تسوية شاملة") مش قادر يحمي نفسه
+          // خالص حتى لو حاول: كان بيعرض بطاقة لكل شريك على الملف (مش بس
+          // الشريك المعروض كشفه)، فلو شريك دائم (مازن مثلاً) ظهر في بطاقة
+          // مقارنة على كشف شريك خارجي تاني، رقمه (grossEntitlement/payableNow،
+          // null فعليًا من core.js) كان هيتحوّل لـ0/"متوازن" مضلِّلة عبر
+          // +null||0. اكتُشف بمراجعة خارجية مستقلة — راجع project_partner_
+          // settlement_permanent_null_fields_2026-09-23 في الذاكرة
+          isPermanent: x.isPermanent === true,
           // ✅ payableNow (core.js) — سقف التحويل النقدي الفعلي. مُمرَّر من
           // المصدر بدل إعادة حساب الصيغة هنا: كانت مكرَّرة يدويًا في موضعين
           // (grandTransferable وكارت "الإجراء المطلوب") فبقيت على النسخة
@@ -2168,8 +2176,16 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                          (ما له + ربح − ما استلمه) يحسب gross بالضبط، فعرض netDue
                          بجواره جعل الجملة تناقض رقمها في 30 من 30 صفًّا — قيس حيًّا
                          على BOX. وnetDue رقم تسوية بين الشركاء، له موضعه المسمَّى
-                         "صافي التسوية" في dashboard.js:872. -->
-                    ${(() => {
+                         "صافي التسوية" في dashboard.js:872.
+                         ✅ 2026-09-23 — isPermanent محمي: grossEntitlement null
+                         فعليًا لشريك دائم، وكان +null||0 بيتحوّل "✅ حساب متوازن"
+                         مضلِّلة بدل "لا ينطبق" الصح -->
+                    ${ps.isPermanent
+                      ? `<div style="background:#eff6ff;border-radius:8px;padding:7px 10px;text-align:center">
+                          <div style="font-weight:700;font-size:12px;color:#1d4ed8">لا ينطبق — شريك دائم</div>
+                          <div style="font-size:10px;color:#94a3b8;margin-top:2px">رأس مال مدوَّر، بلا مطالبة. رصيده الحقيقي في «جاري الشريك».</div>
+                        </div>`
+                      : (() => {
                       const g  = +ps.grossEntitlement || 0;
                       const pos = g >= -0.01;
                       const ttl = g > 0.01 ? '🔵 الرصيد المستحق له' : g < -0.01 ? '🔴 سحب زيادة عن مستحقه' : '✅ حساب متوازن';
@@ -2182,8 +2198,9 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                     </div>`;
                     })()}
 
-                    <!-- تنبيهات الفروق -->
-                    ${(() => {
+                    <!-- تنبيهات الفروق — نفس مفهوم fairShareDiff، لا معنى له
+                         لشريك دائم (رأس مال مدوَّر) بغض النظر عن null/رقم حقيقي -->
+                    ${ps.isPermanent ? '' : (() => {
                       const capDiff = ps.capitalPaid - ps.capitalShould;
                       const notes = [];
                       if (Math.abs(capDiff) > 0.001)
