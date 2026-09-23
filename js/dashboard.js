@@ -1132,10 +1132,22 @@ export async function openFileProfitDistributionModal(fn, sys) {
     }
   }
 
+  // ✅ باج مؤكَّد من المالك (معاينة TM-084، 2026-09-22): مالك شريك مباشر
+  // مُسمَّى على نفس الملف (زي مازن) كان بياخد نصيبه المباشر + نصيب تاني من
+  // توزيع الصندوق = احتساب مزدوج. "أنا ما قولتش إنه بياخد 50+50 من حصة
+  // الاخوين. أنا قلت إنه 50 والاخوين 50." — يُستبعَد من توزيع الصندوق، والباقي
+  // يوزَّع على الباقين بنسبتهم النسبية لبعض. مطابق حرفيًا لـsql/m6_fix_owner_double_dip.sql
+  const directOwnerNames = new Set(toPost.filter(x => x.kind === 'شريك دائم').map(x => x.name));
   const treasuryAmount = treasuryFound ? profit * treasuryShare / 100 : 0;
   if (treasuryFound && Math.abs(treasuryAmount) > 0.005) {
-    owners.forEach(([nm, ratio]) =>
-      toPost.push({ name: nm, kind:'مالك (من نصيب الصندوق)', share: ratio*100, amount: treasuryAmount * ratio }));
+    const distOwners = owners.filter(([nm]) => !directOwnerNames.has(nm));
+    const ratioSum = distOwners.reduce((s,[,r]) => s + r, 0);
+    if (ratioSum > 0) {
+      distOwners.forEach(([nm, ratio]) => {
+        const normRatio = ratio / ratioSum;
+        toPost.push({ name: nm, kind:'مالك (من نصيب الصندوق)', share: normRatio*100, amount: treasuryAmount * normRatio });
+      });
+    }
   }
 
   const totalPosted = toPost.reduce((s, x) => s + x.amount, 0);
