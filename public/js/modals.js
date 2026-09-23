@@ -2505,6 +2505,37 @@ export async function onPayoutPartnerChange() {
     const s = await getPartnerDealBalance(fn, partner, state.system);
     const shareP = (s.share * 100).toFixed(0);
     const fmt2 = n => (+n||0).toLocaleString('en-US',{minimumFractionDigits:2});
+    // ✅ 2026-09-23 — سادس مكان لقيناه بيعرض actualContribution/payableNow
+    // الخام (راجع project_partner_settlement_permanent_null_fields_2026-09-23):
+    // شريك دائم مالوش "رأس مال مدفوع"/"متبقي مستحق" بالمعنى ده أصلًا. السقف
+    // الحقيقي القابل للصرف بيتحسب من checkPayoutCap نفسها — نفس مصدر واحد
+    // مستخدَم في نافذة "سحب عام" المجاورة، بدل رقم s.payableNow (null هنا).
+    if (s.isPermanent) {
+      const cap = await checkPayoutCap(fn, partner, state.system, 0, null, 'استرداد وتوزيع أرباح');
+      card.innerHTML = `
+        <div style="font-weight:800;font-size:13px;color:var(--purple);margin-bottom:10px;display:flex;align-items:center;gap:6px">
+          👤 ${partner}
+          <span style="background:var(--purple);color:#fff;border-radius:20px;padding:2px 10px;font-size:13px">${shareP}% حصة</span>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px">شريك دائم — رأس مال مدوَّر، بلا مطالبة/دَين رأس مال. "رأس المال المدفوع"/"المتبقي" هنا لا تنطبق.</div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px">
+          <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
+            <div style="font-size:13px;color:var(--text2);font-weight:700">الربح المستحق</div>
+            <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:${s.profit>=0?'var(--green)':'var(--red)'}">${fmt2(Math.abs(s.profit))}</div>
+          </div>
+          <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
+            <div style="font-size:13px;color:var(--text2);font-weight:700">إجمالي المسحوبات</div>
+            <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--amber)">${fmt2(s.totalWithdrawn)}</div>
+          </div>
+        </div>
+        <div style="background:${(+cap.payableNow||0)>0.01?'var(--green-dim)':'var(--red-dim)'};border:1px solid ${(+cap.payableNow||0)>0.01?'var(--green)':'var(--red)'};border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;font-weight:700">المتاح للصرف (من الربح المُرحَّل فقط)</span>
+          <span style="font-family:var(--mono);font-size:16px;font-weight:900;color:${(+cap.payableNow||0)>0.01?'var(--green)':'var(--red)'}">
+            ${fmt2(+cap.payableNow||0)} ${(+cap.payableNow||0)>0.01?'✅':'⚠️'}
+          </span>
+        </div>`;
+      return;
+    }
     card.innerHTML = `
       <div style="font-weight:800;font-size:13px;color:var(--purple);margin-bottom:10px;display:flex;align-items:center;gap:6px">
         👤 ${partner}
@@ -2601,7 +2632,7 @@ export async function getPartnerDealBalance(fileNo, partner, sys) {
     apiGetAll('partner_payouts', { select:'amount,payout_type,capital_amount,profit_amount,advance_amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, partner:`eq.${partner}` }),
   ]);
   const x = (settlement.partners||[]).find(p => p.name === (partner||'').trim())
-    || { share:0, capitalPaid:0, expPaid:0, netJE2400:0, profitShare:0, netDue:0, payableNow:0 };
+    || { share:0, capitalPaid:0, expPaid:0, netJE2400:0, profitShare:0, netDue:0, payableNow:0, isPermanent:false };
   const capitalRet  = (payouts||[]).reduce((s,p)=>s+(+p.capital_amount||0),0);
   const profitTaken = (payouts||[]).reduce((s,p)=>s+(+p.profit_amount||0),0);
   const advances    = (payouts||[]).reduce((s,p)=>s+(+p.advance_amount||0),0);
@@ -2612,6 +2643,9 @@ export async function getPartnerDealBalance(fileNo, partner, sys) {
     // ✅ payableNow — المبلغ النقدي القابل للصرف فعليًا (core.js). netDue تظل
     // متاحة للسياقات التي تعبّر عن التسوية بين الشركاء لا عن نقد قابل للصرف
     payableNow: x.payableNow, dealProfit: settlement.profit,
+    // ✅ 2026-09-23 — راجع project_partner_settlement_permanent_null_fields_
+    // 2026-09-23: شريك دائم — capitalPaid/netDue/payableNow فوق null فعليًا
+    isPermanent: x.isPermanent === true,
     _totalCost: settlement.totalPurchase, _totalExp: settlement.totalExpenseAmount, _totalSales: settlement.totalSales,
   };
 }

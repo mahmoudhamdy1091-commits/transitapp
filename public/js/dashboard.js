@@ -955,7 +955,13 @@ export async function loadSummaryTab(fn, sys) {
             ${isPerm
               ? summRow('حصته في التكلفة الكاملة','text-blue','لا ينطبق — شريك دائم')
               : summRow('حصته في التكلفة الكاملة','text-blue',fmt(liability))}
-            ${summRow('ساهم فعلاً (رأس مال+مصاريف)','text-green',fmt(x.actualContribution))}
+            <!-- ✅ 2026-09-23 — الحقل اللي فعليًا بلّغ عنه المالك حيًّا
+                 (0.00 لمازن مقابل رقم ضخم للصندوق) كان هنا، لا في جدول
+                 المقارنة فوق — اتنسى وقت إصلاح الجدول، بالظبط نوع الفجوة
+                 اللي isPermanent المركزية مفروض تمنعها -->
+            ${isPerm
+              ? summRow('ساهم فعلاً (رأس مال+مصاريف)','text-blue','لا ينطبق — شريك دائم')
+              : summRow('ساهم فعلاً (رأس مال+مصاريف)','text-green',fmt(x.actualContribution))}
             ${isPerm
               ? summRow('المتبقي عليه','text-blue','لا ينطبق — شريك دائم',true)
               : (remainingLiab > 0.01
