@@ -251,26 +251,45 @@ export function _ctxVehicle(btn) {
 export async function _ctxDeal(btn) {
   const fn = btn.dataset.fn, id = btn.dataset.id;
   const items = [];
-  items.push({icon:'✏️', label:'تعديل بيانات الملف', action:()=>openNewFileModal(fn)});
-  items.push({icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'purchase_orders', fileNo:fn, id:id||null, title:`صفقة ${fn}`})});
-  // ✅ إلغاء سند الشراء — يظهر فقط لو السند posted فعلياً (لا draft ولا voided مسبقاً)
+  // ✅ حالة الملف تُجلب مرة واحدة أعلى القائمة — تتحكم في إظهار "تعديل" (يختفي
+  // على ملف مُلغى، راجع فجوة تعديل ملف مفويد 2026-09-23) و"إلغاء الملف" (يظهر
+  // فقط لو لسه مش مُلغى، أيًّا كان post_status الحالي — draft أو posted)
+  let poStatus = null;
   try {
     const po = await apiGetAll('purchase_orders', { select:'post_status', system_type:`eq.${state.system}`, file_no:`eq.${fn}` });
-    if ((po?.[0]?.post_status || 'posted') === 'posted') {
-      items.push({icon:'🔄', label:'إلغاء سند الشراء', danger:true, action:()=>confirmAction(
-        'إلغاء سند الشراء',
-        `سيتم عكس سند الشراء لملف ${fn} بقيد محاسبي عكسي — لن يُسمح بذلك لو فيه سيارات مباعة أو دفعات مسجّلة. هل أنت متأكد؟`,
-        async () => {
-          try {
-            await voidPurchaseOrder(fn);
-            toast('✅ تم إلغاء سند الشراء بقيد عكسي','ok');
-            invalidateCache();
-            await loadDashboard();
-          } catch(e) { toast('⚠️ '+e.message,'err'); }
-        }
-      )});
-    }
+    poStatus = po?.[0]?.post_status || null;
   } catch(e) { console.warn('_ctxDeal post_status check:', e.message); }
+  const isVoided = poStatus === 'voided';
+
+  if (!isVoided) items.push({icon:'✏️', label:'تعديل بيانات الملف', action:()=>openNewFileModal(fn)});
+  items.push({icon:'📜', label:'السجل', action:()=>showRecordAudit({table:'purchase_orders', fileNo:fn, id:id||null, title:`صفقة ${fn}`})});
+  // ✅ إلغاء الملف بالكامل (إعادة تصميم 2026-09-23) — بلا حذف وبلا قيود عكسية،
+  // مجرد استبعاد الملف بكل بياناته من الاستخدام العادي (راجع voidPurchaseOrder
+  // الجديدة في engine.js). سبب الإلغاء إلزامي — نجمعه بتكستاريا جوّه الديالوج.
+  if (!isVoided) {
+    items.push({icon:'🔄', label:'إلغاء الملف بالكامل', danger:true, action:()=>showConfirmHtml(
+      `إلغاء ملف ${fn} بالكامل`,
+      `<div style="text-align:right;line-height:1.7">
+        <p>⚠️ هيتم استبعاد الملف <b>${fn}</b> بالكامل من كل التقارير والحسابات وقوائم الاختيار فورًا.</p>
+        <p>كل بياناته (مصاريف/دفعات/تحصيلات/مبيعات/صرف شركاء/قيود يومية) <b>هتتحفظ زي ما هي — بلا حذف وبلا أي قيد عكسي جديد</b>، بس هتختفي من الاستخدام العادي تمامًا.</p>
+        <p>الملف هيتقفل نهائيًا من أي تعديل أو إضافة قيد جديد عليه بعد الإلغاء.</p>
+        <label style="display:block;margin-top:12px;font-weight:700">سبب الإلغاء (إلزامي) *</label>
+        <textarea id="voidReasonInput" rows="3" style="width:100%;margin-top:4px;box-sizing:border-box" placeholder="اكتب سبب واضح لإلغاء هذا الملف..."></textarea>
+      </div>`,
+      async () => {
+        const reason = el('voidReasonInput')?.value?.trim() || '';
+        if (!reason) { toast('⚠️ سبب الإلغاء إلزامي — لم يتم الإلغاء، حاول تاني', 'err'); return; }
+        try {
+          await voidPurchaseOrder(fn, reason);
+          toast(`✅ تم إلغاء الملف ${fn} بالكامل`, 'ok');
+          invalidateCache();
+          await loadDashboard();
+        } catch(e) { toast('⚠️ '+e.message,'err'); }
+      },
+      null,
+      (okBtn) => { if (okBtn) { okBtn.textContent = '⚠️ تأكيد الإلغاء'; okBtn.style.background = 'var(--red)'; } }
+    )});
+  }
   if (can('delete')) {
     items.push('divider');
     // ✅ deleteDealCompletely (reports.js) — نقطة الدخول الموحّدة الوحيدة للحذف

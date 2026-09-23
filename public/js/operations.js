@@ -4645,6 +4645,9 @@ export async function submitJE() {
   }
   if (totalDr <= 0) { showFieldErr('jeError','المبالغ يجب أن تكون أكبر من صفر'); return; }
 
+  try { await _assertFileNotVoided(state.system, fileNo); }
+  catch(e) { showFieldErr('jeError', e.message); return; }
+
   const btn = el('je-submit-btn');
   btn.disabled = true; btn.textContent = '⏳ جاري الحفظ...';
 

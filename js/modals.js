@@ -1907,6 +1907,9 @@ export async function submitSale() {
   if (!date)     { showFieldErr('saleError','يرجى إدخال التاريخ'); return; }
   if (!invNo)    { showFieldErr('saleError','يرجى إدخال رقم الفاتورة'); return; }
 
+  try { await _assertFileNotVoided(state.system, fn); }
+  catch(e) { showFieldErr('saleError', e.message); return; }
+
   // ── جمع السيارات المحددة من الـ picker ──
   const rows = el('saleVehiclesContainer').querySelectorAll('tr.sale-v-row');
   const saleItems = [];

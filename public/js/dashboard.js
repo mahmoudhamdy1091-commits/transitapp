@@ -80,7 +80,13 @@ export async function loadDashboard() {
     // حتى يطابق الرقم الإجمالي عند الضغط على الكارت
     const totExpRaw = periodExpForDD.reduce((s,e)=>s+(+e.amount||0),0);
 
-    const allDealsEnriched = state.allDealsEnriched || [];
+    // ✅ استبعاد الملفات المُلغاة (VOIDED) من كل عرض/حساب — إعادة تصميم الفويد
+    // 2026-09-23 (استبعاد كامل بلا حذف بيانات). voidedFileNos تُبنى مرة واحدة
+    // من deals (state.allDeals، فيها post_status) وتُستخدم هنا لتصفية
+    // allDealsEnriched (drill-downs) وstockVehicles (لا عمود post_status
+    // مباشر على vehicles نفسها، فالاستبعاد عبر file_no)
+    const voidedFileNos  = new Set((deals||[]).filter(d => d.post_status === 'voided').map(d => d.file_no));
+    const allDealsEnriched = (state.allDealsEnriched || []).filter(d => !voidedFileNos.has(d.file_no));
 
     // المشتريات للـ drill-down: من الـ cache
     const periodPurchaseDeals = allDealsEnriched.filter(d => {
@@ -89,7 +95,7 @@ export async function loadDashboard() {
     });
 
     const soldVinsAll   = new Set((allSales||[]).filter(isPosted).map(s=>s.vin).filter(Boolean));
-    const stockVehicles = (vehicles||[]).filter(v => !soldVinsAll.has(v.vin));
+    const stockVehicles = (vehicles||[]).filter(v => !soldVinsAll.has(v.vin) && !voidedFileNos.has(v.file_no));
     const overdueList   = (collections||[]).filter(c => isPosted(c) && !c.paid_date && c.due_date && c.due_date <= todayStr);
     const upcomingList  = (collections||[]).filter(c => isPosted(c) && !c.paid_date && c.due_date && c.due_date > todayStr && c.due_date <= in7);
     const overdueAmt    = overdueList.reduce((s,c)=>s+(+c.amount||0),0);
@@ -181,7 +187,7 @@ export async function loadDashboard() {
         : await apiGetAll('payments', { select:'file_no,amount,post_status', system_type:`eq.${sys}` });
       const paidMap = {};
       (allPayments||[]).filter(isEffective).forEach(p => { paidMap[p.file_no] = (paidMap[p.file_no]||0) + (+p.amount||0); });
-      const duelist = (deals||[]).map(d => ({
+      const duelist = (deals||[]).filter(d => d.post_status !== 'voided').map(d => ({
         file_no: d.file_no, supplier: d.supplier||'—',
         total_purchase: +d.total_purchase||0,
         paid: paidMap[d.file_no]||0,
@@ -594,7 +600,10 @@ export async function openViewer(fileNo) {
     <span class="vh-meta-item"><strong>التاريخ:</strong> <span class="ltr-num">${fmtDate(deal?.po_date)}</span></span>
     <span class="vh-meta-item"><strong>عدد السيارات:</strong> ${deal?.vehicle_count || '—'}</span>
   `;
-  el('vh-status-badge').innerHTML = `<span class="badge badge-${statusClass(deal?.status)}">${deal?.status}</span>`;
+  el('vh-status-badge').innerHTML = `<span class="badge badge-${statusClass(deal?.status)}">${deal?.status}</span>` +
+    (deal?.status === 'VOIDED' && deal?.void_reason
+      ? `<span style="margin-right:8px;color:var(--red);font-size:13px">سبب الإلغاء: ${deal.void_reason}</span>`
+      : '');
 
   // جلب منشئ الملف وآخر محرر من audit_log (غير متزامن — لا يبطّئ فتح الـ viewer)
   apiGetAll('audit_log', {
@@ -1501,7 +1510,9 @@ export async function loadSalesTab(fn, sys) {
 
 // reprintInvoice → js/print.js
 
-// إلغاء فاتورة بيع بقيد عكسي
+// إلغاء فاتورة بيع بقيد عكسي — غلاف تفاعلي حول _voidSaleInvoiceCore (engine.js:
+// ديالوج تأكيد + toast + تحديث تابات؛ المنطق المحاسبي النقي انتقل للمحرك
+// 2026-09-23 عشان كاسكيد voidPurchaseOrder يستدعيه بلا تبعية عكسية للواجهة)
 export async function voidSaleInvoice(invNo, fileNo) {
   confirmAction(
     `إلغاء فاتورة ${invNo}`,
@@ -1509,80 +1520,10 @@ export async function voidSaleInvoice(invNo, fileNo) {
     async () => {
       try {
         const sys = state.system;
-        // جيب كل سطور الفاتورة
-        const allItems = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
-        if (!allItems?.length) { toast('لم يُعثر على بيانات الفاتورة', 'err'); return; }
-        if (allItems.every(r => r.post_status === 'voided')) { toast('⚠️ هذه الفاتورة مُلغاة مسبقاً', 'warn'); return; }
-        // ✅ استثناء cancelled/voided من حساب مبلغ العكس — وإلا تُحسب سيارات
-        // أُزيلت من الفاتورة في تعديل سابق ضمن مبلغ الإلغاء فيُفرَط في عكس الإيراد/الذمم
-        const saleItems = allItems.filter(r => r.post_status !== 'cancelled' && r.post_status !== 'voided');
-        if (!saleItems.length) { toast('⚠️ لا توجد سيارات نشطة في هذه الفاتورة لعكسها', 'warn'); return; }
-        const first = saleItems[0];
-        const totalSale = saleItems.reduce((s,r)=>s+(+r.sale_price||0),0);
-        // ✅ جلب كل سطور القيد الأصلي (بيع + تكلفة) دفعة واحدة — تفيد في حساب
-        // totalCOGS وفي إيجاد entry_no الأصلي للربط (reverses/reversed_by،
-        // project_dual_je_audit Case 1) معاً، فبدل استعلامين صار استعلام واحد
-        let totalCOGS = 0, origId = null;
-        try {
-          const saleJELines = await apiGetAll('journal_entries', {
-            select:'id,account_code,dr_amount,description,ref_id', system_type:`eq.${sys}`,
-            ref_table:`eq.sales`, file_no:`eq.${fileNo}`, post_status:`eq.posted`,
-          });
-          // ✅ مطابقة أولاً بـref_id الحقيقي (قيود ما بعد post_sale_je RPC — ref_id=رقم
-          // الفاتورة بالظبط، موثوق) — fallback لمطابقة النص القديمة بس للقيود التاريخية
-          // اللي ref_id فيها لسه null (قبل الفيز 1)، عشان ملفات قديمة تفضل تشتغل صح
-          const byRefId = (saleJELines||[]).filter(r => r.ref_id === invNo);
-          const jeLines = byRefId.length
-            ? byRefId
-            : (saleJELines||[]).filter(r => !r.ref_id && (r.description||'').includes(invNo));
-          totalCOGS = jeLines.filter(r => r.account_code === '5100').reduce((s,r)=>s+(+r.dr_amount||0), 0);
-          origId    = jeLines[0]?.id || null;
-        } catch(e) { console.warn('voidSaleInvoice: فشل جلب القيد الأصلي:', e.message); }
-        // قيد عكسي للمبيعات (+ التكلفة لو وُجدت)
-        const reversalLines = [];
-        if (totalSale > 0) {
-          reversalLines.push({acc:'4100', name:'إيرادات المبيعات', dr:totalSale, cr:0, contact:null});
-          reversalLines.push({acc:'1200', name:'ذمم العملاء',       dr:0, cr:totalSale, contact:first.customer||null});
-        }
-        if (totalCOGS > 0) {
-          reversalLines.push({acc:'1300', name:'المخزون — سيارات',     dr:totalCOGS, cr:0, contact:null});
-          reversalLines.push({acc:'5100', name:'تكلفة المخزون المباع', dr:0, cr:totalCOGS, contact:null});
-        }
-        if (reversalLines.length) {
-          await postDoubleEntry({ sys, date:today(), fileNo,
-            refTable:'reversal', desc:`عكس بيع فاتورة ${invNo} — ${first.customer||''}`,
-            lines: reversalLines,
-            reversesId: origId,
-          });
-        }
-        // void السجلات
-        await apiPatch('sales', { system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` }, { post_status:'voided' });
-        // ✅ عكس قيود التحصيلات المرحّلة/المدفوعة المرتبطة بهذه الفاتورة قبل إلغائها —
-        // وإلا يبقى قيدها (Dr نقد/بنك، Cr ذمم عملاء) حياً في journal_entries رغم
-        // إلغاء فاتورة البيع نفسها (حادثة فعلية: BOX-138 بتاريخ 2026-07-23 — فاتورة
-        // "70700" أُلغيت وعُكس قيد البيع، لكن قيد التحصيل التابع لها بقي بلا عكس).
-        // نستخدم نفس آلية voidTransaction المستخدمة في deleteSaleInvoice أدناه.
-        let colReverseFailures = 0;
-        try {
-          const relatedCols = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, inv_no:`eq.${invNo}` });
-          for (const c of (relatedCols||[])) {
-            if (c.post_status === 'voided') continue;
-            // ✅ pending_edit/pending_void لسه ممكن يكون ليها قيد مرحّل فعلي من قبل ما
-            // تدخل الحالة المعلّقة (المعلّق هنا معناه "في انتظار موافقة على تغيير"،
-            // مش "القيد اتعكس بالفعل") — فتتعامل زي posted بالظبط عند وجود paid_date
-            const hadLikelyPostedJE = c.post_status === 'posted' || c.post_status === 'pending_edit' || c.post_status === 'pending_void';
-            if (c.paid_date && hadLikelyPostedJE) {
-              try { await voidTransaction('collection', c, true); }
-              catch(e) { colReverseFailures++; console.warn('voidSaleInvoice: فشل عكس قيد تحصيل مرتبط', c.id, e.message); }
-            } else {
-              try { await apiPatch('collections', { id:`eq.${c.id}` }, { post_status:'voided' }); } catch(e) {}
-            }
-          }
-        } catch(e) { console.warn('voidSaleInvoice: فشل جلب التحصيلات المرتبطة:', e.message); }
-        await logAudit('VOID','sales', fileNo, {inv_no:invNo}, {voided_at:today()}, `إلغاء فاتورة بقيد عكسي`);
-        invalidateCache();
+        const result = await _voidSaleInvoiceCore(invNo, fileNo);
+        if (result.skipped) { toast(`⚠️ ${result.skipped}`, 'warn'); return; }
         toast(`✅ تم إلغاء فاتورة ${invNo} بقيد عكسي`, 'ok');
-        if (colReverseFailures > 0) toast(`⚠️ تعذّر عكس قيد ${colReverseFailures} تحصيل مرتبط بهذه الفاتورة — راجعها يدوياً`, 'warn');
+        if (result.colReverseFailures > 0) toast(`⚠️ تعذّر عكس قيد ${result.colReverseFailures} تحصيل مرتبط بهذه الفاتورة — راجعها يدوياً`, 'warn');
         await loadSalesTab(fileNo, sys);
         if (state.currentTab === 5) loadCollectionsTab(fileNo, sys);
         if (state.currentTab === 0) loadSummaryTab(fileNo, sys);

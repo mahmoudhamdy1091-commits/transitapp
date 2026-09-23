@@ -390,9 +390,12 @@ export async function runInventoryReport(sys) {
   el('reportTable').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري تحميل المخزون...</div>';
   try {
     await ensureCache();
-    const vehicles = state.allVehicles || [];
-    const sales    = state.allSales    || [];
     const deals    = state.allDeals    || [];
+    // ✅ استبعاد سيارات الملفات المُلغاة (VOIDED) من المخزون — لا عمود post_status
+    // مباشر على vehicles، فالاستبعاد عبر file_no (إعادة تصميم الفويد 2026-09-23)
+    const voidedFileNos = new Set(deals.filter(d => d.post_status === 'voided').map(d => d.file_no));
+    const vehicles = (state.allVehicles || []).filter(v => !voidedFileNos.has(v.file_no));
+    const sales    = state.allSales    || [];
 
     // ✅ جلب بيانات المخازن من stock_locations
     const locations = await apiGetAll('stock_locations', {

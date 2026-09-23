@@ -570,76 +570,152 @@ export async function reverseManualJE(entryNo) {
 }
 
 // ════════════════════════════════════════════════════════════
-// VOID PURCHASE ORDER — إلغاء سند شراء مُرحَّل بقيد عكسي
-//   شرطان مانعان (يرميان Error برسالة واضحة، بلا أي تعديل):
-//     1. أي سيارة من الملف لها بيع فعّال (posted/pending_edit) — COGS
-//        المُسجَّل لها يعتمد على total_purchase هذا، فحذفه يُفسد حسابها.
-//     2. أي دفعة فعّالة للمورد على هذا الملف — عكس الشراء سيُنقص 2100
-//        بالكامل بينما جزء منه دُفع فعليًا، فيصبح الحساب سالباً.
-//   لا يُلغي المصاريف أو يعكس الدفعات تلقائياً — الملف "يُقفل جزئياً"؛
-//   إلغاء أي بند آخر قرار منفصل يقوم به المستخدم عبر voidTransaction.
+// VOID SALE INVOICE CORE — عكس فاتورة بيع (إيراد+COGS) وكل تحصيلاتها المرتبطة
+//   منطق محاسبي نقي بلا واجهة — استُخدم أصلاً في dashboard.js voidSaleInvoice
+//   (زر تفاعلي، لسه بيستدعي الدالة دي كغلاف) ونُقل هنا 2026-09-23 عشان
+//   كاسكيد voidPurchaseOrder تحت يقدر يستدعيه بلا تبعية عكسية للواجهة (نفس
+//   مبدأ نقل entryStatus من accounting.js فوق). يرمي Error للأخطاء الحقيقية
+//   (فاتورة مش موجودة)، ويرجع {skipped:'سبب'} للحالات المشروعة اللي مفيهاش
+//   حاجة تُعكس (فاتورة مُلغاة مسبقاً/بلا سيارات نشطة).
 // ════════════════════════════════════════════════════════════
-export async function voidPurchaseOrder(fileNo) {
+export async function _voidSaleInvoiceCore(invNo, fileNo) {
   const sys = state.system;
+  const allItems = await apiGetAll('sales', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
+  if (!allItems?.length) throw new Error('لم يُعثر على بيانات الفاتورة');
+  if (allItems.every(r => r.post_status === 'voided')) return { skipped: 'هذه الفاتورة مُلغاة مسبقاً' };
+  // ✅ استثناء cancelled/voided من حساب مبلغ العكس — وإلا تُحسب سيارات
+  // أُزيلت من الفاتورة في تعديل سابق ضمن مبلغ الإلغاء فيُفرَط في عكس الإيراد/الذمم
+  const saleItems = allItems.filter(r => r.post_status !== 'cancelled' && r.post_status !== 'voided');
+  if (!saleItems.length) return { skipped: 'لا توجد سيارات نشطة في هذه الفاتورة لعكسها' };
+  const first = saleItems[0];
+  const totalSale = saleItems.reduce((s,r)=>s+(+r.sale_price||0),0);
+  let totalCOGS = 0, origId = null;
+  try {
+    const saleJELines = await apiGetAll('journal_entries', {
+      select:'id,account_code,dr_amount,description,ref_id', system_type:`eq.${sys}`,
+      ref_table:`eq.sales`, file_no:`eq.${fileNo}`, post_status:`eq.posted`,
+    });
+    const byRefId = (saleJELines||[]).filter(r => r.ref_id === invNo);
+    const jeLines = byRefId.length
+      ? byRefId
+      : (saleJELines||[]).filter(r => !r.ref_id && (r.description||'').includes(invNo));
+    totalCOGS = jeLines.filter(r => r.account_code === '5100').reduce((s,r)=>s+(+r.dr_amount||0), 0);
+    origId    = jeLines[0]?.id || null;
+  } catch(e) { console.warn('_voidSaleInvoiceCore: فشل جلب القيد الأصلي:', e.message); }
+  const reversalLines = [];
+  if (totalSale > 0) {
+    reversalLines.push({acc:'4100', name:'إيرادات المبيعات', dr:totalSale, cr:0, contact:null});
+    reversalLines.push({acc:'1200', name:'ذمم العملاء',       dr:0, cr:totalSale, contact:first.customer||null});
+  }
+  if (totalCOGS > 0) {
+    reversalLines.push({acc:'1300', name:'المخزون — سيارات',     dr:totalCOGS, cr:0, contact:null});
+    reversalLines.push({acc:'5100', name:'تكلفة المخزون المباع', dr:0, cr:totalCOGS, contact:null});
+  }
+  if (reversalLines.length) {
+    await postDoubleEntry({ sys, date:today(), fileNo,
+      refTable:'reversal', desc:`عكس بيع فاتورة ${invNo} — ${first.customer||''}`,
+      lines: reversalLines,
+      reversesId: origId,
+    });
+  }
+  await apiPatch('sales', { system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` }, { post_status:'voided' });
+  // ✅ عكس قيود التحصيلات المرحّلة/المدفوعة المرتبطة بهذه الفاتورة قبل إلغائها —
+  // وإلا يبقى قيدها حيًّا في journal_entries رغم إلغاء فاتورة البيع نفسها
+  // (حادثة فعلية: BOX-138 بتاريخ 2026-07-23 — فاتورة "70700")
+  let colReverseFailures = 0;
+  try {
+    const relatedCols = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, inv_no:`eq.${invNo}` });
+    for (const c of (relatedCols||[])) {
+      if (c.post_status === 'voided') continue;
+      const hadLikelyPostedJE = c.post_status === 'posted' || c.post_status === 'pending_edit' || c.post_status === 'pending_void';
+      if (c.paid_date && hadLikelyPostedJE) {
+        try { await voidTransaction('collection', c, true); }
+        catch(e) { colReverseFailures++; console.warn('_voidSaleInvoiceCore: فشل عكس قيد تحصيل مرتبط', c.id, e.message); }
+      } else {
+        try { await apiPatch('collections', { id:`eq.${c.id}` }, { post_status:'voided' }); } catch(e) {}
+      }
+    }
+  } catch(e) { console.warn('_voidSaleInvoiceCore: فشل جلب التحصيلات المرتبطة:', e.message); }
+  await logAudit('VOID','sales', fileNo, {inv_no:invNo}, {voided_at:today()}, `إلغاء فاتورة بقيد عكسي`);
+  invalidateCache();
+  return { colReverseFailures };
+}
+
+// ════════════════════════════════════════════════════════════
+// VOID PURCHASE ORDER — إلغاء ملف بالكامل (إعادة تصميم 2026-09-23)
+//   قرار المالك النهائي (بعد تصحيح مسار حذف/عكس محاسبي كان مقترحًا أول
+//   الأمر): "ممكن متحذفش الداتا بس تكون كأنها مش موجودة" — لا حذف نهائي
+//   ولا أي قيد عكسي جديد لأي شيء. الفويد = إعادة تصنيف post_status='voided'
+//   على كل صف مرتبط بالملف (مصاريف/دفعات/تحصيلات/مبيعات/صرف شركاء/جاري
+//   شريك/قيود اليومية) دفعة واحدة — البيانات نفسها تبقى محفوظة بالكامل في
+//   القاعدة (قابلة للمراجعة لاحقًا)، لكنها تخرج تلقائيًا من كل حساب/تقرير/KPI
+//   يستخدم أصلاً isEffective/isPosted/isVisible (المصدر الموحّد، core.js) —
+//   بلا حاجة لتعديل كل شاشة استهلاك على حدة، بنفس مبدأ voidTransaction تمامًا
+//   لكن على مستوى الملف كله دفعة واحدة بدل معاملة بمعاملة.
+//   vehicles استثناء وحيد (لا عمود post_status عندها) — استُبعدت في نقاط
+//   الاستهلاك القليلة المحتاجاها مباشرة (تقرير المخزون/كارت المخزون).
+//   سبب الإلغاء إلزامي — يُحفظ في void_reason ويظهر على بادج/تفاصيل الملف.
+// ════════════════════════════════════════════════════════════
+async function _bulkVoidTable(sys, table, fileNo) {
+  const rows = await apiGetAll(table, { select:'id,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+  const activeIds = (rows||[]).filter(r => r.post_status !== 'voided').map(r => r.id).filter(id => id != null);
+  // ✅ دفعات بحجم 200 — تحصين ضد طول URL مفرط لو ملف نشط جدًا بمئات السطور
+  for (let i = 0; i < activeIds.length; i += 200) {
+    const chunk = activeIds.slice(i, i+200);
+    await apiPatch(table, { id:`in.(${chunk.join(',')})` }, { post_status: 'voided' });
+  }
+  return activeIds.length;
+}
+
+export async function voidPurchaseOrder(fileNo, reason) {
+  const sys = state.system;
+  const reasonTrimmed = (reason||'').trim();
+  if (!reasonTrimmed) throw new Error('سبب الإلغاء إلزامي — لازم تكتب سبب واضح قبل إلغاء الملف');
 
   const poRows = await apiGetAll('purchase_orders', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
   const po = poRows?.[0];
   if (!po) throw new Error('لم يُعثر على سند الشراء لهذا الملف');
-  if (po.post_status === 'voided') throw new Error('سند الشراء مُلغى مسبقاً');
+  if (po.post_status === 'voided') throw new Error('هذا الملف مُلغى بالفعل');
 
-  // ── الشرط المانع 1: سيارات مباعة ──
-  const salesRows = await apiGetAll('sales', { select:'vin,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
-  const soldEffective = (salesRows||[]).filter(isEffective);
-  if (soldEffective.length) {
-    throw new Error(`لا يمكن إلغاء سند الشراء — يوجد ${soldEffective.length} سيارة مباعة في هذا الملف. اعكس فواتير البيع المرتبطة أولاً.`);
-  }
-
-  // ── الشرط المانع 2: دفعات للمورد ──
-  const paymentRows = await apiGetAll('payments', { select:'id,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
-  const paysEffective = (paymentRows||[]).filter(isEffective);
-  if (paysEffective.length) {
-    throw new Error(`لا يمكن إلغاء سند الشراء — يوجد ${paysEffective.length} دفعة مسجّلة للمورد على هذا الملف. اعكسها أولاً.`);
-  }
-
-  // ── القيد العكسي: نفس قيمة total_purchase الحالية، عكس Dr1300/Cr2100 الأصلي ──
-  const amount = +po.total_purchase || 0;
   const today_ = today();
-  // ✅ حارس: لو فيه قيد شراء مُرحَّل فعلاً على هذا الملف لكن amount قرأت صفر/غير
-  // صالحة (انجراف بيانات) — ميصحش نلغي السند بصمت من غير عكس القيد، يبقى فيه
-  // قيد يتيم بلا مصدر. نتأكد أولاً بدل الاعتماد على po.total_purchase فقط.
-  // ✅ order:'id.desc' — لو فيه أكتر من قيد شراء posted لنفس الملف (تكرار تاريخي
-  // مثل BOX-135، راجع project_dual_je_audit Case 5) نمسك الأحدث/الفعلي دائماً،
-  // لا صف عشوائي (نفس فئة باج c799ed7 لو اتسيبت بلا ترتيب)
-  const existingPurchaseJE = await apiGetAll('journal_entries', {
-    select:'id', system_type:`eq.${sys}`, ref_table:'eq.purchase_orders', file_no:`eq.${fileNo}`, post_status:'eq.posted', limit:1, order:'id.desc',
-  });
-  if (existingPurchaseJE?.length && amount <= 0) {
-    throw new Error('يوجد قيد شراء مُرحَّل لهذا الملف لكن قيمته الحالية صفر/غير صالحة — لا يمكن إلغاء السند بأمان بدون عكس القيد، راجعي البيانات أولاً');
-  }
-  if (amount > 0) {
-    await postDoubleEntry({
-      sys, date: today_, fileNo,
-      refTable: 'reversal', refId: po.id,
-      desc: `عكس شراء — ملف ${fileNo} — ${po.supplier||''}`,
-      lines: [
-        { acc:'2100', name:'ذمم الموردين',     dr:amount, cr:0,      contact:po.supplier||null },
-        { acc:'1300', name:'المخزون — سيارات', dr:0,      cr:amount, contact:null               },
-      ],
-      reversesId: existingPurchaseJE?.[0]?.id || null,
-    });
-  }
 
-  // ── تحديث حالة السند ──
+  // ── إعادة تصنيف كل الجداول المرتبطة بالملف — بلا حذف وبلا قيود عكسية جديدة ──
+  const counts = {};
+  for (const t of ['expenses', 'payments', 'collections', 'sales', 'partner_payouts', 'partner_ledger']) {
+    try { counts[t] = await _bulkVoidTable(sys, t, fileNo); }
+    catch(e) { console.warn(`voidPurchaseOrder: فشل إعادة تصنيف ${t}:`, e.message); counts[t] = 0; }
+  }
+  // ✅ journal_entries مالهاش file_no في كل صف بالضرورة زي باقي الجداول (بعضها
+  // ref_table مختلف) — لكن اللي عليه file_no=الملف ده تحديدًا (كل قيود الملف)
+  // لازم يتخفى برضه، بلا شرط post_status='posted' بس — pending_edit كمان له
+  // أثر ظاهر لازم يستتر
+  let jeCount = 0;
+  try {
+    const jeRows = await apiGetAll('journal_entries', {
+      select:'id,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`,
+    });
+    const jeIds = (jeRows||[]).filter(r => r.post_status !== 'voided' && r.post_status !== 'draft').map(r => r.id);
+    jeCount = jeIds.length;
+    for (let i = 0; i < jeIds.length; i += 200) {
+      const chunk = jeIds.slice(i, i+200);
+      await apiPatch('journal_entries', { id:`in.(${chunk.join(',')})` }, { post_status: 'voided' });
+    }
+  } catch(e) { console.warn('voidPurchaseOrder: فشل إعادة تصنيف journal_entries:', e.message); }
+
+  // ── تحديث حالة السند نفسه ──
   await apiPatch('purchase_orders', { id:`eq.${po.id}` }, {
     post_status: 'voided',
     status: 'VOIDED',
-    notes: `${po.notes ? po.notes + ' | ' : ''}مُلغى بتاريخ ${today_}`,
+    void_reason: reasonTrimmed,
+    notes: `${po.notes ? po.notes + ' | ' : ''}مُلغى بالكامل بتاريخ ${today_} — السبب: ${reasonTrimmed}`,
   });
 
   // ── تسجيل في audit_log ──
-  await logAudit('VOID', 'purchase_orders', fileNo, po, null, `إلغاء سند شراء ملف ${fileNo} بقيد عكسي`);
+  const summary = `إلغاء كامل لملف ${fileNo} — السبب: ${reasonTrimmed} — مصاريف:${counts.expenses||0} دفعات:${counts.payments||0} تحصيلات:${counts.collections||0} مبيعات:${counts.sales||0} صرف شركاء:${counts.partner_payouts||0} جاري شريك:${counts.partner_ledger||0} قيود يومية:${jeCount}`;
+  await logAudit('VOID', 'purchase_orders', fileNo, po, { ...counts, journal_entries: jeCount, reason: reasonTrimmed }, summary);
 
   invalidateCache();
+  return { ...counts, journal_entries: jeCount };
 }
 
 export async function _jeNo(sys) {
@@ -1030,6 +1106,18 @@ export const TREASURY_PARTNER = 'الصندوق';
 export const TREASURY_ALIASES = new Set([TREASURY_PARTNER, 'صندوق الترانزيت']);
 export function _isPartnerPocket(name) { const n = name && name.trim(); return !!(n && !TREASURY_ALIASES.has(n)); }
 
+// ✅ حارس ضد الكتابة على ملف مُلغى (VOIDED، 2026-09-23) — يتخطّى لو fileNo فاضي
+// (مصروف/صرف عام بلا ملف). يُستدعى أول أي دالة ترحّل نشاطًا جديدًا مرتبطًا
+// بملف — je_expense/je_payment/je_collection/je_payout/je_partnerLedger هنا،
+// وsubmitSale (modals.js) على طبقة العميل قبل الترحيل.
+export async function _assertFileNotVoided(sys, fileNo) {
+  if (!fileNo) return;
+  const po = await apiGetAll('purchase_orders', { select:'post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
+  if (po?.[0]?.post_status === 'voided') {
+    throw new Error(`الملف "${fileNo}" مُلغى (VOIDED) — لا يمكن تسجيل أي عملية جديدة عليه`);
+  }
+}
+
 export const USER_DISPLAY_NAMES = {
   'mahmoud.hamdy1091@gmail.com': 'محمود حمدي',
   'transit.co.2002@gmail.com':   'ترانزيت ابو محمد',
@@ -1041,6 +1129,7 @@ export function displayUser(email) {
 
 export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method,receivedBy,isPrimary=true}) {
   if(!amount||amount<=0) throw new Error(`قيمة تحصيل غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد التحصيل`);
+  await _assertFileNotVoided(sys, fileNo);
   // المدين: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك المخصَّص لو احتفظ
   // بالمبلغ خارج الصندوق. ✅ المرحلة ٢ (partner_account_links، 2026-09-16) —
   // نفس نمط je_payment: _isPartnerPocket أصلاً بتستبعد الخزينة، فاللوكاب هنا
@@ -1076,6 +1165,7 @@ export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo
 // حتى يظهر ما دفعه الشريك في كشف حسابه
 export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,payer,payerName,method,isPrimary=true}) {
   if(!amount||amount<=0) throw new Error(`قيمة دفعة مورد غير صالحة (${amount}) — لن يُسجَّل القيد ولا تُعتمد الدفعة`);
+  await _assertFileNotVoided(sys, fileNo);
   let sup = supplier || supplierName || '';
   if (!sup && fileNo) {
     // ✅ احتياطي: لو لم يُمرَّر اسم المورد (مثلاً جدول payments بدون عمود supplier)
@@ -1198,6 +1288,7 @@ async function _expenseCreditLine(sys, name, amount, method) {
 
 export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,paidBySplit=null,isPrimary=true,targetOverride=null,isCommission=false}) {
   if(!amount||amount<=0) throw new Error(`قيمة مصروف غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
+  await _assertFileNotVoided(sys, fileNo);
   const hasSplit = Array.isArray(paidBySplit) && paidBySplit.length > 0;
   // ✅ م٦ (2026-09-22، قرار مالك) — "عمولة مستحقة لمستفيد": نفس القيد بالحرف
   // (مدين تكلفة الملف / دائن حساب الطرف)، الفرق في المعنى فقط ⇒ في الوصف فقط.
@@ -1246,6 +1337,7 @@ export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,meth
 // المرحَّلة قبل Phase 2 فقط): شريك Dr / نقد Cr
 export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
   if(!amount||amount<=0) throw new Error(`قيمة صرف شريك غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد الصرف`);
+  await _assertFileNotVoided(sys, fileNo);
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
   const partnerTrimmed = (partner||'').trim();
@@ -1280,6 +1372,7 @@ export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
 // عام، computeFinancials تتجاهله تلقائياً لأنه بلا ملف — راجع core.js:92).
 export async function je_partnerLedger({sys,date,entryType,amount,fileNo,refId,partner,method,notes}) {
   if(!amount||amount<=0) throw new Error(`قيمة غير صالحة (${amount}) — لن يُسجَّل القيد`);
+  await _assertFileNotVoided(sys, fileNo);
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
   const isDeposit = entryType === 'إيداع عام';
@@ -1560,7 +1653,7 @@ Object.assign(window, {
   EXPENSE_ACCOUNT_MAP, OPEX_ACC_MAP,
   isAdminUser, adminPostsImmediately, entryStatus,
   toggleAdminPostSetting, updateAdminPostToggleUI,
-  updateJEInPlace, voidTransaction, reverseManualJE, voidPurchaseOrder,
+  updateJEInPlace, voidTransaction, reverseManualJE, voidPurchaseOrder, _voidSaleInvoiceCore, _assertFileNotVoided,
   _jeNo, postDoubleEntry, _handoffPrimaryLine, calcCOGS, checkCOGSInvariant, auditAllFilesCOGS,
   je_purchase, je_sale, je_collection, je_payment, je_expense, je_payout, je_partnerLedger,
   je_custodian, je_opex, simulateDraftJE,
