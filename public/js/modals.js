@@ -1040,7 +1040,7 @@ export async function openPaymentModal() {
   let fileSelector = '';
   if (!fn) {
     await ensureCache();
-    const dealOptions = (state.allDeals||[])
+    const dealOptions = (state.allDeals||[]).filter(isVisible)
       .map(d => `<option value="${d.file_no}">${d.file_no} — ${d.supplier||'—'}</option>`)
       .join('');
     fileSelector = `
@@ -1266,7 +1266,7 @@ export function addExpenseRow(prefill={}) {
   const tbody = el('expenseRowsContainer');
   if (!tbody) return;
   const fn = prefill.fileNo || state.currentFileNo || '';
-  const dealOpts = (state.allDeals||[]).map(d =>
+  const dealOpts = (state.allDeals||[]).filter(isVisible).map(d =>
     `<option value="${d.file_no}" ${d.file_no===fn?'selected':''}>${d.file_no} — ${d.supplier||''}</option>`
   ).join('');
   const tr = document.createElement('tr');
@@ -2443,7 +2443,7 @@ export async function openPayoutModal() {
   if (el('pout-file-selector-wrap')) {
     if (!fn) {
       await ensureCache();
-      const dealOptions = (state.allDeals||[])
+      const dealOptions = (state.allDeals||[]).filter(isVisible)
         .map(d => `<option value="${d.file_no}">${d.file_no} — ${d.supplier||'—'}</option>`)
         .join('');
       el('pout-file-selector-wrap').innerHTML = `
@@ -2831,7 +2831,7 @@ export async function selectLedgerType(type) {
     </div>`;
   } else {
     await ensureCache();
-    const opts = (state.allDeals||[]).map(d=>`<option value="${d.file_no}">${d.file_no} — ${d.supplier||'—'}</option>`).join('');
+    const opts = (state.allDeals||[]).filter(isVisible).map(d=>`<option value="${d.file_no}">${d.file_no} — ${d.supplier||'—'}</option>`).join('');
     fw.innerHTML = `<div class="field" style="margin-bottom:10px">
       <label>الملف / الصفقة *</label>
       <select id="lg-file" onchange="onLedgerFileChange()" style="width:100%">
