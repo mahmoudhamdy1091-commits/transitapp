@@ -2420,12 +2420,18 @@ export async function loadPartnerAccountLedger() {
     // حتى يعطي فلتر الصفقة في renderPartnerAccountLedger نفس الرقم بالضبط
     let totalPayable   = 0;
     const payableByFile = {};
+    // ✅ 2026-09-23 — نفس صفة الشريك من computePartnerSettlement (isPermanent
+    // بقى مصدرها واحد جوّه core.js). ثابتة لنفس الشريك عبر كل ملفاته (تصنيف
+    // partner_account_links.is_permanent مربوط بالاسم لا بالملف) — تُلتقَط من
+    // أول ملف بيرجّع تطابقًا، مش محتاجة تُعاد الحساب لكل ملف
+    let partnerIsPermanent = false;
 
     for (const fn of fileNos) {
       const share = shareMap[fn];
       const pct   = Math.round(share * 100);
       const x = (settleByFile[fn]?.partners||[]).find(p => p.name === partner)
         || { fairShare:0, expPaid:0, collectionsHeld:0, profitShare:0, payableNow:0 };
+      if (x.isPermanent === true) partnerIsPermanent = true;
       // ✅ payableNow يطرح المسحوبات والتحصيلات الممسوكة داخليًا، ويطبّق سقف
       // النقد المحصَّل للملف المفتوح — فلا يُطرح أي منها مرة تانية هنا
       payableByFile[fn] = +x.payableNow || 0;
@@ -2437,7 +2443,10 @@ export async function loadPartnerAccountLedger() {
       // الحقيقية (دفعات/أرباح) هيطلع رقم هجين مايطابقش "إجمالي المستحق له" في
       // نفس المستند ولا في أي شاشة تانية بالتطبيق (باج مُكتشف فعليًا من مراجعة
       // كشف حساب مطبوع — الرصيد التراكمي كان بيوقف عند رقم مختلف عن الكارت العلوي)
-      if (x.fairShare > 0) {
+      // ✅ 2026-09-23 — صف "حصته المفترضة في التكلفة" مرجعي بحت (لا يدخل أي
+      // رصيد، _sign:0) لكنه لا معنى له أصلًا لشريك دائم تحت رأس المال المدوَّر
+      // — إظهاره كان بيزوّد اللبس بدل ما يفيد. راجع نفس تصحيح باقي الشاشات
+      if (x.fairShare > 0 && !x.isPermanent) {
         totalLiability += x.fairShare;
         allEntries.push({
           type: 'liability', file_no: fn,
@@ -2560,7 +2569,25 @@ export async function loadPartnerAccountLedger() {
     const liabilityColor = netLiability > 0.01 ? 'var(--red)' : 'var(--green)';
     const dueColor       = totalDue > 0.01 ? 'var(--green)' : totalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
 
-    el('pa-summary-kpis').innerHTML = `
+    // ✅ 2026-09-23 — مراجعة عميقة بطلب المالك (راجع project_partner_settlement_
+    // permanent_null_fields_2026-09-23 في الذاكرة): "إجمالي ما دفع للمورد"/
+    // "متبقي عليه"/"القابل للتحويل الآن" كلها مبنية على مفهوم "حصة رأس مال"
+    // مالوش معنى لشريك دائم تحت رأس المال المدوَّر — كانت الشاشة دي بالذات
+    // (أخطر شاشة، بوابة الصرف الفعلية) بتعرض رقمًا خامًا بلا أي حماية خالص.
+    el('pa-summary-kpis').innerHTML = partnerIsPermanent ? `
+      <div class="j-kpi" style="border-right:3px solid var(--blue);grid-column:1/-1">
+        <div class="j-kpi-label">شريك دائم — رأس مال مدوَّر، بلا مطالبة/دَين رأس مال</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px">أرقام "دفع للمورد/متبقي عليه/القابل للتحويل" هنا لا تنطبق. رصيده الحقيقي = حصته في الأرباح المرحَّلة فعليًا (تحت) ناقص ما استلمه.</div>
+      </div>
+      <div class="j-kpi" style="border-right:3px solid var(--green)">
+        <div class="j-kpi-label">حصته في الأرباح</div>
+        <div class="j-kpi-val" style="color:${totalProfit>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(totalProfit))}</div>
+        <div style="font-size:12px;color:var(--text2)">${totalProfit>=0?'ربح صافي':'خسارة'}</div>
+      </div>
+      <div class="j-kpi" style="border-right:3px solid var(--accent)">
+        <div class="j-kpi-label">إجمالي الصرف السابق</div>
+        <div class="j-kpi-val" style="color:var(--accent)">${fmt(totalPayout)}</div>
+      </div>` : `
       <div class="j-kpi" style="border-right:3px solid var(--blue)">
         <div class="j-kpi-label">إجمالي ما دفع للمورد</div>
         <div class="j-kpi-val" style="color:var(--blue)">${fmt(totalPaid)}</div>
@@ -2588,6 +2615,7 @@ export async function loadPartnerAccountLedger() {
     partnerAccountState.balance       = totalDue;
     partnerAccountState.netLiability  = netLiability;
     partnerAccountState.totalPaid     = totalPaid;
+    partnerAccountState.isPermanent   = partnerIsPermanent;
     // ✅ لكل ملف على حدة — يستخدمه renderPartnerAccountLedger عند فلترة صفقة
     // بعينها، فيطابق الرقمان بالبناء بدل أن يُحسب كل منهما بمعادلة مختلفة
     partnerAccountState.payableByFile = payableByFile;
@@ -2635,7 +2663,21 @@ export function renderPartnerAccountLedger() {
   const balColor     = kpiTotalDue > 0.01 ? 'var(--green)' : kpiTotalDue < -0.01 ? 'var(--red)' : 'var(--text2)';
   const filterLabel  = filterFile ? ` — ${filterFile}` : ' — كل الصفقات';
 
-  if (el('pa-summary-kpis')) el('pa-summary-kpis').innerHTML = `
+  // ✅ 2026-09-23 — نفس حماية loadPartnerAccountLedger فوق (partnerAccountState.isPermanent)
+  if (el('pa-summary-kpis')) el('pa-summary-kpis').innerHTML = partnerAccountState.isPermanent ? `
+    <div class="j-kpi" style="border-right:3px solid var(--blue);grid-column:1/-1">
+      <div class="j-kpi-label">شريك دائم — رأس مال مدوَّر، بلا مطالبة/دَين رأس مال</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">أرقام "دفع للمورد/متبقي عليه/القابل للتحويل" هنا لا تنطبق${filterLabel}.</div>
+    </div>
+    <div class="j-kpi" style="border-right:3px solid var(--green)">
+      <div class="j-kpi-label">حصته في الأرباح</div>
+      <div class="j-kpi-val" style="color:${kpiProfit>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(kpiProfit))}</div>
+      <div style="font-size:12px;color:var(--text2)">${kpiProfit>=0?'ربح':'خسارة'}</div>
+    </div>
+    <div class="j-kpi" style="border-right:3px solid var(--accent)">
+      <div class="j-kpi-label">إجمالي الصرف السابق</div>
+      <div class="j-kpi-val" style="color:var(--accent)">${fmt(kpiPayout)}</div>
+    </div>` : `
     <div class="j-kpi" style="border-right:3px solid var(--blue)">
       <div class="j-kpi-label">ما دفع للمورد${filterLabel}</div>
       <div class="j-kpi-val" style="color:var(--blue)">${fmt(kpiPaid)}</div>

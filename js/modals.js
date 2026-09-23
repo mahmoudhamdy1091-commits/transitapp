@@ -2856,33 +2856,38 @@ export async function onLedgerPartnerChange() {
   const card    = el('lg-cap-card');
   if (!spec.linkedToFile || !partner || !fn) { card.style.display = 'none'; return; }
   card.style.display = '';
-  // ✅ المرحلة ١ — ترانزيت: الاسترداد من الملف يُحسب من الربح المُرحَّل لهذا
-  // الملف، لا من صافي حساب الشريك فيه: قيد الافتتاح JE-2026-01501 سُجّل بلا
-  // رقم ملف، فرأس مال الشركة المدوَّر ما زال داخل صافي كل ملف (TM-010 ≈ 22,642
-  // فكان السقف يسمح بـ24,450 مقابل نصيب ربح ≈1,808). وسجل الترحيل
-  // (profit_postings) لم يُنشأ بعد — المرحلة ٣ — فالمُرحَّل صفر والسقف صفر.
-  if (state.system === 'TM') {
-    // ✅ البند الكامن الثاني (م٧) — نفس الإصلاح في checkPayoutCap (core.js):
-    // "تأكيد استلام" بلا أي حركة نقدية أصلًا (needsJE:false)، فنصيحة "استخدم
-    // سحب عام" لا تنطبق عليه. كانت هذه البطاقة (معاينة حية قبل الإرسال) نسخة
-    // مكرَّرة من نفس النص الثابت بغض النظر عن النوع — اكتُشفت أثناء التحقق الحي.
-    const suggestion = ledgerState.type === 'تأكيد استلام' ? '' : ' للصرف استخدم «سحب عام» من رصيد الشريك.';
-    card.innerHTML = `<span style="color:var(--orange,#c77)">⚠️ في ترانزيت: الاسترداد من الملف يُحسب من <b>الربح المُرحَّل</b> لهذا الملف، وترحيل الأرباح لم يبدأ بعد ⇒ <b>المتاح الآن صفر</b>.${suggestion}</span>`;
-    return;
-  }
   card.innerHTML = '<span style="color:var(--text2)">جاري حساب المستحق…</span>';
   try {
-    const s = await computePartnerSettlement(fn, state.system);
+    // ✅ 2026-09-23 — كانت هذه البطاقة (معاينة حية قبل الإرسال) بتحسب رقمها
+    // بمعادلة منفصلة عن الحارس الفعلي (checkPayoutCap)، فانحرفت عنه بصمت:
+    // فرع TM كان نص ثابت "المتاح الآن صفر" اتكتب وقت ما profit_postings
+    // كان لسه فاضي، وفضل زي ما هو حتى بعد ما checkPayoutCap اتصلحت تقرأه
+    // فعليًا. الحل: البطاقة تنادي checkPayoutCap نفسها (amount=0 لمجرد قراءة
+    // السقف الحقيقي، بلا أي كتابة) — مصدر واحد للسقف في المعاينة والتنفيذ
+    // معًا، يستحيل ينحرفوا عن بعض تاني. راجع project_partner_settlement_
+    // permanent_null_fields_2026-09-23 في الذاكرة.
+    const [s, cap] = await Promise.all([
+      computePartnerSettlement(fn, state.system),
+      checkPayoutCap(fn, partner, state.system, 0, null, ledgerState.type),
+    ]);
     ledgerState.settlement = s;
     const x = (s.partners||[]).find(p => p.name === partner.trim());
     if (!x) { card.innerHTML = `<span style="color:var(--red)">⚠️ ${partner} غير مسجَّل ضمن شركاء ${fn}</span>`; return; }
-    const cap = +x.payableNow || 0;
+    if (x.isPermanent) {
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <span>حصة الربح: <b style="color:${x.profitShare>=0?'var(--green)':'var(--red)'}">${fmt(x.profitShare)}</b></span>
+          <span style="font-weight:700;color:var(--purple)">القابل للتحويل الآن (من الربح المُرحَّل فقط): ${fmt(+cap.payableNow||0)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px">شريك دائم — رأس مال مدوَّر، بلا مطالبة رأس مال.</div>`;
+      return;
+    }
     card.innerHTML = `
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <span>ساهم فعلًا: <b>${fmt(x.actualContribution)}</b></span>
         <span>حصة الربح: <b style="color:${x.profitShare>=0?'var(--green)':'var(--red)'}">${fmt(x.profitShare)}</b></span>
         <span>استرد سابقًا: <b>${fmt(x.withdrawnViaPayout)}</b></span>
-        <span style="font-weight:700;color:var(--purple)">القابل للتحويل الآن: ${fmt(cap)}</span>
+        <span style="font-weight:700;color:var(--purple)">القابل للتحويل الآن: ${fmt(+cap.payableNow||0)}</span>
       </div>`;
   } catch(e) {
     card.innerHTML = `<span style="color:var(--red)">تعذّر حساب المستحق: ${e.message}</span>`;

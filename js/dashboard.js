@@ -865,9 +865,12 @@ export async function loadSummaryTab(fn, sys) {
     const isOpen = (totalV - soldV) > 0;
     const sp = settlement?.partners || [];
     const diffSum = sp.reduce((s,x)=>s+(x.fairShareDiff||0),0);
-    // ✅ راجع تعليق جلب accountLinks فوق — isPermanentPartner (core.js) نفس
-    // منطق is_permanent_partner() في SQL بالحرف، بلا أسماء مجمَّدة بالكود
-    const isPermSettled = x => window.isPermanentPartner(sys, x.name, accountLinks) === true || x.isTreasury;
+    // ✅ 2026-09-23 — isPermanent بقى جاي من computePartnerSettlement نفسها
+    // (core.js)، مصدر واحد بدل ما كل شاشة تعيد حسابه من accountLinks منفصلة
+    // (نفس السبب اللي خلّى شاشات زي "جاري الشريك"/الملف المطبوع تنسى الحماية
+    // قبل كده — مش كسل، كان محتاج بيانات إضافية مش متاحة بسهولة). يشمل
+    // الخزينة جوّاه فعلًا، فمفيش داعي "|| isTreasury" هنا تاني.
+    const isPermSettled = x => x.isPermanent === true;
 
     const settlementTableHtml = sp.length ? `
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;overflow-x:auto">
@@ -892,7 +895,10 @@ export async function loadSummaryTab(fn, sys) {
               <tr style="border-top:1px solid var(--border)">
                 <td style="padding:8px;font-weight:700">${x.name}${x.isTreasury?' 🏦':''}</td>
                 <td style="text-align:center;padding:8px;color:var(--text2)">${x.sharePercent}%</td>
-                <td style="text-align:left;padding:8px;font-family:var(--mono)">${fmt(x.actualContribution)}</td>
+                <!-- ✅ 2026-09-23 — نفس حماية isPermSettled: actualContribution
+                     بقت null فعليًا من core.js لشريك دائم، وكانت هنا بتتعرض
+                     خامة (0.00 لمازن مقابل رقم ضخم للصندوق — بلاغ مالك حي) -->
+                <td style="text-align:left;padding:8px;font-family:var(--mono)">${isPermSettled(x) ? 'لا ينطبق' : fmt(x.actualContribution)}</td>
                 <td style="text-align:left;padding:8px;font-family:var(--mono);color:var(--text2)">${fmt(x.fairShare)}</td>
                 <td style="text-align:left;padding:8px;font-family:var(--mono);font-weight:700;color:${isPermSettled(x)?'var(--text2)':(Math.abs(x.fairShareDiff)<0.01?'var(--text2)':(x.fairShareDiff>0?'var(--green)':'var(--red)'))}">
                   ${isPermSettled(x) ? '—' : (x.fairShareDiff>0?'+':'')+fmt(x.fairShareDiff)}
@@ -978,6 +984,15 @@ export async function loadSummaryTab(fn, sys) {
              بقايا الصيغة قبل 0f7b1be — فكان الطرفان لا يتساويان على الشاشة
              (ماجد الجبالي: −1,519.50 + 1,519.50 = 3,446 معروضة حرفيًا) -->
         <div style="background:var(--card2);padding:12px 16px;border-top:1px solid var(--border)">
+          ${isPerm ? `
+          <!-- ✅ 2026-09-23 — grossEntitlement/payableNow بقيا null فعليًا من
+               core.js لشريك دائم (مراجعة عميقة بطلب المالك: القسم ده كان
+               آخر حقل خام في الشاشة، بيعرض "725.00 مستحق له" لمازن رغم إنه
+               مالوش مطالبة رأس مال أصلًا — راجع project_partner_settlement_
+               permanent_null_fields_2026-09-23 في الذاكرة) -->
+          <div style="font-size:13px;color:var(--text2);text-align:center;padding:8px 0">
+            لا ينطبق — شريك دائم (رأس مال مدوَّر، بلا مطالبة). رصيده الحقيقي في «جاري الشريك».
+          </div>` : `
           <div style="font-size:12px;color:var(--text2);margin-bottom:6px">
             ${x.isTreasury ? 'المستحق = مساهمته الفعلية + حصة الربح − ما استلمه' : 'المستحق = رأس ماله المدفوع فعلاً + حصة الربح − ما استلمه'}
           </div>
@@ -1015,7 +1030,7 @@ export async function loadSummaryTab(fn, sys) {
                 return 'لا يوجد مستحق';
               })()}</div>
             </div>
-          </div>
+          </div>`}
         </div>
 
         <!-- أزرار -->

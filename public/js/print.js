@@ -847,11 +847,11 @@ export async function printDealSummary(fn) {
       const x = settlementPartners.find(sp => sp.name === (p.partner||'').trim())
         || { actualContribution:0, fairShare:0, profitShare: profit*(share/100), withdrawnViaPayout:0, collectionsHeld:0, netDue:0, isTreasury:false };
       const isTreasury  = x.isTreasury || false;
-      // ✅ اكتُشف حيًّا 2026-09-22 (اختبار م٦ على TM-042) — راجع نفس الإصلاح
-      // في dashboard.js: شريك دائم مالوش مطالبة رأس مال أصلًا (قرار ت١)،
-      // فـ"المتبقي عليه" لا معنى له. d.accountLinks تُجلب في loadSummaryTab
-      // (dashboard.js) وتُخزَّن في state.currentDealData — نفس مصدر الشاشة
-      const isPerm      = isTreasury || window.isPermanentPartner(d.sys, p.partner, d.accountLinks||[]) === true;
+      // ✅ 2026-09-23 — isPermanent بقى جاي من computePartnerSettlement نفسها
+      // (core.js)، مصدر واحد بدل إعادة حساب منفصل هنا بـd.accountLinks (نفس
+      // السبب اللي خلّى الشاشة دي بالذات تنسى نص الحماية — "ساهم فعلاً"/
+      // "القابل للصرف الآن" تحت فضلوا خامًا لحد اليوم رغم إصلاح 2026-09-22).
+      const isPerm      = x.isPermanent === true;
       // للصندوق: افصل رأس المال (دفعات) عن المصاريف (باقي المساهمة)
       const capitalIn   = isTreasury ? (x.capitalPaid || 0) : x.actualContribution;
       const expIn_      = isTreasury ? Math.max(0, (x.actualContribution||0) - (x.capitalPaid||0)) : 0;
@@ -897,9 +897,11 @@ export async function printDealSummary(fn) {
       html += '<div style="padding:12px 14px;border-left:1px solid #e4e0d8;border-bottom:1px solid #e4e0d8">'
             + '<div style="font-size:12px;color:#78716c;font-weight:700;margin-bottom:8px;letter-spacing:1px">رأس المال</div>'
             + rows('حصته في التكلفة', isPerm ? 'لا ينطبق — شريك دائم' : f2(liability),  false, '#1d4ed8')
-            + rows('رأس المال المدفوع', f2(capitalIn), false, '#15803d')
+            + rows('رأس المال المدفوع', isPerm ? 'لا ينطبق' : f2(capitalIn), false, '#15803d')
             + (isTreasury && expIn_ > 0.01 ? rows('مصاريف من جيبه', f2(expIn_), false, '#0369a1') : '')
-            + rows('ساهم فعلاً',       f2(isTreasury ? x.actualContribution : capitalIn), false, '#15803d')
+            // ✅ 2026-09-23 — actualContribution بقت null فعليًا من core.js
+            // لشريك دائم (بلاغ مالك حي: 0.00 لمازن مقابل رقم ضخم للصندوق)
+            + rows('ساهم فعلاً',       isPerm ? 'لا ينطبق' : f2(isTreasury ? x.actualContribution : capitalIn), false, '#15803d')
             + (isPerm
                 ? rows('المتبقي عليه', 'لا ينطبق — شريك دائم', true, '#1d4ed8')
                 : (overpaid_ > 0.01
@@ -929,7 +931,12 @@ export async function printDealSummary(fn) {
       // يُقرأ كمبلغ قابل للتحويل، والشرح النصّي كان يعرض معادلة خاطئة
       // (netJE2400 + profitShare) لا يتساوى طرفاها على الورق المطبوع
       html += '<div style="background:#f9f8f6;padding:12px 16px;border-top:1px solid #e4e0d8">'
-            + '<div style="font-size:12px;color:#78716c;margin-bottom:6px">' + (x.isTreasury ? 'المستحق = مساهمته الفعلية + حصة الربح − ما استلمه' : 'المستحق = رأس ماله المدفوع فعلاً + حصة الربح − ما استلمه') + '</div>'
+            + (isPerm
+                // ✅ 2026-09-23 — grossEntitlement/payableNow بقيا null فعليًا
+                // من core.js لشريك دائم (مراجعة عميقة بطلب المالك — راجع
+                // project_partner_settlement_permanent_null_fields_2026-09-23)
+                ? '<div style="font-size:13px;color:#78716c;text-align:center;padding:8px 0">لا ينطبق — شريك دائم (رأس مال مدوَّر، بلا مطالبة). رصيده الحقيقي في «جاري الشريك».</div>'
+                : '<div style="font-size:12px;color:#78716c;margin-bottom:6px">' + (x.isTreasury ? 'المستحق = مساهمته الفعلية + حصة الربح − ما استلمه' : 'المستحق = رأس ماله المدفوع فعلاً + حصة الربح − ما استلمه') + '</div>'
             // ✅ طرف المعادلة = grossEntitlement لا payableNow — نفس تصحيح
             //    dashboard.js. الورقة تصل الشريك، فطرفان غير متساويين عليها
             //    أسوأ من الشاشة: لا يمكن تحديثها بعد الإرسال.
@@ -953,7 +960,7 @@ export async function printDealSummary(fn) {
             // أصل الالتباس (نفس تصحيح dashboard.js)
             + '<span style="font-size:12px;font-weight:700;color:#1c1917">القابل للصرف الآن' + (isOpen?' (تقديري)':'') + ':</span>'
             + '<span style="font-size:20px;font-weight:700;font-family:monospace;color:' + ((+x.payableNow||0)>0.01?'#15803d':'#78716c') + '">' + f2(+x.payableNow||0) + '</span>'
-            + '</div>'
+            + '</div>')
             + '</div>';
 
       html += '</div>';

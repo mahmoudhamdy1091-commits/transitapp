@@ -681,9 +681,9 @@ export async function computePartnerSettlement(fileNo, sys) {
     // 9 صفوف إجمالاً في كل النظام — جلبها كاملة أرخص من فلترة بالشركاء. لسه
     // صفر صف مكتوب على أي حساب مخصَّص فعليًا (الكتّاب لسه بيكتبوا 2400)، فهذا
     // التغيير regression بحت اليوم: يجب أن يطابق الناتج القديم بالحرف.
-    apiGetAll('partner_account_links', { select:'partner_name,account_code', system_type:`eq.${sys}` }),
+    apiGetAll('partner_account_links', { select:'partner_name,account_code,is_permanent', system_type:`eq.${sys}` }),
   ]);
-  return _settlePartnerRows(fileNo, partnersRaw, jeAll, poRow, confirmations, accountLinks);
+  return _settlePartnerRows(fileNo, partnersRaw, jeAll, poRow, confirmations, accountLinks, sys);
 }
 
 /**
@@ -695,7 +695,7 @@ export async function computePartnerSettlement(fileNo, sys) {
  * لا تُعدَّل هذه الدالة بمعزل عن توثيق computePartnerSettlement أعلاه — أي
  * انحراف هنا ينحرف في الاستخدامين معًا (الفردي والدفعي) في آنٍ واحد.
  */
-function _settlePartnerRows(fileNo, partnersRaw, jeAll, poRow, confirmations, accountLinks) {
+function _settlePartnerRows(fileNo, partnersRaw, jeAll, poRow, confirmations, accountLinks, sys) {
   // كود الحساب المخصَّص لكل شريك في هذا الملف (لو موجود) — يُستخدم تحت
   // لتوسيع فلتر حساب الشركاء بدل الاقتصار على '2400' وحده
   const linkedCodes = new Set((accountLinks||[]).map(r => r.account_code));
@@ -798,6 +798,14 @@ function _settlePartnerRows(fileNo, partnersRaw, jeAll, poRow, confirmations, ac
     const name  = (p.partner||'').trim();
     const share = (+p.share_percent||0) / 100;
     const isTreasury = TREASURY_ALIASES.has(name);
+    // ✅ مصدر واحد للتصنيف "دائم" — بدل ما كل شاشة تعيد حسابه بنفسها من
+    // accountLinks منفصلة (نفس السبب اللي خلّى شاشات كتير تنسى الحماية، راجع
+    // project_partner_settlement_permanent_null_fields_2026-09-23 في الذاكرة).
+    // isPermanentPartner نفسها بتشمل الخزينة (TREASURY_ALIASES) جوّاها فعلًا،
+    // فمفيش داعي "|| isTreasury" منفصلة هنا. === true عمدًا لا !==false: غير
+    // المصنَّف (null) يفضل يُعامَل زي الخارجي (يعرض رقمه الخام) — الافتراضي
+    // الآمن الحالي في كل مكان تاني بالمشروع، مش نخفي بلا تأكيد.
+    const isPermanent = isPermanentPartner(sys, name, accountLinks) === true;
     const c = byContact[name] || { cr:0, dr:0, crByRef:{payments:0,expenses:0}, drByRef:{collections:0,partner_payouts:0}, movements:[] };
 
     const capitalPaid        = c.crByRef.payments;
@@ -875,18 +883,32 @@ function _settlePartnerRows(fileNo, partnersRaw, jeAll, poRow, confirmations, ac
       ? Math.max(0, grossEntitlement)
       : Math.max(0, Math.min(grossEntitlement, cashAvailable));
 
+    // ✅ 2026-09-23 — قرار مالك صريح بعد مراجعة عميقة (راجع الذاكرة
+    // project_partner_settlement_permanent_null_fields_2026-09-23): تحت "رأس
+    // المال المدوَّر"، شريك دائم (أو الخزينة) مالوش مطالبة/دَين رأس مال حقيقي
+    // — فالحقول دي بلا معنى له، لا رقم صحيح تانٍ نعرضه بدلها. `null` صراحةً
+    // لا رقم وهمي (كان صفر/رقم متضخّم بيوهم بثقة إنه صح) ⇒ أي شاشة تنسى تفحص
+    // `isPermanent` قبل ما تعرض الحقل هتظهر فراغ/NaN واضح الخطأ، مش رقم منطقي.
+    // احتساب داخلي فوق (treasuryActual، nonTreasurySum، تحقق fairShareDiff=0)
+    // بيستخدم القيم الحقيقية زي ما هي — الإخفاء هنا في الناتج المُرجَّع بس.
+    const outActualContribution = isPermanent ? null : actualContribution;
+    const outFairShareDiff      = isPermanent ? null : fairShareDiff;
+    const outNetDue              = isPermanent ? null : netDue;
+    const outGrossEntitlement    = isPermanent ? null : grossEntitlement;
+    const outPayableNow          = isPermanent ? null : payableNow;
+
     return {
-      name, share, sharePercent: +p.share_percent, isTreasury,
+      name, share, sharePercent: +p.share_percent, isTreasury, isPermanent,
       capitalPaid, expPaid, collectionsHeld, withdrawnViaPayout, netJE2400,
-      actualContribution, fairShare, fairShareDiff,
-      profitShare, netDue, payableNow, movements: c.movements,
+      actualContribution: outActualContribution, fairShare, fairShareDiff: outFairShareDiff,
+      profitShare, netDue: outNetDue, payableNow: outPayableNow, movements: c.movements,
       // ✅ مكشوفان لأن العرض يحتاجهما: payableNow وحدها لا تفسّر نفسها.
       //    grossEntitlement = ما يستحقه على الورق، cashAvailable = سقف
       //    النقد المتاح. الفرق بينهما هو ما كانت الشاشة تُخفيه فتعرض
       //    معادلة طرفاها غير متساويين، وتصف شريكًا مستحقًّا بأنه مدين.
       //    وكشفهما يمنع نسخة يدوية سادسة من الصيغة (checkPayoutCap تحت
       //    كانت تعيد حساب cashAvailable بالحرف).
-      grossEntitlement, cashAvailable,
+      grossEntitlement: outGrossEntitlement, cashAvailable,
     };
   });
 
@@ -925,7 +947,7 @@ export async function computePartnerSettlementBatch(fileNos, sys) {
       select:'partner,amount,file_no', system_type:`eq.${sys}`, file_no:inList,
       entry_type:'eq.تأكيد استلام', post_status:`eq.posted`,
     }),
-    apiGetAll('partner_account_links', { select:'partner_name,account_code', system_type:`eq.${sys}` }),
+    apiGetAll('partner_account_links', { select:'partner_name,account_code,is_permanent', system_type:`eq.${sys}` }),
   ]);
 
   const groupByFile = rows => {
@@ -941,7 +963,7 @@ export async function computePartnerSettlementBatch(fileNos, sys) {
   const out = {};
   files.forEach(fn => {
     out[fn] = _settlePartnerRows(
-      fn, partnersByFile[fn]||[], jeByFile[fn]||[], poByFile[fn]||[], confByFile[fn]||[], accountLinks
+      fn, partnersByFile[fn]||[], jeByFile[fn]||[], poByFile[fn]||[], confByFile[fn]||[], accountLinks, sys
     );
   });
   return out;
