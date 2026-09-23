@@ -864,7 +864,6 @@ export async function loadSummaryTab(fn, sys) {
     // ── Partners — جدول تسوية موحّد + بطاقة مفصّلة، من computePartnerSettlement ──
     const isOpen = (totalV - soldV) > 0;
     const sp = settlement?.partners || [];
-    const diffSum = sp.reduce((s,x)=>s+(x.fairShareDiff||0),0);
     // ✅ 2026-09-23 — isPermanent بقى جاي من computePartnerSettlement نفسها
     // (core.js)، مصدر واحد بدل ما كل شاشة تعيد حسابه من accountLinks منفصلة
     // (نفس السبب اللي خلّى شاشات زي "جاري الشريك"/الملف المطبوع تنسى الحماية
@@ -912,9 +911,14 @@ export async function loadSummaryTab(fn, sys) {
               </tr>`).join('')}
           </tbody>
         </table>
-        <div style="margin-top:8px;font-size:11px;color:${Math.abs(diffSum)<0.01?'var(--green)':'var(--red)'};display:flex;align-items:center;gap:4px">
-          ${Math.abs(diffSum)<0.01?'✓':'⚠️'} إجمالي الفروق = ${fmt(diffSum)}${Math.abs(diffSum)<0.01?' — التسوية متزنة':''}
-        </div>
+        <!-- ✅ 2026-09-23 — تذييل "إجمالي الفروق = صفر" اتحذف: كان تحقّقًا
+             ذاتيًا صحيحًا رياضيًا بس طالما الخزينة بتمتص المتبقي (fairShareDiff
+             لها غير null). بعد إصلاح isPermanent، fairShareDiff الخزينة null
+             فعليًا ⇒ المجموع لم يعد له سبب يساوي صفر أبدًا (قِست حيًّا: BOX-128
+             طلعت -56,714.50 رغم إن الأرقام كلها صحيحة 100%) — إبقاؤه كان
+             هيعرض "⚠️ غير متزنة" مضلِّلة على أغلب الملفات، عكس هدف "الوضوح
+             التام" اللي اتطلب صراحة. راجع project_partner_settlement_
+             permanent_null_fields_2026-09-23 في الذاكرة -->
       </div>` : '';
 
     const partnersHtml = (partners||[]).map((p,i) => {
