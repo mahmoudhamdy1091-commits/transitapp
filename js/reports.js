@@ -240,10 +240,12 @@ export async function runCashFlowReport(from, to, sys, postFilter = 'posted') {
   try {
     const toEOD = to + 'T23:59:59';
     // ── مصدر واحد: journal_entries فقط — حسابات النقد والبنك ──
-    const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&select=*&limit=49999`;
-    const res  = await fetch(url, { headers: headers() });
-    if (!res.ok) throw new Error(await res.text());
-    let jeRows = await res.json();
+    // ✅ fetchAllPages بدل fetch+limit=49999 — Supabase بتقطع كل استعلام عند
+    // 1000 صف بغض النظر عن قيمة limit، فأي فترة فيها أكتر من 1000 قيد كانت
+    // بترجّع تقرير تدفقات نقدية جزئي بلا أي تنبيه (نفس فئة باج دفتر الأستاذ/
+    // الأرصدة الافتتاحية/ميزان المراجعة، اكتُشف حيًّا 2026-09-24)
+    const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&select=*`;
+    let jeRows = await fetchAllPages(url, 'runCashFlowReport');
 
     // ── معاينة: تضمين أثر العمليات المعلّقة (draft) دون أي كتابة فعلية ──
     let draftRows = [];
@@ -291,10 +293,12 @@ export async function runCashFlowReport(from, to, sys, postFilter = 'posted') {
       collections:'تحصيلات العملاء', payments:'دفعات الموردين',
       expenses:'مصاريف الصفقات', partner_payouts:'معاملات الشركاء', partner_ledger:'معاملات الشركاء',
       operating_expenses:'مصاريف تشغيلية', manual:'قيود يدوية', sales:'مبيعات',
+      reversal:'قيود عكسية', correction:'قيود تصحيحية', purchase_orders:'سندات شراء',
     };
     const srcIcons = {
       collections:'💰', payments:'💳', expenses:'💸',
       partner_payouts:'👥', partner_ledger:'👥', operating_expenses:'💼', manual:'✍️', sales:'🤝',
+      reversal:'🔄', correction:'🛠️', purchase_orders:'📋',
     };
 
     el('reportKpis').innerHTML = `
