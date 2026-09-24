@@ -19,6 +19,18 @@ let _nfSaving = false;          // guard against double-submit
 export function getNfEditFileNo() { return _nfEditFileNo; }
 
 export async function openNewFileModal(editFileNo = null) {
+  // ✅ حارس ضد تعديل ملف مُلغى (VOIDED) — كان بيدخل من هنا بلا فحص من أي مكان
+  // (زرار "✏️ تعديل" في شريط أدوات عارض الملف، أو _ctxDeal في جدول الداشبورد)
+  // ويلغي حالة الفويد بصمت لو اتحفظ (statusAfterEdit('voided') بترجع 'draft').
+  // الحارس هنا في مصدر واحد يقفل كل نقاط الدخول دفعة واحدة — راجع إعادة
+  // تصميم الفويد 2026-09-23/24
+  if (editFileNo) {
+    const po = await apiGetAll('purchase_orders', { select:'post_status', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` });
+    if (po?.[0]?.post_status === 'voided') {
+      toast(`⚠️ الملف "${editFileNo}" مُلغى (VOIDED) — لا يمكن تعديله`, 'err');
+      return;
+    }
+  }
   // ── set mode FIRST ──
   _nfEditMode   = !!editFileNo;
   _nfEditFileNo = editFileNo || null;
