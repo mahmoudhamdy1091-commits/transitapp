@@ -1143,7 +1143,12 @@ export async function submitEditPayment() {
           await _handoffPrimaryLine({ sys: state.system, oldIds: (oldJELines||[]).map(l=>l.id), newIds: newJE.ids });
         }
         // 2c. إعادة status إلى pending_edit (voidTransaction يضع 'voided' على السجل لكننا نريد void للقيود فقط)
-        await apiPatch('payments', { id:`eq.${id}` }, { post_status: 'pending_edit' });
+        // ✅ voidTransaction كتبت notes جديدة فوق اللي حفظناها في خطوة 1 (بتاخد
+        // old.notes + "مُلغى بتاريخ..." — نسخة ما قبل التعديل، لا القيمة الجديدة
+        // اللي المستخدم كتبها). نرجّعها هنا صريحًا — اكتُشف حيًّا 2026-09-24 (نص
+        // "مُلغى بتاريخ" كان بيمسح ملاحظة تصحيح حقيقية ويطلّع تحذير "كان ملغى
+        // سابقًا" الكاذب في قائمة المراجعة)
+        await apiPatch('payments', { id:`eq.${id}` }, { post_status: 'pending_edit', notes: notes||null });
       } else {
         await updateJEInPlace({
           sys: state.system, fileNo: old.file_no,
@@ -1497,7 +1502,12 @@ export async function submitEditExpense() {
           await _handoffPrimaryLine({ sys: state.system, oldIds: (oldJELines||[]).map(l=>l.id), newIds: newJE.ids });
         }
         // 2c. إعادة status إلى pending_edit (voidTransaction يضع 'voided' على السجل لكننا نريد void للقيود فقط)
-        await apiPatch('expenses', { id:`eq.${id}` }, { post_status: 'pending_edit' });
+        // ✅ voidTransaction كتبت notes جديدة فوق اللي حفظناها في خطوة 1 (بتاخد
+        // old.notes + "مُلغى بتاريخ..." — نسخة ما قبل التعديل، لا القيمة الجديدة
+        // اللي المستخدم كتبها). نرجّعها هنا صريحًا — اكتُشف حيًّا 2026-09-24 (نص
+        // "مُلغى بتاريخ" كان بيمسح ملاحظة تصحيح حقيقية ويطلّع تحذير "كان ملغى
+        // سابقًا" الكاذب في قائمة المراجعة)
+        await apiPatch('expenses', { id:`eq.${id}` }, { post_status: 'pending_edit', notes: notes||null });
       } else {
         // 2c. تحديث التاريخ فقط في مكانه (مبلغ ومجموعة شركاء بلا تغيير هنا فعلاً)
         await updateJEInPlace({
@@ -1612,7 +1622,11 @@ export async function submitEditCollection() {
           await _handoffPrimaryLine({ sys: state.system, oldIds: (oldJELines||[]).map(l=>l.id), newIds: newJE.ids });
         }
         // 2c. إعادة status إلى pending_edit
-        await apiPatch('collections', { id:`eq.${id}` }, { post_status: 'pending_edit' });
+        // ✅ voidTransaction كتبت notes جديدة فوق اللي حفظناها في خطوة 1 (بتاخد
+        // old.notes + "مُلغى بتاريخ..." — نسخة ما قبل التعديل، لا القيمة الجديدة
+        // اللي المستخدم كتبها). نرجّعها هنا صريحًا — نفس باج submitEditExpense/
+        // submitEditPayment، اكتُشف حيًّا 2026-09-24
+        await apiPatch('collections', { id:`eq.${id}` }, { post_status: 'pending_edit', notes: notes||null });
       } else {
         // 2c. تحديث المبلغ والتاريخ في مكانهم
         await updateJEInPlace({
