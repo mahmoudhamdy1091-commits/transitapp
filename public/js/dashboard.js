@@ -1872,14 +1872,14 @@ export function addVehicleRowWithData(v) {
 }
 
 // Add partner row pre-filled with existing data
-export async function addPartnerRowWithData(partner, payment) {
+// ⛔ P0-11 (2026-09-27): الصف = الاسم + الحصة بس. مفيش دفعة بتتربط بالصف تاني
+// (كان بيربط أول دفعة دافعها بنفس الاسم، وحفظ التعديل كان بيعدّلها أو يلغيها).
+export async function addPartnerRowWithData(partner) {
   await addPartnerRow();
   const rows = el('partnersContainer').querySelectorAll('.p-row');
   const row  = rows[rows.length - 1];
   if (!row) return;
   row.dataset.partnerId         = partner.id;
-  row.dataset.paymentId         = payment?.id || '';
-  row.dataset.paymentPostStatus = payment?.post_status || '';
 
   const inputs = row.querySelectorAll('input');
   const sels   = row.querySelectorAll('select');
@@ -1898,14 +1898,6 @@ export async function addPartnerRowWithData(partner, payment) {
 
   // Share percent
   if (inputs[0]) inputs[0].value = partner.share_percent || '';
-
-  // Payment data
-  if (payment) {
-    if (inputs[1]) inputs[1].value = payment.amount     || '';
-    if (inputs[2]) inputs[2].value = payment.pay_date   || '';
-    if (sels[1])   sels[1].value   = payment.pay_method || 'تحويل بنكي';
-    if (inputs[3]) inputs[3].value = payment.document   || '';
-  }
 
   updatePartnerSummary();
 }

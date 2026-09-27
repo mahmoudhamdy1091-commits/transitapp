@@ -14,7 +14,7 @@ let _originalPOTotal = 0;
 let _originalPOSupplier = '';
 let _originalPOPostStatus = null;
 let _originalVehicleIds = [];   // IDs of all vehicles loaded at edit open time
-let _originalPartners = [];     // partner+payment data loaded at edit open time
+let _originalPartners = [];     // partner data loaded at edit open time (P0-11: no payments)
 let _nfSaving = false;          // guard against double-submit
 export function getNfEditFileNo() { return _nfEditFileNo; }
 
@@ -86,11 +86,11 @@ export async function openNewFileModal(editFileNo = null) {
     el('partnersContainer').innerHTML = '<div style="padding:12px;color:var(--text2);font-size:13px">⏳ جاري التحميل...</div>';
 
     try {
-      const [deals, vList, pList, payList] = await Promise.all([
+      // ⛔ P0-11: الدفعات ما بتتحمّلش هنا خالص — تعديل السند ما يلمسش أي دفعة
+      const [deals, vList, pList] = await Promise.all([
         apiGetAll('purchase_orders', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
         apiGetAll('vehicles', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
         apiGetAll('partners_master', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
-        apiGetAll('payments', { select:'*', system_type:`eq.${state.system}`, file_no:`eq.${editFileNo}` }),
       ]);
 
       const d = deals?.[0] || {};
@@ -114,19 +114,10 @@ export async function openNewFileModal(editFileNo = null) {
       // حفظ IDs الأصلية للمقارنة عند الحفظ (للكشف عن المحذوفة)
       _originalVehicleIds = (vList||[]).map(v => v.id).filter(Boolean);
 
-      // حفظ بيانات الشركاء والدفعات الأصلية للمقارنة عند الحفظ
-      _originalPartners = (pList||[]).map(p => {
-        const pay = (payList||[]).find(pm => pm.payer === p.partner);
-        return {
-          pid: p.id, name: p.partner, share: +p.share_percent||0,
-          paymentId: pay?.id || null,
-          paymentAmount: +pay?.amount || 0,
-          paymentPostStatus: pay?.post_status || null,
-          // ✅ لازمة لكشف تغيّر حساب النقدية عند الحفظ — بدونها كانت البوابة
-          //    تُفتح بينما oldMethod = undefined فلا يتحرّك القيد: عطل صامت
-          paymentMethod: pay?.pay_method || null,
-        };
-      });
+      // حفظ بيانات الشركاء الأصلية للمقارنة عند الحفظ (P0-11: من غير دفعات)
+      _originalPartners = (pList||[]).map(p => ({
+        pid: p.id, name: p.partner, share: +p.share_percent||0,
+      }));
 
       // Load vehicles
       el('vehiclesContainer').innerHTML = '';
@@ -140,8 +131,7 @@ export async function openNewFileModal(editFileNo = null) {
       el('partnersContainer').innerHTML = '';
       if (pList?.length) {
         for (const p of pList) {
-          const pay = (payList||[]).find(pm => pm.payer === p.partner);
-          await addPartnerRowWithData(p, pay);
+          await addPartnerRowWithData(p);
         }
       } else {
         await addPartnerRow();
@@ -362,7 +352,10 @@ export async function addPartnerRow() {
       style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px;width:100%">`;
   const div = document.createElement('div');
   div.className = 'dyn-row p-row';
-  div.style.cssText = 'grid-template-columns:1.8fr 0.7fr 0.8fr 0.7fr 0.9fr 0.8fr 32px;gap:6px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border)';
+  // ⛔ P0-11 (2026-09-27): صف الشريك = الاسم + الحصة بس. خانات الدفع (المبلغ/
+  // التاريخ/الطريقة/المستند) اتشالت — كانت بتعمل دفعة «حصة X% — دفع مقدماً»
+  // باسم الشريك (مصدر TM-095/096/097). الدفعات من «💳 دفعة» جوّه الملف.
+  div.style.cssText = 'grid-template-columns:1.8fr 0.7fr 32px;gap:6px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border)';
   const opts = partners.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
   div.innerHTML = `
     <select style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px;width:100%">
@@ -370,15 +363,6 @@ export async function addPartnerRow() {
       <option value="__new__">+ جديد...</option>
     </select>
     ${inp('الحصة %','number','min="0" max="100" step="0.01" oninput="updatePartnerSummary()"')}
-    ${inp('المبلغ','number','min="0" step="0.01" oninput="updatePartnerSummary()"')}
-    <input type="date" style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px;width:100%" value="${today()}">
-    <select style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-family:Cairo,sans-serif;font-size:12px;width:100%">
-      <option value="تحويل بنكي">تحويل بنكي</option>
-      <option value="نقد">نقد</option>
-      <option value="شيك">شيك</option>
-      <option value="SWIFT">SWIFT</option>
-    </select>
-    ${inp('رقم المستند')}
     <button class="btn-remove" onclick="this.parentElement.remove();updatePartnerSummary()" title="حذف">✕</button>
   `;
   const sel = div.querySelector('select');
@@ -408,25 +392,22 @@ export async function addPartnerRow() {
 export function updatePartnerSummary() {
   const total = parseFloat(el('nf-totalAmount').value) || 0;
   const rows  = el('partnersContainer').querySelectorAll('.p-row');
-  let shareSum = 0, paidSum = 0, valid = true;
+  let shareSum = 0;
   const lines = [];
   rows.forEach(row => {
     const inputs = row.querySelectorAll('input');
     const sel    = row.querySelector('select');
     const name   = sel?.value || '';
     const share  = parseFloat(inputs[0].value) || 0;
-    const paid   = parseFloat(inputs[1].value) || 0;
+    // P0-11: مفيش «مدفوع/متبقي» هنا — الحصة وقيمتها من السند بس
     if (name && share) {
-      const due       = total * share / 100;
-      const remaining = due - paid;
+      const due = total * share / 100;
       shareSum += share;
-      paidSum  += paid;
       lines.push(`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)">
         <span style="font-weight:600">${name}</span>
-        <span style="font-size:13px;color:var(--text2)">حصة: ${share}% = <span style="color:var(--accent)">${fmt(due)}</span> | دفع: <span style="color:var(--green)">${fmt(paid)}</span> | متبقي: <span style="color:${remaining>0?'var(--red)':'var(--green)'}">${fmt(remaining)}</span></span>
+        <span style="font-size:13px;color:var(--text2)">حصة: ${share}% = <span style="color:var(--accent)">${fmt(due)}</span></span>
       </div>`);
     }
-    if (name && share) valid = true;
   });
   el('partnerShareWarning').style.display = (shareSum > 0 && Math.abs(shareSum-100) > 0.01) ? 'block' : 'none';
   const summary = el('partnerSummary');
@@ -435,7 +416,7 @@ export function updatePartnerSummary() {
     summary.innerHTML = lines.join('') +
       `<div style="display:flex;justify-content:space-between;margin-top:6px;font-weight:700">
         <span>الإجمالي</span>
-        <span style="font-size:13px">الحصص: ${fmt(shareSum)}% | مدفوع: <span style="color:var(--green)">${fmt(paidSum)}</span> | متبقي: <span style="color:var(--red)">${fmt(total-paidSum)}</span></span>
+        <span style="font-size:13px">الحصص: ${fmt(shareSum)}%</span>
       </div>`;
   } else { summary.style.display = 'none'; }
 }
@@ -586,18 +567,10 @@ export async function _submitNewFileInner() {
     const sels    = row.querySelectorAll('select');
     const name    = sels[0]?.value || '';
     const share   = parseFloat(inputs[0].value) || 0;
-    const paid    = parseFloat(inputs[1].value) || 0;
-    const payDate = inputs[2]?.value || poDate || '';
-    const method  = sels[1]?.value || 'تحويل بنكي';
-    const doc     = inputs[3]?.value.trim() || '';
-    if (name && share) { partners.push({ name, share, paid, payDate, method, doc }); shareTotal += share; }
+    // P0-11: الاسم والحصة بس — مفيش دفعات من السند (وتنبيه م٧ اللي كان هنا
+    // مالوش لزمة لأنه كان بيشتغل بس لما p.paid > 0)
+    if (name && share) { partners.push({ name, share }); shareTotal += share; }
   });
-
-  // ✅ م٧ — نفس تنبيه submitPayment/submitExpense، لأن هذا المسار (إنشاء ملف
-  // جديد بشركاء دافعين) بيستخدم je_payment بنفس الطريقة بالظبط
-  for (const p of partners) {
-    if (p.paid > 0 && !(await _confirmNonTreasuryPayerTM(state.system, p.name))) return;
-  }
 
   if (partners.length && Math.abs(shareTotal-100) > 0.01) {
     showFieldErr('nfError',`مجموع حصص الشركاء = ${shareTotal}% يجب أن يساوي 100%`); return;
@@ -667,44 +640,13 @@ export async function _submitNewFileInner() {
       }
     }
 
-    // 4. Insert partners + their payments
+    // 4. Insert partners — ⛔ P0-11: من غير أي دفعة. الجزء اللي كان بيعمل دفعة
+    //    «حصة X% — دفع مقدماً» باسم كل شريك + je_payment اتشال (مصدر TM-095/096/097).
     for (const p of partners) {
       await apiPost('partners_master', {
         system_type: state.system, file_no: fileNo,
         partner: p.name, share_percent: p.share
       });
-      // If partner paid something, record as payment
-      if (p.paid > 0) {
-        const pmtId = `PMT-${fileNo}-P${partners.indexOf(p)+1}`;
-        const payDate = p.payDate || poDate || null;
-        // ✅ تحذير ناعم بدل الرفض الصلب القديم (uniq_payment_active) — راجع
-        // sql/add_idempotency_key_expenses_payments.sql وjs/utils.js warnIfSimilarActive
-        const proceedPmt = await warnIfSimilarActive('payments', {
-          select: 'id,post_status', system_type: `eq.${state.system}`, file_no: `eq.${fileNo}`,
-          amount: `eq.${p.paid}`, payer: `eq.${p.name}`, pay_date: `eq.${payDate}`,
-        }, 'دفعة');
-        if (!proceedPmt) continue;
-        const pmtIns = await apiPost('payments', {
-          system_type: state.system, file_no: fileNo,
-          pay_id: pmtId, ref_no: pmtId,
-          po_no: poNo||null, payer: p.name,
-          amount: p.paid, pay_method: p.method||'تحويل بنكي',
-          document: p.doc||null, pay_date: payDate,
-          notes: `حصة ${p.share}% — دفع مقدماً`,
-          idempotency_key: newIdemKey(),
-          post_status: entryStatus(),
-        });
-        // Ledger: partner paid (credit partner account)
-        if (entryStatus()==='posted') {
-          const pmtId = pmtIns?.[0]?.id || null;
-          try {
-            await je_payment({sys:state.system,date:poDate||today(),amount:p.paid,fileNo,refId:pmtId,supplierName:supplier,payerName:p.name,method:p.method||'تحويل بنكي'});
-          } catch(jeErr) {
-            if (pmtId) await apiPatch('payments', { id:`eq.${pmtId}` }, { post_status:'draft' });
-            toast(`⚠️ فشل قيد دفعة ${p.name} — أُعيدت لانتظار الموافقة: ${jeErr.message}`,'warn');
-          }
-        }
-      }
     }
 
     // 5. Audit + تسجيل جهة الاتصال تلقائياً
@@ -784,14 +726,9 @@ export async function submitEditFileFull() {
     const sels   = row.querySelectorAll('select');
     const name   = sels[0]?.value || '';
     const share  = parseFloat(inputs[0].value) || 0;
-    const paid   = parseFloat(inputs[1].value) || 0;
-    const payDate= inputs[2]?.value || poDate || '';
-    const method = sels[1]?.value || 'تحويل بنكي';
-    const doc    = inputs[3]?.value.trim() || '';
     const pid    = row.dataset.partnerId || null;
-    const paymentId = row.dataset.paymentId || null;
-    const paymentPostStatus = row.dataset.paymentPostStatus || null;
-    if (name) { partners.push({ pid, name, share, paid, payDate, method, doc, paymentId, paymentPostStatus }); shareTotal += share; }
+    // P0-11: الاسم والحصة بس — تعديل السند ما يلمسش أي دفعة
+    if (name) { partners.push({ pid, name, share }); shareTotal += share; }
   });
 
   if (partners.length && Math.abs(shareTotal-100) > 0.01) {
@@ -866,21 +803,22 @@ export async function submitEditFileFull() {
     }
 
     // 3. Update partners — diff-based: تعديل في المكان للموجود، حذف للمُزال، إنشاء للجديد فقط
-    //    (نفس أسلوب السيارات أعلاه) — يحافظ على ثبات id الدفعة فيعمل updateJEInPlace بشكل صحيح
+    //    (نفس أسلوب السيارات أعلاه).
+    // ⛔ P0-11 (2026-09-27): الخطوة دي بقت تلمس partners_master بس. قبل كده كانت
+    //    بتدوّر على «أول دفعة على الملف دافعها بنفس اسم الشريك» وتعدّلها في مكانها
+    //    (المبلغ/التاريخ/الطريقة/notes=«حصة X%») أو تلغيها لو الشريك اتشال أو
+    //    المبلغ اتصفّر، أو تعمل دفعة جديدة. دلوقتي أي دفعة تتعدّل أو تتلغي من
+    //    شاشة الدفعة نفسها بس.
     const remainingPids = new Set(partners.filter(p=>p.pid).map(p=>p.pid));
 
-    // 3a. شركاء أُزيلوا بالكامل من الجدول
+    // 3a. شركاء أُزيلوا بالكامل من الجدول — دفعاتهم (لو فيه) تفضل زي ما هي
     for (const op of (_originalPartners||[])) {
       if (remainingPids.has(op.pid)) continue;
       try { await apiDelete('partners_master', { id:`eq.${op.pid}` }); } catch(e) { console.warn('delete removed partner:', e.message); }
-      if (op.paymentId && op.paymentAmount > 0) {
-        await voidOrDeleteOldPayment(op);
-      }
     }
 
     // 3b. شركاء موجودون (تعديل في المكان) أو جدد (إنشاء)
     for (const p of partners) {
-      const pIndex = partners.indexOf(p) + 1;
       if (p.pid) {
         await apiPatch('partners_master', { id:`eq.${p.pid}` }, {
           partner:p.name, share_percent:p.share, file_no:newFileNo
@@ -889,69 +827,6 @@ export async function submitEditFileFull() {
         await apiPost('partners_master', {
           system_type:state.system, file_no:newFileNo,
           partner:p.name, share_percent:p.share
-        });
-      }
-
-      if (p.paymentId) {
-        const orig = (_originalPartners||[]).find(op => op.paymentId === p.paymentId);
-        if (p.paid > 0) {
-          // تعديل الدفعة في مكانها — نفس id فيبقى ref_id في القيد صحيحاً
-          // ✅ لو الدفعة مش posted أصلاً (draft/cancelled/voided من رفض أو
-          // إلغاء سابق) لازم نرجّع post_status عبر statusAfterEdit، وإلا
-          // تفضل عالقة على حالتها الميتة للأبد رغم إن السند نفسه رجع draft
-          // ويقبل موافقة من جديد (باج حقيقي مكتشَف على TM-005 — كانت الدفعة
-          // cancelled من 2026-07-30 وفضلت كده حتى بعد تعديل وحفظ السند مرات)
-          await apiPatch('payments', { id:`eq.${p.paymentId}` }, {
-            payer:p.name, amount:p.paid, pay_method:p.method||'تحويل بنكي',
-            document:p.doc||null, pay_date:p.payDate||poDate||null,
-            file_no:newFileNo, notes:`حصة ${p.share}%`,
-            ...(orig?.paymentPostStatus === 'posted' ? {} : { post_status: statusAfterEdit(orig?.paymentPostStatus) }),
-          });
-          if (orig?.paymentPostStatus === 'posted') {
-            const amountChanged  = Math.abs((+orig.paymentAmount||0) - (+p.paid||0)) > 0.001;
-            const contactChanged = orig.name !== p.name;
-            // ✅ تغيّر طريقة الدفع مُطلِق ثالث. كانت البوابة تتجاهله تمامًا،
-            //    فتعديل الطريقة وحدها لم يكن يستدعي الدالة أصلًا — والقيد
-            //    يبقى على حساب النقدية القديم بينما السجل يقول غيره.
-            //    المقارنة على الحساب لا النصّ (نفس منطق updateJEInPlace).
-            const _acc = mm => (mm||'') === 'نقد' ? '1110' : '1120';
-            const newMethod_     = p.method || 'تحويل بنكي';
-            const methodChanged_ = _acc(orig.paymentMethod) !== _acc(newMethod_);
-            if (amountChanged || contactChanged || methodChanged_) {
-              await updateJEInPlace({
-                sys: state.system, fileNo: oldFileNo,
-                refTable: 'payments', refId: p.paymentId,
-                oldAmount: orig.paymentAmount, newAmount: p.paid,
-                contactPatch: contactChanged ? p.name : null,
-                newDate: p.payDate || poDate || null,   // ✅ مزامنة تاريخ قيد دفعة الشريك
-                oldMethod: orig.paymentMethod, newMethod: newMethod_,
-              });
-            }
-          }
-        } else if (orig) {
-          // المستخدم صفّر مبلغ هذه الدفعة — إلغاؤها
-          await voidOrDeleteOldPayment(orig);
-        }
-      } else if (p.paid > 0) {
-        // دفعة جديدة (شريك جديد، أو شريك بدون دفعة سابقة)
-        const newPmtId = `PMT-${newFileNo}-P${pIndex}`;
-        const newPayDate = p.payDate || poDate || null;
-        // ✅ تحذير ناعم بدل الرفض الصلب القديم (uniq_payment_active) — راجع
-        // sql/add_idempotency_key_expenses_payments.sql وjs/utils.js warnIfSimilarActive
-        const proceedNewPmt = await warnIfSimilarActive('payments', {
-          select: 'id,post_status', system_type: `eq.${state.system}`, file_no: `eq.${newFileNo}`,
-          amount: `eq.${p.paid}`, payer: `eq.${p.name}`, pay_date: `eq.${newPayDate}`,
-        }, 'دفعة');
-        if (proceedNewPmt) await apiPost('payments', {
-          system_type:state.system, file_no:newFileNo,
-          pay_id: newPmtId, ref_no: newPmtId,
-          po_no:poNo||null, payer:p.name,
-          amount:p.paid, pay_method:p.method||'تحويل بنكي',
-          document:p.doc||null, pay_date:newPayDate,
-          notes:`حصة ${p.share}%`,
-          idempotency_key: newIdemKey(),
-          // الصفقة كانت مُرحَّلة → الدفعة الجديدة تنتظر الموافقة (سيتم إنشاء قيدها عند الموافقة)
-          post_status: _originalPOPostStatus==='posted' ? 'pending_edit' : entryStatus(),
         });
       }
     }
@@ -993,24 +868,16 @@ export async function submitEditFileFull() {
       if (poLine && Math.abs((+poLine.dr_amount||0) - finalTotal) > 0.01) {
         toast(`⚠️ تحقّق من قيد المخزون — القيمة الحالية لا تطابق قيمة الصفقة الجديدة`,'warn');
       }
-      for (const p of partners) {
-        if (p.paymentId && p.paymentPostStatus==='posted' && p.paid>0) {
-          const pLine = (checkLines||[]).find(l => l.ref_table==='payments' && String(l.ref_id)===String(p.paymentId));
-          const lineAmt = pLine ? (+pLine.dr_amount||+pLine.cr_amount||0) : 0;
-          if (Math.abs(lineAmt - p.paid) > 0.01) {
-            toast(`⚠️ تحقّق من قيد دفعة ${p.name} — لم يُحدَّث بالكامل`,'warn');
-          }
-        }
-      }
+      // P0-11: فحص قيود دفعات الشركاء اتشال — التعديل ما بقاش يلمس الدفعات
     } catch(e) { console.warn('post-edit JE check:', e.message); }
 
     // ✅ سجّل القيم القديمة الفعلية (لا null) — بدونها audit_log كان يفقد القيمة/المورد/دفعات
     // الشركاء الأصلية عند التعديل، فيصير التتبّع وصفاً عاماً بلا قيمة إثباتية فعلية
     await logAudit('EDIT','purchase_orders',oldFileNo,
       { fileNo:oldFileNo, supplier:_originalPOSupplier, totalPurchase:_originalPOTotal,
-        partners:(_originalPartners||[]).map(p=>({name:p.name, share:p.share, paymentAmount:p.paymentAmount})) },
+        partners:(_originalPartners||[]).map(p=>({name:p.name, share:p.share})) },
       { fileNo:newFileNo, supplier, totalPurchase:finalTotal,
-        partners:partners.map(p=>({name:p.name, share:p.share, paid:p.paid})) },
+        partners:partners.map(p=>({name:p.name, share:p.share})) },
       `تعديل سند الشراء ${oldFileNo}`);
     await updateApprovalBadge();
 
