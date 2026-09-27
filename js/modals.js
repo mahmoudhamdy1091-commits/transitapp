@@ -1256,7 +1256,17 @@ export async function submitExpense() {
   if (splitMode && !splitPartners.length) { showFieldErr('expError','يرجى اختيار شريك واحد على الأقل للتوزيع المتساوي'); return; }
   if (commissionMode && !paidBy) { showFieldErr('expError','يرجى اختيار المستفيد من العمولة'); return; }
   if (commissionMode && TREASURY_ALIASES.has(paidBy)) { showFieldErr('expError','لا يمكن تسجيل عمولة باسم الخزينة — اختر مستفيدًا حقيقيًا'); return; }
-  if (!splitMode && !(await _confirmNonTreasuryPayerTM(state.system, paidBy, commissionMode))) return;
+  // ⚠️ P0-9 (2): مصروف دافعه شريك دائم (فردي أو ضمن المقسوم) ← تنبيه واحد، مش منع،
+  // لحد ما نظام العهدة يشتغل (B-2 — راجع core.js). وضع العمولة مستثنى: المستفيد
+  // ما دفعش فلوس. والتنبيه ده بيحل محل م٧ للدائم عشان مايطلعش رسالتين.
+  let _permPayers = [];
+  if (!commissionMode) {
+    try { _permPayers = await permanentAmong(state.system, splitMode ? splitPartners : [paidBy]); }
+    catch (e) { showFieldErr('expError', e.message); return; }
+  }
+  if (_permPayers.length) {
+    if (!(await confirmAsync('⚠️ الدافع شريك دائم', permanentExpenseWarnMsg(_permPayers), true, '✅ نعم، سجّل على حسابه'))) return;
+  } else if (!splitMode && !(await _confirmNonTreasuryPayerTM(state.system, paidBy, commissionMode))) return;
 
   const rows = el('expenseRowsContainer')?.querySelectorAll('tr') || [];
   const expenses = [];
@@ -1384,6 +1394,9 @@ export async function submitPayment() {
   if (!fn)     { showFieldErr('payError','يرجى اختيار الملف/الصفقة'); return; }
   if (!payer || !amount || !date) { showFieldErr('payError','يرجى ملء الحقول المطلوبة'); return; }
 
+  // ⛔ P0-9: الشريك الدائم ما يتختارش دافع لدفعة مورد (مؤقت لحد B-2 — راجع core.js).
+  // المنع قبل تنبيه م٧ عشان مايطلعش رسالتين متعارضتين.
+  if (!(await guardSupplierPayerUI(state.system, payer, 'payError'))) return;
   if (!(await _confirmNonTreasuryPayerTM(state.system, payer))) return;
 
   // تحذير لو الدفعة أكبر من المتبقي
@@ -1416,6 +1429,9 @@ export async function _proceedSubmitPayment() {
   const date   = el('pay-date').value;
   const notes  = el('pay-notes').value.trim();
   if (!fn || !payer || !amount || !date) return;
+  // ⛔ P0-9: طبقة تانية جوّه الكاتب نفسه — _proceedSubmitPayment متعرّضة على window
+  // واتنادت مباشرة قبل كده (تخطّي submitPayment)
+  if (!(await guardSupplierPayerUI(state.system, payer, 'payError'))) return;
 
   // ✅ تحذير ناعم بدل الرفض الصلب القديم (uniq_payment_active) — راجع
   // sql/add_idempotency_key_expenses_payments.sql وjs/utils.js warnIfSimilarActive

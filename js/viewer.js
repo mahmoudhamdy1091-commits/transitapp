@@ -547,6 +547,8 @@ export async function submitQuickPayment() {
   if (!fileNo || !payer || !amount || !date) {
     showFieldErr('qsPayError','يرجى ملء جميع الحقول المطلوبة (*)'); return;
   }
+  // ⛔ P0-9: الشريك الدائم ما يتختارش دافع لدفعة مورد (مؤقت لحد B-2 — راجع core.js)
+  if (!(await guardSupplierPayerUI(state.system, payer, 'qsPayError'))) return;
 
   // تحقق من عدم تجاوز الباقي
   const remainingText = el('qp-card-remaining')?.textContent?.replace(/,/g,'');

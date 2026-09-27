@@ -1114,6 +1114,13 @@ export async function submitEditPayment() {
     const old = oldData?.[0];
     if (!old) { showFieldErr('epError','لم يُعثر على السجل'); return; }
 
+    // ⛔ P0-9: ممنوع **اختيار** شريك دائم كدافع جديد (مؤقت لحد B-2 — راجع core.js).
+    // لو الدافع هو نفسه القديم (دفعة تاريخية باسم مازن مثلًا) التعديل مسموح: إجبار
+    // تغيير الدافع هيعكس القيد من 2401/3200 لـ1120 = أثر رجعي (C4). ولو السجل
+    // مش مرحّل، الاعتماد نفسه هيرفضه (_createApprovalJE).
+    if ((payer||'').trim() !== (old.payer||'').trim()
+        && !(await guardSupplierPayerUI(state.system, payer, 'epError'))) return;
+
     if (wasAlreadyPosted(old.post_status)) {
       // ── السجل مرحّل: تعديل مباشر في السجل + القيد الأصلي + إرسال للموافقة ──
       // ✅ Track A / Phase 1 — قرار موحَّد عبر js/lifecycle.js
@@ -1437,6 +1444,20 @@ export async function submitEditExpense() {
     if (splitMode && !isSplitAllowed(state.system) && !_oldHasSplit) {
       showFieldErr('eeError','التوزيع المتساوي مقفول في ترانزيت — اختر «دُفع بواسطة»: «مازن الخلف» (يُحتسب له المبلغ كاملاً) أو «صندوق الترانزيت» (من الخزينة)');
       return;
+    }
+
+    // ⚠️ P0-9 (2): تنبيه (مش منع) لو التعديل **دخّل** شريك دائم كدافع ماكانش موجود
+    // في السجل القديم (مؤقت لحد B-2 — راجع core.js). الدافعين القدام نفسهم ما
+    // بيطلّعوش تنبيه (763 مصروف تاريخي مقسوم في TM — من غير أثر رجعي، C4).
+    // العمولة مستثناة: المستفيد ما دفعش فلوس.
+    if (!old.is_commission) {
+      const _oldPayers = new Set([(old.paid_by||'').trim(),
+        ...(Array.isArray(old.paid_by_split) ? old.paid_by_split.map(s => (s?.partner||'').trim()) : [])]);
+      // (أي خطأ هنا بيتمسك في catch الدالة ويظهر في eeError)
+      const _newPerm = await permanentAmong(state.system,
+        (splitMode ? splitPartners : [paidBy]).filter(n => !_oldPayers.has((n||'').trim())));
+      if (_newPerm.length &&
+          !(await confirmAsync('⚠️ الدافع شريك دائم', permanentExpenseWarnMsg(_newPerm), true, '✅ نعم، سجّل على حسابه'))) return;
     }
 
     // ✅ الحصص الجديدة (لو وضع التوزيع مفعّل) تُحسَب من الصفر دائمًا بالمبلغ

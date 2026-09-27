@@ -1137,6 +1137,10 @@ export async function loadApprovalQueue() {
       ...editItems,
     ].sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
 
+    // ⛔ P0-9: تصنيف الدافعين لشارة «شريك دائم» في renderApprovalList — فشلها ما يوقفش القائمة
+    try { approvalState.payerLinks = await loadPayerClassLinks(sys); }
+    catch(e) { approvalState.payerLinks = null; console.warn('P0-9 payerLinks:', e.message); }
+
     // تحديث الـ badge في الـ sidebar
     const total = approvalState.all.length;
     const badge = el('approval-badge');
@@ -1235,12 +1239,24 @@ export function renderApprovalList() {
     const revivedBadge = revivedFromDead
       ? '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700;margin-inline-start:6px;white-space:nowrap">⚠️ كان ملغى سابقًا — راجع السبب قبل الموافقة</span>'
       : '';
+    // ⛔ P0-9: شارة «شريك دائم» (مؤقت لحد B-2 — راجع core.js). دفعة مورد draft
+    // دافعها دائم ← الاعتماد هيترفض. مصروف draft دافعه دائم (فردي أو ضمن المقسوم،
+    // مش عمولة) ← تنبيه بس. طلبات التعديل مالهاش شارة: التنبيه/المنع حصل وقت التعديل.
+    let permBadge = '';
+    const _pl = approvalState.payerLinks;
+    if (_pl && r._type === 'payment' && payerClass(state.system, r.payer, _pl) === 'permanent') {
+      permBadge = '<span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700;margin-inline-start:6px;white-space:nowrap">⛔ الدافع شريك دائم — الاعتماد هيترفض؛ عدّل الدافع لحساب الشركة الأول</span>';
+    } else if (_pl && r._type === 'expense' && !r.is_commission) {
+      const _payers = Array.isArray(r.paid_by_split) && r.paid_by_split.length ? r.paid_by_split.map(s => s?.partner) : [r.paid_by];
+      if (_payers.some(n => payerClass(state.system, n, _pl) === 'permanent'))
+        permBadge = '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700;margin-inline-start:6px;white-space:nowrap">⚠️ الدافع شريك دائم — هيتسجّل على حسابه الجاري لحد ما العهدة تشتغل</span>';
+    }
     return `
     <div class="approval-row" onclick="openApprovalDetail('${r._type}','${r.id}')" style="${isReversal?'border-right:3px solid #f97316':''}">
       <div class="approval-row-icon" style="background:${color}22;color:${color}">${cfg.icon}</div>
       <div class="approval-row-body">
         <div class="approval-row-title" style="${isReversal?'color:#f97316':''}">
-          ${isReversal ? '🔄 طلب إلغاء — ' : ''}${r._desc}${revivedBadge}
+          ${isReversal ? '🔄 طلب إلغاء — ' : ''}${r._desc}${revivedBadge}${permBadge}
         </div>
         <div class="approval-row-meta">
           ${fmtDate(r._date)}
@@ -1724,6 +1740,16 @@ export async function approveItem(type, id) {
     // ✅ خذ نسخة من بيانات السجل قبل إزالته من القائمة (الإزالة المتفائلة تمسحه من approvalState.all)
     const approvedItem = approvalState.all.find(r => r._type === type && String(r.id) === String(id));
 
+    // ⛔ P0-9: اعتماد دفعة مورد دافعها شريك دائم يترفض — هنا *قبل* الإزالة المتفائلة
+    // عشان مايظهرش «✅ تمت الموافقة» وبعدين يرجع. الطبقة التانية في _createApprovalJE
+    // (بيعدّي منها approveAll كمان). مؤقت لحد B-2 — راجع core.js.
+    if (type === 'payment') {
+      const pr = approvedItem || (await apiGetAll(cfg.table, { select:'payer', id:`eq.${id}` }))?.[0];
+      if (pr && (await classifyPayer(state.system, pr.payer)) === 'permanent') {
+        toast(permanentPayerBlockMsg(state.system, pr.payer), 'err'); return;
+      }
+    }
+
     // ① شيل فوراً من الشاشة
     _optimisticRemove(type, id);
     toast('✅ تمت الموافقة','ok');
@@ -2053,6 +2079,9 @@ export async function _createApprovalJE(type, record, sys) {
     const ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${sys}`, ref_table:'eq.purchase_orders', file_no:`eq.${record.file_no}`, post_status:'eq.posted', limit:1 });
     if (!ex?.length) await je_purchase({ sys, date:record.po_date||today(), amount:+record.total_purchase||0, fileNo:record.file_no, supplier:record.supplier||'', refId:record.id||null });
   } else if (type === 'payment') {
+    // ⛔ P0-9: مفيش قيد دفعة مورد لدافع شريك دائم — approveItem بيرجّع السجل draft
+    // وapproveAll بيكتبها ❌ بالرسالة. القيد الموجود فعلًا بيرجع فوق قبل هنا.
+    await assertSupplierPayerAllowed(sys, record.payer);
     await je_payment({ sys, date:record.pay_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, supplierName:record.supplier||'', payerName:record.payer||'', method:record.pay_method||'تحويل بنكي' });
   } else if (type === 'expense') {
     await je_expense({ sys, date:record.exp_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, desc:record.description||'مصروف', expType:record.exp_type||'أخرى', method:record.pay_method||'تحويل بنكي', paidBy:record.paid_by||null, paidBySplit:record.paid_by_split||null, isCommission:!!record.is_commission });
@@ -2141,6 +2170,29 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
   if (!item) return { ok:false, message:'لم يُعثر على طلب التعديل' };
 
   try {
+    // ⛔ P0-9 (مؤقت لحد B-2 — راجع core.js): فحص مسبق **قبل أي كتابة في الدالة**
+    // (قبل je_purchase/je_payment وقبل أي patch لحالة). لو هيتعمل قيد دفعة جديد
+    // لدافع شريك دائم، الاعتماد كله يفشل برسالة والسجل يفضل pending_edit زي ما هو.
+    //  - payment_edit: القيد بيتعمل بس لو مفيش قيد قديم للدفعة.
+    //  - purchase_edit: دفعات الملف اللي حالتها pending_edit ومالهاش قيد.
+    if (type === 'payment_edit' && item.file_no) {
+      if ((await classifyPayer(state.system, item.payer)) === 'permanent') {
+        const _ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${state.system}`,
+          ref_table:'eq.payments', ref_id:`eq.${item.id}`, limit:'1' });
+        if (!_ex?.length) throw new Error(permanentPayerBlockMsg(state.system, item.payer));
+      }
+    }
+    if (type === 'purchase_edit' && item.file_no) {
+      const _pend = await apiGetAll('payments', { select:'id,payer', system_type:`eq.${state.system}`,
+        file_no:`eq.${item.file_no}`, post_status:'eq.pending_edit' });
+      const _perm = await permanentAmong(state.system, (_pend||[]).map(p => p.payer));
+      for (const pmt of (_pend||[]).filter(p => _perm.includes(p.payer))) {
+        const _ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${state.system}`,
+          ref_table:'eq.payments', ref_id:`eq.${pmt.id}`, limit:'1' });
+        if (!_ex?.length) throw new Error(permanentPayerBlockMsg(state.system, pmt.payer));
+      }
+    }
+
     // ✅ لو السجل كان "مسودة" قبل التعديل (لم يُرحَّل/يُنشأ له قيد من قبل) —
     // updateJEInPlace عند الحفظ لم يجد قيداً ليُحدّثه، فننشئ القيد الآن
     // بالبيانات الحالية (بعد التعديل) — يضمن ظهور المبلغ على اسم المورد/العميل الجديد
@@ -2185,6 +2237,7 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
         if (type === 'purchase_edit') {
           await je_purchase({ sys:state.system, date:item.po_date||today(), amount:+item.total_purchase||0, fileNo:item.file_no, supplier:item.supplier||'', refId:item.id||null });
         } else if (type === 'payment_edit') {
+          // (P0-9: دافع دائم اترفض فوق في الفحص المسبق قبل أي كتابة)
           await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
         } else if (type === 'expense_edit') {
           await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'نقد', paidBy:item.paid_by||null, paidBySplit:item.paid_by_split||null, isCommission:!!item.is_commission });
