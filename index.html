@@ -1945,19 +1945,20 @@
       <div id="vehiclesContainer"></div>
 
       <!-- STEP 3: الشركاء -->
-      <div class="divider-label">٣ — الشركاء والدفعات</div>
+      <!-- ⛔ P0-11 (2026-09-27): خانات الدفع (المبلغ/التاريخ/الطريقة/المستند) اتشالت من صفوف الشركاء.
+           السند = المورد + العربيات + الشركاء ونسبهم. الدفعات من «💳 دفعة» جوّه الملف. -->
+      <div class="divider-label">٣ — الشركاء ونسبهم</div>
       <div class="dyn-section">
         <h5>
           الشركاء
           <button class="btn btn-secondary btn-sm" onclick="addPartnerRow()">➕ إضافة شريك</button>
         </h5>
-        <div style="display:grid;grid-template-columns:1.8fr 0.7fr 0.8fr 0.7fr 0.9fr 0.8fr 32px;gap:6px;margin-bottom:8px;padding:0 4px">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:8px;padding:0 4px">
+          ℹ️ الدفعات لا تُسجَّل من هنا — بعد حفظ السند سجّلها من زر «💳 دفعة» داخل الملف.
+        </div>
+        <div style="display:grid;grid-template-columns:1.8fr 0.7fr 32px;gap:6px;margin-bottom:8px;padding:0 4px">
           <span style="font-size:10px;color:var(--text3);font-weight:700">اسم الشريك</span>
           <span style="font-size:10px;color:var(--text3);font-weight:700">الحصة %</span>
-          <span style="font-size:10px;color:var(--text3);font-weight:700">المبلغ المدفوع</span>
-          <span style="font-size:10px;color:var(--text3);font-weight:700">التاريخ</span>
-          <span style="font-size:10px;color:var(--text3);font-weight:700">نوع المستند</span>
-          <span style="font-size:10px;color:var(--text3);font-weight:700">رقم المستند</span>
           <span></span>
         </div>
         <div id="partnersContainer"></div>
