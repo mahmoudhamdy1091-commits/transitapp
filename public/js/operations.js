@@ -2805,7 +2805,15 @@ export function exportPartnerAccountPDF() {
   openPrintOverlay(html, `كشف حساب — ${partnerName}`);
 }
 
+// ⛔ P0-1 (2026-09-27): مسار «سحب عام» القديم مقفول. كان بيكتب في partner_accounts
+// من غير أي قيد (I-01). المسار السليم: «👥 معاملة شريك» ← «سحب عام» (partner_ledger
+// بقيد عبر create_partner_ledger_entry). الدالتين بيرفضوا دايمًا، والزرار مستخبي.
+const GENERAL_WITHDRAW_CLOSED_MSG =
+  '⛔ هذا الزر القديم متوقف لأنه لا يسجل قيدًا. لتسجيل سحب للشريك استخدم «👥 معاملة شريك» ← «سحب عام».';
+
 export function openGeneralWithdrawModal() {
+  toast(GENERAL_WITHDRAW_CLOSED_MSG, 'err');
+  return;
   el('gw-amount').value  = '';
   el('gw-date').value    = today();
   el('gw-doc').value     = '';
@@ -2818,6 +2826,9 @@ export function openGeneralWithdrawModal() {
 }
 
 export async function submitGeneralWithdraw() {
+  // ⛔ P0-1: مقفول دايمًا — راجع GENERAL_WITHDRAW_CLOSED_MSG فوق.
+  toast(GENERAL_WITHDRAW_CLOSED_MSG, 'err');
+  return;
   // ✅ مسح رسالة خطأ سابقة أولاً — راجع نفس الإصلاح في submitPayment (modals.js)
   const errEl = el('gwError');
   if (errEl) errEl.style.display = 'none';
