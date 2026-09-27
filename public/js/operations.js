@@ -2191,22 +2191,12 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
     // (قبل je_purchase/je_payment وقبل أي patch لحالة). لو هيتعمل قيد دفعة جديد
     // لدافع شريك دائم، الاعتماد كله يفشل برسالة والسجل يفضل pending_edit زي ما هو.
     //  - payment_edit: القيد بيتعمل بس لو مفيش قيد قديم للدفعة.
-    //  - purchase_edit: دفعات الملف اللي حالتها pending_edit ومالهاش قيد.
+    //  (purchase_edit ما بقاش بيرحّل دفعات — P0-12 تحت — فمالوش فحص هنا)
     if (type === 'payment_edit' && item.file_no) {
       if ((await classifyPayer(state.system, item.payer)) === 'permanent') {
         const _ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${state.system}`,
           ref_table:'eq.payments', ref_id:`eq.${item.id}`, limit:'1' });
         if (!_ex?.length) throw new Error(permanentPayerBlockMsg(state.system, item.payer));
-      }
-    }
-    if (type === 'purchase_edit' && item.file_no) {
-      const _pend = await apiGetAll('payments', { select:'id,payer', system_type:`eq.${state.system}`,
-        file_no:`eq.${item.file_no}`, post_status:'eq.pending_edit' });
-      const _perm = await permanentAmong(state.system, (_pend||[]).map(p => p.payer));
-      for (const pmt of (_pend||[]).filter(p => _perm.includes(p.payer))) {
-        const _ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${state.system}`,
-          ref_table:'eq.payments', ref_id:`eq.${pmt.id}`, limit:'1' });
-        if (!_ex?.length) throw new Error(permanentPayerBlockMsg(state.system, pmt.payer));
       }
     }
 
@@ -2285,24 +2275,11 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
       }
     }
 
-    // ✅ تعديل سند شراء قد يُنشئ دفعات شركاء جديدة بحالة pending_edit (بدون قيد بعد)
-    // — أنشئ قيودها الآن مع الموافقة على التعديل
-    if (type === 'purchase_edit' && item.file_no) {
-      const pendingPayments = await apiGetAll('payments', {
-        select:'*', system_type:`eq.${state.system}`,
-        file_no:`eq.${item.file_no}`, post_status:`eq.pending_edit`,
-      });
-      for (const pmt of (pendingPayments||[])) {
-        const hasJE = await apiGet('journal_entries', {
-          select:'entry_no', system_type:`eq.${state.system}`,
-          ref_table:`eq.payments`, ref_id:`eq.${pmt.id}`, limit:'1',
-        });
-        if (!hasJE?.length) {
-          await je_payment({ sys:state.system, date:pmt.pay_date||today(), amount:+pmt.amount||0, fileNo:pmt.file_no, refId:pmt.id||null, supplierName:item.supplier||'', payerName:pmt.payer||'', method:pmt.pay_method||'تحويل بنكي' });
-        }
-        await apiPatch('payments', { id:`eq.${pmt.id}` }, { post_status:'posted' });
-      }
-    }
+    // ⛔ P0-12 (N-16، قرار المالك 2026-09-27: «شيله» ← «مؤكد»): اعتماد تعديل سند
+    // الشراء بيعتمد السند بس. قبل كده كان بيرحّل **أي** دفعة pending_edit على
+    // الملف (ومنها دفعة لسه مستنية اعتماد تعديلها لوحده) = تجاوز للمراجعة. ومن
+    // بعد P0-11 تعديل السند ما بقاش يعمل دفعات أصلًا. أي تعديل دفعة يفضل في
+    // قايمة الانتظار لوحده (payment_edit) لحد ما يتعتمد أو يترفض.
 
     // ✅ فحص idempotency: لو السجل اعتُمد فعلاً (لم يعد pending_edit) — توقف بدون تكرار
     let cleanPatched;
