@@ -988,6 +988,66 @@ export function isPermanentPartner(sys, partnerName, accountLinksWithFlag) {
   return row ? row.is_permanent : null;
 }
 
+// ════════════════════════════════════════════════════════════
+// ⛔ P0-9 (2026-09-27) — حارس مؤقت: الشريك الدائم ما يتختارش «دافع» لدفعة
+// مورد، ومصروفه بيطلّع تنبيه. **شرط صريح في الخطة: الحارس ده ما يتشالش قبل
+// ما قاعدة تسجيل العهدة (B-2) تشتغل وتتجرّب** — docs/PLAN-partner-statements-
+// fix-2026-09-23.md (P0-9) وdocs/DESIGN-banks-and-custody.md.
+// التصنيف بقرار المالك 2026-09-27: «الحسابات الدائمة اتصنّفت خلاص وأي حساب
+// تاني هو خارجي» ⇒ is_permanent=true بس = دائم؛ false/NULL/من غير صف ربط =
+// خارجي. الخزينة (TREASURY_ALIASES) = فلوس الشركة (1110/1120) ⇒ مسموحة دايمًا
+// — لازم تتستثنى قبل isPermanentPartner لأنها بترجّع true للخزينة.
+// ════════════════════════════════════════════════════════════
+// ⚠️ fail-closed: كل نظام فيه ≥3 شركاء دائمين متصنّفين، فقايمة فاضية أو من غير ولا
+// صف is_permanent=true = قراءة فاشلة (جلسة منتهية/RLS بترجّع صفر بصمت) مش حقيقة —
+// لو كمّلنا بيها كل الأسامي هتطلع «خارجي» ومازن يعدّي. فنرمي بدل ما نفترض.
+export const PAYER_CLASS_UNVERIFIED_MSG = 'تعذّر التحقق من تصنيف الدافع (دائم/خارجي) — أعد المحاولة، ولو تكرر أعد تحميل الصفحة وسجّل الدخول.';
+export async function loadPayerClassLinks(sys) {
+  let rows;
+  try { rows = await apiGetAll('partner_account_links', { select:'partner_name,is_permanent', system_type:`eq.${sys}` }); }
+  catch (_) { throw new Error(PAYER_CLASS_UNVERIFIED_MSG); }
+  if (!(rows || []).some(r => r.is_permanent === true)) throw new Error(PAYER_CLASS_UNVERIFIED_MSG);
+  return rows;
+}
+const _isTreasuryPayer = name => { const n = (name || '').trim(); return !n || TREASURY_ALIASES.has(n); };
+// 'treasury' | 'permanent' | 'external' — الاسم الفاضي = الخزينة (زي je_payment/_isPartnerPocket)
+export function payerClass(sys, name, links) {
+  if (_isTreasuryPayer(name)) return 'treasury';
+  return isPermanentPartner(sys, (name || '').trim(), links) === true ? 'permanent' : 'external';
+}
+// الخزينة بترجع من غير ما تقرا الروابط، فالدفع العادي ما يقفش لو القراءة فشلت
+export async function classifyPayer(sys, name) {
+  if (_isTreasuryPayer(name)) return 'treasury';
+  return payerClass(sys, name, await loadPayerClassLinks(sys));
+}
+// نفس التصنيف لقايمة أسامي (مصروف مقسوم) — بيقرا الروابط بس لو فيه اسم مش خزينة
+export async function permanentAmong(sys, names) {
+  const cand = (names || []).filter(n => !_isTreasuryPayer(n));
+  if (!cand.length) return [];
+  const links = await loadPayerClassLinks(sys);
+  return cand.filter(n => payerClass(sys, n, links) === 'permanent');
+}
+// للشاشات: true = كمّل. false = الرسالة ظهرت في خانة الخطأ (منع، أو تعذّر التحقق)
+export async function guardSupplierPayerUI(sys, payer, errElId) {
+  try {
+    if ((await classifyPayer(sys, payer)) !== 'permanent') return true;
+    showFieldErr(errElId, permanentPayerBlockMsg(sys, payer));
+  } catch (e) { showFieldErr(errElId, e.message); }
+  return false;
+}
+export function companyPayerName(sys) { return sys === 'TM' ? 'صندوق الترانزيت' : TREASURY_PARTNER; }
+export function permanentPayerBlockMsg(sys, name) {
+  return `⛔ «${(name||'').trim()}» شريك دائم — دفعة المورد لازم تتسجّل من حساب الشركة («${companyPayerName(sys)}») لحد ما نظام العهدة يشتغل. عدّل الدافع لحساب الشركة الأول.`;
+}
+export function permanentExpenseWarnMsg(names) {
+  const list = [...new Set((names||[]).map(n => (n||'').trim()).filter(Boolean))].join('، ');
+  return `الدافع شريك دائم (${list}) — المبلغ هيتسجّل على حسابه الجاري لحد ما نظام العهدة يشتغل.\n\nلو الفلوس من حساب الشركة، ألغِ واختار «الصندوق» / «صندوق الترانزيت».`;
+}
+// يرمي Error برسالة المنع لو الدافع دائم — للمسارات اللي بتكتب قيد دفعة (الاعتماد)
+export async function assertSupplierPayerAllowed(sys, name) {
+  if ((await classifyPayer(sys, name)) === 'permanent') throw new Error(permanentPayerBlockMsg(sys, name));
+}
+
 // ✅ تصنيف مركزي لأخطاء "قيد فريد" (unique constraint) — مُعمَّم لأي اسم قيد،
 // مش بس uniq_expense_active/uniq_payment_active الأصليين. قيد فريد يعني الصف
 // اللي إنت بتحاول تكتبه (أو نسخة مطابقة منه) موجود بالفعل — غالبًا لأن محاولة
@@ -1698,7 +1758,9 @@ Object.assign(window, {
   cacheStale, ensureCache, _doLoadCache, invalidateCache, isPosted,
   isDraft, isActive, isEffective, isVisible, isOccupying, isPending,
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
-  apiGetAll, fetchJEForPeriod, fetchAllPages, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner, pgIn, apiPost, apiPatch,
+  apiGetAll, fetchJEForPeriod, fetchAllPages, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner,
+  PAYER_CLASS_UNVERIFIED_MSG, loadPayerClassLinks, payerClass, classifyPayer, permanentAmong, guardSupplierPayerUI,
+  companyPayerName, permanentPayerBlockMsg, permanentExpenseWarnMsg, assertSupplierPayerAllowed, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
   computePartnerGlobalBalance, fetchPartnerLedgerMovements, postFileProfitAll, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
   fetchPartnerTransactions,
