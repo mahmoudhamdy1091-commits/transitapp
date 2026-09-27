@@ -341,7 +341,11 @@ export function filterLedgerByContact(name) {
 
 // ── كشف حساب PDF (طباعة) ──
 export function printAccountStatement() {
-  const list    = JSON.parse(el('ledgerView').dataset.entries || '[]');
+  // ✅ P0-6: نفس أرقام الشاشة بالظبط (ledgerState._view من renderLedgerTable) —
+  // رصيد أول المدة، وسطره بنفس قاعدة الشاشة، والإجماليات، والرصيد الختامي
+  const v = ledgerState._view;
+  if (!v) { toast('افتح الحساب الأول', 'warn'); return; }
+  const list    = v.list || [];
   const accCode = el('ledgerView').dataset.accountCode || '';
   const contact = el('ledger-contact-filter')?.value || '';
   const accName = el('ledgerView').dataset.contactName || accCode;
@@ -351,12 +355,18 @@ export function printAccountStatement() {
   const period  = (from||to) ? `${from||''}  —  ${to||''}` : 'كل الفترات';
   const co      = (state.systems||[]).find(s=>s.id===state.system)?.name || state.system || '';
 
-  let running = 0;
-  const rows = list.map((e,i) => {
+  let running = v.opening;
+  const f = x => x > 0 ? x.toLocaleString('en-US',{minimumFractionDigits:2}) : '—';
+  const openingRow = v.showOpeningRow ? `<tr style="background:#f1f5f9;font-weight:700">
+      <td>—</td><td>رصيد افتتاحي</td><td></td>
+      <td style="text-align:left;color:#16a34a">${f(v.opening)}</td>
+      <td style="text-align:left;color:#dc2626">${f(-v.opening)}</td>
+      <td style="text-align:left">${Math.abs(v.opening).toLocaleString('en-US',{minimumFractionDigits:2})} <span style="font-size:10px;color:#64748b">${v.opening>0?'مدين':'دائن'}</span></td>
+    </tr>` : '';
+  const rows = openingRow + list.map((e,i) => {
     running += e.debit - e.credit;
     const bal = Math.abs(running);
     const dir = running > 0 ? 'مدين' : running < 0 ? 'دائن' : '—';
-    const f = v => v > 0 ? v.toLocaleString('en-US',{minimumFractionDigits:2}) : '—';
     return `<tr style="background:${i%2?'#f8fafc':'#fff'}">
       <td>${e.date||'—'}</td>
       <td>${e.desc||'—'}</td>
@@ -367,10 +377,10 @@ export function printAccountStatement() {
     </tr>`;
   }).join('');
 
-  const totalDr  = list.reduce((s,e)=>s+e.debit,0);
-  const totalCr  = list.reduce((s,e)=>s+e.credit,0);
-  const finalBal = totalDr - totalCr;
-  const fmtN = v => v.toLocaleString('en-US',{minimumFractionDigits:2});
+  const totalDr  = v.totalDr;
+  const totalCr  = v.totalCr;
+  const finalBal = v.finalBal;
+  const fmtN = x => x.toLocaleString('en-US',{minimumFractionDigits:2});
 
   const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8">
   <title>${title}</title>
@@ -419,22 +429,31 @@ export function printAccountStatement() {
   </body></html>`;
 
   const w = window.open('','_blank','width=960,height=720');
-  if (w) { w.document.write(html); w.document.close(); }
+  if (!w) { toast('⚠️ المتصفح منع نافذة الطباعة — اسمح بالنوافذ المنبثقة للموقع ده وجرّب تاني', 'err'); return; }
+  w.document.write(html); w.document.close();
 }
 
 // ── تصدير Excel لدفتر الأستاذ / كشف الحساب ──
 export function exportLedgerExcel() {
-  const list    = JSON.parse(el('ledgerView').dataset.entries || '[]');
+  // ✅ P0-6: نفس أرقام الشاشة (ledgerState._view) — الرصيد بيبدأ من رصيد أول المدة،
+  // وصف «رصيد افتتاحي» بنفس قاعدة الشاشة
+  const v = ledgerState._view;
+  if (!v) { toast('افتح الحساب الأول', 'warn'); return; }
+  const list    = v.list || [];
   const accCode = el('ledgerView').dataset.accountCode || '';
   const contact = el('ledger-contact-filter')?.value || '';
   const accName = el('ledgerView').dataset.contactName || accCode;
   const sheet   = (contact || `${accCode} ${accName}`).slice(0, 31);
 
-  let running = 0;
-  const data = list.map(e => {
+  let running = v.opening;
+  const data = v.showOpeningRow
+    ? [['', 'رصيد افتتاحي', '', '', v.opening > 0 ? v.opening : 0, v.opening < 0 ? -v.opening : 0,
+        Math.abs(v.opening), v.opening >= 0 ? 'مدين' : 'دائن']]
+    : [];
+  list.forEach(e => {
     running += e.debit - e.credit;
-    return [e.date||'', e.desc||'', e.contact||'', e.file_no||'', e.debit||0, e.credit||0,
-            Math.abs(running), running>=0?'مدين':'دائن'];
+    data.push([e.date||'', e.desc||'', e.contact||'', e.file_no||'', e.debit||0, e.credit||0,
+               Math.abs(running), running>=0?'مدين':'دائن']);
   });
 
   exportToExcel([{
@@ -479,6 +498,12 @@ export async function renderLedgerTable() {
   const totalDr=list.reduce((s,e)=>s+(+e.debit||0),0);
   const totalCr=list.reduce((s,e)=>s+(+e.credit||0),0);
   const finalBal=opening+totalDr-totalCr;
+  // ✅ P0-6: مصدر واحد لأرقام الشاشة — printAccountStatement وexportLedgerExcel بيقروا
+  // من هنا بدل ما يبدأوا من صفر (كانت الورقة بتطلع 90,015.01 دائن و1300 على الشاشة
+  // 202,568 مدين). أي قرار بعدين في الافتتاحي مع فلتر ملف (N-20) يتعمل هنا بس.
+  // (الـlist نفسها جوّه _view: الـreturn بدري تحت لـ«لا توجد حركات» بيحصل قبل ما
+  // dataset.entries تتحدّث، فالطباعة كانت ممكن تاخد قايمة قديمة)
+  ledgerState._view = { list, opening, showOpeningRow: !!(opening && !fileFilter), totalDr, totalCr, finalBal };
   el('ledgerKpis').innerHTML=[
     ['مجموع المدين',fmt(totalDr),'var(--green)'],
     ['مجموع الدائن',fmt(totalCr),'var(--red)'],
