@@ -735,6 +735,49 @@ export async function submitEditFileFull() {
     showFieldErr('nfError',`مجموع حصص الشركاء = ${shareTotal}% يجب أن يساوي 100%`); return;
   }
 
+  // ⚠️ P0-11b (قرار المالك 2026-09-27): شريك اتشال من السند أو اتغيّر اسمه وليه
+  // دفعات قايمة على الملف ← تنبيه **قبل أي كتابة** (قبل ensurePartnerAccounts كمان،
+  // لأنها ممكن تفتح حساب). تنبيه مش منع — التعديل ما بيلمسش الدفعات (P0-11)،
+  // فلو محتاج تتلغي أو تتعدّل يبقى من شاشة الدفعة. الدفعات بتتدوّر بالاسم القديم،
+  // والخزينة مش مستثناة. تغيير النسبة لوحده ما يطلّعش رسالة.
+  const _p11bChanged = [];   // { oldName, newName|null }
+  const _remainingPids = new Set(partners.filter(p => p.pid).map(p => p.pid));
+  // الاسم لو لسه موجود في السند بأي صف (صف اتشال واتضاف تاني بنفس الاسم، أو
+  // اسمين اتبدّلوا بين صفين) ← مفيش تنبيه، لأن الدفعات لسه ليها صاحب في السند
+  const _newNames = new Set(partners.map(p => (p.name || '').trim()).filter(Boolean));
+  for (const op of (_originalPartners || [])) {
+    const oldName = (op.name || '').trim();
+    if (!oldName || _newNames.has(oldName)) continue;
+    if (!_remainingPids.has(op.pid)) { _p11bChanged.push({ oldName, newName: null }); continue; }
+    const now = partners.find(p => p.pid === op.pid);
+    if (now && (now.name || '').trim() !== oldName) _p11bChanged.push({ oldName, newName: (now.name || '').trim() });
+  }
+  let _p11bWarned = [];
+  if (_p11bChanged.length) {
+    let pays;
+    try {
+      pays = await apiGetAll('payments', { select:'id,payer,amount,post_status',
+        system_type:`eq.${state.system}`, file_no:`eq.${oldFileNo}` });
+    } catch (e) { showFieldErr('nfError', 'تعذّر التحقق من دفعات الشركاء على الملف — أعد المحاولة: ' + e.message); return; }
+    const live = (pays || []).filter(isOccupying);   // مش cancelled ولا voided (والـnull = مرحّل)
+    const lines = [];
+    for (const c of _p11bChanged) {
+      const mine = live.filter(p => (p.payer || '').trim() === c.oldName);
+      if (!mine.length) continue;
+      const sum = mine.reduce((s, p) => s + (+p.amount || 0), 0);
+      const pending = mine.filter(p => ['draft','pending_edit','pending_void'].includes(p.post_status)).length;
+      const who = c.newName ? `«${c.oldName}» (اسمه اتغيّر لـ«${c.newName}»)` : `«${c.oldName}» (اتشال من السند)`;
+      lines.push(`• ${who} ليه ${mine.length} دفعة بمجموع ${fmt(sum)} على الملف ده${pending ? ` — منها ${pending} مستنية اعتماد` : ''}.`);
+      _p11bWarned.push({ partner: c.oldName, renamedTo: c.newName, count: mine.length, sum, pending });
+    }
+    if (lines.length) {
+      const go = await confirmAsync('⚠️ دفعات قايمة لشريك اتشال أو اتغيّر اسمه',
+        `${lines.join('\n')}\n\nالدفعات دي مش هتتلغي ولا هتتعدّل لوحدها. لو محتاج تلغيها أو تعدّلها، اعمل ده من شاشة الدفعة.`,
+        true, '✅ كمّل الحفظ', '↩ ارجع أعدّل');
+      if (!go) return;   // صفر كتابة — والمودال فاضل مفتوح بقيمه
+    }
+  }
+
   // ✅ نفس فحص submitPO — التعديل ممكن يضيف شريكًا جديدًا كمان
   if (!(await ensurePartnerAccounts(partners.map(p => p.name)))) return;
 
@@ -877,7 +920,8 @@ export async function submitEditFileFull() {
       { fileNo:oldFileNo, supplier:_originalPOSupplier, totalPurchase:_originalPOTotal,
         partners:(_originalPartners||[]).map(p=>({name:p.name, share:p.share})) },
       { fileNo:newFileNo, supplier, totalPurchase:finalTotal,
-        partners:partners.map(p=>({name:p.name, share:p.share})) },
+        partners:partners.map(p=>({name:p.name, share:p.share})),
+        ...(_p11bWarned.length ? { acknowledgedPaymentWarnings: _p11bWarned } : {}) },
       `تعديل سند الشراء ${oldFileNo}`);
     await updateApprovalBadge();
 

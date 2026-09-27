@@ -682,7 +682,16 @@ function _runConfirm(title, msg, isHtml, onConfirm, onCancel, beforeShow) {
     okBtn.onclick = async () => { await closeModal('confirmDeleteModal'); await onConfirm(); resolveTurn(); };
     if (cancelBtn) {
       cancelBtn.onclick = async () => { await closeModal('confirmDeleteModal'); if (onCancel) await onCancel(); resolveTurn(); };
+      // ✅ P0-11b: نص زرار الإلغاء يرجع لأصله في أول كل نافذة — confirmAsync بقت
+      // تقبل cancelLabel (مثلًا «ارجع أعدّل»)، ومن غير السطر ده النص كان هيفضل
+      // على كل نوافذ التأكيد اللي بعدها مهما اتقفلت النافذة إزاي
+      cancelBtn.textContent = 'إلغاء';
     }
+    // ✅ P0-11b: وزرار التأكيد كمان يرجع لافتراضي index.html — كان بيورث نص/لون
+    // آخر confirmAsync (اتجرّب: «حذف الصفقة» طلع زرارها «✅ كمّل الحفظ»).
+    // confirmAsync بتكتب فوقه في beforeShow زي ما هي
+    okBtn.textContent = '🗑 حذف نهائي';
+    okBtn.style.background = '';
     if (typeof beforeShow === 'function') beforeShow(okBtn, cancelBtn);
     openModal('confirmDeleteModal');
   });

@@ -407,14 +407,17 @@ export function confirmAction(title, msg, onConfirm, danger = true) {
 // توقيعها الخارجي — الـ45 نداء الحالي لـshowConfirm/confirmAction يفضلوا
 // يشتغلوا بالضبط زي ما هما. ✅ إشارة "اتلغى" ونداءات الطابور بقيا مُدارين
 // مركزيًا جوه showConfirm نفسها (reports.js، onCancel/beforeShow) — مش هنا
-export function confirmAsync(title, msg, danger = true, okLabel = null) {
+// cancelLabel اختياري (P0-11b) — النداءات القديمة (3-4 وسائط) ما بتتأثرش، و_runConfirm
+// بيرجّع «إلغاء» في أول كل نافذة
+export function confirmAsync(title, msg, danger = true, okLabel = null, cancelLabel = null) {
   return new Promise(resolve => {
     if (typeof showConfirm !== 'function') { resolve(false); return; }
-    showConfirm(title, msg, () => resolve(true), () => resolve(false), (okBtn) => {
+    showConfirm(title, msg, () => resolve(true), () => resolve(false), (okBtn, cancelBtn) => {
       if (okBtn) {
         okBtn.textContent = okLabel || (danger ? '⚠️ تأكيد' : '✅ تأكيد');
         okBtn.style.background = danger ? 'var(--red)' : 'var(--green)';
       }
+      if (cancelBtn && cancelLabel) cancelBtn.textContent = cancelLabel;
     });
   });
 }
