@@ -484,6 +484,54 @@ export async function fetchAllPages(url, label = '') {
   return out;
 }
 
+// ✅ P0-7 (2026-09-27): صفحات بفحص اكتمال — للشاشات اللي كانت بتبعت طلب واحد
+// بـRange 0-49999 (السيرفر بيقطع عند 1000 بصمت). بعكس fetchAllPages فوق (مشتركة،
+// ما اتلمستش — N-18): أول صفحة بتطلب Prefer: count=exact، وأي فشل بيتسجّل في
+// complete بدل ما يرجع جزء من غير ما حد يعرف. المكرر بيتشال بالـid (صف اتضاف
+// وقت الجلب بيزحزح الـoffset)، فالشرط rows >= total مش ==.
+// لازم الـorder يكون فيه عمود id بالظبط كعنصر (ترتيب فريد بين الصفحات).
+const _ORDER_HAS_ID = /(^|,)id(\.(asc|desc))?(\.nulls(first|last))?(,|$)/;
+export function _orderHasId(url) {
+  const q = String(url).split('?')[1] || '';
+  const part = q.split('&').find(p => p.startsWith('order='));
+  return !!part && _ORDER_HAS_ID.test(decodeURIComponent(part.slice(6)));
+}
+export async function fetchPagesChecked(url, { label = '', pageSize = _API_PAGE_SIZE } = {}) {
+  if (!_orderHasId(url)) {
+    throw new Error(`fetchPagesChecked${label ? '(' + label + ')' : ''}: لازم order فيه عمود id عشان الصفحات ما تتلخبطش`);
+  }
+  const seen = new Set();
+  const rows = [];
+  let total = null, failed = false, offset = 0;
+  for (let page = 0; page < _API_MAX_PAGES; page++) {
+    // العدد مضاعف لحجم الصفحة بالظبط ⇒ ماتطلبش صفحة بعد الآخر (PostgREST بيرد 416)
+    if (page > 0 && total != null && offset >= total) break;
+    let res, body;
+    try {
+      res = await apiFetch(url, {
+        headers: { 'Range': `${offset}-${offset + pageSize - 1}`, 'Range-Unit': 'items', ...(page === 0 ? { 'Prefer': 'count=exact' } : {}) },
+        cache: 'no-store',
+      });
+      if (res.status === 416 && page > 0) break;   // بعد الآخر (صفوف اتمسحت وقت الجلب) — مش فشل
+      if (!res.ok && res.status !== 206) { failed = true; break; }
+      if (page === 0) {
+        const t = parseInt(((res.headers.get('content-range') || '').split('/')[1]), 10);
+        if (Number.isFinite(t)) total = t;
+      }
+      body = await res.json();
+    } catch (_) { failed = true; break; }
+    for (const r of (body || [])) {
+      const k = r && r.id != null ? 'id:' + r.id : 'row:' + rows.length;
+      if (!seen.has(k)) { seen.add(k); rows.push(r); }
+    }
+    if ((body || []).length < pageSize) break;
+    offset += pageSize;
+  }
+  const complete = !failed && total != null && rows.length >= total;
+  if (!complete) console.warn(`[Transit] ⚠️ fetchPagesChecked${label ? '(' + label + ')' : ''}: اتحمّل ${rows.length} من ${total ?? '؟'}${failed ? ' — فشل طلب صفحة' : ''}`);
+  return { rows, total, complete };
+}
+
 /** جلب قيود journal_entries المرحّلة لفترة معيّنة (النظام الحالي + system_type=null) مع إزالة التكرار */
 export async function fetchJEForPeriod(sys, from, to) {
   const toEOD = to + 'T23:59:59';
@@ -1758,7 +1806,7 @@ Object.assign(window, {
   cacheStale, ensureCache, _doLoadCache, invalidateCache, isPosted,
   isDraft, isActive, isEffective, isVisible, isOccupying, isPending,
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
-  apiGetAll, fetchJEForPeriod, fetchAllPages, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner,
+  apiGetAll, fetchJEForPeriod, fetchAllPages, fetchPagesChecked, _orderHasId, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner,
   PAYER_CLASS_UNVERIFIED_MSG, loadPayerClassLinks, payerClass, classifyPayer, permanentAmong, guardSupplierPayerUI,
   companyPayerName, permanentPayerBlockMsg, permanentExpenseWarnMsg, assertSupplierPayerAllowed, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
