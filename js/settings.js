@@ -1482,6 +1482,36 @@ export async function submitEditExpense() {
       // لا المبلغ كله — كانت هتفضل بقيمتها القديمة بصمت لو مر تغيّر المبلغ من هنا
       const routingChanged = amountChanged || !samePartnerSet(oldPartnerSet, newPartnerSet);
 
+      // ✅ P0-2 (N-09 — قرار المالك C4: من غير إعادة تصنيف بالتعديل): قبل **أول كتابة**
+      // نقرا سطور القيد النشط القديم، ونبني لكل شريك كان دائن فيه خريطة «اسمه ← حسابه
+      // القديم». je_expense بيطبّقها بس على الشريك اللي لسه في التوزيع الجديد
+      // (_isPartnerPocket)، فنص مازن اللي على 3200 يفضل على 3200. الشريك اللي اتشال
+      // مالوش سطر، والجديد بيتوجّه عادي، والخزينة (contact null) عمرها ما بتتطابق.
+      // القيد النشط = entry_no بتاع أحدث سطر مدين (id.desc) — نفس قاعدة voidTransaction.
+      let oldJELines = null, creditOverride = null;
+      if (routingChanged) {
+        oldJELines = await apiGetAll('journal_entries', {
+          select:'id,entry_no,account_code,account_name,contact_name,dr_amount,cr_amount', system_type:`eq.${state.system}`,
+          ref_table:'eq.expenses', ref_id:`eq.${id}`, post_status:'eq.posted', order:'id.desc',
+        });
+        const _activeDr = (oldJELines||[]).find(l => (+l.dr_amount||0) > 0);
+        if (_activeDr) {
+          const _map = {};
+          for (const l of (oldJELines||[])) {
+            if (l.entry_no !== _activeDr.entry_no || !((+l.cr_amount||0) > 0)) continue;
+            const who = (l.contact_name || '').trim();
+            if (!who) continue;
+            if (_map[who] && _map[who].acc !== l.account_code) {
+              // أكتر من سطر لنفس الشريك على حسابات مختلفة ⇒ مش هنخمّن — وقف قبل أي كتابة
+              showFieldErr('eeError', `القيد القديم ${_activeDr.entry_no} (ملف ${old.file_no||'—'}) فيه أكتر من حساب للشريك «${who}» (${_map[who].acc} و${l.account_code}) — راجع اليومية قبل تعديل المصروف ده.`);
+              return;
+            }
+            _map[who] = { acc: l.account_code, name: l.account_name };
+          }
+          if (Object.keys(_map).length) creditOverride = _map;
+        }
+      }
+
       // 1. تحديث السجل
       await apiPatch('expenses', { id:`eq.${id}` }, {
         description:desc, exp_type:type||old.exp_type, amount, exp_date:date,
@@ -1498,10 +1528,7 @@ export async function submitEditExpense() {
         // أكثر من مرة تاريخيًا، الاستعلام هيرجّع أسطر من أكتر من entry_no قديم
         // مُستبدَل كمان، لا الفعّال بس — order:'id.desc' بيضمن .find() تحت
         // يمسك أحدث سطر مدين فعلي، لا أي سطر قديم بترتيب غير مضمون من الـAPI
-        const oldJELines = await apiGetAll('journal_entries', {
-          select:'id,account_code,account_name,dr_amount', system_type:`eq.${state.system}`,
-          ref_table:'eq.expenses', ref_id:`eq.${id}`, post_status:'eq.posted', order:'id.desc',
-        });
+        // (P0-2: اتقرت فوق قبل خطوة 1 — نفس الاستعلام بأعمدة أكتر)
         // ✅ حساب الترسملة الفعلي للقيد الحالي النشط (1300 قبل البيع أو 5100
         // بعده) — يُمرَّر لـje_expense تحت كـtargetOverride بدل تركها تعيد
         // اشتقاقه من حالة البيع *الحالية*، واللي ممكن تكون اتغيّرت من وقت
@@ -1518,7 +1545,8 @@ export async function submitEditExpense() {
         const newJE = await je_expense({ sys:state.system, date, amount, fileNo:old.file_no, refId:id,
           desc, expType:type||old.exp_type||'أخرى', method, paidBy: paidBy||null, paidBySplit, isPrimary:false,
           isCommission: !!old.is_commission,
-          targetOverride: oldDebitLine ? { acc: oldDebitLine.account_code, name: oldDebitLine.account_name } : null });
+          targetOverride: oldDebitLine ? { acc: oldDebitLine.account_code, name: oldDebitLine.account_name } : null,
+          creditOverride });
         if (newJE?.ids?.length) {
           await _handoffPrimaryLine({ sys: state.system, oldIds: (oldJELines||[]).map(l=>l.id), newIds: newJE.ids });
         }
