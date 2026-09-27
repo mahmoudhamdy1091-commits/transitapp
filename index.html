@@ -3239,7 +3239,8 @@
           <option value="capital_credit">رأس مال</option>
         </select>
         <button class="btn btn-secondary btn-sm" onclick="loadPartnerAccountLedger()">🔄 تحديث</button>
-        <button class="btn btn-primary btn-sm" onclick="openGeneralWithdrawModal()" style="margin-right:auto">➕ سحب عام</button>
+        <!-- ⛔ P0-1 (2026-09-27): زر «➕ سحب عام» القديم مستخبي — كان بيكتب في partner_accounts بلا قيد. المسار السليم: «👥 معاملة شريك» ← «سحب عام» -->
+        <button class="btn btn-primary btn-sm" onclick="openGeneralWithdrawModal()" style="display:none">➕ سحب عام</button>
       </div>
 
       <!-- جدول الحركات -->
