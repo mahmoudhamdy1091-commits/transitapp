@@ -725,7 +725,6 @@ export async function loadSummaryTab(fn, sys) {
     const postedPay  = (payments||[]).filter(isActive);
     const postedExp  = (expenses||[]).filter(isActive);
     const postedSal  = (sales||[]).filter(isActive);
-    const postedCol  = (collections||[]).filter(isActive);
     const postedPout = (payouts||[]).filter(isActive);
     const draftCount = (payments||[]).filter(isDraft).length +
                        (expenses||[]).filter(isDraft).length +
@@ -738,34 +737,12 @@ export async function loadSummaryTab(fn, sys) {
     // ✅ لكل فاتورة على حدة: لو ليها سطر/سطور تحصيل استخدمها (تشمل extra charges
     // وتميّز مدفوع/مستحق)، ولو مالهاش أي سطر تحصيل اعتبرها بالكامل "غير محصّلة" —
     // قبل التعديل كان أي فاتورة بلا سطر تحصيل تُحذف بالكامل من "المبيعات" لو
-    // الملف فيه فواتير أخرى محصّلة (باج اكتُشف فعليًا — فاتورة ابو لزام -004)
-    const salesByInv = {};
-    postedSal.forEach(s => {
-      const k = s.inv_no || `__no_inv_${s.id}`;
-      salesByInv[k] = (salesByInv[k]||0) + (+s.sale_price||0);
-    });
-    const colByInv = {};
-    postedCol.forEach(c => {
-      if (c.post_status === 'voided') return;
-      const k = c.inv_no || `__no_inv_${c.id}`;
-      (colByInv[k] = colByInv[k]||[]).push(c);
-    });
-    let totalCollected = 0, totalPending = 0, totalInvoiced = 0;
-    new Set([...Object.keys(salesByInv), ...Object.keys(colByInv)]).forEach(k => {
-      const cols = colByInv[k];
-      if (cols && cols.length) {
-        cols.forEach(c => {
-          totalInvoiced += +c.amount||0;
-          if (c.paid_date) totalCollected += +c.amount||0;
-          else totalPending += +c.amount||0;
-        });
-      } else {
-        const amt = salesByInv[k]||0;
-        totalInvoiced += amt;
-        totalPending  += amt;
-      }
-    });
-    const totalSales     = totalInvoiced; // للعرض والربحية
+    // الملف فيه فواتير أخرى محصّلة (باج اكتُشف فعليًا — فاتورة ابو لزام -004).
+    // الحلقة نفسها بقت في engine.js (computeFileSalesTotals) مشتركة مع الطباعة
+    const colTotals      = computeFileSalesTotals(sales, collections);
+    const totalCollected = colTotals.collected;
+    const totalPending   = colTotals.pending;
+    const totalSales     = colTotals.invoiced; // للعرض والربحية
     const totalPayouts   = postedPout.reduce((s,p)=>s+(+p.amount||0),0);
     const fullCost       = totalPurchase + totalExp;
     // ✅ من computeFinancials (core.js) — نفس مصدر لوحة التحكم وتقرير الأرباح
@@ -795,6 +772,18 @@ export async function loadSummaryTab(fn, sys) {
     const cogsCheck  = checkCOGSInvariant({ vehicles, soldVins, totalPurchase, totalExp, actualRemaining: unsoldCostBasis });
     const cogsBanner = cogsCheck.hasDrift ? `<div style="background:#fee2e2;border:1px solid #ef4444;border-radius:var(--radius-sm);padding:8px 14px;margin-bottom:12px;font-size:12px;color:#991b1b;display:flex;align-items:center;gap:8px">⚠️ <strong>عدم تطابق في تكلفة المخزون المباع</strong> — المتوقع ${fmt(cogsCheck.expectedRemaining)} والفعلي ${fmt(cogsCheck.actualRemaining)} (فرق ${fmt(Math.abs(cogsCheck.drift))} — ${cogsCheck.direction})، راجع الملف محاسبيًا</div>` : '';
 
+    // ✅ فحص تطابق سطور التحصيل مع القيود: المبيعات والمستحق على العملاء
+    // المحسوبين من سطور التحصيل (فوق) لازم يساووا 4100 و1200 في اليومية لنفس
+    // الملف. سطور التحصيل نسخة بتحدّثها كل شاشة بنفسها — لو شاشة نسيت (زي
+    // BOX-144 في 2026-09-27: مبيعات 523,877 والقيود 404,000) الفرق يبان هنا
+    // فورًا بدل ما يكتشفه المالك. بيتخطّى لو فيه بيع/تحصيل draft أو طلب إلغاء
+    // (القيد لسه ما اتعملش/ما اتعكسش، فالفرق مؤقت ومتوقع)
+    const colJeOpen = [...(sales||[]), ...(collections||[])].some(r => isDraft(r) || r.post_status === 'pending_void');
+    const je1200 = (jeAll||[]).filter(r => r.account_code === '1200').reduce((s,r) => s + (+r.dr_amount||0) - (+r.cr_amount||0), 0);
+    const colJeMismatch = hasJEData && !colJeOpen &&
+      (Math.abs(totalSales - fin.sales) > 0.01 || Math.abs(uncollected - je1200) > 0.01);
+    const colJeBanner = colJeMismatch ? `<div style="background:#fee2e2;border:1px solid #ef4444;border-radius:var(--radius-sm);padding:8px 14px;margin-bottom:12px;font-size:12px;color:#991b1b;display:flex;align-items:center;gap:8px;flex-wrap:wrap">⚠️ <strong>سطور التحصيل مش مطابقة للقيود المحاسبية</strong> — المبيعات: الشاشة ${fmt(totalSales)} / القيود ${fmt(fin.sales)} · غير المحصّل: الشاشة ${fmt(uncollected)} / القيود ${fmt(je1200)} — راجع تبويب التحصيلات واليومية لهذا الملف</div>` : '';
+
     // ── KPI Strip ──
     // زرار طباعة ملخص الصفقة
     el('sum-financial').innerHTML = `
@@ -802,7 +791,7 @@ export async function loadSummaryTab(fn, sys) {
         <button class="btn btn-secondary btn-sm" onclick="printDealSummary('${fn}')" style="color:var(--blue)">
           📊 ملخص إداري (كل الشركاء)
         </button>
-      </div>` + draftBanner + cogsBanner + `
+      </div>` + draftBanner + cogsBanner + colJeBanner + `
       <div id="kpiGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
         ${[
           // ── التكاليف ──
@@ -1619,8 +1608,10 @@ export async function loadCollectionsTab(fn, sys) {
     const data = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'due_date.desc' });
     if (!data?.length) { el('collectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
 
-    // فصل المقبوض عن المنتظر — ✅ استثناء الملغية من كل الإجماليات
-    const activeData  = data.filter(isVisible);
+    // فصل المقبوض عن المنتظر — ✅ استثناء الملغية والمرفوضة (isOccupying) من
+    // كل الإجماليات. isVisible كانت بتسيب cancelled جوه الإجمالي: تحصيل مرفوض
+    // أو سطر مستحق استُهلك بالكامل (adjustInvoiceDue, engine.js) كان بيتجمع
+    const activeData  = data.filter(isOccupying);
     const paidData    = activeData.filter(c => c.paid_date);
     const pendingData = activeData.filter(c => !c.paid_date);
     const totalInvoiced = activeData.reduce((s,c)=>s+(+c.amount||0),0);
@@ -1654,8 +1645,10 @@ export async function loadCollectionsTab(fn, sys) {
         <tbody>
           ${data.map((c,i)=>{
             const isVoidedC = c.post_status === 'voided';
+            // مرفوض/مستحق استُهلك بالكامل — خارج الإجمالي، فيتعرض باهت زي الملغى
+            const isCancelledC = c.post_status === 'cancelled';
             const voidedBadgeC = isVoidedC ? '<span style="font-size:13px;background:var(--text2);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">ملغى</span>' : '';
-            return `<tr style="${isVoidedC?'opacity:.55;':''}">
+            return `<tr style="${(isVoidedC||isCancelledC)?'opacity:.55;':''}">
             <td style="text-align:center;font-size:13px;color:var(--text3);font-weight:700">${i+1}</td>
             <td class="mono" style="color:var(--green);font-weight:700;font-size:13px">${c.ref_no||'—'} ${voidedBadgeC}</td>
             <td class="mono">${c.inv_no||'—'}</td>
@@ -1665,7 +1658,7 @@ export async function loadCollectionsTab(fn, sys) {
             <td>${c.pay_method||'—'}</td>
             <td class="mono">${fmtDate(c.due_date)}</td>
             <td class="mono">${c.paid_date ? fmtDate(c.paid_date) : '—'}</td>
-            <td>${isVoidedC ? '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">ملغى</span>' : statusBadge(c)}</td>
+            <td>${isVoidedC ? '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">ملغى</span>' : isCancelledC ? '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">مرفوض/مُستهلَك</span>' : statusBadge(c)}</td>
             <td style="font-size:12px;color:var(--text2)">${((creators[c.ref_no]||'').split('@')[0])||'—'}</td>
             <td style="text-align:center">
               ${!isVoidedC ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxCollection(this)" data-id="${c.id}" data-fn="${fn}" data-paid="${c.paid_date?'1':'0'}" title="إجراءات">⋮</button>` : ''}

@@ -734,39 +734,17 @@ export async function printDealSummary(fn) {
     const postedPay      = (payments||[]).filter(isEffective);
     const postedExp      = (expenses||[]).filter(isEffective);
     const postedSal      = (sales||[]).filter(isEffective);
-    const postedCol      = (collections||[]).filter(isEffective);
     const postedPout     = (payouts||[]).filter(isPosted);
 
     const totalPaid      = postedPay.reduce((s,p)=>s+(+p.amount||0),0);
     const totalExp       = postedExp.reduce((s,e)=>s+(+e.amount||0),0);
     // ✅ لكل فاتورة على حدة: لو ليها سطر تحصيل استخدمه، ولو لأ تُحسب بالكامل
-    // "غير محصّلة" — نفس إصلاح loadSummaryTab في dashboard.js (باج فاتورة بلا
-    // تحصيل كانت تُحذف بالكامل من المبيعات لو الملف فيه فواتير أخرى محصّلة)
-    const salesByInv = {};
-    postedSal.forEach(s => {
-      const k = s.inv_no || `__no_inv_${s.id}`;
-      salesByInv[k] = (salesByInv[k]||0) + (+s.sale_price||0);
-    });
-    const colByInv = {};
-    postedCol.forEach(c => {
-      const k = c.inv_no || `__no_inv_${c.id}`;
-      (colByInv[k] = colByInv[k]||[]).push(c);
-    });
-    let totalCollected = 0, totalPending = 0, totalSales = 0;
-    new Set([...Object.keys(salesByInv), ...Object.keys(colByInv)]).forEach(k => {
-      const cols = colByInv[k];
-      if (cols && cols.length) {
-        cols.forEach(c => {
-          totalSales += +c.amount||0;
-          if (c.paid_date) totalCollected += +c.amount||0;
-          else totalPending += +c.amount||0;
-        });
-      } else {
-        const amt = salesByInv[k]||0;
-        totalSales   += amt;
-        totalPending += amt;
-      }
-    });
+    // "غير محصّلة" — نفس حساب loadSummaryTab بالحرف لأنه نفس الدالة
+    // (computeFileSalesTotals, engine.js) بدل نسخة منفصلة هنا
+    const colTotals      = computeFileSalesTotals(sales, collections);
+    const totalCollected = colTotals.collected;
+    const totalPending   = colTotals.pending;
+    const totalSales     = colTotals.invoiced;
     const fullCost       = totalPurchase + totalExp;
     // ✅ من computePartnerSettlement (core.js عبر state.currentDealData.settlement،
     // محسوبة في loadSummaryTab) — نفس رقم تبويب الملخص بالضبط، بدل حساب محلي

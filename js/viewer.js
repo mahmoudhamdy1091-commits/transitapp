@@ -190,41 +190,15 @@ export async function loadQuickInvoices(fileNo) {
 
     const [sales, collections] = await Promise.all([
       apiGetAll('sales',       { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'sale_date.desc' }),
-      apiGetAll('collections', { select:'inv_no,amount,paid_date,file_no', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+      apiGetAll('collections', { select:'id,inv_no,amount,paid_date,file_no,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
     ]);
 
-    // مجموع ما تم تحصيله فعلاً (paid_date موجود فقط — المسجّل بدون دفع لا يُحسب)
-    const collectedMap = {};
-    (collections||[]).forEach(c => {
-      if (c.inv_no && c.paid_date)
-        collectedMap[c.inv_no] = (collectedMap[c.inv_no]||0) + (+c.amount||0);
-    });
-
-    // الفواتير اللي فيها سجل collection بدون paid_date = منتظرة (مش مدفوعة)
-    const pendingInvSet = new Set(
-      (collections||[]).filter(c => c.inv_no && !c.paid_date).map(c => c.inv_no)
-    );
-
-    // تجميع السيارات بنفس inv_no في فاتورة واحدة
-    const invMap = {};
-    (sales||[]).filter(s => s.inv_no).forEach(s => {
-      const k = s.inv_no;
-      if (!invMap[k]) invMap[k] = {
-        inv_no: k, customer: s.customer, file_no: s.file_no,
-        sale_date: s.sale_date, total: 0, vins: []
-      };
-      invMap[k].total += +s.sale_price || 0;
-      if (s.vin) invMap[k].vins.push(s.vin);
-    });
-
-    const pending = Object.values(invMap).map(inv => ({
-      ...inv,
-      sale_price: inv.total,
-      vin:        inv.vins.join(' / '),
-      collected:  collectedMap[inv.inv_no] || 0,
-      remaining:  inv.total - (collectedMap[inv.inv_no] || 0),
-    })).filter(inv => inv.remaining > 0.001)
-       .sort((a,b) => (a.sale_date||'') > (b.sale_date||'') ? -1 : 1);
+    // ✅ الباقي من نفس مصدر فورم «💰 تحصيل» جوه الملف (computeInvoiceDueStatus,
+    // engine.js). الحساب القديم هنا كان من سعر البيع − المدفوع بلا أي فلتر
+    // حالة: فاتورة ملغاة كانت بتظهر، وتحصيل ملغى كان بيتحسب مقبوض، ومصاريف
+    // الفاتورة الإضافية ماكانتش داخلة — ولنفس فاتورة BOX-144 كان الفورمين
+    // بيقولوا باقي مختلف (141,123 هنا و261,000 هناك)
+    const pending = computeInvoiceDueStatus(sales, collections);
 
     invSel._salesData = pending;
 
@@ -235,17 +209,19 @@ export async function loadQuickInvoices(fileNo) {
 
     invSel.innerHTML = '<option value="">— اختر الفاتورة —</option>' +
       pending.map(inv => {
-        const hasPendingCol = pendingInvSet.has(inv.inv_no);
+        const hasPendingCol = inv.hasPending;
         const label = hasPendingCol
           ? `${inv.inv_no} — ${inv.customer||'—'} — ${inv.vins.length} سيارة — ⏳ تحصيل منتظر (${fmt(inv.remaining)})`
           : `${inv.inv_no} — ${inv.customer||'—'} — ${inv.vins.length} سيارة (باقي: ${fmt(inv.remaining)})`;
         return `<option value="${inv.inv_no}"
           data-customer="${inv.customer||''}"
           data-vin="${inv.vin||''}"
-          data-total="${inv.total||0}"
+          data-total="${inv.sale_price||0}"
           data-collected="${inv.collected}"
           data-remaining="${inv.remaining}"
-          data-has-pending="${hasPendingCol}">
+          data-has-pending="${hasPendingCol}"
+          data-pendingid="${inv.pendingId||''}"
+          data-pendingamount="${inv.pendingAmount!=null?inv.pendingAmount:''}">
           ${label}
         </option>`;
       }).join('');
@@ -407,23 +383,56 @@ export async function submitQuickCollection() {
   }
 
   try {
-    const refNo = (await genSeqRef('COL', state.system, fileNo, 'collections')) || `COL-${fileNo}-${Date.now()}`;
-    // ✅ paid_date يُحفظ دائماً (الحقل إجباري في الفورم) — كان يُرمى عند Draft
-    // مما يخلي التحصيل يفضل "مستحق" للأبد حتى بعد الموافقة، لأن الموافقة
-    // لا تُعيد تاريخ الدفع ولا تُنشئ قيده بدونه (نفس نمط modals.js لفاتورة البيع)
     const isPostedNow = entryStatus() === 'posted';
-    const data = {
-      system_type: state.system, file_no: fileNo,
-      pay_id: refNo, inv_no: invNo, customer: customer||null,
-      vin: vin||null, amount, pay_method: method,
-      document: doc||null, due_date: due||null,
-      paid_date: paid || null,
-      notes: notes||null, ref_no: refNo, received_by: receivedBy,
-    post_status:entryStatus()};
-    const qcIns = await apiPost('collections', data);
-    await logAudit('INSERT','collections', fileNo, null, data);
+    // ✅ نفس قاعدة فورم «💰 تحصيل» جوه الملف (submitCollection, modals.js):
+    // مبلغ = سطر المستحق الوحيد بالظبط ← نكمّل السطر ده بدل سطر جديد؛ غير كده
+    // سطر جديد + خصم نفس المبلغ من المستحق. قبل 2026-09-27 الفورم ده كان
+    // بيعمل سطر جديد دايمًا ومش بيلمس المستحق — ده اللي حصل في BOX-144
+    // (119,877 اتضافوا فوق مستحق 261,000 فالمبيعات طلعت 523,877 بدل 404,000)
+    const pendingId     = opt?.dataset?.pendingid || null;
+    const pendingAmtRaw = opt?.dataset?.pendingamount;
+    const pendingAmount = pendingAmtRaw !== undefined && pendingAmtRaw !== '' ? parseFloat(pendingAmtRaw) : null;
+    const completeExisting = !!pendingId && pendingAmount != null && Math.abs(pendingAmount - amount) < 0.001;
+
+    let qcId;
+    if (completeExisting) {
+      const patchData = {
+        pay_method: method, document: doc||null,
+        paid_date: paid,
+        notes: notes||null, received_by: receivedBy,
+        post_status: entryStatus(),
+      };
+      // تاريخ الاستحقاق هنا اختياري — لو فاضي نسيب تاريخ استحقاق السطر زي ما هو
+      if (due) patchData.due_date = due;
+      await apiPatch('collections', { id:`eq.${pendingId}` }, patchData);
+      await logAudit('EDIT','collections', fileNo, null, patchData, `استكمال تحصيل معلّق — فاتورة ${invNo}`);
+      qcId = pendingId;
+    } else {
+      const refNo = (await genSeqRef('COL', state.system, fileNo, 'collections')) || `COL-${fileNo}-${Date.now()}`;
+      // ✅ paid_date يُحفظ دائماً (الحقل إجباري في الفورم) — كان يُرمى عند Draft
+      // مما يخلي التحصيل يفضل "مستحق" للأبد حتى بعد الموافقة، لأن الموافقة
+      // لا تُعيد تاريخ الدفع ولا تُنشئ قيده بدونه (نفس نمط modals.js لفاتورة البيع)
+      const data = {
+        system_type: state.system, file_no: fileNo,
+        pay_id: refNo, inv_no: invNo, customer: customer||null,
+        vin: vin||null, amount, pay_method: method,
+        document: doc||null, due_date: due||null,
+        paid_date: paid || null,
+        notes: notes||null, ref_no: refNo, received_by: receivedBy,
+        post_status: entryStatus(),
+      };
+      const qcIns = await apiPost('collections', data);
+      await logAudit('INSERT','collections', fileNo, null, data);
+      qcId = qcIns?.[0]?.id || null;
+      // ✅ سطر جديد = المبلغ ده اتقبض من المستحق — نخصمه منه (engine.js)
+      try {
+        await adjustInvoiceDue({ sys:state.system, fileNo, invNo, delta:-amount, excludeId:qcId, reason:`تحصيل ${refNo}` });
+      } catch(adjErr) {
+        console.error('submitQuickCollection adjustInvoiceDue:', adjErr.message);
+        toast(`⚠️ التحصيل اتسجّل لكن فشل خصمه من مستحق الفاتورة — راجع تبويب التحصيلات (${adjErr.message})`,'warn');
+      }
+    }
     if (isPostedNow && customer) {
-      const qcId = qcIns?.[0]?.id || null;
       try {
         await je_collection({sys:state.system,date:paid||today(),amount,fileNo,refId:qcId,customer,invNo,method,receivedBy});
       } catch(jeErr) {

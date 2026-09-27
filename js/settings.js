@@ -1337,6 +1337,13 @@ export async function deleteCollectionEntry(collectionId, fileNo) {
           try {
             await apiDelete('collections', { id:`eq.${collectionId}` });
             await logAudit('DELETE','collections', fileNo||c.file_no, c, null, `حذف تحصيل ${c.ref_no||collectionId}`);
+            // ✅ تحصيل مدفوع (draft) اتحذف ← مبلغه كان متخصوم من المستحق، يرجع له
+            // (engine.js). حذف سطر مستحق نفسه = قرار يدوي، مالوش تسوية
+            if (c.paid_date && isOccupying(c)) {
+              try {
+                await adjustInvoiceDue({ sys:state.system, fileNo:c.file_no, invNo:c.inv_no, delta:+c.amount||0, excludeId:c.id, reason:`حذف تحصيل ${c.ref_no||collectionId}` });
+              } catch(adjErr) { toast(`⚠️ فشل إرجاع المبلغ لمستحق الفاتورة — راجع تبويب التحصيلات (${adjErr.message})`,'warn'); }
+            }
             toast('✅ تم الحذف','ok');
             if (state.currentTab === 5) loadCollectionsTab(state.currentFileNo||fileNo, state.system);
             if (state.currentTab === 0) loadSummaryTab(state.currentFileNo||fileNo, state.system);
@@ -1353,6 +1360,15 @@ export async function deleteCollectionEntry(collectionId, fileNo) {
       async () => {
         try {
           await voidTransaction('collection', c);
+          // ✅ لو الإلغاء اتنفّذ فعلًا (مش مجرد طلب إلغاء لغير المدير) ← المبلغ
+          // يرجع لمستحق الفاتورة (engine.js). طلب الإلغاء بيتسوّى وقت اعتماده
+          // (_processReversalApproval, operations.js)
+          const after = (await apiGetAll('collections', { select:'post_status', id:`eq.${c.id}` }))?.[0];
+          if (after?.post_status === 'voided') {
+            try {
+              await adjustInvoiceDue({ sys:state.system, fileNo:c.file_no, invNo:c.inv_no, delta:+c.amount||0, excludeId:c.id, reason:`إلغاء تحصيل ${c.ref_no||collectionId}` });
+            } catch(adjErr) { toast(`⚠️ فشل إرجاع المبلغ لمستحق الفاتورة — راجع تبويب التحصيلات (${adjErr.message})`,'warn'); }
+          }
           toast(`✅ تم إلغاء التحصيل ${c.ref_no||''} بقيد عكسي`, 'ok');
           if (state.currentTab === 5) loadCollectionsTab(state.currentFileNo||fileNo, state.system);
           if (state.currentTab === 0) loadSummaryTab(state.currentFileNo||fileNo, state.system);
@@ -1692,6 +1708,13 @@ export async function submitEditCollection() {
       }
 
       await logAudit('EDIT', 'collections', old.file_no, old, {amount,method,due,paid}, `تعديل تحصيل ${old.ref_no||id}`);
+      // ✅ مبلغ التحصيل المدفوع اتغيّر ← المستحق يتغيّر بنفس الفرق بالعكس
+      // (engine.js). حالة BOX-144 نفسها: 11,788 اتعدّل لـ119,877
+      if (Math.abs(oldAmount - amount) > 0.0005) {
+        try {
+          await adjustInvoiceDue({ sys:state.system, fileNo:old.file_no, invNo:old.inv_no, delta: oldAmount - amount, excludeId:id, reason:`تعديل تحصيل ${old.ref_no||id} ${fmt(oldAmount)} ← ${fmt(amount)}` });
+        } catch(adjErr) { toast(`⚠️ فشل تعديل مستحق الفاتورة — راجع تبويب التحصيلات (${adjErr.message})`,'warn'); }
+      }
       await updateApprovalBadge();
       markSaving('editCollectionModal'); await closeModal('editCollectionModal');
       toast('⚠️ تم تعديل التحصيل والقيد — في انتظار الموافقة', 'warn');
@@ -1705,11 +1728,27 @@ export async function submitEditCollection() {
     const wasUnpaid = !old.paid_date;
     const nowPaid   = !!paid;
     const isPostedRecord = old.post_status !== 'draft';
-    const effectivePaidDate = (paid && isPostedRecord) ? paid : null;
+    // ✅ تاريخ الدفع يتحفظ حتى لو السجل draft — الموافقة (_createApprovalJE)
+    // بتعمل القيد من paid_date الموجود على السجل ومش بتضيفه؛ قبل كده تعديل
+    // تحصيل draft كان بيمسح تاريخ دفعه فيتعتمد بلا قيد ويفضل «مستحق» للأبد
+    const effectivePaidDate = paid || null;
 
     // ✅ statusAfterEdit تُرجع draft لأي حالة غير posted/pending_edit — بما
     // فيها cancelled/voided (نفس باج TM-005 المكتشَف في submitEditFileFull)
     await apiPatch('collections', { id:`eq.${id}` }, { amount, pay_method:method, due_date:due||null, paid_date:effectivePaidDate, document:doc||null, notes:notes||null, received_by:receivedBy||null, post_status: statusAfterEdit(old.post_status) });
+
+    // ✅ السطر بقى (أو فضل) تحصيل مدفوع ← المستحق يتظبط بالفرق (engine.js):
+    // مستحق D اتحوّل لمدفوع P ← الباقي D−P يرجع مستحق؛ مدفوع X بقى Y ← X−Y؛
+    // سطر كان ملغى/مرفوض ورجع ← يتخصم كله. تعديل سطر مستحق وهو لسه مستحق =
+    // تصحيح يدوي للمستحق نفسه، مالوش تسوية
+    if (effectivePaidDate) {
+      const oldCounted = isOccupying(old) ? (+old.amount||0) : 0;
+      if (Math.abs(oldCounted - amount) > 0.0005) {
+        try {
+          await adjustInvoiceDue({ sys:state.system, fileNo:old.file_no, invNo:old.inv_no, delta: oldCounted - amount, excludeId:id, reason:`تعديل تحصيل ${old.ref_no||id}` });
+        } catch(adjErr) { toast(`⚠️ فشل تعديل مستحق الفاتورة — راجع تبويب التحصيلات (${adjErr.message})`,'warn'); }
+      }
+    }
 
     // إذا كانت غير مدفوعة وأصبحت مدفوعة الآن → أنشئ قيد تحصيل
     if (wasUnpaid && nowPaid && isPostedRecord) {
