@@ -642,6 +642,176 @@ export async function _voidSaleInvoiceCore(invNo, fileNo) {
 }
 
 // ════════════════════════════════════════════════════════════
+// مستحق الفاتورة في جدول التحصيلات — قاعدة واحدة لكل الشاشات
+//   سطور التحصيل الشاغلة (isOccupying) لأي فاتورة مجموعها = قيمة الفاتورة
+//   دايمًا: مدفوع (paid_date) + مستحق (بلا paid_date). ملخص الملف وتبويب
+//   التحصيلات وفورم التحصيل بياخدوا إجمالي الفاتورة من مجموع السطور دي.
+//   فأي عملية بتغيّر مجموع السطور (تحصيل جديد، تعديل مبلغ تحصيل مدفوع، رفض/
+//   إلغاء/حذف تحصيل مدفوع) لازم تعدّل المستحق بنفس الفرق بالعكس — وإلا
+//   الفاتورة تتحسب مرتين. اكتُشف حيًّا 2026-09-27 على BOX-144: تحصيل جزئي
+//   119,877 من «تسجيل سريع» اتسجّل سطر جديد وسطر المستحق فضل 261,000 ←
+//   مبيعات الملف 523,877 بدل 404,000 (القيود نفسها كانت سليمة). العيب كان
+//   موجود من أول نسخة (يونيو)؛ إصلاح 2026-07-28 غطّى «نفس المبلغ بالظبط»
+//   في فورم الملف بس. لا تُستدعى من كاسكيد إلغاء/حذف الفاتورة نفسها.
+// ════════════════════════════════════════════════════════════
+const _r3 = n => Math.round((+n || 0) * 1000) / 1000;
+
+/**
+ * حالة تحصيل كل فاتورة — مصدر واحد لفورم «💰 تحصيل» جوه الملف وفورم
+ * «تسجيل سريع ← 💰 تحصيل» (كانوا بيحسبوا «الباقي» بطريقتين: الأول من سطور
+ * التحصيل، والتاني من سعر البيع بلا فلتر حالة — فطلعوا 261,000 و141,123
+ * لنفس الفاتورة). الإجمالي = مجموع سطور التحصيل المرحّلة (يشمل المصاريف
+ * الإضافية)، ولو مفيش سطور يرجع لسعر البيع. ترجع الفواتير اللي باقيها > 0.
+ */
+export function computeInvoiceDueStatus(sales, collections) {
+  const invoicedMap = {}, collectedMap = {}, pendingMap = {};
+  (collections||[]).filter(c => c.inv_no && isPosted(c)).forEach(c => {
+    const key = `${c.file_no}__${c.inv_no}`;
+    invoicedMap[key] = (invoicedMap[key]||0) + (+c.amount||0);
+    if (c.paid_date) collectedMap[key] = (collectedMap[key]||0) + (+c.amount||0);
+    else (pendingMap[key] = pendingMap[key]||[]).push(c);
+  });
+  // ✅ استبعاد cancelled/voided (isOccupying) — فاتورة ملغاة مالهاش باقي
+  const invMap = {};
+  (sales||[]).filter(s => s.inv_no && isOccupying(s)).forEach(s => {
+    const k = `${s.file_no}__${s.inv_no}`;
+    if (!invMap[k]) invMap[k] = { inv_no:s.inv_no, customer:s.customer, file_no:s.file_no, sale_date:s.sale_date, total:0, vins:[] };
+    invMap[k].total += +s.sale_price || 0;
+    if (s.vin) invMap[k].vins.push(s.vin);
+  });
+  return Object.values(invMap).map(inv => {
+    const key         = `${inv.file_no}__${inv.inv_no}`;
+    const realTotal   = invoicedMap[key] > 0 ? invoicedMap[key] : inv.total;
+    const collected   = collectedMap[key] || 0;
+    const pendingRows = pendingMap[key] || [];
+    // سطر مستحق واحد بس ← الحفظ بنفس مبلغه يكمّله بدل ما ينشئ سطر جديد
+    const single      = pendingRows.length === 1 ? pendingRows[0] : null;
+    return {
+      ...inv,
+      sale_price:    realTotal,
+      vin:           inv.vins.join(' / '),
+      collected,
+      remaining:     _r3(realTotal - collected),
+      hasPending:    pendingRows.length > 0,
+      pendingId:     single ? single.id : null,
+      pendingAmount: single ? (+single.amount||0) : null,
+    };
+  }).filter(inv => inv.remaining > 0.001)
+    .sort((a,b) => (a.sale_date||'') > (b.sale_date||'') ? -1 : 1);
+}
+
+/**
+ * إجماليات مبيعات/تحصيل ملف من سطور التحصيل — مصدر واحد لتبويب ملخص الملف
+ * (loadSummaryTab, dashboard.js) والملخص الإداري المطبوع (printDealSummary,
+ * print.js)؛ كانوا نسختين من نفس الحلقة. لكل فاتورة: لو ليها سطور تحصيل
+ * مرحّلة ← إجماليها = مجموع السطور (يشمل المصاريف الإضافية)؛ لو مالهاش ←
+ * سعر البيع كله «غير محصّل».
+ * ✅ تحصيل مدفوع لسه draft بيتخصم من المستحق وقت تسجيله (adjustInvoiceDue)،
+ * فبيتضاف هنا لإجمالي الفاتورة بس (مش للمقبوض ولا للمستحق) — وإلا المبيعات
+ * تنزل بمبلغه لحد ما يتعتمد.
+ */
+export function computeFileSalesTotals(sales, collections) {
+  const salesByInv = {};
+  (sales||[]).filter(isEffective).forEach(s => {
+    const k = s.inv_no || `__no_inv_${s.id}`;
+    salesByInv[k] = (salesByInv[k]||0) + (+s.sale_price||0);
+  });
+  const colByInv = {}, draftPaidByInv = {};
+  (collections||[]).forEach(c => {
+    const k = c.inv_no || `__no_inv_${c.id}`;
+    if (isEffective(c)) (colByInv[k] = colByInv[k]||[]).push(c);
+    else if (isDraft(c) && c.paid_date) draftPaidByInv[k] = (draftPaidByInv[k]||0) + (+c.amount||0);
+  });
+  let invoiced = 0, collected = 0, pending = 0, draftPaid = 0;
+  new Set([...Object.keys(salesByInv), ...Object.keys(colByInv)]).forEach(k => {
+    const cols = colByInv[k];
+    if (cols && cols.length) {
+      cols.forEach(c => {
+        invoiced += +c.amount||0;
+        if (c.paid_date) collected += +c.amount||0;
+        else pending += +c.amount||0;
+      });
+      if (salesByInv[k] != null && draftPaidByInv[k]) {
+        invoiced  += draftPaidByInv[k];
+        draftPaid += draftPaidByInv[k];
+      }
+    } else {
+      const amt = salesByInv[k]||0;
+      invoiced += amt;
+      pending  += amt;
+    }
+  });
+  return { invoiced:_r3(invoiced), collected:_r3(collected), pending:_r3(pending), draftPaid:_r3(draftPaid) };
+}
+
+/**
+ * يعدّل مستحق فاتورة بفرق موقَّع (سطور بلا paid_date، مالهاش قيد):
+ *   delta < 0 ← خصم (تحصيل جديد / زيادة مبلغ تحصيل مدفوع): الأقدم أولًا،
+ *               والسطر اللي يتخصم بالكامل يتعلّم cancelled (مالوش قيد أصلًا)
+ *   delta > 0 ← إرجاع (رفض/إلغاء/حذف تحصيل مدفوع، أو تقليل مبلغه): يتضاف
+ *               لأقدم سطر مستحق، ولو مفيش يتعمل سطر مستحق جديد
+ * excludeId: سطر التحصيل اللي بيتغيّر نفسه (مايتحسبش ضمن المستحق).
+ * بيتخطى بهدوء لو الفاتورة مالهاش مبيعات قائمة (اتلغت/اترفضت/اتحذفت).
+ * يرجع { changed, unmatched } — unmatched = جزء من الخصم مالقاش مستحق.
+ */
+export async function adjustInvoiceDue({ sys, fileNo, invNo, delta, excludeId = null, reason = '' }) {
+  delta = _r3(delta);
+  if (!sys || !fileNo || !invNo || Math.abs(delta) < 0.001) return { changed: 0, unmatched: 0 };
+  const [saleRows, colRows] = await Promise.all([
+    apiGetAll('sales',       { select:'id,customer,vin,sale_date,post_status', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` }),
+    apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` }),
+  ]);
+  const liveSales = (saleRows||[]).filter(isOccupying);
+  if (!liveSales.length) return { changed: 0, unmatched: 0, skipped: 'الفاتورة مالهاش مبيعات قائمة' };
+
+  const dueLines = (colRows||[])
+    .filter(c => isOccupying(c) && !c.paid_date && String(c.id) !== String(excludeId))
+    .sort((a,b) => (a.due_date||'').localeCompare(b.due_date||'') || String(a.created_at||'').localeCompare(String(b.created_at||'')));
+  const why = reason ? ` — ${reason}` : '';
+
+  if (delta < 0) {
+    let left = -delta, changed = 0;
+    for (const d of dueLines) {
+      if (left < 0.001) break;
+      const amt = +d.amount || 0;
+      if (amt <= left + 0.0005) {
+        await apiPatch('collections', { id:`eq.${d.id}` }, { post_status:'cancelled', notes:`${d.notes||''} | استُهلك بالكامل بالتحصيل${why}`.trim() });
+        await logAudit('DUE_ADJUST', 'collections', fileNo, d, { post_status:'cancelled' }, `مستحق فاتورة ${invNo}: ${d.ref_no||d.id} استُهلك بالكامل (${fmt(amt)})${why}`);
+        left = _r3(left - amt);
+      } else {
+        const newAmt = _r3(amt - left);
+        await apiPatch('collections', { id:`eq.${d.id}` }, { amount:newAmt });
+        await logAudit('DUE_ADJUST', 'collections', fileNo, d, { amount:newAmt }, `مستحق فاتورة ${invNo}: ${d.ref_no||d.id} ${fmt(amt)} ← ${fmt(newAmt)}${why}`);
+        left = 0;
+      }
+      changed++;
+    }
+    return { changed, unmatched: _r3(left) };
+  }
+
+  if (dueLines.length) {
+    const d = dueLines[0];
+    const newAmt = _r3((+d.amount||0) + delta);
+    await apiPatch('collections', { id:`eq.${d.id}` }, { amount:newAmt });
+    await logAudit('DUE_ADJUST', 'collections', fileNo, d, { amount:newAmt }, `مستحق فاتورة ${invNo}: ${d.ref_no||d.id} ${fmt(+d.amount||0)} ← ${fmt(newAmt)}${why}`);
+    return { changed: 1, unmatched: 0 };
+  }
+  const first = liveSales[0];
+  const refNo = (await genSeqRef('COL', sys, fileNo, 'collections')) || `COL-${fileNo}-${Date.now()}`;
+  const row = {
+    system_type: sys, file_no: fileNo, inv_no: invNo, customer: first.customer || null,
+    vin: liveSales.map(s => s.vin).filter(Boolean).join(' / ') || null, amount: delta,
+    pay_method: null, document: null, due_date: first.sale_date || null, paid_date: null,
+    notes: `مستحق مُعاد${why}`, ref_no: refNo, pay_id: refNo,
+    // مستحق فاتورة لسه draft يفضل draft معاها
+    post_status: liveSales.some(isActive) ? 'posted' : 'draft',
+  };
+  await apiPost('collections', row);
+  await logAudit('DUE_ADJUST', 'collections', fileNo, null, row, `مستحق فاتورة ${invNo}: سطر مستحق جديد ${fmt(delta)}${why}`);
+  return { changed: 1, unmatched: 0 };
+}
+
+// ════════════════════════════════════════════════════════════
 // VOID PURCHASE ORDER — إلغاء ملف بالكامل (إعادة تصميم 2026-09-23)
 //   قرار المالك النهائي (بعد تصحيح مسار حذف/عكس محاسبي كان مقترحًا أول
 //   الأمر): "ممكن متحذفش الداتا بس تكون كأنها مش موجودة" — لا حذف نهائي
@@ -1662,6 +1832,7 @@ Object.assign(window, {
   isAdminUser, adminPostsImmediately, entryStatus,
   toggleAdminPostSetting, updateAdminPostToggleUI,
   updateJEInPlace, voidTransaction, reverseManualJE, voidPurchaseOrder, _voidSaleInvoiceCore, _assertFileNotVoided,
+  computeInvoiceDueStatus, computeFileSalesTotals, adjustInvoiceDue,
   _jeNo, postDoubleEntry, _handoffPrimaryLine, calcCOGS, checkCOGSInvariant, auditAllFilesCOGS,
   je_purchase, je_sale, je_collection, je_payment, je_expense, je_payout, je_partnerLedger,
   je_custodian, je_opex, simulateDraftJE,

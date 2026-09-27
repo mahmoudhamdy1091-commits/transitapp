@@ -1894,6 +1894,13 @@ export async function rejectItem(type, id) {
         oldMethod: current.pay_method, newMethod: oldRow.pay_method,
       });
 
+      // ✅ تعديل مبلغ تحصيل مدفوع كان عدّل مستحق الفاتورة وقت التعديل
+      // (submitEditCollection) — الرفض يرجّعه بنفس الفرق (engine.js)
+      if (srcType === 'collection' && oldRow.paid_date && current.paid_date && Math.abs(newAmount - oldAmount) > 0.0005) {
+        try {
+          await adjustInvoiceDue({ sys:state.system, fileNo:oldRow.file_no, invNo:oldRow.inv_no, delta: newAmount - oldAmount, excludeId:id, reason:`رفض تعديل تحصيل ${oldRow.ref_no||id}` });
+        } catch(adjErr) { toast(`⚠️ فشل إرجاع مستحق الفاتورة — راجع تبويب التحصيلات (${adjErr.message})`,'warn'); }
+      }
       await logAudit('EDIT_REJECTED', tbl, oldRow.file_no, current, oldRow, `رفض تعديل ${cfg.label} ${oldRow.ref_no||id}`);
       invalidateCache();
       loadApprovalQueue();
@@ -1964,11 +1971,21 @@ export async function rejectItem(type, id) {
             }
             await logAudit('REJECT','purchase_orders', fn, item, null, `رفض أمر شراء draft ملف ${fn}`);
           } else {
+            // ✅ نسخة السجل قبل الرفض (لو مش في الكاش) — التحصيل محتاجها تحت
+            const row = item || (type === 'collection' ? (await apiGetAll(cfg.table, { select:'*', id:`eq.${id}` }))?.[0] : null);
             await apiPatch(cfg.table, { id:`eq.${id}` }, {
               post_status: 'cancelled',
-              notes: `${item?.notes||''} | مرفوض بتاريخ ${today()}`.trim(),
+              notes: `${row?.notes||''} | مرفوض بتاريخ ${today()}`.trim(),
             });
-            await logAudit('REJECT', cfg.table, item?.file_no||null, item, null, `رفض ${cfg.label} #${id}`);
+            await logAudit('REJECT', cfg.table, row?.file_no||null, row, null, `رفض ${cfg.label} #${id}`);
+            // ✅ تحصيل مدفوع اترفض = الفلوس ما اتقبضتش ← مبلغه يرجع لمستحق
+            // الفاتورة (كان اتخصم منه وقت التسجيل، أو كان هو نفسه سطر المستحق
+            // اللي اتكمّل) — engine.js. تحصيل «مستحق» مرفوض مالوش تسوية
+            if (type === 'collection' && row?.paid_date && isOccupying(row)) {
+              try {
+                await adjustInvoiceDue({ sys:state.system, fileNo:row.file_no, invNo:row.inv_no, delta:+row.amount||0, excludeId:id, reason:`رفض تحصيل ${row.ref_no||id}` });
+              } catch(adjErr) { toast(`⚠️ فشل إرجاع المبلغ لمستحق الفاتورة — راجع تبويب التحصيلات (${adjErr.message})`,'warn'); }
+            }
           }
           invalidateCache();
           loadApprovalQueue();
@@ -2312,6 +2329,12 @@ export async function _processReversalApproval(id, preloadedItem=null) {
   if (!item) return { ok:false, message:'لم يُعثر على طلب الإلغاء' };
   try {
     await voidTransaction(item._srcType, item, true);
+    // ✅ تحصيل مدفوع اتلغى ← مبلغه يرجع لمستحق الفاتورة (engine.js)
+    if (item._srcType === 'collection' && item.paid_date) {
+      try {
+        await adjustInvoiceDue({ sys:state.system, fileNo:item.file_no, invNo:item.inv_no, delta:+item.amount||0, excludeId:item.id, reason:`إلغاء تحصيل ${item.ref_no||item.id}` });
+      } catch(adjErr) { console.error('_processReversalApproval adjustInvoiceDue:', adjErr.message); }
+    }
     return { ok:true, message:'تم تنفيذ الإلغاء بقيد عكسي' };
   } catch(e) {
     return { ok:false, message: e.message };
