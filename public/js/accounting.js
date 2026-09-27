@@ -299,9 +299,12 @@ export async function showAccountLedger(accountCode, accountName, accountType) {
 
   try {
     const sys=state.system;
-    const url=`${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&account_code=eq.${encodeURIComponent(accountCode)}&select=*&order=entry_date.asc,id.asc&limit=49999`;
-    const res=await apiFetch(url,{headers:{ 'Range': '0-49999', 'Range-Unit': 'items' },cache:'no-store'});
-    const rows=res.ok?await res.json():[];
+    // ✅ P0-7: صفحات بفحص اكتمال بدل طلب واحد (السيرفر كان بيقطع عند 1000 — TM 1300
+    // وصل 995). لو اتحمّل جزء بس، شريط تحذير فوق الجدول (renderLedgerTable).
+    const url=`${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&account_code=eq.${encodeURIComponent(accountCode)}&select=*&order=entry_date.asc,id.asc`;
+    const { rows, total, complete } = await fetchPagesChecked(url, { label:'showAccountLedger' });
+    ledgerState._loadWarn = complete ? '' :
+      `<div class="alert alert-err" style="margin-bottom:10px">⚠️ تم تحميل ${rows.length} من ${total ?? '؟'} سطر لهذا الحساب — الأرصدة المعروضة ممكن تكون ناقصة. أعد فتح الحساب.</div>`;
     window._ledgerAllEntries=(rows||[]).map(r=>({
       id:r.id,date:(r.entry_date||'').split('T')[0],type:r.ref_table||'manual',
       desc:r.description||'—',ref:r.entry_no||'',debit:+r.dr_amount||0,
@@ -482,7 +485,7 @@ export async function renderLedgerTable() {
     ['الرصيد الختامي',fmt(Math.abs(finalBal))+' '+(finalBal>0?'مدين':finalBal<0?'دائن':'صفر'),finalBal>=0?'var(--green)':'var(--red)'],
     ['عدد الحركات',list.length,'var(--blue)'],
   ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c}">${v}</div></div>`).join('');
-  if(!list.length&&!opening){el('ledgerTable').innerHTML=emptyHTML('📖','لا توجد حركات');return;}
+  if(!list.length&&!opening){el('ledgerTable').innerHTML=(ledgerState._loadWarn||'')+emptyHTML('📖','لا توجد حركات');return;}
   const SL=SOURCE_LABELS, SC=SOURCE_COLORS;
   let running=opening, rows='';
   if(opening&&!fileFilter) rows+=`<tr style="background:var(--card2)">
@@ -515,7 +518,7 @@ export async function renderLedgerTable() {
       <td style="padding:9px 12px;text-align:center"><button class="btn btn-sm" onclick="event.stopPropagation();openJEDetail('${e.ref}')" title="تفاصيل القيد" style="padding:3px 8px;font-size:14px">🔍</button></td>
     </tr>`;
   }).join('');
-  el('ledgerTable').innerHTML=`
+  el('ledgerTable').innerHTML=`${ledgerState._loadWarn||''}
     <div style="font-size:13px;color:var(--text2);margin-bottom:6px">اضغط على أي حركة لعرض تفاصيل القيد والمرفقات</div>
     <table class="data-table" style="min-width:700px">
     <thead><tr>

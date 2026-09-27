@@ -70,6 +70,14 @@ export function setTxPeriod(period) {
   loadTransactions();
 }
 
+// ✅ P0-7: لو صفحة ما اتحمّلتش، تحذير واضح بالعدد بدل عرض ناقص من غير ما حد يعرف
+function _txWarnIfIncomplete(table, p1, p2) {
+  if (p1.complete && p2.complete) return;
+  const got = p1.rows.length + p2.rows.length, of = (p1.total ?? 0) + (p2.total ?? 0);
+  const label = Object.values(TX_CONFIG).find(c => c.table === table)?.title || table;
+  toast(`⚠️ ${label}: اتحمّل ${got} من ${of || '؟'} سطر بس — القايمة ناقصة، أعد التحميل`, 'warn');
+}
+
 export async function loadTransactions() {
   const type = _txType;
   const cfg  = TX_CONFIG[type];
@@ -92,15 +100,18 @@ export async function loadTransactions() {
   // helper: build Supabase URL with correct filters — يشمل null system_type (بيانات قديمة)
   async function fetchRows(table, dateCol) {
     // جلب المطابق + null معاً
-    const base = `${SB_URL}/rest/v1/${table}?select=*&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc`;
+    // ✅ P0-7: صفحات بفحص اكتمال بدل طلب واحد (كان بيقطع عند 1000 بصمت)، و,id.desc
+    // عشان الترتيب يبقى فريد بين الصفحات (التاريخ لوحده بيتكرر)
+    const base = `${SB_URL}/rest/v1/${table}?select=*&${dateCol}=gte.${encodeURIComponent(from)}&${dateCol}=lte.${encodeURIComponent(toEOD)}&order=${dateCol}.desc,id.desc`;
     const psFilter = pf === 'draft' ? '&post_status=eq.draft'
                    : pf === 'posted' ? '&or=(post_status.eq.posted,post_status.is.null)'
                    : '';
-    const [r1, r2] = await Promise.all([
-      fetch(base + `&system_type=eq.${encodeURIComponent(sys)}` + psFilter, { headers: headers() }),
-      fetch(base + '&system_type=is.null' + psFilter, { headers: headers() }),
+    const [p1, p2] = await Promise.all([
+      fetchPagesChecked(base + `&system_type=eq.${encodeURIComponent(sys)}` + psFilter, { label: 'tx-' + table }),
+      fetchPagesChecked(base + '&system_type=is.null' + psFilter, { label: 'tx-' + table + '-null' }),
     ]);
-    const [d1, d2] = await Promise.all([r1.ok ? r1.json() : [], r2.ok ? r2.json() : []]);
+    _txWarnIfIncomplete(table, p1, p2);
+    const d1 = p1.rows, d2 = p2.rows;
     const seen = new Set(); const out = [];
     [...(d1||[]), ...(d2||[])].forEach(r => {
       const key = r.id ?? JSON.stringify(r);
@@ -120,12 +131,13 @@ export async function loadTransactions() {
     const buildUrl = (sysParam) =>
       `${SB_URL}/rest/v1/collections?select=*&${sysParam}&order=id.desc${psFilter}`;
 
-    const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
-    const [r1, r2] = await Promise.all([
-      fetch(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { headers: h }),
-      fetch(buildUrl('system_type=is.null'),                        { headers: h }),
+    // ✅ P0-7: صفحات بفحص اكتمال بدل طلب واحد بـRange 0-49999 (order=id.desc فريد)
+    const [p1, p2] = await Promise.all([
+      fetchPagesChecked(buildUrl(`system_type=eq.${encodeURIComponent(sys)}`), { label: 'tx-collections' }),
+      fetchPagesChecked(buildUrl('system_type=is.null'),                        { label: 'tx-collections-null' }),
     ]);
-    const [d1, d2] = await Promise.all([r1.ok ? r1.json() : [], r2.ok ? r2.json() : []]);
+    _txWarnIfIncomplete('collections', p1, p2);
+    const d1 = p1.rows, d2 = p2.rows;
     const seen = new Set(); const all = [];
     [...(d1||[]), ...(d2||[])].forEach(r => {
       const key = r.id ?? JSON.stringify(r);

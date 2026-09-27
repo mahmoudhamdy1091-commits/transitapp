@@ -58,6 +58,7 @@ export async function showRecordAudit({ table, fileNo, refNo, id, title } = {}) 
 // ACTIVITY LOG
 // ════════════════════════════════════════
 let _activityData = [];
+let _activityWarn = '';   // P0-7: تحذير «معروض X من Y» لو التحميل ما كملش
 
 export async function showActivityLog() {
   if (!can('settings')) { toast('🔒 هذه الصفحة للمدراء فقط', 'err'); return; }
@@ -99,15 +100,18 @@ export async function loadActivityLog() {
     else if (from)  dateFilter = `&created_at=gte.${encodeURIComponent(from)}`;
     else if (to)    dateFilter = `&created_at=lte.${encodeURIComponent(to+'T23:59:59')}`;
 
-    const h = headers({ 'Range': '0-49999', 'Range-Unit': 'items' });
+    // ✅ P0-7: صفحات بفحص اكتمال بدل طلب واحد بـRange 0-49999 (كان بيقطع عند 1000 —
+    // BOX عنده 2,096 سجل). جوّه فلتر الفترة والنظام زي ما هو، ومش بيسحب الجدول كله.
     // ✅ نجلب أيضاً السجلات القديمة التي بلا system_type (بيانات قديمة قبل إضافة الحقل) — نفس نمط apiGetAll
     const base = `${SB_URL}/rest/v1/audit_log?select=*&order=id.desc${dateFilter}`;
-    const [r1, r2] = await Promise.all([
-      fetch(`${base}&system_type=eq.${encodeURIComponent(state.system)}`, { headers: h, cache: 'no-store' }),
-      fetch(`${base}&system_type=is.null`,                                 { headers: h, cache: 'no-store' }),
+    const [p1, p2] = await Promise.all([
+      fetchPagesChecked(`${base}&system_type=eq.${encodeURIComponent(state.system)}`, { label:'activityLog' }),
+      fetchPagesChecked(`${base}&system_type=is.null`,                                 { label:'activityLog-null' }),
     ]);
-    if (!r1.ok && !r2.ok) throw new Error(r1.statusText || r2.statusText);
-    const [d1, d2] = await Promise.all([r1.ok ? r1.json() : [], r2.ok ? r2.json() : []]);
+    if (!p1.rows.length && !p2.rows.length && !p1.complete && !p2.complete) throw new Error('تعذّر تحميل سجل النشاط');
+    const d1 = p1.rows, d2 = p2.rows;
+    _activityWarn = (p1.complete && p2.complete) ? '' :
+      `<div class="alert alert-err" style="margin-bottom:10px">⚠️ معروض ${d1.length + d2.length} من ${(p1.total ?? 0) + (p2.total ?? 0)} سجل — التحميل ما كملش. أعد التحميل.</div>`;
     const seen = new Set(); const merged = [];
     [...(d1||[]), ...(d2||[])].forEach(r => {
       const key = r.id ?? JSON.stringify(r);
@@ -190,7 +194,7 @@ export function renderActivityLog() {
   if (filterTo)     list = list.filter(r => (r.created_at||'').split('T')[0] <= filterTo);
 
   if (el('activity-subtitle')) el('activity-subtitle').textContent = `${list.length} سجل`;
-  if (!list.length) { el('activityTableWrap').innerHTML = emptyHTML('🕵️','لا توجد سجلات'); return; }
+  if (!list.length) { el('activityTableWrap').innerHTML = _activityWarn + emptyHTML('🕵️','لا توجد سجلات'); return; }
 
   const rows = list.map(r => {
     const dt       = r.created_at ? `${fmtDate(r.created_at)} ${fmtTime(r.created_at)}` : '—';
@@ -236,7 +240,7 @@ export function renderActivityLog() {
     </tr>`;
   }).join('');
 
-  el('activityTableWrap').innerHTML = `
+  el('activityTableWrap').innerHTML = `${_activityWarn}
     <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
       <table class="data-table">
         <thead><tr>
