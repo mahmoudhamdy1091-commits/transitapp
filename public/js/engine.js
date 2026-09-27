@@ -1266,9 +1266,14 @@ export async function fileExpenseTarget(sys, fileNo, expType) {
 // معيّن — شريك حقيقي (يبحث عن حسابه المخصَّص، حارس صريح لو بلا رابط) أو
 // خزينة/دفع مباشر (نقد/بنك ثابت، بلا لوكاب). مُستخرجة كدالة مستقلة لاستخدامها
 // في مسار التوزيع (N شريك) والمسار الفردي معًا بلا تكرار منطق.
-async function _expenseCreditLine(sys, name, amount, method) {
+// creditOverride (P0-2، اختياري): { 'اسم الشريك': {acc, name} } — لو الشريك ليه مفتاح،
+// السطر الدائن بيتكتب على الحساب القديم بدل partner_account_links. بيبعته
+// submitEditExpense بس (من سطور القيد النشط القديم)، والباقيين null ⇒ نفس السلوك
+async function _expenseCreditLine(sys, name, amount, method, creditOverride = null) {
   if (_isPartnerPocket(name)) {
     const trimmed = name.trim();
+    const ov = creditOverride && creditOverride[trimmed];
+    if (ov && ov.acc) return {acc:ov.acc, name:ov.name || ov.acc, dr:0, cr:amount, contact:trimmed};
     const link = await apiGetAll('partner_account_links', {
       select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${trimmed}`,
     });
@@ -1286,7 +1291,10 @@ async function _expenseCreditLine(sys, name, amount, method) {
   return {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:0, cr:amount, contact:null};
 }
 
-export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,paidBySplit=null,isPrimary=true,targetOverride=null,isCommission=false}) {
+// ✅ P0-2 (N-09، 2026-09-27): creditOverride اختياري — راجع _expenseCreditLine فوق.
+// من غيره تعديل مبلغ مصروف مقسوم كان بيرجّع نص مازن من 3200 (فلوس شركة، m4b)
+// لـ2401 (حسابه) بصمت، لأن السطر الدائن بيتحسب من partner_account_links من الأول
+export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,paidBySplit=null,isPrimary=true,targetOverride=null,isCommission=false,creditOverride=null}) {
   if(!amount||amount<=0) throw new Error(`قيمة مصروف غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
   await _assertFileNotVoided(sys, fileNo);
   const hasSplit = Array.isArray(paidBySplit) && paidBySplit.length > 0;
@@ -1320,8 +1328,8 @@ export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,meth
   // فيها [Promise, Promise,...] بدل {acc,name,dr,cr,contact} (رصدها المراجع
   // قبل الكتابة، مش بعد اكتشاف باج حي).
   const creditLines = hasSplit
-    ? await Promise.all(paidBySplit.map(p => _expenseCreditLine(sys, p.partner, +p.amount||0, method)))
-    : [ await _expenseCreditLine(sys, paidBy, amount, method) ];
+    ? await Promise.all(paidBySplit.map(p => _expenseCreditLine(sys, p.partner, +p.amount||0, method, creditOverride)))
+    : [ await _expenseCreditLine(sys, paidBy, amount, method, creditOverride) ];
   const tail = hasSplit
     ? ` — موزَّع بالتساوي على ${paidBySplit.map(p=>p.partner).join('، ')}`
     : (_isPartnerPocket(paidBy)
