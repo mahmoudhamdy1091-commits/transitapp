@@ -2211,7 +2211,7 @@ export async function showPartnerStatement(partnerName, fileNoFilter = null) {
                     ${ps.isPermanent
                       ? `<div style="background:#eff6ff;border-radius:8px;padding:7px 10px;text-align:center">
                           <div style="font-weight:700;font-size:12px;color:#1d4ed8">لا ينطبق — شريك دائم</div>
-                          <div style="font-size:10px;color:#94a3b8;margin-top:2px">رأس مال مدوَّر، بلا مطالبة. رصيده الحقيقي في «جاري الشريك».</div>
+                          <div style="font-size:10px;color:#94a3b8;margin-top:2px">${TREASURY_ALIASES.has(ps.name) ? 'أموال الشركة، لا يوجد لها حساب شريك.' : 'رأس مال مدوَّر، بلا مطالبة. ويظهر رصيد حسابه في «كشف حساب شامل لشريك» باسمه.'}</div>
                         </div>`
                       : (() => {
                       const g  = +ps.grossEntitlement || 0;

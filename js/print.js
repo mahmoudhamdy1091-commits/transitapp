@@ -913,7 +913,10 @@ export async function printDealSummary(fn) {
                 // ✅ 2026-09-23 — grossEntitlement/payableNow بقيا null فعليًا
                 // من core.js لشريك دائم (مراجعة عميقة بطلب المالك — راجع
                 // project_partner_settlement_permanent_null_fields_2026-09-23)
-                ? '<div style="font-size:13px;color:#78716c;text-align:center;padding:8px 0">لا ينطبق — شريك دائم (رأس مال مدوَّر، بلا مطالبة). رصيده الحقيقي في «جاري الشريك».</div>'
+                // ✅ P0-3 (2026-09-28): الإحالة القديمة لـ«جاري الشريك» اتشالت (رصيده هناك وهمي — G-01)
+                ? '<div style="font-size:13px;color:#78716c;text-align:center;padding:8px 0">' + (x.isTreasury
+                    ? 'لا ينطبق — أموال الشركة، لا يوجد لها حساب شريك.'
+                    : 'لا ينطبق — شريك دائم (رأس مال مدوَّر، بلا مطالبة). ويظهر رصيد حسابه في «كشف حساب شامل لشريك».') + '</div>'
                 : '<div style="font-size:12px;color:#78716c;margin-bottom:6px">' + (x.isTreasury ? 'المستحق = مساهمته الفعلية + حصة الربح − ما استلمه' : 'المستحق = رأس ماله المدفوع فعلاً + حصة الربح − ما استلمه') + '</div>'
             // ✅ طرف المعادلة = grossEntitlement لا payableNow — نفس تصحيح
             //    dashboard.js. الورقة تصل الشريك، فطرفان غير متساويين عليها

@@ -3216,6 +3216,13 @@
     </div>
     <div class="modal-body">
 
+      <!-- ⚠️ P0-3 (2026-09-28، G-01): الشاشة دي مبنية من حصص وتقديرات لكل ملف، مش من حساب الشريك،
+           فرصيدها التراكمي كان وهمي (مازن +318,331 وحسابه 2401 مدين عليه). الشريط لحد ما تتبني من القيود -->
+      <div class="alert alert-warn" style="margin-bottom:12px;font-size:13px;line-height:1.7">
+        ⚠️ <strong>الشاشة دي مش رصيد حساب الشريك.</strong> دي حصص وتقديرات محسوبة لكل ملف، ومش بتقرا كل سحوباته ولا القيود اللي على حسابه.
+        <span id="pa-warning-ref">رصيد حسابه الفعلي في «📖 كشف حساب شامل لشريك» (📋 المعاملات ← 👥 معاملات الشركاء).</span>
+      </div>
+
       <!-- رصيد ملخص -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px" id="pa-summary-kpis"></div>
 

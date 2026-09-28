@@ -999,7 +999,9 @@ export async function loadSummaryTab(fn, sys) {
                مالوش مطالبة رأس مال أصلًا — راجع project_partner_settlement_
                permanent_null_fields_2026-09-23 في الذاكرة) -->
           <div style="font-size:13px;color:var(--text2);text-align:center;padding:8px 0">
-            لا ينطبق — شريك دائم (رأس مال مدوَّر، بلا مطالبة). رصيده الحقيقي في «جاري الشريك».
+            ${x.isTreasury
+              ? 'لا ينطبق — فلوس الشركة، مالوش حساب شريك.'
+              : 'لا ينطبق — شريك دائم (رأس مال مدوَّر، بلا مطالبة). رصيد حسابه في «📊 كل الصفقات» تحت (نفس «📖 كشف حساب شامل لشريك»).'}
           </div>` : `
           <div style="font-size:12px;color:var(--text2);margin-bottom:6px">
             ${x.isTreasury ? 'المستحق = مساهمته الفعلية + حصة الربح − ما استلمه' : 'المستحق = رأس ماله المدفوع فعلاً + حصة الربح − ما استلمه'}
