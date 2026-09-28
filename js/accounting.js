@@ -1013,6 +1013,23 @@ export function exportToExcel(sheets, filename) {
 // printPurchaseOrder → js/print.js
 
 
+// ⚠️ P0-5 (2026-09-28، G-04، مؤقت لحد P3-3): Excel الصفقة وExcel سند الشراء كانوا بيطلّعوا
+// كل الصفوف من غير post_status: 16 ملف فيهم ملغي/مرفوض بـ1,242,056 (BOX-138: 26 تحصيل
+// ملغي = 951,480). القاعدة دلوقتي (نفس الشاشة): الفعّال (isEffective) بيتحسب في الإجمالي،
+// والمسودة وطلب الإلغاء بيظهروا بعلامة ومش محسوبين، والملغي (voided) والمرفوض (cancelled)
+// بيتشالوا. الملف ممكن يطلع بره، فالكلام بالفصحى.
+function _xlStatus(r) {
+  const st = r.post_status;
+  if (!st || st === 'posted') return 'مُرحَّل';
+  if (st === 'pending_edit')  return 'مُرحَّل (تعديل معلّق)';
+  if (st === 'draft')         return 'معلّق بانتظار الاعتماد (غير محسوب)';
+  if (st === 'pending_void')  return 'طلب إلغاء معلّق (غير محسوب)';
+  return null;   // voided / cancelled ← يتشال
+}
+const _xlRows  = rows => (rows||[]).filter(r => _xlStatus(r) !== null);
+const _xlSum   = (rows, f) => (rows||[]).filter(isEffective).reduce((s,r) => s + (+f(r)||0), 0);
+const _XL_TOTAL = 'الإجمالي (المُرحَّل فقط)';
+
 export async function exportPurchaseOrderExcel(fileNo) {
   try {
     const sys = state.system;
@@ -1039,8 +1056,11 @@ export async function exportPurchaseOrderExcel(fileNo) {
       },
       {
         name: 'دفعات المورد',
-        headers: ['التاريخ','الدافع','المبلغ','طريقة الدفع','المستند','ملاحظات'],
-        data: (payments||[]).map(p => [p.pay_date||'', p.payer||'', +p.amount||0, p.pay_method||'', p.document||'', p.notes||''])
+        headers: ['التاريخ','الدافع','المبلغ','طريقة الدفع','المستند','ملاحظات','الحالة'],
+        data: [
+          ..._xlRows(payments).map(p => [p.pay_date||'', p.payer||'', +p.amount||0, p.pay_method||'', p.document||'', p.notes||'', _xlStatus(p)]),
+          [_XL_TOTAL, '', _xlSum(payments, p => p.amount), '', '', '', ''],
+        ]
       }
     ], `سند-شراء-${fileNo}`);
   } catch(e) { toast('خطأ: '+e.message,'err'); }
@@ -1060,17 +1080,29 @@ export async function exportDealExcel(fileNo) {
       apiGetAll('collections',     { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
       apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` }),
     ]);
+    // ✅ P0-5: راجع _xlStatus فوق. التحصيل اللي لسه ما اتحصّلش (paid_date فاضي) كان
+    // بيطلع في شيت «تحصيلات» بتاريخ فاضي، فبقى في شيت لوحده بتاريخ الاستحقاق.
+    const paidColl   = (collections||[]).filter(c => c.paid_date);
+    const unpaidColl = (collections||[]).filter(c => !c.paid_date);
     exportToExcel([
-      { name:'مبيعات', headers:['التاريخ','الفاتورة','VIN','العميل','السعر','ملاحظات'],
-        data:(sales||[]).map(s=>[s.sale_date,s.inv_no,s.vin,s.customer,+s.sale_price||0,s.notes||'']) },
-      { name:'مصاريف', headers:['التاريخ','البيان','النوع','المبلغ','طريقة الدفع'],
-        data:(expenses||[]).map(e=>[e.exp_date||e.expense_date,e.description,e.category,+e.amount||0,e.pay_method||'']) },
-      { name:'دفعات المورد', headers:['التاريخ','الدافع','المبلغ','طريقة الدفع','المستند'],
-        data:(payments||[]).map(p=>[p.pay_date,p.payer,+p.amount||0,p.pay_method||'',p.document||'']) },
-      { name:'تحصيلات', headers:['التاريخ','العميل','المبلغ','طريقة الدفع'],
-        data:(collections||[]).map(c=>[c.paid_date,c.customer,+c.amount||0,c.pay_method||'']) },
-      { name:'صرف شركاء', headers:['التاريخ','الشريك','النوع','رأس مال','أرباح','إجمالي'],
-        data:(payouts||[]).map(p=>[p.pay_date,p.partner,p.payout_type,+p.capital_amount||0,+p.profit_amount||0,+p.amount||0]) },
+      { name:'مبيعات', headers:['التاريخ','الفاتورة','VIN','العميل','السعر','ملاحظات','الحالة'],
+        data:[ ..._xlRows(sales).map(s=>[s.sale_date,s.inv_no,s.vin,s.customer,+s.sale_price||0,s.notes||'',_xlStatus(s)]),
+               [_XL_TOTAL,'','','',_xlSum(sales, s=>s.sale_price),'',''] ] },
+      { name:'مصاريف', headers:['التاريخ','البيان','النوع','المبلغ','طريقة الدفع','الحالة'],
+        data:[ ..._xlRows(expenses).map(e=>[e.exp_date||e.expense_date,e.description,e.category,+e.amount||0,e.pay_method||'',_xlStatus(e)]),
+               [_XL_TOTAL,'','',_xlSum(expenses, e=>e.amount),'',''] ] },
+      { name:'دفعات المورد', headers:['التاريخ','الدافع','المبلغ','طريقة الدفع','المستند','الحالة'],
+        data:[ ..._xlRows(payments).map(p=>[p.pay_date,p.payer,+p.amount||0,p.pay_method||'',p.document||'',_xlStatus(p)]),
+               [_XL_TOTAL,'',_xlSum(payments, p=>p.amount),'','',''] ] },
+      { name:'تحصيلات', headers:['التاريخ','العميل','المبلغ','طريقة الدفع','الحالة'],
+        data:[ ..._xlRows(paidColl).map(c=>[c.paid_date,c.customer,+c.amount||0,c.pay_method||'',_xlStatus(c)]),
+               [_XL_TOTAL,'',_xlSum(paidColl, c=>c.amount),'',''] ] },
+      { name:'مستحق لم يُحصَّل', headers:['تاريخ الاستحقاق','العميل','الفاتورة','المبلغ','الحالة'],
+        data:[ ..._xlRows(unpaidColl).map(c=>[c.due_date||'',c.customer,c.inv_no||'',+c.amount||0,_xlStatus(c)]),
+               [_XL_TOTAL,'','',_xlSum(unpaidColl, c=>c.amount),''] ] },
+      { name:'صرف شركاء', headers:['التاريخ','الشريك','النوع','رأس مال','أرباح','إجمالي','الحالة'],
+        data:[ ..._xlRows(payouts).map(p=>[p.pay_date,p.partner,p.payout_type,+p.capital_amount||0,+p.profit_amount||0,+p.amount||0,_xlStatus(p)]),
+               [_XL_TOTAL,'','',_xlSum(payouts, p=>p.capital_amount),_xlSum(payouts, p=>p.profit_amount),_xlSum(payouts, p=>p.amount),''] ] },
     ], `كشف-حساب-${fileNo}`);
   } catch(e) { toast('خطأ: '+e.message,'err'); }
 }
