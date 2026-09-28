@@ -2425,6 +2425,10 @@ const partnerAccountState = { partner: null, entries: [] };
 export async function openPartnerAccountLedger(partnerName) {
   partnerAccountState.partner = partnerName;
   el('pa-partner-name').textContent = partnerName;
+  // ⚠️ P0-3: الخزينة فلوس الشركة ومالهاش حساب شريك، فمفيش كشف شامل نحيلها له
+  if (el('pa-warning-ref')) el('pa-warning-ref').textContent = TREASURY_ALIASES.has(partnerName)
+    ? 'والصندوق فلوس الشركة، مالوش حساب شريك.'
+    : 'رصيد حسابه الفعلي في «📖 كشف حساب شامل لشريك» (📋 المعاملات ← 👥 معاملات الشركاء).';
   el('pa-ledger-table').innerHTML = '<div class="loading"><div class="spinner"></div><br>جاري التحميل...</div>';
   openModal('partnerAccountModal');
   await loadPartnerAccountLedger();
@@ -2630,7 +2634,7 @@ export async function loadPartnerAccountLedger() {
     el('pa-summary-kpis').innerHTML = partnerIsPermanent ? `
       <div class="j-kpi" style="border-right:3px solid var(--blue);grid-column:1/-1">
         <div class="j-kpi-label">شريك دائم — رأس مال مدوَّر، بلا مطالبة/دَين رأس مال</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:4px">أرقام "دفع للمورد/متبقي عليه/القابل للتحويل" هنا لا تنطبق. رصيده الحقيقي = حصته في الأرباح المرحَّلة فعليًا (تحت) ناقص ما استلمه.</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px">أرقام "دفع للمورد/متبقي عليه/القابل للتحويل" هنا لا تنطبق. ${TREASURY_ALIASES.has(partner) ? 'والصندوق فلوس الشركة، مالوش حساب شريك.' : 'ورصيد حسابه مش في الشاشة دي — شوف «📖 كشف حساب شامل لشريك».'}</div>
       </div>
       <div class="j-kpi" style="border-right:3px solid var(--green)">
         <div class="j-kpi-label">حصته في الأرباح</div>
@@ -2785,20 +2789,19 @@ export function renderPartnerAccountLedger() {
     return;
   }
 
-  let runningBalance = 0;
-  // ✅ الحساب من القديم للحديث (الترتيب الصح للرصيد التراكمي)
-  // ✅ e._sign !== undefined بدل e._sign||fallback — الصفر falsy في JS، فكان
-  // أي بند _sign:0 (مرجعي، زي "حصة في التكلفة") بيرجع للـfallback (+1) بدل
-  // ما يتجاهل تمامًا من حساب الرصيد
+  // ⛔ P0-3 (2026-09-28، G-01): عمود «الرصيد التراكمي» اتشال. كان بيجمع أرقام
+  // مرجعية على فعلية على تقديرية (دفعات من فلوس الشركة + أرباح ملفات مفتوحة)
+  // ومش شايف partner_ledger ولا القيود اليدوية، فطلّع لمازن +318,331 وحسابه
+  // 2401 مدين عليه. الإشارة (+/−/≈) لسه ظاهرة في عمود المبلغ.
+  // ✅ e._sign !== undefined بدل e._sign||fallback — الصفر falsy في JS
   const rowsData = entries.map(e => {
     const type   = e.type || e.entry_type;
     const sign   = e._sign !== undefined ? e._sign : (type==='general_withdraw'||type==='advance'||type==='deal_payout' ? -1 : +1);
     const amount = +e.amount || 0;
-    runningBalance += sign * amount;
-    return { e, type, sign, amount, balance: runningBalance };
+    return { e, type, sign, amount };
   });
 
-  const rows = rowsData.map(({e, type, sign, amount, balance}) => {
+  const rows = rowsData.map(({e, type, sign, amount}) => {
     const color = typeColors[type] || 'var(--text2)';
     const date  = e.entry_date||e.pay_date||e.created_at?.split('T')[0]||'—';
     return `<tr>
@@ -2813,9 +2816,6 @@ export function renderPartnerAccountLedger() {
       <td class="mono" style="color:${sign>0?'var(--green)':sign<0?'var(--red)':'var(--text2)'};font-weight:700">
         ${sign>0?'+':sign<0?'−':'≈'}${fmt(amount)}
       </td>
-      <td class="mono" style="font-weight:700;color:${balance>=0?'var(--blue)':'var(--red)'}">
-        ${sign===0 ? `<span style="color:var(--text2);font-weight:400">${fmt(balance)} (بدون تغيير)</span>` : fmt(balance)}
-      </td>
       <td style="font-size:13px;color:var(--text2)">${e.document||e.notes||'—'}</td>
     </tr>`;
   }).join('');
@@ -2824,7 +2824,7 @@ export function renderPartnerAccountLedger() {
     <table class="data-table" style="font-size:12px">
       <thead><tr>
         <th>التاريخ</th><th>النوع</th><th>البيان</th>
-        <th>الملف</th><th>المبلغ</th><th>الرصيد التراكمي</th><th>ملاحظات</th>
+        <th>الملف</th><th>المبلغ</th><th>ملاحظات</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
@@ -2849,6 +2849,11 @@ export function exportPartnerAccountPDF() {
           <div style="font-size:13px;font-weight:700;margin-top:4px">${partnerName}</div>
           <div style="font-size:13px;color:#666">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-KW')}</div>
         </div>
+      </div>
+      <!-- ⚠️ P0-3: نفس شريط المودال بالفصحى — الورقة ممكن تطلع للشريك -->
+      <div style="border:1.5px solid #d97706;background:#fffbeb;color:#92400e;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.7">
+        <strong>تنبيه: هذا الكشف لا يمثّل رصيد حساب الشريك.</strong> فهو يعرض حصصًا وتقديرات محسوبة لكل ملف، ولا يشمل جميع المسحوبات ولا القيود المسجّلة على حسابه.
+        ${TREASURY_ALIASES.has(partnerName) ? 'والصندوق أموال الشركة، ولا يوجد له حساب شريك.' : 'ويُرجَع في رصيد الحساب إلى «كشف حساب شامل لشريك».'}
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
         ${kpisEl ? kpisEl.innerHTML : ''}
