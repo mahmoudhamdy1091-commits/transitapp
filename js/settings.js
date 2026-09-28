@@ -771,10 +771,21 @@ export async function loadDealStatement(fn, sys) {
         </div>`
       : '';
 
-    const kpis = draftAlert + `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px">
+    // ⚠️ P0-4 (2026-09-28، G-02، مؤقت لحد P3-3): الرقم ده = مبيعات − الشراء كله − مصاريف،
+    // مش ربح الملف (بيطرح تمن العربيات اللي ما اتباعتش، ومش شايف مصاريف الفواتير ولا
+    // إلغاء الملف): 49 من 120 ملف مختلفين عن computePartnerSettlement. كان بيتعرض
+    // Math.abs باللون بس، فالخسارة كانت بتتقري ربح. دلوقتي بإشارته + كلمة + شريط.
+    const plSigned = n => `${n < -0.005 ? '−' : ''}${fmt(Math.abs(n))}`;
+    const plWord   = profit > 0.005 ? 'ربح' : profit < -0.005 ? 'خسارة' : 'تعادل';
+    const notProfitAlert = `<div class="alert alert-warn" style="margin-bottom:10px;font-size:13px;line-height:1.7">
+        ⚠️ <strong>الرقم هنا مش ربح الملف.</strong> ده = المبيعات − تكلفة الشراء كلها − المصاريف، فبيطرح تمن العربيات اللي لسه ما اتباعتش، ومش شايف المصاريف الإضافية على الفواتير ولا إلغاء الملف.
+        ربح الملف الصح في تبويب «📋 ملخص».
+      </div>`;
+
+    const kpis = notProfitAlert + draftAlert + `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px">
       ${[['تكلفة الشراء',fmt(totalPurchase),'var(--blue)'],['المدفوع للمورد',fmt(totalPaid),'var(--cyan)'],
          ['المصاريف',fmt(totalExp),'var(--red)'],['المبيعات',fmt(totalSales),'var(--green)'],
-         ['المحصّل فعلاً',fmt(totalColl),'var(--green)'],['صافي الربح',fmt(Math.abs(profit)),profit>=0?'var(--green)':'var(--red)'],
+         ['المحصّل فعلاً',fmt(totalColl),'var(--green)'],['مبيعات − شراء − مصاريف',`${plSigned(profit)} <span style="font-size:12px">${plWord}</span>`,profit>=0?'var(--green)':'var(--red)'],
       ].map(([l,v,c])=>`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px">
         <div style="font-size:12px;color:var(--text2);margin-bottom:4px">${l}</div>
         <div style="font-size:16px;font-weight:700;color:${c}">${v}</div></div>`).join('')}
@@ -798,7 +809,7 @@ export async function loadDealStatement(fn, sys) {
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--green)">${e.debit>0?fmt(e.debit):'—'}</td>
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:12px;color:var(--red)">${e.credit>0?fmt(e.credit):'—'}</td>
         <td style="padding:10px 12px;text-align:left;font-family:var(--mono);font-size:13px;font-weight:700;color:${e._pl?(running>=0?'var(--green)':'var(--red)'):'var(--text2)'}">
-          ${e._pl?fmt(Math.abs(running)):'—'}
+          ${e._pl?plSigned(running):'—'}
         </td>
       </tr>`;
     }).join('');
@@ -809,7 +820,7 @@ export async function loadDealStatement(fn, sys) {
     wrap.innerHTML = kpis + `
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <div style="padding:8px 14px;background:var(--card2);border-bottom:1px solid var(--border);font-size:13px;color:var(--text2)">
-          📊 الرصيد الجاري = صافي ربح/خسارة الصفقة (مبيعات − تكلفة شراء − مصاريف) · الصفوف المعلّمة "معلوماتي" لا تدخل في الحساب
+          📊 الرصيد الجاري = مبيعات − تكلفة الشراء كلها − مصاريف (مش ربح الملف)، والسالب (−) خسارة · الصفوف المعلّمة "معلوماتي" لا تدخل في الحساب
         </div>
         <table style="width:100%;border-collapse:collapse">
           <thead><tr style="background:var(--card2);border-bottom:1px solid var(--border)">
@@ -828,9 +839,14 @@ export async function loadDealStatement(fn, sys) {
 export function exportDealStatementExcel() {
   const d = window._dealStatementData;
   if (!d) { toast('افتح كشف الصفقة أولاً','err'); return; }
-  const { fn, entries } = d;
+  const { fn, entries, profit } = d;
   let running = 0;
-  const rows = [['التاريخ','النوع','البيان','الطرف','مدين','دائن','الرصيد (ر/خ)','ملاحظة']];
+  // ⚠️ P0-4: الملف ممكن يطلع بره، فالتنبيه بالفصحى، والرصيد بإشارته (كان Math.abs)
+  const rows = [
+    ['تنبيه: الرصيد في هذا الكشف = المبيعات − تكلفة الشراء كاملة − المصاريف، وهو ليس ربح الملف؛ إذ يطرح تكلفة السيارات التي لم تُبع بعد، ولا يشمل المصاريف الإضافية على الفواتير ولا إلغاء الملف. والرصيد السالب خسارة.'],
+    [],
+    ['التاريخ','النوع','البيان','الطرف','مدين','دائن','الرصيد (ر/خ)','ملاحظة'],
+  ];
   entries.forEach(e => {
     // ✅ الرصيد يُحدَّث فقط للصفوف التي تدخل في P&L (مطابق للعرض في الشاشة)
     if (e._pl) {
@@ -839,9 +855,11 @@ export function exportDealStatementExcel() {
     }
     rows.push([e.date||'', e.type, e.desc+(e.extra?' — '+e.extra:''), e.party,
       e.debit>0?e.debit:'', e.credit>0?e.credit:'',
-      e._pl ? Math.abs(running) : '',
+      e._pl ? running : '',
       e._draft ? 'معلق - في انتظار الموافقة' : '']);
   });
+  rows.push(['', 'الإجمالي', 'المبيعات − تكلفة الشراء كاملة − المصاريف (ليس ربح الملف)', '', '', '',
+    profit, profit > 0.005 ? 'ربح' : profit < -0.005 ? 'خسارة' : 'تعادل']);
   const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
