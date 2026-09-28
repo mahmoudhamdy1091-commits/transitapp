@@ -4063,13 +4063,16 @@ export async function loadJEManager() {
     };
     if (from) params['entry_date'] = `gte.${from}`;
     // Supabase: can't use two conditions on same field in params object — build URL manually
-    let url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(state.system)}&order=entry_date.desc,entry_no.desc&select=*`;
+    // ✅ P0-7b (2026-09-28، N-19): كان limit=2000 في طلب واحد، والسيرفر بيقطع عند 1000
+    // (TM 2025 = 1,904 سطر، و2026 = 1,056). صفحات بفحص اكتمال، والـorder فيه id.
+    // فلتر الحالة زي ما هو (مفيش — المدير بيعرض كل الحالات).
+    let url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(state.system)}&order=entry_date.desc,entry_no.desc,id.desc&select=*`;
     if (from) url += `&entry_date=gte.${encodeURIComponent(from)}`;
     if (to)   url += `&entry_date=lte.${encodeURIComponent(to+'T23:59:59')}`;
-    url += `&limit=2000`;
-    const res = await apiFetch(url, {});
-    if (!res.ok) throw new Error(await res.text());
-    const rows = await res.json();
+    const got = await fetchPagesChecked(url, { label:'jeManager' });
+    const rows = got.rows;
+    const loadWarn = got.complete ? '' :
+      `<div class="alert alert-err" style="margin-bottom:8px">⚠️ تم تحميل ${rows.length} من ${got.total ?? '؟'} سطر — القايمة والإجماليات ممكن تكون ناقصة. أعد التحميل.</div>`;
     jeMgrState.allEntries = rows || [];
 
     // تجميع بـ entry_no
@@ -4103,11 +4106,11 @@ export async function loadJEManager() {
     // Balance banner
     if (el('je-balance-banner')) {
       if (diff < 0.01) {
-        el('je-balance-banner').innerHTML = `<div style="background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:8px 14px;font-size:12px;font-weight:700;color:var(--green)">✅ القيود متوازنة — مدين = دائن = ${fmt(totalDr)}</div>`;
+        el('je-balance-banner').innerHTML = `${loadWarn}<div style="background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:8px 14px;font-size:12px;font-weight:700;color:var(--green)">✅ القيود متوازنة — مدين = دائن = ${fmt(totalDr)}</div>`;
       } else {
         // حساب القيود غير المتوازنة
         const unbalanced = Object.values(jeMgrState.grouped).filter(g => Math.abs(g.totalDr-g.totalCr)>0.01);
-        el('je-balance-banner').innerHTML = `
+        el('je-balance-banner').innerHTML = `${loadWarn}
           <div style="background:var(--red-dim);border:2px solid var(--red);border-radius:var(--radius-sm);padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <div style="flex:1;min-width:200px">
               <div style="font-size:12px;font-weight:700;color:var(--red)">❌ فرق ${fmt(diff)} بين المدين والدائن — يؤثر على ميزان المراجعة!</div>
@@ -5656,19 +5659,22 @@ export async function loadContactStatement() {
 
   try {
     // جلب كل القيود التي تحمل contact_name = اسم الطرف
-    const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&contact_name=eq.${encodeURIComponent(name)}&post_status=eq.posted&order=entry_date.asc,entry_no.asc&select=*&limit=5000`;
-    const res  = await fetch(url, { headers: headers() });
-    if (!res.ok) throw new Error(await res.text());
-    const rows = await res.json();
-    csState.entries = rows || [];
+    // ✅ P0-7b (2026-09-28، N-19، قرار المالك «صلح كشف مازن»): كان طلب واحد بـlimit=5000،
+    // والسيرفر بيقطع عند 1000 بصمت (كشف مازن TM: 1,017 سطر، والشاشة بتعرض 1000 برصيد
+    // 57,432.5 بدل 50,047.5). دلوقتي صفحات بفحص اكتمال، والـorder فيه id (شرط fetchPagesChecked).
+    const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&contact_name=eq.${encodeURIComponent(name)}&post_status=eq.posted&order=entry_date.asc,entry_no.asc,id.asc&select=*`;
+    let got = await fetchPagesChecked(url, { label:'contactStatement' });
+    csState.entries = got.rows || [];
 
-    if (!rows?.length) {
-      // محاولة بحث بـ account_name (للبيانات القديمة قبل الـ migration)
-      const url2 = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&account_name=like.*${encodeURIComponent(name)}*&post_status=eq.posted&order=entry_date.asc,entry_no.asc&select=*&limit=5000`;
-      const res2  = await fetch(url2, { headers: headers() });
-      const rows2 = res2.ok ? await res2.json() : [];
-      csState.entries = rows2 || [];
-      if (!rows2?.length) {
+    // ⚠️ الـfallback بس لو الطلب الأول **اكتمل** ورجع صفر. لو فشل (complete=false) مانروحش
+    // له، عشان مانعرضش كشف تاني جزئي من غير ما حد ياخد باله — بيطلع تحذير التحميل الناقص.
+    if (got.complete && !got.rows?.length) {
+      // محاولة بحث بـ account_name (للبيانات القديمة قبل الـ migration) — نفس المعاملة
+      const url2 = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&account_name=like.*${encodeURIComponent(name)}*&post_status=eq.posted&order=entry_date.asc,entry_no.asc,id.asc&select=*`;
+      got = await fetchPagesChecked(url2, { label:'contactStatement-byAccountName' });
+      const rows2 = got.rows || [];
+      csState.entries = rows2;
+      if (!rows2.length) {
         wrap.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text2)">
           <div style="font-size:36px;margin-bottom:10px">📋</div>
           <div style="font-size:14px;font-weight:700;margin-bottom:6px">لا توجد قيود باسم "${name}"</div>
@@ -5736,12 +5742,31 @@ export async function loadContactStatement() {
       ['عدد القيود',    entries.length,        'var(--blue)'],
     ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c};font-size:18px;font-weight:900">${v}</div></div>`).join('');
 
-    wrap.innerHTML = `
+    // ✅ P0-7b: تحذير لو التحميل ناقص (نفس أسلوب P0-7 في دفتر الأستاذ)
+    const loadWarn = got.complete ? '' :
+      `<div class="alert alert-err" style="margin-bottom:10px">⚠️ تم تحميل ${entries.length} من ${got.total ?? '؟'} سطر — الرصيد المعروض ممكن يكون ناقص. أعد فتح الكشف.</div>`;
+    // ✅ P0-7b: الرصيد هنا مجموع كل الحسابات اللي عليها اسم الجهة (مازن: 2401 + 3200)،
+    // مش رصيد حساب واحد — فبنفصّله بالحساب لو أكتر من حساب.
+    const _byAcc = {};
+    entries.forEach(r => {
+      const k = r.account_code || '—';
+      if (!_byAcc[k]) _byAcc[k] = { name: r.account_name || '', net: 0 };
+      _byAcc[k].net += (+r.dr_amount || 0) - (+r.cr_amount || 0);
+    });
+    const _accKeys = Object.keys(_byAcc).sort();
+    const accBreakdown = _accKeys.length > 1
+      ? `<div style="padding:8px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);line-height:1.8">
+          تفصيل الرصيد حسب الحساب: ${_accKeys.map(k => { const n = _byAcc[k].net; return `<span style="white-space:nowrap"><b>${k}</b> ${_byAcc[k].name}: <span class="mono">${fmt(Math.abs(n))}</span> ${n > 0.005 ? 'مدين' : n < -0.005 ? 'دائن' : 'متوازن'}</span>`; }).join(' · ')}
+        </div>`
+      : '';
+
+    wrap.innerHTML = `${loadWarn}
       <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <div style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
           <span>📋 كشف حساب: <strong style="color:var(--text)">${name}</strong> · ${entries.length} حركة</span>
           <span style="font-weight:700;color:${balColor}">الرصيد: ${fmt(Math.abs(balance))} ${balLabel}</span>
         </div>
+        ${accBreakdown}
         <div style="overflow-x:auto">
           <table class="data-table" style="min-width:700px">
             <thead><tr>
