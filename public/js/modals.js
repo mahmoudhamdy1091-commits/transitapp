@@ -2432,7 +2432,8 @@ export async function onPayoutPartnerChange() {
         <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px">
           <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
             <div style="font-size:13px;color:var(--text2);font-weight:700">الربح المستحق</div>
-            <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:${s.profit>=0?'var(--green)':'var(--red)'}">${fmt2(Math.abs(s.profit))}</div>
+            <!-- ✅ P0-4b: بإشارته + كلمة (كان Math.abs باللون بس) -->
+            <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:${s.profit>=0?'var(--green)':'var(--red)'}">${s.profit < -0.005 ? '−' : ''}${fmt2(Math.abs(s.profit))} <span style="font-family:'Cairo',sans-serif;font-size:11px">${s.profit > 0.005 ? 'ربح' : s.profit < -0.005 ? 'خسارة' : 'تعادل'}</span></div>
           </div>
           <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
             <div style="font-size:13px;color:var(--text2);font-weight:700">إجمالي المسحوبات</div>
@@ -2475,7 +2476,8 @@ export async function onPayoutPartnerChange() {
         </div>
         <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
           <div style="font-size:13px;color:var(--text2);font-weight:700">الربح المستحق</div>
-          <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:${s.profit>=0?'var(--green)':'var(--red)'}">${fmt2(Math.abs(s.profit))}</div>
+          <!-- ✅ P0-4b: بإشارته + كلمة (كان Math.abs باللون بس) -->
+          <div style="font-family:var(--mono);font-size:13px;font-weight:800;color:${s.profit>=0?'var(--green)':'var(--red)'}">${s.profit < -0.005 ? '−' : ''}${fmt2(Math.abs(s.profit))} <span style="font-family:'Cairo',sans-serif;font-size:11px">${s.profit > 0.005 ? 'ربح' : s.profit < -0.005 ? 'خسارة' : 'تعادل'}</span></div>
         </div>
         <div style="background:var(--card2);border-radius:6px;padding:8px 10px">
           <div style="font-size:13px;color:var(--text2);font-weight:700">إجمالي المسحوبات</div>
