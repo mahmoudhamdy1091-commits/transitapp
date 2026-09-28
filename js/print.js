@@ -409,7 +409,7 @@ export async function printPayoutVoucher(payoutId) {
       </div>
       <div class="kpi-row" style="margin-top:6px">
         <div class="kpi-cell" style="border-color:#2563eb"><div class="kpi-label">رأس المال المدفوع</div><div class="kpi-val c-blue">${fmt2(dealSummary.capitalPaid)} KWD</div></div>
-        <div class="kpi-cell" style="border-color:${dealSummary.profit>=0?'#16a34a':'#dc2626'}"><div class="kpi-label">الربح المستحق</div><div class="kpi-val ${dealSummary.profit>=0?'c-green':'c-red'}">${fmt2(Math.abs(dealSummary.profit))} KWD</div></div>
+        <div class="kpi-cell" style="border-color:${dealSummary.profit>=0?'#16a34a':'#dc2626'}"><div class="kpi-label">حصته من الربح أو الخسارة</div><div class="kpi-val ${dealSummary.profit>=0?'c-green':'c-red'}">${dealSummary.profit < -0.005 ? '−' : ''}${fmt2(Math.abs(dealSummary.profit))} KWD <span style="font-size:12px">${dealSummary.profit > 0.005 ? 'ربح' : dealSummary.profit < -0.005 ? 'خسارة' : 'تعادل'}</span></div></div>
         <div class="kpi-cell" style="border-color:#3C3834"><div class="kpi-label">المسحوبات السابقة</div><div class="kpi-val c-amber">${fmt2(dealSummary.totalWithdrawn)} KWD</div></div>
       </div>
     </div>` : '';

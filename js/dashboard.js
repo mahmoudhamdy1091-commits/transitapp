@@ -253,6 +253,11 @@ export async function loadDashboard() {
 }
 
 // ── Performance Chart — Stacked Bar ──
+// ✅ P0-4b (2026-09-28، قرار المالك «نصلّح سند صرف الشريك» ومعاه باقي الأماكن): الربح كان
+// بيتعرض Math.abs باللون بس، فالخسارة كانت بتتقري ربح. دلوقتي بإشارته + كلمة. عرض بس.
+const _plSign = n => (n < -0.005 ? '−' : '');
+const _plWord = n => (n > 0.005 ? 'ربح' : n < -0.005 ? 'خسارة' : 'تعادل');
+
 export function renderDashPerfChart(sales, expenses, from, to, days, deals) {
   const chartWrap  = el('dash-perf-chart');
   const labelsWrap = el('dash-perf-labels');
@@ -317,7 +322,7 @@ export function renderDashPerfChart(sales, expenses, from, to, days, deals) {
     const expH   = stackH - purH;
     const salH   = Math.max((b.sales / maxVal) * CHART_H, b.sales>0?4:0);
     const pColor = b.profit >= 0 ? 'var(--green)' : 'var(--red)';
-    const tooltip = `مشتريات: ${fmtK(b.purchase)} | مصروفات: ${fmtK(b.exp)} | مبيعات: ${fmtK(b.sales)} | ربح: ${fmtK(Math.abs(b.profit))}`;
+    const tooltip = `مشتريات: ${fmtK(b.purchase)} | مصروفات: ${fmtK(b.exp)} | مبيعات: ${fmtK(b.sales)} | ${_plWord(b.profit)}: ${_plSign(b.profit)}${fmtK(Math.abs(b.profit)) || '0'}`;
     return `
     <div style="flex:1;display:flex;gap:2px;align-items:flex-end;min-width:0" title="${tooltip}">
       <!-- Stacked: مشتريات + مصروفات -->
@@ -508,7 +513,8 @@ export function renderDealsTable(deals, targetId = 'dealsTableBody', opts = {}) 
       <td>
         <div style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:8px;background:${profitBg}">
           <span style="font-size:12px">${profitArrow}</span>
-          <span class="mono" style="font-weight:900;color:${profitColor};font-size:13px">${fmt(Math.abs(profit))}</span>
+          <span class="mono" style="font-weight:900;color:${profitColor};font-size:13px">${_plSign(profit)}${fmt(Math.abs(profit))}</span>
+          <span style="font-size:11px;color:${profitColor}">${_plWord(profit)}</span>
         </div>
         ${profit!==0 && sales>0 ? `<div style="font-size:12px;color:var(--text2);margin-top:2px;text-align:center">هامش ${sales>0?((profit/sales)*100).toFixed(1):0}%</div>` : ''}
       </td>
@@ -828,7 +834,7 @@ export async function loadSummaryTab(fn, sys) {
           <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
           <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:14px;font-weight:700">
             <span>صافي ربح الصفقة</span>
-            <span style="color:${profit>=0?'var(--green)':'var(--red)'}">${fmt(Math.abs(profit))} ${profit>=0?'✓':'↓'}</span>
+            <span style="color:${profit>=0?'var(--green)':'var(--red)'}">${_plSign(profit)}${fmt(Math.abs(profit))} <span style="font-size:12px">${_plWord(profit)}</span></span>
           </div>
           <div style="font-size:11px;color:var(--text2)">هامش ${margin}%${!hasJEData?' · بدون قيود محاسبية بعد':''}</div>
         </div>
