@@ -64,11 +64,14 @@ export async function loadJournal() {
     const toEOD  = to + 'T23:59:59';
 
     // ── مصدر واحد: journal_entries فقط ──
-    const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&order=entry_date.desc,entry_no.desc&select=*&limit=5000`;
+    // ✅ P0-7b (2026-09-28، N-19): كان طلب واحد بـlimit=5000، والسيرفر بيقطع عند 1000 بصمت
+    // (TM 2025 = 1,904 سطر مرحّل). صفحات بفحص اكتمال، والـorder فيه id، وتحذير لو ناقص.
+    const url = `${SB_URL}/rest/v1/journal_entries?system_type=eq.${encodeURIComponent(sys)}&entry_date=gte.${encodeURIComponent(from)}&entry_date=lte.${encodeURIComponent(toEOD)}&post_status=eq.posted&order=entry_date.desc,entry_no.desc,id.desc&select=*`;
 
-    const res = await apiFetch(url, {});
-    if (!res.ok) throw new Error(await res.text());
-    const jeRows = await res.json();
+    const got = await fetchPagesChecked(url, { label:'journal' });
+    const jeRows = got.rows;
+    journalState._loadWarn = got.complete ? '' :
+      `<div class="alert alert-err" style="margin-bottom:10px">⚠️ تم تحميل ${jeRows.length} من ${got.total ?? '؟'} سطر للفترة دي — القايمة والكروت ممكن تكون ناقصة. أعد التحميل.</div>`;
 
     // ── ربط نوع العملية بـ ref_table ──
     const RT = {
@@ -420,7 +423,7 @@ export function renderJournalEntries() {
   }
 
   if (!entries.length) {
-    el('journalTimeline').innerHTML = `<div class="empty-state"><div class="e-icon">📅</div><p>لا توجد عمليات في هذه الفترة</p></div>`;
+    el('journalTimeline').innerHTML = (journalState._loadWarn || '') + `<div class="empty-state"><div class="e-icon">📅</div><p>لا توجد عمليات في هذه الفترة</p></div>`;
     return;
   }
 
@@ -482,7 +485,7 @@ export function renderJournalEntries() {
     html += `</div>`;
   });
 
-  el('journalTimeline').innerHTML = html;
+  el('journalTimeline').innerHTML = (journalState._loadWarn || '') + html;
 }
 
 // استخراج رقم الفاتورة من وصف القيد — يتوقف عند أول em-dash (" — ") أو نهاية النص
