@@ -373,7 +373,7 @@ export function printAccountStatement() {
       <td style="font-size:11px;color:#64748b">${e.file_no||'—'}</td>
       <td style="text-align:left;color:#16a34a;font-weight:600">${f(e.debit)}</td>
       <td style="text-align:left;color:#dc2626;font-weight:600">${f(e.credit)}</td>
-      <td style="text-align:left;font-weight:700">${bal.toLocaleString('en-US',{minimumFractionDigits:2})} <span style="font-size:10px;color:#64748b">${dir}</span></td>
+      <td style="text-align:left;font-weight:700">${v.noBalance ? '—' : `${bal.toLocaleString('en-US',{minimumFractionDigits:2})} <span style="font-size:10px;color:#64748b">${dir}</span>`}</td>
     </tr>`;
   }).join('');
 
@@ -381,6 +381,11 @@ export function printAccountStatement() {
   const totalCr  = v.totalCr;
   const finalBal = v.finalBal;
   const fmtN = x => x.toLocaleString('en-US',{minimumFractionDigits:2});
+  // ✅ N-20: في حالة البحث بالكلام الحر مفيش رصيد (مش صفر — الصفر معناه متوازن)
+  const balKpi  = v.noBalance
+    ? `<div class="kpi"><div class="v" style="color:#64748b">—</div><div class="l">الرصيد (بحث — غير محسوب)</div></div>`
+    : `<div class="kpi"><div class="v" style="color:${finalBal>=0?'#16a34a':'#dc2626'}">${fmtN(Math.abs(finalBal))}</div><div class="l">الرصيد ${finalBal>=0?'مدين':'دائن'}</div></div>`;
+  const balFoot = v.noBalance ? '—' : `${fmtN(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}`;
 
   const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8">
   <title>${title}</title>
@@ -411,7 +416,7 @@ export function printAccountStatement() {
   <div class="kpis">
     <div class="kpi"><div class="v" style="color:#16a34a">${fmtN(totalDr)}</div><div class="l">إجمالي المدين</div></div>
     <div class="kpi"><div class="v" style="color:#dc2626">${fmtN(totalCr)}</div><div class="l">إجمالي الدائن</div></div>
-    <div class="kpi"><div class="v" style="color:${finalBal>=0?'#16a34a':'#dc2626'}">${fmtN(Math.abs(finalBal))}</div><div class="l">الرصيد ${finalBal>=0?'مدين':'دائن'}</div></div>
+    ${balKpi}
     <div class="kpi"><div class="v">${list.length}</div><div class="l">عدد الحركات</div></div>
   </div>
   <table>
@@ -422,7 +427,7 @@ export function printAccountStatement() {
       <td colspan="3" style="text-align:right">الإجمالي — ${list.length} حركة</td>
       <td style="text-align:left;color:#16a34a">${fmtN(totalDr)}</td>
       <td style="text-align:left;color:#dc2626">${fmtN(totalCr)}</td>
-      <td style="text-align:left;color:${finalBal>=0?'#16a34a':'#dc2626'}">${fmtN(Math.abs(finalBal))} ${finalBal>=0?'مدين':'دائن'}</td>
+      <td style="text-align:left;color:${v.noBalance?'#64748b':finalBal>=0?'#16a34a':'#dc2626'}">${balFoot}</td>
     </tr></tfoot>
   </table>
   <script>window.onload=()=>window.print();<\/script>
@@ -452,8 +457,9 @@ export function exportLedgerExcel() {
     : [];
   list.forEach(e => {
     running += e.debit - e.credit;
+    // ✅ N-20: في حالة البحث مفيش رصيد — «—» مش صفر
     data.push([e.date||'', e.desc||'', e.contact||'', e.file_no||'', e.debit||0, e.credit||0,
-               Math.abs(running), running>=0?'مدين':'دائن']);
+               v.noBalance ? '—' : Math.abs(running), v.noBalance ? '' : (running>=0?'مدين':'دائن')]);
   });
 
   exportToExcel([{
@@ -480,15 +486,32 @@ export async function renderLedgerTable() {
     window._ledgerOpening = map[accountCode] || 0;
   }
 
+  // ✅ N-20 (2026-09-28، قرار المالك «لما تفلتر دفتر الأستاذ يظهر رصيد افتتاحي والحركات
+  // اللي تمت خلال الفترة، زي أي دفتر أستاذ»): الافتتاحي كان دايمًا بتاع الحساب كله حتى
+  // مع فلتر ملف/جهة (1300 TM بفلتر TM-084 كان بيبدأ من 292,583.01).
+  //  • فلتر ملف و/أو جهة (تقاطع): الافتتاحي = صافي سطور الحساب نفسها (_ledgerAllEntries)
+  //    اللي قبل «من»، بنفس فلتر الترحيل والملف والجهة. (system_type IS NULL = 0 سطر، فمتسق
+  //    مع _computeOpeningBalances.) والجاري والختامي بتوعهم.
+  //  • بحث بالكلام الحر: الحركات ومجموع المدين والدائن بس — من غير افتتاحي ولا رصيد (noBalance).
+  //  • من غير فلتر: زي ما هو (افتتاحي الحساب كله).
+  const search=(el('ldg-filter-search')?.value||'').trim().toLowerCase();
+  const noBalance=!!search;
+  const scoped=!noBalance && !!(fileFilter||contactQ);
+  const _postOk=e=>postFilter==='posted'?e.status==='posted':postFilter==='draft'?e.status==='draft':true;
+  const _scopeOk=e=>(!fileFilter||e.file_no===fileFilter)&&(!contactQ||e.contact===contactQ);
+  let opening;
+  if(noBalance) opening=0;
+  else if(scoped) opening=from ? (window._ledgerAllEntries||[]).filter(e=>e.date<from&&_postOk(e)&&_scopeOk(e)).reduce((s,e)=>s+(+e.debit||0)-(+e.credit||0),0) : 0;
+  else opening=window._ledgerOpening||0;
+  if(Math.abs(opening)<0.0005) opening=0;
+
   let list=window._ledgerAllEntries||[];
-  const opening=window._ledgerOpening||0;
   if(fileFilter)  list=list.filter(e=>e.file_no===fileFilter);
   if(postFilter==='posted') list=list.filter(e=>e.status==='posted');
   if(postFilter==='draft')  list=list.filter(e=>e.status==='draft');
   if(from) list=list.filter(e=>e.date>=from);
   if(to)   list=list.filter(e=>e.date<=to);
   if(contactQ)    list=list.filter(e=>e.contact===contactQ);
-  const search=(el('ldg-filter-search')?.value||'').trim().toLowerCase();
   if(search) list=list.filter(e=>
     (e.desc||'').toLowerCase().includes(search) ||
     (e.ref||'').toLowerCase().includes(search) ||
@@ -497,23 +520,25 @@ export async function renderLedgerTable() {
   );
   const totalDr=list.reduce((s,e)=>s+(+e.debit||0),0);
   const totalCr=list.reduce((s,e)=>s+(+e.credit||0),0);
-  const finalBal=opening+totalDr-totalCr;
+  const finalBal=noBalance ? null : opening+totalDr-totalCr;
   // ✅ P0-6: مصدر واحد لأرقام الشاشة — printAccountStatement وexportLedgerExcel بيقروا
   // من هنا بدل ما يبدأوا من صفر (كانت الورقة بتطلع 90,015.01 دائن و1300 على الشاشة
-  // 202,568 مدين). أي قرار بعدين في الافتتاحي مع فلتر ملف (N-20) يتعمل هنا بس.
+  // 202,568 مدين). وN-20 اتعمل هنا (فوق).
   // (الـlist نفسها جوّه _view: الـreturn بدري تحت لـ«لا توجد حركات» بيحصل قبل ما
   // dataset.entries تتحدّث، فالطباعة كانت ممكن تاخد قايمة قديمة)
-  ledgerState._view = { list, opening, showOpeningRow: !!(opening && !fileFilter), totalDr, totalCr, finalBal };
+  ledgerState._view = { list, opening, showOpeningRow: !noBalance && opening!==0, totalDr, totalCr, finalBal, noBalance };
   el('ledgerKpis').innerHTML=[
     ['مجموع المدين',fmt(totalDr),'var(--green)'],
     ['مجموع الدائن',fmt(totalCr),'var(--red)'],
-    ['الرصيد الختامي',fmt(Math.abs(finalBal))+' '+(finalBal>0?'مدين':finalBal<0?'دائن':'صفر'),finalBal>=0?'var(--green)':'var(--red)'],
+    noBalance
+      ? ['الرصيد الختامي','— (بحث)','var(--text2)']
+      : ['الرصيد الختامي',fmt(Math.abs(finalBal))+' '+(finalBal>0?'مدين':finalBal<0?'دائن':'صفر'),finalBal>=0?'var(--green)':'var(--red)'],
     ['عدد الحركات',list.length,'var(--blue)'],
   ].map(([l,v,c])=>`<div class="j-kpi"><div class="j-kpi-label">${l}</div><div class="j-kpi-val" style="color:${c}">${v}</div></div>`).join('');
   if(!list.length&&!opening){el('ledgerTable').innerHTML=(ledgerState._loadWarn||'')+emptyHTML('📖','لا توجد حركات');return;}
   const SL=SOURCE_LABELS, SC=SOURCE_COLORS;
   let running=opening, rows='';
-  if(opening&&!fileFilter) rows+=`<tr style="background:var(--card2)">
+  if(ledgerState._view.showOpeningRow) rows+=`<tr style="background:var(--card2)">
     <td colspan="4" style="padding:9px 14px;font-size:14px;font-weight:700;color:var(--text2)">رصيد افتتاحي</td>
     <td class="mono text-green" style="padding:9px 14px;font-size:15px;text-align:left">${opening>0?fmt(opening):'—'}</td>
     <td class="mono text-red"   style="padding:9px 14px;font-size:15px;text-align:left">${opening<0?fmt(Math.abs(opening)):'—'}</td>
@@ -539,7 +564,7 @@ export async function renderLedgerTable() {
       <td class="mono" style="padding:9px 12px;font-size:13px;color:var(--text2)">${e.ref||'—'}</td>
       <td class="mono text-green" style="padding:9px 12px;font-size:15px;font-weight:700;text-align:left">${e.debit>0?fmt(e.debit):'—'}</td>
       <td class="mono text-red"   style="padding:9px 12px;font-size:15px;font-weight:700;text-align:left">${e.credit>0?fmt(e.credit):'—'}</td>
-      <td class="mono" style="padding:9px 12px;font-size:16px;font-weight:900;color:${rc};text-align:left">${fmt(Math.abs(running))}</td>
+      <td class="mono" style="padding:9px 12px;font-size:16px;font-weight:900;color:${noBalance?'var(--text2)':rc};text-align:left">${noBalance?'—':fmt(Math.abs(running))}</td>
       <td style="padding:9px 12px;text-align:center"><button class="btn btn-sm" onclick="event.stopPropagation();openJEDetail('${e.ref}')" title="تفاصيل القيد" style="padding:3px 8px;font-size:14px">🔍</button></td>
     </tr>`;
   }).join('');
@@ -556,7 +581,7 @@ export async function renderLedgerTable() {
       <td colspan="4" style="padding:10px 16px;font-size:15px;font-weight:900">الإجمالي</td>
       <td class="mono text-green" style="padding:10px 16px;font-size:15px;font-weight:900;text-align:left">${fmt(totalDr)}</td>
       <td class="mono text-red"   style="padding:10px 16px;font-size:15px;font-weight:900;text-align:left">${fmt(totalCr)}</td>
-      <td style="padding:10px 16px;font-size:16px;font-weight:900;color:${finalBal>=0?'var(--green)':'var(--red)'};text-align:left">${fmt(Math.abs(finalBal))} ${finalBal>0?'مدين':finalBal<0?'دائن':'✓'}</td>
+      <td style="padding:10px 16px;font-size:16px;font-weight:900;color:${noBalance?'var(--text2)':finalBal>=0?'var(--green)':'var(--red)'};text-align:left">${noBalance?'—':`${fmt(Math.abs(finalBal))} ${finalBal>0?'مدين':finalBal<0?'دائن':'✓'}`}</td>
       <td></td>
     </tr></tfoot></table>`;
   el('ledgerView').dataset.entries=JSON.stringify(list);
