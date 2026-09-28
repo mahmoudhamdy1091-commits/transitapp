@@ -1072,7 +1072,10 @@ export async function loadSummaryTab(fn, sys) {
     el('sum-partners').innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">
         <span style="font-size:12px;font-weight:700;color:var(--text2)">👥 الشركاء</span>
-        ${canDistribute ? `
+        ${canDistribute && !PROFIT_POSTING_GATE_OPEN ? `
+        <!-- ⛔ P0-10 (قرار المالك 2026-09-28): الزرار مستخبي لحد ما شروط البوابة تتحقق -->
+        <span style="font-size:11px;color:var(--text2)">🔒 ${PROFIT_POSTING_GATE_MSG}</span>` : ''}
+        ${canDistribute && PROFIT_POSTING_GATE_OPEN ? `
         <button onclick="openFileProfitDistributionModal('${fn}','${sys}')"
           style="background:var(--green-dim,#dcfce7);color:var(--green,#16a34a);border:1px solid var(--green,#16a34a);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Cairo',sans-serif">
           💰 توزيع أرباح هذا الملف
@@ -1106,8 +1109,10 @@ const TREASURY_OWNER_SPLIT = {
 //      شرط canDistribute الحالي (status === 'CLOSED') مش كفاية.
 //   4. P4-4 يتصلح (شيل «استرداد على ملف» للشريك الدائم).
 //   5. المراجعة ملف ملف مع المالك (Q1) قبل ترحيل كل ملف.
-// الحارس ده **توثيق بس** — مفيش منع في الشاشة لسه (اقتراح حارس في الخطة، مستني
-// قرار). أي حد هيرحّل قبل الشروط يرجع للمالك الأول.
+// ✅ 2026-09-28 (قرار المالك «امنع الترحيل لحد ما الشروط تتحقق»): الحارس بقى فعلي —
+// PROFIT_POSTING_GATE_OPEN = false في core.js: الزرار مستخبي، والدالة دي بترجع،
+// وpostFileProfitAll بترفض قبل الـRPC. والحارس على السيرفر مسودة في
+// sql/p0_10_profit_posting_gate.sql (المالك يقرر). فتحها بقرار المالك بس.
 // ════════════════════════════════════════════════════════════
 /**
  * م٦ — نافذة "توزيع أرباح هذا الملف" (زر واحد على مستوى الملف، loadSummaryTab).
@@ -1127,6 +1132,8 @@ const TREASURY_OWNER_SPLIT = {
  * اختلفوا).
  */
 export async function openFileProfitDistributionModal(fn, sys) {
+  // ⛔ P0-10: لو حد نادى الدالة من غير الزرار، مانفتحش شاشة تأكيد هتفشل في الآخر
+  if (!PROFIT_POSTING_GATE_OPEN) { toast(`🔒 ${PROFIT_POSTING_GATE_MSG}`, 'warn'); return; }
   const owners = TREASURY_OWNER_SPLIT[sys] || [];
 
   let profit = 0, partners = [], links = [];

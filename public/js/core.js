@@ -1463,7 +1463,17 @@ export async function fetchPartnerLedgerMovements(sys, partner) {
  * لكن أي فرق عن computeFinancials المحلية (نفس المعادلة، مصدر مختلف) لازم
  * يظهر فورًا وصارخًا، لا سكريبت دوري لازم حد يفتكر يشغّله.
  */
+// ⛔ P0-10 — حارس ترحيل الأرباح الفعلي. قرار المالك 2026-09-28: «امنع الترحيل لحد ما
+// الشروط تتحقق» (الخمس شروط في docs/PLAN-partner-statements-fix-2026-09-23.md، P0-10،
+// ومكتوبة فوق openFileProfitDistributionModal). فتح البوابة = تغيير الثابت ده لـtrue
+// بقرار من المالك بس. الثابت محلي في الموديول، فتغيير window.* من الـconsole ما بيفتحهاش.
+// والحارس المقابل على السيرفر (مسودة، المالك يقرر يشغّلها): sql/p0_10_profit_posting_gate.sql
+export const PROFIT_POSTING_GATE_OPEN = false;
+export const PROFIT_POSTING_GATE_MSG  = 'ترحيل الأرباح مقفول لحد ما الشروط تتحقق';
+
 export async function postFileProfitAll(sys, fileNo) {
+  // ⛔ P0-10: الرفض قبل أي نداء للـRPC
+  if (!PROFIT_POSTING_GATE_OPEN) throw new Error(`${PROFIT_POSTING_GATE_MSG} (P0-10) — القرار عند المالك`);
   const rows = await apiRpc('post_file_profit_all', { p_sys: sys, p_file_no: fileNo });
   if (!rows || !rows.length) return rows;
 
@@ -1811,6 +1821,7 @@ Object.assign(window, {
   companyPayerName, permanentPayerBlockMsg, permanentExpenseWarnMsg, assertSupplierPayerAllowed, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
   computePartnerGlobalBalance, fetchPartnerLedgerMovements, postFileProfitAll, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
+  PROFIT_POSTING_GATE_OPEN, PROFIT_POSTING_GATE_MSG,
   fetchPartnerTransactions,
   login, logout, state, SB_URL, SB_KEY,
 });
