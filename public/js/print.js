@@ -1236,22 +1236,28 @@ export function printContactStatement() {
 // SECTION 15 — Single Voucher Print (نُقلت من dashboard.js — Phase 1)
 // ════════════════════════════════════════════════════════════
 // طباعة سند دفعة مورد منفردة
+// ✅ P0-8 (2026-09-27): قيد السند بيتجاب بالـref_id (UUID فريد) مش بالمبلغ. قبل كده
+// كان بياخد أول سطر على الملف مبلغه = مبلغ السجل، فالدفعتين 50/50 بنفس المبلغ
+// (خزينة + مازن) كانوا بيتبادلوا القيود — 85 من 174 دفعة TM، و105 من 767 مصروف.
+// القيد النشط = أحدث سطر reversed_by فاضي (نفس قاعدة voidTransaction)، وإلا الأحدث.
+// من غير system_type في الفلتر عشان مايفوتش سطر قديم system_type بتاعه null.
+async function _voucherEntry(refTable, refId) {
+  const rows = await apiGet('journal_entries', {
+    select:'id,entry_no,reversed_by', ref_table:`eq.${refTable}`, ref_id:`eq.${refId}`,
+    post_status:'eq.posted', order:'id.desc', limit:50,
+  });
+  const active = (rows||[]).find(r => r.reversed_by == null);
+  return { entryNo: (active || rows?.[0])?.entry_no || '', reversed: !active && !!(rows||[]).length };
+}
+
 export async function printPaymentVoucher(paymentId, fn) {
   try {
     const rows = await apiGetAll('payments', { select:'*', id:`eq.${paymentId}` });
     const p = rows?.[0];
     if (!p) { toast('لم يُعثر على الدفعة','err'); return; }
-    // جيب entry_no من journal_entries
-    const jes = await apiGet('journal_entries', {
-      select:'entry_no,dr_amount,cr_amount',
-      system_type:`eq.${state.system}`, file_no:`eq.${fn}`,
-      ref_table:'eq.payments', post_status:'eq.posted',
-      order:'id.desc', limit:50
-    });
-    // ابحث عن القيد الأقرب للمبلغ والتاريخ
-    const match = (jes||[]).find(j => +j.dr_amount === +p.amount || +j.cr_amount === +p.amount);
-    const entryNo = match?.entry_no || '';
-    const title = `دفعة مورد — ${p.ref_no||p.id} — ${p.payer||''}`;
+    const { entryNo, reversed } = await _voucherEntry('payments', p.id);
+    if (!entryNo) toast('السجل ده لسه ما اترحّلش — مفيش قيد', 'warn');
+    const title = `دفعة مورد — ${p.ref_no||p.id} — ${p.payer||''}${reversed ? ' (مُلغاة — القيد معكوس)' : ''}`;
     printJournalVoucher(entryNo, 'payment', fn, +p.amount, p.pay_date, title);
   } catch(e) { toast('خطأ في الطباعة: '+e.message,'err'); }
 }
@@ -1262,15 +1268,9 @@ export async function printExpenseVoucher(expenseId, fn) {
     const rows = await apiGetAll('expenses', { select:'*', id:`eq.${expenseId}` });
     const e = rows?.[0];
     if (!e) { toast('لم يُعثر على المصروف','err'); return; }
-    const jes = await apiGet('journal_entries', {
-      select:'entry_no,dr_amount,cr_amount',
-      system_type:`eq.${state.system}`, file_no:`eq.${fn}`,
-      ref_table:'eq.expenses', post_status:'eq.posted',
-      order:'id.desc', limit:50
-    });
-    const match = (jes||[]).find(j => +j.dr_amount === +e.amount || +j.cr_amount === +e.amount);
-    const entryNo = match?.entry_no || '';
-    const title = `مصروف — ${e.ref_no||e.id} — ${e.description||e.exp_type||''}`;
+    const { entryNo, reversed } = await _voucherEntry('expenses', e.id);   // P0-8 — راجع _voucherEntry
+    if (!entryNo) toast('السجل ده لسه ما اترحّلش — مفيش قيد', 'warn');
+    const title = `مصروف — ${e.ref_no||e.id} — ${e.description||e.exp_type||''}${reversed ? ' (مُلغى — القيد معكوس)' : ''}`;
     printJournalVoucher(entryNo, 'expense', fn, +e.amount, e.exp_date||e.expense_date, title);
   } catch(e2) { toast('خطأ في الطباعة: '+e2.message,'err'); }
 }
