@@ -37,6 +37,12 @@
 -- 3) رصيد 2401 (المتوقع 54227):
 -- select sum(dr_amount) - sum(cr_amount) from journal_entries
 --  where system_type='TM' and account_code='2401' and post_status='posted';
+-- 4) حارس م٥ (sql/m5_lock_parent_accounts.sql: trg_reject_je_on_parent، before insert OR update
+--    على journal_entries) بيرفض أي سطر حسابه ليه حسابات فرعية. الملف بيعمل UPDATE لسطور على
+--    1120 و1300 و2100 و2401 — لازم ولا واحد فيهم يكون أب. المتوقع **صفر صفوف**:
+-- select parent_code, count(*) from chart_of_accounts
+--  where system_type='TM' and parent_code in ('1120','1300','2100','2401') group by 1;
+--    ⚠️ لو طلع أي صف، **ماتشغّلش**: الـtrigger م٥ هيرفض، والـtransaction هترجع كلها من غير أي كتابة.
 
 begin;
 
