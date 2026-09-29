@@ -82,7 +82,11 @@ export function updateAdminPostToggleUI() {
 // كل زوج بمبلغه الخاص فقط (مطابقة بالقيمة الفعلية، لا "أي سطر موجب") حتى لا يُكتب
 // مبلغ الإيراد فوق سطر التكلفة بالخطأ
 // ════════════════════════════════════════════════════════════════
-export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null, newDate = null, oldCost = null, newCost = null, oldMethod = null, newMethod = null }) {
+// contactAccount: لو اتحدد، تغيير الاسم (contactPatch) يتطبّق على سطور الحساب ده
+// بس. من غيره (الافتراضي القديم) بيتطبّق على أي سطر فيه اسم أو دائن — وده في
+// قيد تحصيل استلمه شريك كان هيكتب اسم العميل مكان الشريك على سطر 2400، وفي قيد
+// البيع بيحط اسم العميل على 4100/1300 (post_sale_je بيحطه على 1200 بس)
+export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null, contactAccount = null, newDate = null, oldCost = null, newCost = null, oldMethod = null, newMethod = null }) {
   const amountChanged  = oldAmount != null && Math.abs((+oldAmount||0) - (+newAmount||0)) > 0.001;
   const costChanged    = oldCost != null && newCost != null && Math.abs((+oldCost||0) - (+newCost||0)) > 0.001;
   const contactChanged = contactPatch != null;
@@ -163,7 +167,8 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
         if (Math.abs(dr - (+oldCost||0)) < 0.001 && dr > 0) { newDr = +newCost; anyLineChanged = true; }
         if (Math.abs(cr - (+oldCost||0)) < 0.001 && cr > 0) { newCr = +newCost; anyLineChanged = true; }
       }
-      if (contactChanged && contactPatch && (line.contact_name || cr > 0)) { contact = contactPatch; anyLineChanged = true; }
+      if (contactChanged && contactPatch && (contactAccount ? line.account_code === contactAccount : (line.contact_name || cr > 0))
+          && contact !== contactPatch) { contact = contactPatch; anyLineChanged = true; }
       // ✅ نقل سطر النقدية إلى حسابها الجديد. الشرط على 1110/1120 حصرًا
       // مقصود: مصروف دفعه شريك من جيبه طرفه المقابل 2400 لا نقدية، وطريقة
       // الدفع لا تعنيه — فلا يُلمس. وكذلك 2100/1200 وباقي الحسابات.
@@ -809,6 +814,66 @@ export async function adjustInvoiceDue({ sys, fileNo, invNo, delta, excludeId = 
   await apiPost('collections', row);
   await logAudit('DUE_ADJUST', 'collections', fileNo, null, row, `مستحق فاتورة ${invNo}: سطر مستحق جديد ${fmt(delta)}${why}`);
   return { changed: 1, unmatched: 0 };
+}
+
+/**
+ * مزامنة سطور تحصيل فاتورة بعد تعديلها (openEditSaleApproval, operations.js) —
+ * مسار تعديل الفاتورة الوحيد في البرنامج كان بيعدّل السيارات وقيد البيع ومش
+ * بيلمس التحصيلات خالص (فحص 2026-09-29): الإجمالي يتغيّر والمستحق يفضل،
+ * والاسم يتغيّر وقيود التحصيل تفضل على القديم (LOT 3 NEW وBOX-126 — رصيد
+ * العميل اتقسم على اسمين).
+ *   totalDelta  ← المستحق يتظبط بنفس الفرق (adjustInvoiceDue)
+ *   newCustomer ← اسم العميل على سطور التحصيل + سطر 1200 في قيود التحصيلات
+ *                 المدفوعة (updateJEInPlace بـcontactAccount '1200' — سطر النقد/
+ *                 الشريك مايتلمسش)
+ *   vins/newDate ← نص الشاصيهات على السطور، وتاريخ استحقاق المستحق لو كان =
+ *                 تاريخ البيع القديم (الاستحقاق الرسمي = تاريخ البيع)
+ * يرجع { unmatched, jeMoved, jeFailed } — unmatched > 0 = العميل دافع أكتر من
+ * قيمة الفاتورة الجديدة بالمبلغ ده (البرنامج مايتصرّفش فيه لوحده).
+ */
+export async function syncInvoiceCollectionsAfterSaleEdit({ sys, fileNo, invNo, totalDelta = 0, oldCustomer = null, newCustomer = null, vins = null, oldDate = null, newDate = null }) {
+  const res = { unmatched: 0, jeMoved: 0, jeFailed: 0 };
+  if (!sys || !fileNo || !invNo) return res;
+
+  if (Math.abs(+totalDelta||0) > 0.0005) {
+    const adj = await adjustInvoiceDue({ sys, fileNo, invNo, delta: +totalDelta, reason: `تعديل فاتورة ${invNo}` });
+    res.unmatched = adj.unmatched || 0;
+  }
+
+  const cols = (await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` })) || [];
+  const live = cols.filter(isOccupying);
+  const renamed    = !!newCustomer && newCustomer !== oldCustomer;
+  const vinText    = vins?.length ? vins.join(' / ') : null;
+  const dateMoved  = !!newDate && !!oldDate && newDate !== oldDate;
+  // نفس السيارات بترتيب مختلف مش تغيير — نقارن كمجموعة
+  const vinKey     = t => String(t||'').split('/').map(x => x.trim()).filter(Boolean).sort().join('|');
+  const vinSetNew  = vinText ? vinKey(vinText) : null;
+
+  for (const c of live) {
+    const patch = {};
+    if (renamed && c.customer !== newCustomer) patch.customer = newCustomer;
+    if (vinText && vinKey(c.vin) !== vinSetNew) patch.vin = vinText;
+    if (dateMoved && !c.paid_date && c.due_date === oldDate) patch.due_date = newDate;
+    if (Object.keys(patch).length) await apiPatch('collections', { id:`eq.${c.id}` }, patch);
+
+    // قيد التحصيل المدفوع يتنقل للاسم الجديد (draft مالوش قيد لسه — قيده هيتعمل بالاسم الجديد)
+    if (renamed && c.paid_date && isActive(c)) {
+      try {
+        await updateJEInPlace({ sys, fileNo, refTable:'collections', refId:c.id,
+          oldAmount:+c.amount||0, newAmount:+c.amount||0, contactPatch:newCustomer, contactAccount:'1200' });
+        res.jeMoved++;
+      } catch(e) {
+        res.jeFailed++;
+        console.warn('syncInvoiceCollectionsAfterSaleEdit: فشل نقل قيد التحصيل للاسم الجديد', c.ref_no||c.id, e.message);
+      }
+    }
+  }
+  if (renamed || dateMoved || live.some(c => vinText && vinKey(c.vin) !== vinSetNew)) {
+    await logAudit('EDIT', 'collections', fileNo, { inv_no:invNo, customer:oldCustomer, date:oldDate },
+      { customer:newCustomer, vins:vinText, date:newDate, je_moved:res.jeMoved },
+      `مزامنة تحصيلات فاتورة ${invNo} بعد تعديلها`);
+  }
+  return res;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1832,7 +1897,7 @@ Object.assign(window, {
   isAdminUser, adminPostsImmediately, entryStatus,
   toggleAdminPostSetting, updateAdminPostToggleUI,
   updateJEInPlace, voidTransaction, reverseManualJE, voidPurchaseOrder, _voidSaleInvoiceCore, _assertFileNotVoided,
-  computeInvoiceDueStatus, computeFileSalesTotals, adjustInvoiceDue,
+  computeInvoiceDueStatus, computeFileSalesTotals, adjustInvoiceDue, syncInvoiceCollectionsAfterSaleEdit,
   _jeNo, postDoubleEntry, _handoffPrimaryLine, calcCOGS, checkCOGSInvariant, auditAllFilesCOGS,
   je_purchase, je_sale, je_collection, je_payment, je_expense, je_payout, je_partnerLedger,
   je_custodian, je_opex, simulateDraftJE,

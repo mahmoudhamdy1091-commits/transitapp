@@ -1567,8 +1567,25 @@ export async function openSaleModal(fileNoOverride = null) {
     }
   } catch(e) { console.warn('regenInvNo:', e.message); }
 
-  // مسح المصاريف الإضافية
-  if (el('extraChargesContainer')) el('extraChargesContainer').innerHTML = '';
+  // ✅ زرار الحفظ يرجع لوضع «فاتورة جديدة» — openEditSaleApproval (operations.js)
+  // بيربطه بحفظ التعديل ومكانش بيرجع غير بعد حفظ ناجح. تعديل اتقفل من غير حفظ ⇒
+  // أول «بيع» جديد بعده كان هيتحفظ كتعديل على الفاتورة القديمة: سياراتها كلها
+  // تتلغي والسيارات الجديدة تتضاف عليها (اتكشف 2026-09-29). وضع التعديل بيتركّب
+  // من جديد بعد الفتح (setTimeout هناك)، فالـreset هنا مايأثرش عليه
+  const saleBtn = el('saleSubmitBtn');
+  if (saleBtn) {
+    saleBtn.onclick = function () { return guardSubmit(this, submitSale); };
+    saleBtn._editMode = false; saleBtn._editInvNo = null; saleBtn._editFileNo = null;
+  }
+
+  // مسح المصاريف الإضافية — ورجوع زرار «إضافة بند» اللي وضع التعديل بيخفيه
+  // (openEditSaleApproval, operations.js)
+  if (el('extraChargesContainer')) {
+    el('extraChargesContainer').innerHTML = '';
+    el('ecEditNote')?.remove();
+    const addBtn = el('extraChargesContainer').parentElement?.querySelector('button[onclick="addExtraChargeRow()"]');
+    if (addBtn) addBtn.style.display = '';
+  }
   updateSaleTotal();
   // تحميل السيارات مباشرة (renderSaleVehiclePicker تعرض + تحمّل state._saleAvailableVehicles)
   await renderSaleVehiclePicker(fileNo, sys);
