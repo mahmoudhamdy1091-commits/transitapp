@@ -1632,77 +1632,200 @@ export async function deleteSaleInvoice(invNo, fileNo) {
 
 // printSaleInvoice → js/print.js
 
+// تجميع سطور التحصيل تحت فاتورتها. قيمة الفاتورة = مجموع سطورها الشاغلة
+// (مدفوع + مستحق، يشمل المصاريف الإضافية — نفس قاعدة adjustInvoiceDue في
+// engine.js)، ولو مالهاش سطور = سعر البيع كله مستحق. «المحصّل» مايشملش
+// تحصيل لسه بانتظار الموافقة (بيتعرض لوحده)، زي ملخص الملف بالظبط
+function _groupCollectionsByInvoice(sales, cols) {
+  const groups = {};
+  const get = k => groups[k] || (groups[k] = { inv_no:null, customer:null, sale_date:null, cars:0, saleTotal:0, liveSale:false, allDraft:true, lines:[] });
+  (sales||[]).forEach(s => {
+    const g = get(s.inv_no || `__no_inv_sale_${s.id}`);
+    g.inv_no = g.inv_no || s.inv_no; g.customer = g.customer || s.customer; g.sale_date = g.sale_date || s.sale_date;
+    if (isOccupying(s)) {
+      g.liveSale = true; g.cars++; g.saleTotal += +s.sale_price||0;
+      if (!isDraft(s)) g.allDraft = false;
+    }
+  });
+  (cols||[]).forEach(c => {
+    const g = get(c.inv_no || `__no_inv_${c.id}`);
+    g.inv_no = g.inv_no || c.inv_no; g.customer = g.customer || c.customer;
+    g.lines.push(c);
+  });
+  const sum = a => a.reduce((s,c) => s + (+c.amount||0), 0);
+  return Object.values(groups).map(g => {
+    const live = g.lines.filter(isOccupying);
+    const paidLines  = live.filter(c => c.paid_date && !isDraft(c));
+    const draftLines = live.filter(c => c.paid_date && isDraft(c));
+    const dueLines   = live.filter(c => !c.paid_date);
+    return {
+      ...g, paidLines, draftLines, dueLines,
+      deadLines: g.lines.filter(c => !isOccupying(c)),
+      total:     live.length ? sum(live) : g.saleTotal,
+      paidAmt:   sum(paidLines),
+      draftAmt:  sum(draftLines),
+      remaining: live.length ? sum(dueLines) : g.saleTotal,
+      voided:    !g.liveSale && !live.length,
+    };
+  }).sort((a,b) => {
+    const rank = g => g.voided ? 2 : (g.remaining > 0.001 ? 0 : 1);
+    return rank(a) - rank(b) || String(b.sale_date||'').localeCompare(String(a.sale_date||''));
+  });
+}
+
+// فورم «💰 تحصيل» على فاتورة معيّنة من تبويب التحصيلات
+export async function collectForInvoice(invNo) {
+  await openCollectionModal();
+  const sel = el('col-invNo');
+  if (sel && [...sel.options].some(o => o.value === invNo)) { sel.value = invNo; onCollectionInvChange(); }
+}
+
 export async function loadCollectionsTab(fn, sys) {
   try {
-    const data = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'due_date.desc' });
-    if (!data?.length) { el('collectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
-
-    // فصل المقبوض عن المنتظر — ✅ استثناء الملغية والمرفوضة (isOccupying) من
-    // كل الإجماليات. isVisible كانت بتسيب cancelled جوه الإجمالي: تحصيل مرفوض
-    // أو سطر مستحق استُهلك بالكامل (adjustInvoiceDue, engine.js) كان بيتجمع
-    const activeData  = data.filter(isOccupying);
-    const paidData    = activeData.filter(c => c.paid_date);
-    const pendingData = activeData.filter(c => !c.paid_date);
-    const totalInvoiced = activeData.reduce((s,c)=>s+(+c.amount||0),0);
-    const totalPaid     = paidData.reduce((s,c)=>s+(+c.amount||0),0);
-    const totalPending  = pendingData.reduce((s,c)=>s+(+c.amount||0),0);
+    const [data, sales] = await Promise.all([
+      apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fn}`, order:'due_date.desc' }),
+      apiGetAll('sales',       { select:'id,inv_no,customer,sale_date,sale_price,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}` }),
+    ]);
+    if (!data?.length && !(sales||[]).some(isOccupying)) { el('collectionsTable').innerHTML = emptyHTML('💰','لا توجد تحصيلات'); return; }
     const creators = await getCreatorsMap('collections', fn); // عمود "بواسطة"
+
+    // ✅ العرض بالفاتورة (طلب المالك 2026-09-29): كل فاتورة صف فيه قيمتها
+    // والمحصّل والباقي، وتحتها تحصيلاتها — بدل قائمة سطور مسطّحة مش باين
+    // فيها كل فاتورة اتدفع منها كام وفاضل كام. الإجماليات بـisOccupying
+    // (الملغى والمرفوض برّه) — نفس إصلاح 2026-09-27
+    const groups = _groupCollectionsByInvoice(sales, data);
+    const liveGroups = groups.filter(g => !g.voided);
+    const totInv   = liveGroups.reduce((s,g) => s + g.total, 0);
+    const totPaid  = liveGroups.reduce((s,g) => s + g.paidAmt, 0);
+    const totRem   = liveGroups.reduce((s,g) => s + g.remaining, 0);
+    const totDraft = liveGroups.reduce((s,g) => s + g.draftAmt, 0);
+    const openCount = liveGroups.filter(g => g.remaining > 0.001).length;
+    const voidedCount = groups.length - liveGroups.length;
+    const todayStr  = today();
 
     const csvRows = data.map(c=>[c.ref_no||'—', c.inv_no||'—', c.customer||'—', c.vin||'—', +c.amount||0, c.pay_method||'—', c.due_date||'—', c.paid_date||'—', c.paid_date?'محصّل':'مستحق']);
     const csvHeaders = ['رقم التحصيل','رقم الفاتورة','العميل','الشاصي','المبلغ','طريقة الدفع','تاريخ الاستحقاق','تاريخ الدفع','الحالة'];
 
-    const statusBadge = c => c.paid_date
-      ? `<span style="background:var(--green-dim);color:var(--green);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">✅ محصّل</span>`
-      : `<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">⏳ مستحق</span>`;
+    const badge = (txt, bg, color) => `<span style="background:${bg};color:${color};padding:1px 8px;border-radius:10px;font-size:12px;font-weight:700;white-space:nowrap">${txt}</span>`;
+    const lineBadge = c => {
+      if (c.post_status === 'voided')       return badge('ملغى', 'var(--card2)', 'var(--text2)');
+      if (c.post_status === 'cancelled')    return badge('مرفوض/مُستهلَك', 'var(--card2)', 'var(--text2)');
+      if (isDraft(c))                       return badge('🕓 بانتظار الموافقة', '#fef3c7', '#92400e');
+      if (c.post_status === 'pending_edit') return badge('✏️ تعديل تحت المراجعة', '#fef3c7', '#92400e');
+      if (c.post_status === 'pending_void') return badge('🔄 طلب إلغاء', '#fef3c7', '#92400e');
+      return c.paid_date ? badge('✅ محصّل', 'var(--green-dim)', 'var(--green)') : badge('⏳ مستحق', '#fef3c7', '#92400e');
+    };
+    const ctxBtn = c => c.post_status === 'voided' ? '' :
+      `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxCollection(this)" data-id="${c.id}" data-fn="${fn}" data-paid="${c.paid_date?'1':'0'}" title="إجراءات">⋮</button>`;
+    const by = c => ((creators[c.ref_no]||'').split('@')[0]) || '—';
+    const muted = 'color:var(--text2);font-size:12px';
+
+    // سطر تحصيل تحت الفاتورة: المدفوع في عمود «المحصّل» والمستحق في عمود «الباقي»
+    const lineRow = (c, dead) => {
+      const isPaid = !!c.paid_date;
+      let info;
+      if (isPaid) {
+        info = `دُفع ${fmtDate(c.paid_date)} · ${c.pay_method||'—'}${c.received_by?` · استلمه: ${c.received_by}`:''}${c.document?` · مستند ${c.document}`:''}`;
+      } else {
+        const late = !dead && c.due_date && c.due_date < todayStr
+          ? ` · <span style="color:var(--red);font-weight:700">متأخر ${Math.floor((new Date(todayStr) - new Date(c.due_date)) / 86400000)} يوم</span>` : '';
+        info = `المتبقي المستحق${c.due_date?` · من ${fmtDate(c.due_date)}`:''}${late}`;
+      }
+      const amt = `<span class="mono" style="font-weight:700;${dead?'text-decoration:line-through;':''}color:${isPaid?'var(--green)':'var(--accent)'}">${fmt(c.amount)}</span>`;
+      return `<tr class="${dead?'colgrp-dead':'colgrp-line'}" style="${dead?'opacity:.55;':''}">
+        <td style="padding-right:26px">
+          <span style="color:var(--text3)">↳</span>
+          <span class="mono" style="font-weight:700;font-size:13px">${c.ref_no||'—'}</span>
+          <span style="${muted}"> · ${info}</span>
+          ${c.notes ? `<div class="colgrp-note" style="${muted};margin-top:2px;padding-right:14px" title="${String(c.notes).replace(/"/g,'&quot;')}">${c.notes}</div>` : ''}
+        </td>
+        <td></td>
+        <td>${isPaid ? amt : ''}</td>
+        <td>${isPaid ? '' : amt}</td>
+        <td>${lineBadge(c)}</td>
+        <td style="${muted}">${by(c)}</td>
+        <td style="text-align:center">${ctxBtn(c)}</td>
+      </tr>`;
+    };
+
+    const groupBody = g => {
+      const pct = g.total > 0 ? Math.min(100, Math.round(g.paidAmt / g.total * 100)) : 0;
+      const status = g.voided ? badge('⛔ فاتورة ملغاة', 'var(--card2)', 'var(--text2)')
+        : g.remaining <= 0.001 ? badge('✅ مسدّدة', 'var(--green-dim)', 'var(--green)')
+        : g.paidAmt > 0 ? badge(`🟡 جزئي ${pct}%`, '#fef3c7', '#92400e')
+        : badge('🔴 لم يُحصّل', 'var(--red-dim)', 'var(--red)');
+      const collapsed = g.voided || g.remaining <= 0.001; // المسدّد والملغى مقفولين — ضغطة تفتحهم
+      // ✅ تحت الفاتورة الدفعات بس. سطر المستحق مايتعرضش لوحده — رقمه هو نفسه
+      // «الباقي» في صف الفاتورة، فكان بيبان مكرر (ملاحظة المالك 2026-09-29).
+      // تاريخ استحقاقه وتأخيره وقائمته (⋮) بقوا في صف الفاتورة. أكتر من سطر
+      // مستحق لنفس الفاتورة = حالة شاذة، فتتعرض سطورها عشان تبان وتتراجع
+      const singleDue = g.dueLines.length === 1 ? g.dueLines[0] : null;
+      const lines = [...g.paidLines, ...g.draftLines, ...(g.dueLines.length > 1 ? g.dueLines : [])]
+        .sort((a,b) => (a.paid_date ? 0 : 1) - (b.paid_date ? 0 : 1) || String(a.paid_date||a.due_date||'').localeCompare(String(b.paid_date||b.due_date||'')));
+      const hasChildren = lines.length > 0 || g.deadLines.length > 0;
+      const dueFrom = [...g.dueLines].sort((a,b) => String(a.due_date||'').localeCompare(String(b.due_date||'')))[0]?.due_date
+        || (!g.lines.some(isOccupying) ? g.sale_date : null);
+      const lateDays = dueFrom ? Math.floor((new Date(todayStr) - new Date(dueFrom)) / 86400000) : 0;
+      const dueInfo = !g.voided && g.remaining > 0.001 && dueFrom
+        ? `<div style="${muted};font-weight:400;white-space:nowrap">مستحق من ${fmtDate(dueFrom)}${lateDays > 0 ? ` · <span style="color:var(--red);font-weight:700">متأخر ${lateDays} يوم</span>` : ''}</div>` : '';
+      const invLabel = g.inv_no || '— بدون رقم فاتورة —';
+      return `<tbody class="colgrp${collapsed?' collapsed':''}${g.voided?' colgrp-voided':''}">
+        <tr class="colgrp-head" ${hasChildren ? `onclick="this.closest('tbody').classList.toggle('collapsed')" style="cursor:pointer;` : 'style="'}background:var(--card2)${g.voided?';opacity:.6':''}">
+          <td>
+            <span class="colgrp-arrow" style="display:inline-block;transition:transform .15s;color:var(--text3);${hasChildren?'':'visibility:hidden'}">▾</span>
+            <span class="mono text-amber" style="font-weight:700">${invLabel}</span>
+            <div style="${muted};margin-top:2px;padding-right:16px">${g.customer||'—'}${g.cars?` · ${g.cars} سيارة`:''}${g.sale_date?` · ${fmtDate(g.sale_date)}`:''}${g.liveSale && g.allDraft?' · 🕓 الفاتورة بانتظار الموافقة':''}${!g.liveSale && !g.voided?' · <span style="color:var(--red)">⚠️ الفاتورة ملغاة وعليها سطور تحصيل</span>':''}</div>
+          </td>
+          <td class="mono" style="font-weight:700">${fmt(g.total)}</td>
+          <td class="mono text-green" style="font-weight:700">${fmt(g.paidAmt)}${g.draftAmt>0?`<div style="${muted};font-weight:400">+ ${fmt(g.draftAmt)} بانتظار الموافقة</div>`:''}</td>
+          <td class="mono" style="font-weight:700;color:${g.remaining>0.001?'var(--accent)':'var(--text2)'}">${fmt(g.remaining)}${dueInfo}</td>
+          <td>${status}${!g.voided?`<div style="height:5px;background:var(--border);border-radius:10px;overflow:hidden;margin-top:5px;min-width:90px"><div style="width:${pct}%;height:100%;background:var(--green)"></div></div>`:''}${g.dueLines.length > 1 ? `<div style="color:var(--red);font-size:12px;margin-top:3px">⚠️ ${g.dueLines.length} سطور مستحق</div>` : ''}</td>
+          <td></td>
+          <td style="text-align:center;white-space:nowrap">${!g.voided && g.remaining > 0.001 && g.inv_no
+            ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();collectForInvoice(this.dataset.inv)" data-inv="${g.inv_no}" style="white-space:nowrap">💰 تحصيل</button>` : ''}${singleDue ? ` ${ctxBtn(singleDue)}` : ''}</td>
+        </tr>
+        ${lines.map(c => lineRow(c, false)).join('')}
+        ${g.deadLines.length ? `<tr class="colgrp-line"><td colspan="7" style="padding-right:26px"><a href="javascript:void(0)" onclick="event.stopPropagation();this.closest('tbody').classList.toggle('show-dead')" style="${muted};text-decoration:underline">🗂 سطور ملغاة/مرفوضة (${g.deadLines.length})</a></td></tr>` : ''}
+        ${g.deadLines.map(c => lineRow(c, true)).join('')}
+      </tbody>`;
+    };
 
     el('collectionsTable').innerHTML = `
+      <style>
+        .colgrp.collapsed tr.colgrp-line, .colgrp tr.colgrp-dead { display:none }
+        .colgrp.show-dead:not(.collapsed) tr.colgrp-dead { display:table-row }
+        .colgrp.collapsed .colgrp-arrow { transform:rotate(90deg) }
+        .coltbl.hide-voided tbody.colgrp-voided { display:none }
+        .colgrp tr.colgrp-head td { border-top:2px solid var(--border) }
+        /* عمود البيان بيلف (الجدول كله nowrap افتراضيًا) — عشان أرقام القيمة/
+           المحصّل/الباقي تفضل ظاهرة من غير scroll أفقي */
+        .colgrp td:first-child { white-space:normal; min-width:260px; max-width:440px }
+        .colgrp .colgrp-note { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+        @media (max-width:768px) { .colgrp td:first-child { min-width:170px; max-width:220px } }
+      </style>
       ${exportBtns(
         () => exportCSV(csvHeaders, csvRows, 'تحصيلات_'+fn),
         () => printCollectionsTab(data, fn)
       )}
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-        <div class="j-kpi" style="border-right:3px solid var(--blue)"><div class="j-kpi-label">📄 إجمالي الفواتير</div><div class="j-kpi-val text-blue">${fmt(totalInvoiced)}</div></div>
-        <div class="j-kpi" style="border-right:3px solid var(--green)"><div class="j-kpi-label">✅ مقبوض فعلاً</div><div class="j-kpi-val text-green">${fmt(totalPaid)}</div></div>
-        <div class="j-kpi" style="border-right:3px solid var(--accent)"><div class="j-kpi-label">⏳ منتظر تحصيل</div><div class="j-kpi-val" style="color:${totalPending>0?'var(--accent)':'var(--text2)'}">${fmt(totalPending)}</div></div>
+        <div class="j-kpi" style="border-right:3px solid var(--blue)"><div class="j-kpi-label">📄 إجمالي الفواتير (${liveGroups.length})</div><div class="j-kpi-val text-blue">${fmt(totInv)}</div></div>
+        <div class="j-kpi" style="border-right:3px solid var(--green)"><div class="j-kpi-label">✅ المحصّل</div><div class="j-kpi-val text-green">${fmt(totPaid)}</div></div>
+        <div class="j-kpi" style="border-right:3px solid var(--accent)"><div class="j-kpi-label">⏳ الباقي${openCount?` (${openCount} فاتورة)`:''}</div><div class="j-kpi-val" style="color:${totRem>0.001?'var(--accent)':'var(--text2)'}">${fmt(totRem)}</div></div>
+        ${totDraft > 0 ? `<div class="j-kpi" style="border-right:3px solid #f59e0b"><div class="j-kpi-label">🕓 بانتظار الموافقة</div><div class="j-kpi-val" style="color:#92400e">${fmt(totDraft)}</div></div>` : ''}
+        ${voidedCount ? `<a href="javascript:void(0)" onclick="document.getElementById('colInvTable').classList.toggle('hide-voided')" style="align-self:center;margin-right:auto;${muted};text-decoration:underline">⛔ عرض/إخفاء الفواتير الملغاة (${voidedCount})</a>` : ''}
       </div>
-      <table class="data-table">
+      <table class="data-table coltbl hide-voided" id="colInvTable">
         <thead><tr>
-          <th style="width:36px;text-align:center">#</th>
-          <th>رقم التحصيل</th><th>رقم الفاتورة</th><th>العميل</th><th>الشاصي</th>
-          <th>المبلغ</th><th>طريقة الدفع</th><th>الاستحقاق</th><th>تاريخ الدفع</th><th>الحالة</th><th>بواسطة</th><th></th>
+          <th>الفاتورة / التحصيل</th><th>قيمة الفاتورة</th><th>المحصّل</th><th>الباقي</th><th>الحالة</th><th>بواسطة</th><th></th>
         </tr></thead>
-        <tbody>
-          ${data.map((c,i)=>{
-            const isVoidedC = c.post_status === 'voided';
-            // مرفوض/مستحق استُهلك بالكامل — خارج الإجمالي، فيتعرض باهت زي الملغى
-            const isCancelledC = c.post_status === 'cancelled';
-            const voidedBadgeC = isVoidedC ? '<span style="font-size:13px;background:var(--text2);color:#fff;padding:1px 5px;border-radius:4px;font-weight:700;margin-right:4px">ملغى</span>' : '';
-            return `<tr style="${(isVoidedC||isCancelledC)?'opacity:.55;':''}">
-            <td style="text-align:center;font-size:13px;color:var(--text3);font-weight:700">${i+1}</td>
-            <td class="mono" style="color:var(--green);font-weight:700;font-size:13px">${c.ref_no||'—'} ${voidedBadgeC}</td>
-            <td class="mono">${c.inv_no||'—'}</td>
-            <td>${c.customer||'—'}</td>
-            <td class="mono">${c.vin||'—'}</td>
-            <td class="mono text-blue" style="font-weight:700${isVoidedC?';text-decoration:line-through':''}">${fmt(c.amount)}</td>
-            <td>${c.pay_method||'—'}</td>
-            <td class="mono">${fmtDate(c.due_date)}</td>
-            <td class="mono">${c.paid_date ? fmtDate(c.paid_date) : '—'}</td>
-            <td>${isVoidedC ? '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">ملغى</span>' : isCancelledC ? '<span style="background:var(--card2);color:var(--text2);padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700">مرفوض/مُستهلَك</span>' : statusBadge(c)}</td>
-            <td style="font-size:12px;color:var(--text2)">${((creators[c.ref_no]||'').split('@')[0])||'—'}</td>
-            <td style="text-align:center">
-              ${!isVoidedC ? `<button class="btn-ctx-menu" onclick="event.stopPropagation();_ctxCollection(this)" data-id="${c.id}" data-fn="${fn}" data-paid="${c.paid_date?'1':'0'}" title="إجراءات">⋮</button>` : ''}
-            </td>
-          </tr>`;}).join('')}
-          <tr style="background:var(--card2);font-weight:700">
-            <td colspan="4">الإجمالي</td>
-            <td class="mono text-blue"><strong>${fmt(totalInvoiced)}</strong></td>
-            <td colspan="4" style="font-size:13px;color:var(--text2)">
-              محصّل: <span style="color:var(--green)">${fmt(totalPaid)}</span>
-              ${totalPending>0?` · منتظر: <span style="color:var(--accent)">${fmt(totalPending)}</span>`:''}
-            </td>
-            <td colspan="2"></td>
-          </tr>
-        </tbody>
+        ${groups.map(groupBody).join('')}
+        <tbody><tr style="background:var(--card2);font-weight:700">
+          <td>الإجمالي</td>
+          <td class="mono text-blue">${fmt(totInv)}</td>
+          <td class="mono text-green">${fmt(totPaid)}</td>
+          <td class="mono" style="color:${totRem>0.001?'var(--accent)':'var(--text2)'}">${fmt(totRem)}</td>
+          <td colspan="3"></td>
+        </tr></tbody>
       </table>`;
   } catch(e) { el('collectionsTable').innerHTML = errHTML(e.message); }
 }
@@ -1930,7 +2053,7 @@ Object.assign(window, {
   renderDashAlerts, renderDashCollections, renderDashExpBreakdown, renderDealsTable,
   filterDeals, openViewer, switchTab, loadViewerTab, loadSummaryTab, summRow,
   loadPaymentsTab, loadExpensesTab, loadSalesTab, voidSaleInvoice, deleteSaleInvoice,
-  loadCollectionsTab, loadPayoutsTab, openEditPayoutModal, addVehicleRowWithData,
+  loadCollectionsTab, collectForInvoice, loadPayoutsTab, openEditPayoutModal, addVehicleRowWithData,
   addPartnerRowWithData, openFileProfitDistributionModal,
 });
 
