@@ -1499,6 +1499,16 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
           updateSaleTotal();
         }
       } catch(e) { console.warn('load sale_charges:', e.message); }
+      // ✅ المصاريف الإضافية للعرض بس في وضع التعديل: الحفظ تحت عمره ما قراها —
+      // أي تعديل فيها أو بند جديد كان بيضيع بصمت. زرار «إضافة بند» بيرجع في
+      // openSaleModal (modals.js)
+      const chWrap = el('extraChargesContainer');
+      if (chWrap) {
+        chWrap.querySelectorAll('input,button').forEach(x => { x.disabled = true; });
+        const addBtn = chWrap.parentElement?.querySelector('button[onclick="addExtraChargeRow()"]');
+        if (addBtn) addBtn.style.display = 'none';
+        if (!el('ecEditNote')) chWrap.insertAdjacentHTML('beforebegin', `<div id="ecEditNote" style="font-size:12px;color:var(--text2);margin-bottom:8px">ℹ️ المصاريف الإضافية مش بتتعدّل من شاشة تعديل الفاتورة</div>`);
+      }
 
       // Override زرار الحفظ — تعديل in-place + إرسال للموافقة
       const submitBtn = el('saleSubmitBtn');
@@ -1537,6 +1547,20 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
           const oldVinSet = new Set((oldSales||[]).map(s=>s.vin));
           const checkedRows = Array.from(rows).filter(r => r.querySelector('.sv-check')?.checked);
           const checkedVins = new Set(checkedRows.map(r => r.dataset?.vin).filter(Boolean));
+          // ✅ شيل كل السيارات = إلغاء الفاتورة، مش تعديلها — كان بيلغي السيارات
+          // ويسيب سطور التحصيل والقيد معلّقين على فاتورة مالهاش سيارات
+          if (!checkedRows.length) {
+            toast('⚠️ لازم تفضل سيارة واحدة على الأقل — لإلغاء الفاتورة كلها استخدم «إلغاء الفاتورة» من قائمة ⋮', 'err');
+            return;
+          }
+          // المصاريف الإضافية (ثابتة في وضع التعديل) — قيد البيع بيتسجّل بالإجمالي
+          // الكامل (سيارات + مصاريف، post_sale_je)، فلازم تدخل في المبلغ القديم/الجديد
+          // اللي updateJEInPlace بيطابق بيه سطور القيد، وإلا الإيراد مش بيتعدّل بصمت
+          let chargesTotal = 0;
+          try {
+            const chRows = await apiGetAll('sale_charges', { select:'amount', system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
+            chargesTotal = (chRows||[]).reduce((s,c) => s + (+c.amount||0), 0);
+          } catch(e) { console.warn('openEditSaleApproval charges total:', e.message); }
 
           // أ) سيارات مزالة (كانت في الفاتورة والآن unchecked) → إلغاء
           const removedSales = (oldSales||[]).filter(s => !checkedVins.has(s.vin));
@@ -1628,16 +1652,36 @@ export async function openEditSaleApproval(saleId, fileNo, invNo) {
               // (ref_id-based) بقى يلاقي القيد مباشرة بدل الاعتماد الدائم على fallback
               // مطابقة المبلغ (لسه موجود كـfallback للقيود القديمة بلا ref_id)
               sys, fileNo, refTable:'sales', refId: invNo||null,
-              oldAmount: totalOld, newAmount: totalNew,
+              oldAmount: totalOld + chargesTotal, newAmount: totalNew + chargesTotal,
               oldCost, newCost,
               contactPatch: newCustomer !== oldCustomer ? newCustomer : null,
+              contactAccount: '1200',   // ✅ زي post_sale_je: الاسم على سطر العميل بس
               newDate: dateChangedSale ? newDate : null,   // ✅ مزامنة تاريخ قيد البيع
             });
           }
 
+          // ── 4. مزامنة سطور التحصيل (engine.js) — المستحق بفرق الإجمالي، والاسم
+          // على السطور وقيود التحصيلات المدفوعة، والشاصيهات/تاريخ الاستحقاق.
+          // قبل 2026-09-29 التعديل ماكانش بيلمس التحصيلات خالص ⇒ الإجمالي يتغيّر
+          // والمستحق يفضل، والاسم يتغيّر وقيود التحصيل تفضل على القديم
+          let sync = { unmatched:0, jeFailed:0 };
+          try {
+            sync = await syncInvoiceCollectionsAfterSaleEdit({
+              sys, fileNo, invNo, totalDelta: totalNew - totalOld,
+              oldCustomer, newCustomer, vins: [...checkedVins],
+              oldDate, newDate: dateChangedSale ? newDate : null,
+            });
+          } catch(syncErr) {
+            console.error('openEditSaleApproval syncInvoiceCollectionsAfterSaleEdit:', syncErr.message);
+            toast(`⚠️ الفاتورة اتعدّلت لكن فشل تحديث تحصيلاتها — راجع تبويب التحصيلات (${syncErr.message})`, 'warn');
+          }
+          if (sync.unmatched > 0.001) toast(`⚠️ العميل دافع أكتر من قيمة الفاتورة الجديدة بـ${fmt(sync.unmatched)} — محتاج ترجيع أو تسوية`, 'warn');
+          if (sync.jeFailed > 0) toast(`⚠️ تعذّر نقل ${sync.jeFailed} قيد تحصيل للاسم الجديد — راجع كشف حساب العميل`, 'warn');
+
           await logAudit('EDIT','sales', fileNo, {invNo,totalOld,oldCustomer}, {totalNew,newCustomer}, `تعديل فاتورة ${invNo}`);
           await updateApprovalBadge();
-          submitBtn.onclick  = () => submitSale();
+          // نفس حماية الضغط المزدوج بتاعة الزرار الأصلي (guardSubmit في index.html)
+          submitBtn.onclick  = function () { return guardSubmit(this, submitSale); };
           submitBtn._editMode= false;
           markSaving('saleModal'); await closeModal('saleModal');
           toast(wasPosted ? '⚠️ تم تعديل الفاتورة والقيد — في انتظار الموافقة' : '✏️ تم حفظ تعديل الفاتورة (لا تزال بانتظار الاعتماد الأول)', 'warn');
