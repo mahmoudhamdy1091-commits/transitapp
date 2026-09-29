@@ -17,8 +17,11 @@
 | `2e89950` | chore: نشر 7549d00 | public/js/dashboard.js + version.json |
 | `058a5d1` | fix(sales): تعديل فاتورة البيع يحدّث تحصيلاتها + زرار الحفظ مايفضلش مربوط بفاتورة قديمة | engine, operations, modals |
 | `eca35a2` | chore: نشر 058a5d1 | public/js (engine, modals, operations) + version.json |
+| `4bb37c6` | docs: الملحوظة دي | docs/NOTE-collections-sales-session-2026-09-29.md |
+| `1a020e1` | feat(journal): ملاحظات الإدخالات تظهر في اليومية | js/journal-notes.js (جديد) + index.html |
+| `cd64ef3` | chore: نشر 1a020e1 | public/index.html + public/js/journal-notes.js + version.json |
 
-**لسه مش على main ولا منشور:** فرع `feat/journal-notes` (`8685edb`، worktree `.claude/worktrees/journal-notes`). ملف جديد `js/journal-notes.js` + سطر `<script>` واحد في `index.html` بعد `journal.js`. بيعرض خانة «ملاحظات» بتاعة الإدخال الأصلي تحت كل قيد في اليومية، وفي كارت التفاصيل. **مابيعدّلش `journal.js`**: بيراقب `#journalTimeline` و`#jqd-body` بـMutationObserver، وبيقرا `window.journalState` بس. **لو غيّرتوا شكل كروت اليومية** (`.j-entry` / `.j-entry-title` / `.j-entry-actions[data-eno]`)، الإضافة مش هتبوّظ حاجة، بس الملاحظات مش هتظهر.
+**✅ ملاحظات اليومية منشورة (2026-09-29 14:24Z، `1a020e1`):** ملف جديد `js/journal-notes.js` + سطر `<script>` واحد في `index.html` بعد `journal.js`. بيعرض خانة «ملاحظات» بتاعة الإدخال الأصلي تحت كل قيد في اليومية، وفي كارت التفاصيل. **مابيعدّلش `journal.js`**: بيراقب `#journalTimeline` و`#jqd-body` بـMutationObserver، وبيقرا `window.journalState` بس. **لو غيّرتوا شكل كروت اليومية** (`.j-entry` / `.j-entry-title` / `.j-entry-actions[data-eno]`)، الإضافة مش هتبوّظ حاجة، بس الملاحظات مش هتظهر.
 
 ## دوال جديدة في `engine.js` (كلها على `window`)
 - `computeInvoiceDueStatus(sales, collections)`: «الباقي» لكل فاتورة. مصدر واحد لفورم «💰 تحصيل» جوه الملف وفورم «تسجيل سريع ← تحصيل».
