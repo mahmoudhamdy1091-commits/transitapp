@@ -1851,6 +1851,16 @@ export async function simulateDraftJE(sys, from, to) {
   // sourceFromRecord). ⚠️ الـselect الصريح فيه source_* ⇒ ده **بعد SQL c1** بس (شرط §٥ب).
   const _srcLine = (r, who, amt, side) => { const k = String(r.source_account);
     return { acc:k, name:getAccountName(k), dr: side === 'dr' ? amt : 0, cr: side === 'cr' ? amt : 0, contact: /^24/.test(k) ? (who || null) : null }; };
+  // ✅ B-2c3b: تأمين تسلسل — لو SQL c1 لسه ما اتشغّلش، الـselect بـsource_* بيرجع 400 («column
+  // … source_sys does not exist») ⇒ نعيد نفس الطلب من غير العمودين (المعاينة القديمة بالحرف)، بدل ما
+  // الـcatch الكبير تحت يضيّع كل المسودات بصمت. أي خطأ تاني بيطلع زي ما هو.
+  const _draftRows = async (table, select) => {
+    try { return await apiGetAll(table, { select: select + ',source_sys,source_account', system_type:`eq.${sys}`, post_status:'eq.draft' }); }
+    catch (e) {
+      if (!/source_(sys|account)/.test(String(e?.message || '')) || !/does not exist/.test(String(e?.message || ''))) throw e;
+      return await apiGetAll(table, { select, system_type:`eq.${sys}`, post_status:'eq.draft' });
+    }
+  };
 
   try {
     // ── المشتريات draft ──
@@ -1866,9 +1876,7 @@ export async function simulateDraftJE(sys, from, to) {
     });
 
     // ── المدفوعات draft ──
-    const PMs = await apiGetAll('payments', {
-      select:'id,pay_date,amount,file_no,payer,pay_method,source_sys,source_account', system_type:`eq.${sys}`, post_status:'eq.draft',
-    });
+    const PMs = await _draftRows('payments', 'id,pay_date,amount,file_no,payer,pay_method');
     for (const pmt of (PMs||[])) {
       if (!inRange(pmt.pay_date) || !(+pmt.amount>0)) continue;
       let sup = '';
@@ -1922,9 +1930,7 @@ export async function simulateDraftJE(sys, from, to) {
     }
 
     // ── المصاريف draft ──
-    const EXPs = await apiGetAll('expenses', {
-      select:'id,exp_date,amount,file_no,description,exp_type,pay_method,paid_by,source_sys,source_account', system_type:`eq.${sys}`, post_status:'eq.draft',
-    });
+    const EXPs = await _draftRows('expenses', 'id,exp_date,amount,file_no,description,exp_type,pay_method,paid_by');
     (EXPs||[]).forEach(e => {
       if (!inRange(e.exp_date) || !(+e.amount>0)) return;
       // سياسة الترسملة: مصروف ملف → مخزون 1300 (المعاينة تتجاهل حالة "الملف
@@ -1941,9 +1947,7 @@ export async function simulateDraftJE(sys, from, to) {
     });
 
     // ── صرف الشركاء draft ──
-    const POuts = await apiGetAll('partner_payouts', {
-      select:'id,pay_date,amount,file_no,partner,pay_method,source_sys,source_account', system_type:`eq.${sys}`, post_status:'eq.draft',
-    });
+    const POuts = await _draftRows('partner_payouts', 'id,pay_date,amount,file_no,partner,pay_method');
     for (const o of (POuts||[])) {
       if (!inRange(o.pay_date) || !(+o.amount>0)) continue;
       const cashAcc = o.pay_method==='نقد'?'1110':'1120';
@@ -2004,9 +2008,7 @@ export async function simulateDraftJE(sys, from, to) {
     }
 
     // ── التحصيلات المدفوعة draft ──
-    const Cols = await apiGetAll('collections', {
-      select:'id,paid_date,amount,file_no,customer,inv_no,pay_method,received_by,source_sys,source_account', system_type:`eq.${sys}`, post_status:'eq.draft',
-    });
+    const Cols = await _draftRows('collections', 'id,paid_date,amount,file_no,customer,inv_no,pay_method,received_by');
     (Cols||[]).forEach(c => {
       if (!c.paid_date || !inRange(c.paid_date) || !(+c.amount>0)) return;
       const cashAcc = c.pay_method==='نقد'?'1110':'1120';
