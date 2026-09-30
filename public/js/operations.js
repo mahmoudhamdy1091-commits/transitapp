@@ -255,6 +255,9 @@ export async function submitEditOpex() {
     // ── 1. جلب السجل القديم لمعرفة المبلغ القديم ──
     const oldRows = await apiGet('operating_expenses', { select:'*', id:`eq.${id}` });
     const old = oldRows?.[0];
+    // ✅ B-2c3: السجل ليه مصدر محفوظ ⇒ القيد يفضل على حسابه، وطريقة الدفع عرض بس (قبل أي كتابة،
+    // عشان المصدر المحفوظ لو بايظ نقف من غير ما نلمس السجل)
+    const _oldSrc = old ? await sourceFromRecord(state.system, 'operating_expenses', old) : null;
 
     // 1. تحديث السجل
     // ✅ جدول operating_expenses بلا عمود post_status (لا دورة اعتماد) — لا نضبطه هنا
@@ -276,6 +279,7 @@ export async function submitEditOpex() {
       oldAmount: +old?.amount||0, newAmount: amount,
       newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ المصروف التشغيلي الجديد
       oldMethod: old?.pay_method, newMethod: method,   // ✅ نقل سطر النقدية عند نقد↔بنك
+      ...(_oldSrc ? { oldSourceAccount: old.source_account, newSource: _oldSrc } : {}),   // ✅ B-2c3
     });
 
     // ✅ سجّل تعديل المصروف التشغيلي (كان غير مسجَّل — فجوة تتبّع)
@@ -309,8 +313,10 @@ export async function deleteOpex(id) {
       }
       if (amount > 0) {
         const eAcc    = OPEX_ACC_MAP[o.exp_type] || '6700';
-        const cashAcc = o.pay_method === 'نقد' ? '1110' : '1120';
-        const cashNm  = o.pay_method === 'نقد' ? 'النقد' : 'البنك';
+        // ✅ B-2c3: مصدر محفوظ ⇒ العكس على حساب المصدر (عهدة)، مش pay_method (كان هيعكس على 1110/1120 غلط)
+        const _src    = await sourceFromRecord(state.system, 'operating_expenses', o);
+        const cashAcc = _src ? _src.account     : (o.pay_method === 'نقد' ? '1110' : '1120');
+        const cashNm  = _src ? _src.accountName : (o.pay_method === 'نقد' ? 'النقد' : 'البنك');
         // ✅ id للقيد الأصلي فقط للربط (reverses/reversed_by، project_dual_je_audit
         // Case 1) — أفضل مجهود، لا يُستخدم لحساب الحساب (بيتحسب من o مباشرة فوق)
         let origId = null;
@@ -2144,11 +2150,11 @@ export async function _createApprovalJE(type, record, sys) {
     // ⛔ P0-9: مفيش قيد دفعة مورد لدافع شريك دائم — approveItem بيرجّع السجل draft
     // وapproveAll بيكتبها ❌ بالرسالة. القيد الموجود فعلًا بيرجع فوق قبل هنا.
     await assertSupplierPayerAllowed(sys, record.payer);
-    await je_payment({ sys, date:record.pay_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, supplierName:record.supplier||'', payerName:record.payer||'', method:record.pay_method||'تحويل بنكي' });
+    await je_payment({ sys, date:record.pay_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, supplierName:record.supplier||'', payerName:record.payer||'', method:record.pay_method||'تحويل بنكي', ...(await sourceArgsFromRecord(sys, 'payments', record)) });
   } else if (type === 'expense') {
-    await je_expense({ sys, date:record.exp_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, desc:record.description||'مصروف', expType:record.exp_type||'أخرى', method:record.pay_method||'تحويل بنكي', paidBy:record.paid_by||null, paidBySplit:record.paid_by_split||null, isCommission:!!record.is_commission });
+    await je_expense({ sys, date:record.exp_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, desc:record.description||'مصروف', expType:record.exp_type||'أخرى', method:record.pay_method||'تحويل بنكي', paidBy:record.paid_by||null, paidBySplit:record.paid_by_split||null, isCommission:!!record.is_commission, ...(await sourceArgsFromRecord(sys, 'expenses', record)) });
   } else if (type === 'payout') {
-    await je_payout({ sys, date:record.pay_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, partner:record.partner||'', method:record.pay_method||'تحويل بنكي' });
+    await je_payout({ sys, date:record.pay_date||today(), amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, partner:record.partner||'', method:record.pay_method||'تحويل بنكي', ...(await sourceArgsFromRecord(sys, 'partner_payouts', record)) });
   } else if (type === 'ledger') {
     // ✅ je_partnerLedger تقرأ الاتجاه من entry_type: "إيداع عام" تعكس الطرفين
     //    (مدين نقد / دائن 2400) وباقي الأنواع بالعكس. fileNo=null للأنواع العامة
@@ -2158,7 +2164,7 @@ export async function _createApprovalJE(type, record, sys) {
       partner:record.partner||'', method:record.pay_method||'تحويل بنكي', notes:record.notes||null });
   } else if (type === 'collection') {
     // القيد يُولَّد فقط إذا كان مدفوعاً فعلاً (paid_date موجود) — لو مستحق فقط، لا قيد الآن
-    if (record.paid_date) await je_collection({ sys, date:record.paid_date, amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, customer:record.customer||'', invNo:record.inv_no||'', method:record.pay_method||'تحويل بنكي' });
+    if (record.paid_date) await je_collection({ sys, date:record.paid_date, amount:+record.amount||0, fileNo:record.file_no, refId:record.id||null, customer:record.customer||'', invNo:record.inv_no||'', method:record.pay_method||'تحويل بنكي', ...(await sourceArgsFromRecord(sys, 'collections', record)) });
   }
 }
 
@@ -2204,6 +2210,7 @@ export async function _approveLinkedPaidCollections(sys, fileNo, invNo, fallback
             sys, date: col.paid_date, amount: +col.amount, fileNo: col.file_no, refId: col.id || null,
             customer: col.customer || fallbackCustomer || '', invNo: col.inv_no || invNo || '',
             method: col.pay_method || 'تحويل بنكي',
+            ...(await sourceArgsFromRecord(sys, 'collections', col)),   // ✅ B-2c3
           });
         } catch(jeErr) {
           toast(`⚠️ فشل قيد تحصيل ${col.inv_no||col.file_no}: ${jeErr.message}`, 'warn');
@@ -2290,13 +2297,13 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
           await je_purchase({ sys:state.system, date:item.po_date||today(), amount:+item.total_purchase||0, fileNo:item.file_no, supplier:item.supplier||'', refId:item.id||null });
         } else if (type === 'payment_edit') {
           // (P0-9: دافع دائم اترفض فوق في الفحص المسبق قبل أي كتابة)
-          await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي' });
+          await je_payment({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, supplierName:item.supplier||'', payerName:item.payer||'', method:item.pay_method||'تحويل بنكي', ...(await sourceArgsFromRecord(state.system, 'payments', item)) });
         } else if (type === 'expense_edit') {
-          await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'نقد', paidBy:item.paid_by||null, paidBySplit:item.paid_by_split||null, isCommission:!!item.is_commission });
+          await je_expense({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, desc:item.description||'مصروف', expType:item.exp_type||'أخرى', method:item.pay_method||'نقد', paidBy:item.paid_by||null, paidBySplit:item.paid_by_split||null, isCommission:!!item.is_commission, ...(await sourceArgsFromRecord(state.system, 'expenses', item)) });
         } else if (type === 'collection_edit' && item.paid_date) {
-          await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي' });
+          await je_collection({ sys:state.system, date:item.paid_date, amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, customer:item.customer||'', invNo:item.inv_no||'', method:item.pay_method||'تحويل بنكي', ...(await sourceArgsFromRecord(state.system, 'collections', item)) });
         } else if (type === 'payout_edit') {
-          await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, partner:item.partner||'', method:item.pay_method||'نقد' });
+          await je_payout({ sys:state.system, date:item.pay_date||today(), amount:+item.amount||0, fileNo:item.file_no, refId:item.id||null, partner:item.partner||'', method:item.pay_method||'نقد', ...(await sourceArgsFromRecord(state.system, 'partner_payouts', item)) });
         } else if (type === 'ledger_edit' && item.entry_type !== 'تأكيد استلام') {
           // ✅ "تأكيد استلام" مستثنى: لا قيد له بالتصميم، فلا يُنشأ عند اعتماد
           //    تعديله أيضًا — وإلا ظهر قيد نقدي لحركة لم يتحرّك فيها نقد
@@ -2304,7 +2311,7 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
             amount:+item.amount||0, fileNo:item.file_no||null, refId:item.id||null,
             partner:item.partner||'', method:item.pay_method||'نقد', notes:item.notes||null });
         } else if (type === 'opex_edit') {
-          await je_opex({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, expType:item.exp_type||'أخرى', desc:item.description||'مصروف تشغيلي', method:item.pay_method||'نقد', refNo:item.ref_no||item.id });
+          await je_opex({ sys:state.system, date:item.exp_date||today(), amount:+item.amount||0, expType:item.exp_type||'أخرى', desc:item.description||'مصروف تشغيلي', method:item.pay_method||'نقد', refNo:item.ref_no||item.id, ...(await sourceArgsFromRecord(state.system, 'operating_expenses', item)) });
         } else if (type === 'sale_edit' && item.inv_no && item.file_no) {
           const allInvSales = await apiGetAll('sales', { select:'sale_price,vin', system_type:`eq.${state.system}`, file_no:`eq.${item.file_no}`, inv_no:`eq.${item.inv_no}` });
           const totalAmt = (allInvSales||[]).reduce((s,x)=>s+(+x.sale_price||0),0);
@@ -4369,7 +4376,7 @@ export async function fixUnbalancedEntries() {
           const data = await apiGetAll('payments', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           for (const p of (data||[]).filter(isPosted)) {
             if (+p.amount > 0)
-              await je_payment({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, supplierName:p.supplier||'', payerName:p.payer||'', method:p.pay_method||'تحويل بنكي' });
+              await je_payment({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, supplierName:p.supplier||'', payerName:p.payer||'', method:p.pay_method||'تحويل بنكي', ...(await sourceArgsFromRecord(sys, 'payments', p)) });
           }
 
         } else if (refTable === 'sales' && fileNo) {
@@ -4400,28 +4407,28 @@ export async function fixUnbalancedEntries() {
           const data = await apiGetAll('collections', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           for (const c of (data||[]).filter(c=>isPosted(c)&&c.paid_date)) {
             if (+c.amount > 0)
-              await je_collection({ sys, date:c.paid_date, amount:+c.amount, fileNo:c.file_no,refId:c.id||null, customer:c.customer||'', invNo:c.inv_no||'', method:c.pay_method||'تحويل بنكي' });
+              await je_collection({ sys, date:c.paid_date, amount:+c.amount, fileNo:c.file_no,refId:c.id||null, customer:c.customer||'', invNo:c.inv_no||'', method:c.pay_method||'تحويل بنكي', ...(await sourceArgsFromRecord(sys, 'collections', c)) });
           }
 
         } else if (refTable === 'expenses' && fileNo) {
           const data = await apiGetAll('expenses', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           for (const e of (data||[]).filter(isPosted)) {
             if (+e.amount > 0)
-              await je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no,refId:e.id||null, desc:e.description||'مصروف', expType:e.exp_type||'أخرى', method:e.pay_method||'نقد', paidBy:e.paid_by||null, paidBySplit:e.paid_by_split||null, isCommission:!!e.is_commission });
+              await je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no,refId:e.id||null, desc:e.description||'مصروف', expType:e.exp_type||'أخرى', method:e.pay_method||'نقد', paidBy:e.paid_by||null, paidBySplit:e.paid_by_split||null, isCommission:!!e.is_commission, ...(await sourceArgsFromRecord(sys, 'expenses', e)) });
           }
 
         } else if (refTable === 'partner_payouts' && fileNo) {
           const data = await apiGetAll('partner_payouts', { select:'*', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });
           for (const p of (data||[]).filter(isPosted)) {
             if (+p.amount > 0)
-              await je_payout({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, partner:p.partner||'', method:p.pay_method||'نقد' });
+              await je_payout({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, partner:p.partner||'', method:p.pay_method||'نقد', ...(await sourceArgsFromRecord(sys, 'partner_payouts', p)) });
           }
 
         } else if (refTable === 'operating_expenses') {
           const data = await apiGetAll('operating_expenses', { select:'*', system_type:`eq.${sys}` });
           for (const o of (data||[])) {
             if (+o.amount > 0)
-              await je_opex({ sys, date:o.exp_date||today(), amount:+o.amount, expType:o.exp_type||'أخرى', desc:o.description||'', method:o.pay_method||'نقد', refNo:o.ref_no||null });
+              await je_opex({ sys, date:o.exp_date||today(), amount:+o.amount, expType:o.exp_type||'أخرى', desc:o.description||'', method:o.pay_method||'نقد', refNo:o.ref_no||null, ...(await sourceArgsFromRecord(sys, 'operating_expenses', o)) });
           }
         }
       }
@@ -4514,14 +4521,14 @@ export async function createMissingJE(idx) {
   const sys = state.system;
   try {
     if (m.table === 'expenses') {
-      await je_expense({ sys, date:r.exp_date||r.expense_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, desc:r.description||'مصروف', expType:r.exp_type||r.category||'أخرى', method:r.pay_method||'نقد', paidBy:r.paid_by||null, paidBySplit:r.paid_by_split||null, isCommission:!!r.is_commission });
+      await je_expense({ sys, date:r.exp_date||r.expense_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, desc:r.description||'مصروف', expType:r.exp_type||r.category||'أخرى', method:r.pay_method||'نقد', paidBy:r.paid_by||null, paidBySplit:r.paid_by_split||null, isCommission:!!r.is_commission, ...(await sourceArgsFromRecord(sys, 'expenses', r)) });
     } else if (m.table === 'payments') {
-      await je_payment({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'نقد' });
+      await je_payment({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'نقد', ...(await sourceArgsFromRecord(sys, 'payments', r)) });
     } else if (m.table === 'collections') {
       if (!r.paid_date) { toast('⚠️ هذا التحصيل مستحق (غير مدفوع) — لا يُنشأ له قيد','warn'); return; }
-      await je_collection({ sys, date:r.paid_date, amount:+r.amount, fileNo:r.file_no, refId:r.id, customer:r.customer||'—', invNo:r.inv_no||'', method:r.pay_method||'نقد' });
+      await je_collection({ sys, date:r.paid_date, amount:+r.amount, fileNo:r.file_no, refId:r.id, customer:r.customer||'—', invNo:r.inv_no||'', method:r.pay_method||'نقد', ...(await sourceArgsFromRecord(sys, 'collections', r)) });
     } else if (m.table === 'partner_payouts') {
-      await je_payout({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, partner:r.partner||'', method:r.pay_method||'نقد' });
+      await je_payout({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, partner:r.partner||'', method:r.pay_method||'نقد', ...(await sourceArgsFromRecord(sys, 'partner_payouts', r)) });
     }
     toast(`✅ تم إنشاء القيد لـ ${m.label} (${r.file_no})`,'ok');
     const tr = document.querySelector(`#missing-je-tbody tr:nth-child(${idx+1})`);
@@ -4547,14 +4554,14 @@ export async function createAllMissingJE() {
       const ex = await apiGet('journal_entries', { select:'entry_no', system_type:`eq.${sys}`, ref_table:`eq.${m.table}`, ref_id:`eq.${r.id}`, post_status:'eq.posted', limit:1 });
       if (ex?.length) { ok++; continue; }
       if (m.table === 'expenses') {
-        await je_expense({ sys, date:r.exp_date||r.expense_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, desc:r.description||'مصروف', expType:r.exp_type||r.category||'أخرى', method:r.pay_method||'نقد', paidBy:r.paid_by||null, paidBySplit:r.paid_by_split||null, isCommission:!!r.is_commission });
+        await je_expense({ sys, date:r.exp_date||r.expense_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, desc:r.description||'مصروف', expType:r.exp_type||r.category||'أخرى', method:r.pay_method||'نقد', paidBy:r.paid_by||null, paidBySplit:r.paid_by_split||null, isCommission:!!r.is_commission, ...(await sourceArgsFromRecord(sys, 'expenses', r)) });
       } else if (m.table === 'payments') {
-        await je_payment({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'نقد' });
+        await je_payment({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, supplierName:r.supplier||'', payerName:r.payer||'', method:r.pay_method||'نقد', ...(await sourceArgsFromRecord(sys, 'payments', r)) });
       } else if (m.table === 'collections') {
         if (!r.paid_date) continue;
-        await je_collection({ sys, date:r.paid_date, amount:+r.amount, fileNo:r.file_no, refId:r.id, customer:r.customer||'—', invNo:r.inv_no||'', method:r.pay_method||'نقد' });
+        await je_collection({ sys, date:r.paid_date, amount:+r.amount, fileNo:r.file_no, refId:r.id, customer:r.customer||'—', invNo:r.inv_no||'', method:r.pay_method||'نقد', ...(await sourceArgsFromRecord(sys, 'collections', r)) });
       } else if (m.table === 'partner_payouts') {
-        await je_payout({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, partner:r.partner||'', method:r.pay_method||'نقد' });
+        await je_payout({ sys, date:r.pay_date||today(), amount:+r.amount, fileNo:r.file_no, refId:r.id, partner:r.partner||'', method:r.pay_method||'نقد', ...(await sourceArgsFromRecord(sys, 'partner_payouts', r)) });
       }
       ok++;
     } catch(e) { fail++; console.warn('createAllMissingJE:', m.table, r.id, e.message); }
@@ -5036,7 +5043,7 @@ export async function runMigration() {
     _migLog(`💳 ${(payments||[]).filter(isPosted).length} دفعة مورد...`);
     for (const p of (payments||[]).filter(isPosted)) {
       if (!p.amount||!+p.amount) { skipped++; tick(); continue; }
-      await safe(`دفعة ${p.pay_id||p.id}`, () => je_payment({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, supplierName:p.supplier||'', payerName:p.payer||'', method:p.pay_method||'تحويل بنكي' }));
+      await safe(`دفعة ${p.pay_id||p.id}`, async () => je_payment({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, supplierName:p.supplier||'', payerName:p.payer||'', method:p.pay_method||'تحويل بنكي', ...(await sourceArgsFromRecord(sys, 'payments', p)) }));
     }
 
     // ── الخطوة 5: المبيعات ──
@@ -5102,7 +5109,7 @@ export async function runMigration() {
     _migLog(`💰 ${paidCols.length} تحصيل مدفوع...`);
     for (const c of paidCols) {
       if (!c.amount||!+c.amount) { skipped++; tick(); continue; }
-      await safe(`تحصيل ${c.ref_no||c.id}`, () => je_collection({ sys, date:c.paid_date, amount:+c.amount, fileNo:c.file_no,refId:c.id||null, customer:c.customer||'', invNo:c.inv_no||'', method:c.pay_method||'تحويل بنكي' }));
+      await safe(`تحصيل ${c.ref_no||c.id}`, async () => je_collection({ sys, date:c.paid_date, amount:+c.amount, fileNo:c.file_no,refId:c.id||null, customer:c.customer||'', invNo:c.inv_no||'', method:c.pay_method||'تحويل بنكي', ...(await sourceArgsFromRecord(sys, 'collections', c)) }));
     }
     const pendingCount = (collections||[]).filter(c=>isPosted(c)&&!c.paid_date).length;
     if (pendingCount>0) _migLog(`ℹ️ ${pendingCount} تحصيل منتظر — سيُضاف قيده عند الدفع`, 'warn');
@@ -5112,11 +5119,11 @@ export async function runMigration() {
     _migLog(`💸 ${(expenses||[]).filter(isPosted).length} مصروف + ${(payouts||[]).filter(isPosted).length} صرف شريك...`);
     for (const e of (expenses||[]).filter(isPosted)) {
       if (!e.amount||!+e.amount) { skipped++; tick(); continue; }
-      await safe(`مصروف ${e.ref_no||e.id}`, () => je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no,refId:e.id||null, desc:e.description||e.category||'مصروف', expType:e.exp_type||e.category||'أخرى', method:e.pay_method||'نقد', paidBy:e.paid_by||null, paidBySplit:e.paid_by_split||null, isCommission:!!e.is_commission }));
+      await safe(`مصروف ${e.ref_no||e.id}`, async () => je_expense({ sys, date:e.exp_date||today(), amount:+e.amount, fileNo:e.file_no,refId:e.id||null, desc:e.description||e.category||'مصروف', expType:e.exp_type||e.category||'أخرى', method:e.pay_method||'نقد', paidBy:e.paid_by||null, paidBySplit:e.paid_by_split||null, isCommission:!!e.is_commission, ...(await sourceArgsFromRecord(sys, 'expenses', e)) }));
     }
     for (const p of (payouts||[]).filter(isPosted)) {
       if (!p.amount||!+p.amount) { skipped++; tick(); continue; }
-      await safe(`صرف ${p.pay_id||p.id}`, () => je_payout({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, partner:p.partner||'', method:p.pay_method||'نقد' }));
+      await safe(`صرف ${p.pay_id||p.id}`, async () => je_payout({ sys, date:p.pay_date||today(), amount:+p.amount, fileNo:p.file_no,refId:p.id||null, partner:p.partner||'', method:p.pay_method||'نقد', ...(await sourceArgsFromRecord(sys, 'partner_payouts', p)) }));
     }
 
     // ── الخطوة 8: المصاريف التشغيلية ──
@@ -5124,7 +5131,7 @@ export async function runMigration() {
     _migLog(`💼 ${(opexItems||[]).length} مصروف تشغيلي...`);
     for (const o of (opexItems||[])) {
       if (!o.amount||!+o.amount) { skipped++; tick(); continue; }
-      await safe(`OPEX ${o.ref_no||o.id}`, () => je_opex({ sys, date:o.exp_date||today(), amount:+o.amount, expType:o.exp_type||'أخرى', desc:o.description||'', method:o.pay_method||'نقد', refNo:o.ref_no||null }));
+      await safe(`OPEX ${o.ref_no||o.id}`, async () => je_opex({ sys, date:o.exp_date||today(), amount:+o.amount, expType:o.exp_type||'أخرى', desc:o.description||'', method:o.pay_method||'نقد', refNo:o.ref_no||null, ...(await sourceArgsFromRecord(sys, 'operating_expenses', o)) }));
     }
 
     // ── النتيجة النهائية ──

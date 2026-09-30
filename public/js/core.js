@@ -599,6 +599,8 @@ export function cashAccountsOf(sys = state.system) {
 export const CUSTODY_LABEL_PREFIX = 'عهدة: ';
 export const isCustodyLabel = name => String(name || '').trim().startsWith(CUSTODY_LABEL_PREFIX.trim());
 export const custodyLabel = holderName => CUSTODY_LABEL_PREFIX + String(holderName || '').trim();
+// ✅ B-2c4: رسالة حارس «اسم عهدة من غير مصدر» في الشاشات (المصدر بيتختار، مش بيتكتب اسمه)
+export const CUSTODY_NEEDS_SOURCE_MSG = 'اختيار «عهدة: …» كدافع أو مستلم بيتعمل من اختيار مصدر الفلوس، مش بكتابة الاسم — ماتحفظش حاجة';
 
 // أصحاب العهد لكل نظام — كاش موسوم بنظامه، بيتجدد مع loadChartOfAccounts (transactions.js)،
 // والرد المتأخر لنظام قديم بيتساب (نفس حارس N-21). **fail-closed:** لو التحميل فشل ⇒ null،
@@ -691,6 +693,68 @@ export async function resolveMoneySource(sys, choice) {
   }
   if (kind === 'bank') throw new Error('البنوك بأساميها لسه ما اتفعّلتش (B-2f)');
   throw new Error(`resolveMoneySource: نوع مصدر غير معروف (${kind})`);
+}
+
+/**
+ * ✅ B-2c3 (2026-09-30) — المصدر المحفوظ في سجل **موجود** (source_sys/source_account) ← مصدر
+ * متسجّل للكتّاب/updateJEInPlace. قواعده غير resolveMoneySource (مراجعة c2، DESIGN §٥):
+ *  (١) العهدة المقفولة **مقبولة** — الرفض للحركة الجديدة بس؛ إعادة الترحيل/التعديل/الإلغاء لسجل
+ *      موجود بتاخد حسابه المحفوظ (وإلا تعديل مبلغ قديم يتقفل).
+ *  (٢) المحفوظ لازم يكون سليم: source_sys = sys، والحساب 1110 أو 1151-1199 أو 24xx لشريك
+ *      **خارجي** مربوط (البنوك 1121-1149 = B-2f)، وموجود في الشجرة.
+ *  (٣) الاسم في خانة السجل (payer/paid_by/received_by) لازم يطابق المصدر — لو مش مطابق (حد عدّل
+ *      الاسم بس) ⇒ **رفض بصوت**، مش رجوع للمسار القديم.
+ * السجل من غير مصدر (العمودين فاضيين أو مش موجودين قبل SQL c1) ⇒ null ⇒ المسار القديم بالحرف.
+ */
+const _SOURCE_NAME_FIELD = { payments:'payer', expenses:'paid_by', collections:'received_by' };
+export async function sourceFromRecord(sys, table, record) {
+  const sa = record?.source_account, ss = record?.source_sys;
+  if (sa == null && ss == null) return null;
+  const tag = `${table} ${record?.ref_no || record?.pay_id || record?.id || ''}`.trim();
+  if (sa == null || ss == null) throw new Error(`${tag}: مصدر الفلوس محفوظ ناقص (source_sys=${ss ?? '—'} / source_account=${sa ?? '—'}) — راجع السجل`);
+  if (ss !== sys) throw new Error(`${tag}: مصدر الفلوس من ${ss} والسجل في ${sys} — القيد المرآة بين الشركتين لسه (B-2f)`);
+  const acc = String(sa);
+  let src;
+  if (acc === '1110') {
+    src = { kind:'custody-base', label: sys === 'TM' ? 'صندوق الترانزيت' : TREASURY_PARTNER, contact:null };
+  } else if (isCustodyAccount(acc)) {
+    const holders = await _custodyHoldersFor(sys);
+    if (!Array.isArray(holders)) throw new Error('تعذّر تحميل أصحاب العهد — أعد المحاولة، ولو تكرر أعد تحميل الصفحة.');
+    const h = holders.find(x => x.account_code === acc);   // (١) أي حالة — المقفولة مقبولة لسجل موجود
+    if (!h) throw new Error(`${tag}: حساب المصدر ${acc} مالوش صاحب عهدة في ${sys}`);
+    src = { kind:'custody', holderId:h.id, label: custodyLabel(h.name), contact:null };
+  } else if (/^24\d\d$/.test(acc)) {
+    let rows;
+    try { rows = await apiGetAll('partner_account_links', { select:'partner_name,account_code,is_permanent', system_type:`eq.${sys}` }); }
+    catch (_) { throw new Error(PAYER_CLASS_UNVERIFIED_MSG); }
+    if (!(rows || []).some(r => r.is_permanent === true)) throw new Error(PAYER_CLASS_UNVERIFIED_MSG);
+    const link = rows.find(r => r.account_code === acc);
+    if (!link) throw new Error(`${tag}: حساب المصدر ${acc} مش مربوط بشريك في ${sys}`);
+    if (link.is_permanent === true) throw new Error(`${tag}: حساب المصدر ${acc} لشريك دائم («${link.partner_name}») — مصدر مش مسموح`);
+    if (link.is_permanent !== false) throw new Error(PAYER_CLASS_UNVERIFIED_MSG);
+    src = { kind:'partner', label: link.partner_name, contact: link.partner_name };
+  } else if (/^11(2[1-9]|[34]\d)$/.test(acc)) {
+    throw new Error(`${tag}: مصدر بنك (${acc}) — البنوك بأساميها لسه ما اتفعّلتش (B-2f)`);
+  } else {
+    throw new Error(`${tag}: حساب المصدر ${acc} بره المسموح (1110 / 1151-1199 / جاري شريك خارجي)`);
+  }
+  const chart = await apiGetAll('chart_of_accounts', { select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${acc}` });
+  if (!chart?.[0]?.account_name) throw new Error(`${tag}: حساب المصدر ${acc} مش موجود في شجرة ${sys}`);
+  // (٣) الاسم في الخانة يطابق المصدر (نفس قاعدة الكتّاب _assertNameMatchesSource)
+  const field = _SOURCE_NAME_FIELD[table];
+  if (field) {
+    const n = String(record[field] || '').trim();
+    const ok = src.kind === 'custody-base' ? (!n || TREASURY_ALIASES.has(n)) : n === (src.kind === 'partner' ? src.contact : src.label);
+    if (!ok) throw new Error(`${tag}: «${n || '—'}» في خانة ${field} مش مطابق لمصدر الفلوس المحفوظ «${src.label}» (${acc}) — تغيير المصدر بيتعمل من اختيار المصدر نفسه، مش بتعديل الاسم`);
+  }
+  return _blessSource({ sys, account: acc, accountName: chart[0].account_name, fromRecord: true, ...src });
+}
+// للمنادين اللي بيعيدوا ترحيل سجل: {} للسجل القديم (نفس النداء بالحرف)، وإلا { source } + اسم
+// المستلم للتحصيل (je_collection محتاجه للمطابقة — مسارات إعادة الترحيل القديمة مابتبعتوش).
+export async function sourceArgsFromRecord(sys, table, record) {
+  const source = await sourceFromRecord(sys, table, record);
+  if (!source) return {};
+  return table === 'collections' ? { source, receivedBy: record.received_by || null } : { source };
 }
 
 /**
@@ -1196,7 +1260,10 @@ export async function loadPayerClassLinks(sys) {
   if (!(rows || []).some(r => r.is_permanent === true)) throw new Error(PAYER_CLASS_UNVERIFIED_MSG);
   return rows;
 }
-const _isTreasuryPayer = name => { const n = (name || '').trim(); return !n || TREASURY_ALIASES.has(n); };
+// ✅ B-2c4: «عهدة: …» = فلوس شركة (أصل 115x في إيد حد) ⇒ نفس معاملة الخزينة في التصنيف بالاسم (مش شريك،
+// ومش دائم) — ومن غير قراءة partner_account_links، فمفيش «تعذّر التحقق» كاذب لدافع هو أصلًا فلوس شركة.
+// (المستهلكين كلهم بيقارنوا بـ'permanent' بس، ومفيش شاشة بتعرض كلمة للتصنيف ده.)
+const _isTreasuryPayer = name => { const n = (name || '').trim(); return !n || TREASURY_ALIASES.has(n) || isCustodyLabel(n); };
 // 'treasury' | 'permanent' | 'external' — الاسم الفاضي = الخزينة (زي je_payment/_isPartnerPocket)
 export function payerClass(sys, name, links) {
   if (_isTreasuryPayer(name)) return 'treasury';
@@ -1957,7 +2024,8 @@ Object.assign(window, {
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, fetchAllPages, fetchPagesChecked, _orderHasId, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner,
   CASH_BASE_ACCOUNTS, cashAccountsOf, isCustodyAccount,
-  CUSTODY_LABEL_PREFIX, isCustodyLabel, custodyLabel, loadCustodyHolders, resolveMoneySource, isResolvedSource,
+  CUSTODY_LABEL_PREFIX, isCustodyLabel, custodyLabel, loadCustodyHolders, resolveMoneySource, isResolvedSource, CUSTODY_NEEDS_SOURCE_MSG,
+  sourceFromRecord, sourceArgsFromRecord,
   PAYER_CLASS_UNVERIFIED_MSG, loadPayerClassLinks, payerClass, classifyPayer, permanentAmong, guardSupplierPayerUI,
   companyPayerName, permanentPayerBlockMsg, permanentExpenseWarnMsg, assertSupplierPayerAllowed, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,

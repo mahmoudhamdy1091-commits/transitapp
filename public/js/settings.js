@@ -1136,6 +1136,12 @@ export async function submitEditPayment() {
     const oldData = await apiGetAll('payments', { select:'*', id:`eq.${id}` });
     const old = oldData?.[0];
     if (!old) { showFieldErr('epError','لم يُعثر على السجل'); return; }
+    // ✅ B-2c3: سجل ليه مصدر محفوظ ⇒ المصدر من السجل، والدافع لازم يفضل مطابق له (تغيير المصدر
+    // بيتعمل من اختيار المصدر نفسه — B-2d). بيقع هنا قبل أي كتابة لو الاسم اتغيّر أو المحفوظ بايظ.
+    const _oldSrc = await sourceFromRecord(state.system, 'payments', { ...old, payer });
+    // ✅ B-2c4: اسم عهدة من غير مصدر محفوظ ⇒ رفض قبل أي كتابة. من غيره: patch ← void (القيد القديم
+    // يتعكس) ← je_payment يرمي (c2) ⇒ قيد اتعكس من غير بديل. العهدة بتتختار كمصدر (B-2d)، مش بتتكتب.
+    if (!_oldSrc && isCustodyLabel(payer)) { showFieldErr('epError', CUSTODY_NEEDS_SOURCE_MSG); return; }
 
     // ⛔ P0-9: ممنوع **اختيار** شريك دائم كدافع جديد (مؤقت لحد B-2 — راجع core.js).
     // لو الدافع هو نفسه القديم (دفعة تاريخية باسم مازن مثلًا) التعديل مسموح: إجبار
@@ -1184,9 +1190,10 @@ export async function submitEditPayment() {
           sys: state.system, fileNo: old.file_no,
           refTable: 'payments', refId: id,
           oldAmount, newAmount: amount,
-          contactPatch: payer !== oldPayer ? payer : null,
+          contactPatch: (!_oldSrc && payer !== oldPayer) ? payer : null,   // مع مصدر: الاسم مطابق (اتفحص فوق)
           newDate: date,   // ✅ مزامنة تاريخ القيد مع تاريخ الدفعة الجديد
           oldMethod: old.pay_method, newMethod: method,   // ✅ نقل سطر النقدية عند نقد↔بنك
+          ...(_oldSrc ? { oldSourceAccount: old.source_account, newSource: _oldSrc } : {}),   // ✅ B-2c3
         });
       }
 
@@ -1477,6 +1484,12 @@ export async function submitEditExpense() {
     const oldData = await apiGetAll('expenses', { select:'*', id:`eq.${id}` });
     const old = oldData?.[0];
     if (!old) { showFieldErr('eeError','لم يُعثر على السجل'); return; }
+    // ✅ B-2c3: سجل ليه مصدر محفوظ ⇒ مصدر واحد (مفيش توزيع)، والدافع لازم يفضل مطابق للمصدر —
+    // قبل أي كتابة (وقبل تنبيه P0-9) عشان المحفوظ لو بايظ أو الاسم اتغيّر نقف من غير ما نلمس حاجة
+    if (old.source_account != null && splitMode) { showFieldErr('eeError','المصروف ده ليه مصدر فلوس محفوظ — مصدر واحد، التوزيع بالتساوي مش مسموح'); return; }
+    const _oldSrc = await sourceFromRecord(state.system, 'expenses', { ...old, paid_by: paidBy });
+    // ✅ B-2c4: نفس حارس الدفعة — والتوزيع كمان (أي اسم فيه «عهدة: …»)
+    if (!_oldSrc && [paidBy, ...(splitMode ? splitPartners : [])].some(n => isCustodyLabel(n))) { showFieldErr('eeError', CUSTODY_NEEDS_SOURCE_MSG); return; }
     // ✅ المرحلة ١ — ترانزيت: يُرفض صراحةً بدل التحويل الصامت إلى "دُفع بواسطة"،
     // فالتحويل الصامت يعيد توجيه المبلغ كاملاً إلى طرف واحد بلا إشعار المستخدم.
     const _oldHasSplit = Array.isArray(old.paid_by_split) && old.paid_by_split.length > 0;
@@ -1549,6 +1562,8 @@ export async function submitEditExpense() {
           }
           if (Object.keys(_map).length) creditOverride = _map;
         }
+        // ✅ B-2c3: مع مصدر محفوظ، المصدر هو اللي بيحدد الدائن (source وcreditOverride واحد بس — c2)
+        if (_oldSrc) creditOverride = null;
       }
 
       // 1. تحديث السجل
@@ -1585,7 +1600,7 @@ export async function submitEditExpense() {
           desc, expType:type||old.exp_type||'أخرى', method, paidBy: paidBy||null, paidBySplit, isPrimary:false,
           isCommission: !!old.is_commission,
           targetOverride: oldDebitLine ? { acc: oldDebitLine.account_code, name: oldDebitLine.account_name } : null,
-          creditOverride });
+          creditOverride, ...(_oldSrc ? { source: _oldSrc } : {}) });   // ✅ B-2c3
         if (newJE?.ids?.length) {
           await _handoffPrimaryLine({ sys: state.system, oldIds: (oldJELines||[]).map(l=>l.id), newIds: newJE.ids });
         }
@@ -1604,6 +1619,7 @@ export async function submitEditExpense() {
           oldAmount, newAmount: amount,
           newDate: date,
           oldMethod: old.pay_method, newMethod: method,
+          ...(_oldSrc ? { oldSourceAccount: old.source_account, newSource: _oldSrc } : {}),   // ✅ B-2c3
         });
       }
 
@@ -1673,6 +1689,10 @@ export async function submitEditCollection() {
   try {
     const oldData = await apiGetAll('collections', { select:'*', id:`eq.${id}` });
     const old = oldData?.[0] || {};
+    // ✅ B-2c3: سجل ليه مصدر محفوظ ⇒ المستلم لازم يفضل مطابق للمصدر (قبل أي كتابة)
+    const _oldSrc = await sourceFromRecord(state.system, 'collections', { ...old, received_by: receivedBy });
+    // ✅ B-2c4: نفس حارس الدفعة (patch ← void ← je_collection يرمي)
+    if (!_oldSrc && isCustodyLabel(receivedBy)) { showFieldErr('ecError', CUSTODY_NEEDS_SOURCE_MSG); return; }
 
     // ✅ Track A / Phase 1 — قرار موحَّد عبر js/lifecycle.js. الشرط الإضافي
     // (old.paid_date) خاص بالتحصيلات تحديدًا: تحصيل "مستحق" بلا paid_date ما
@@ -1723,6 +1743,7 @@ export async function submitEditCollection() {
           oldAmount, newAmount: amount,
           newDate: paid || old.paid_date,
           oldMethod: old.pay_method, newMethod: method,
+          ...(_oldSrc ? { oldSourceAccount: old.source_account, newSource: _oldSrc } : {}),   // ✅ B-2c3
         });
       }
 
