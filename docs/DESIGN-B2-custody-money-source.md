@@ -70,18 +70,29 @@
 | تحصيل | في عهدته: مدين 115x / دائن 1200 | زي النهارده | زي الدفعة |
 | سحب / أرباح | جاريه (زي النهارده) | جاريه | — |
 - **الكتّاب:** `je_payment`، و`je_expense` (`_expenseCreditLine`)، و`je_collection`، و`je_opex`، و`je_payout`، و`je_partnerLedger`، و`je_custodian` (القديم، يتراجع). كل واحد بياخد `source` جاهز من `resolveMoneySource` بدل `method==='نقد'?'1110':'1120'` (الـ15 مكان في القياس §١). **لو مفيش `source` ← المسار القديم بالحرف** (سجلات قديمة، واعتماد، وإصلاح).
-- **السجل بيحفظ مصدره:** عمودين جداد في `payments` و`expenses` و`collections` (و`operating_expenses` لو دخلت): `source_sys` و`source_account` (SQL). إعادة الترحيل (تعديل، اعتماد مسودة، إصلاح) بتقرا المصدر المحفوظ، مش بتفترض نقد/بنك. والسجلات القديمة (العمودين فاضيين) ← المسار القديم.
+- **السجل بيحفظ مصدره:** عمودين جداد في **6 جداول** — `payments` و`expenses` و`collections` و`operating_expenses` و`partner_ledger` و`partner_payouts` (قرار مراجعة c1: `partner_payouts` مايتسابش برا) — `source_sys` و`source_account` (SQL `sql/b2c1_money_source_columns.sql`، check: الاتنين يا فاضيين يا مليانين + الشكل). إعادة الترحيل (تعديل، اعتماد مسودة، إصلاح) بتقرا المصدر المحفوظ، مش بتفترض نقد/بنك. والسجلات القديمة (العمودين فاضيين) ← المسار القديم.
 - **التقسيم بالتساوي:** أي مصروف جديد مصدر واحد (قرار §٥-ج). والتاريخي (`paid_by_split`) مقبول في الاعتماد والإصلاح زي النهارده.
 - **مفيش لمس لأي قيد قديم** (C4).
 
 ### ٥ب. مستهلكين العمودين الجداد (`source_sys` / `source_account`) — قايمة إلزامية في B-2c
-كل مسار بيعيد الترحيل لازم يقراهم، وإلا يرجع للمسار القديم **في صمت**:
+كل مسار بيعيد الترحيل لازم يقراهم، وإلا يرجع للمسار القديم **في صمت**.
+> ⛔ **شرط (مراجعة c1، 2026-09-30): مفيش `select` صريح ولا payload (insert/patch) فيه `source_sys`/`source_account` قبل ما المالك يشغّل `sql/b2c1_money_source_columns.sql` ويتحقق.** PostgREST بيرجّع 400 لو عمود مش موجود اتذكر بالاسم — مثلًا `simulateDraftJE` لو ضاف `source_account` للـselect قبل الـSQL هيقع في الـcatch و**المعاينة هتخسر المسودات بصمت**. ⇒ **SQL c1 يتشغّل ويتحقق قبل نشر c2/c3.** (`select:'*'` مش متأثر.)
 - **التعديل:** `submitEditPayment` (settings.js ~1143-1169)، و`submitEditExpense` (~1481-1587)، و`submitEditCollection` (~1670-1783)، و`submitMarkPaid` (~1849-1885)، و`updateJEInPlace` (engine.js:85، §٦).
 - **الاعتماد:** `_createApprovalJE` (operations.js ~2101-2104)، و`_processEditApproval` (~2196-2250)، و`approveItem`/`approveAll` (عن طريقهم).
 - **الإصلاح:** `fixUnbalancedEntries` (4327/4365)، و`createMissingJE` (4472-4474)، و`createAllMissingJE` (4505-4507)، و`runMigration` (4994/5070).
 - **المعاينة:** `simulateDraftJE` (engine.js 1693/1738/1752/1814).
 - **الإلغاء:** `voidTransaction` (engine.js ~413/462) — بياخد الحساب من القيد الأصلي (`cashAccFromJE`)، مش من العمود، وده صح. والـfallback يقرا `source_account` قبل `pay_method`.
 - **حذف المصروف التشغيلي:** `deleteOpex` (operations.js:312) بيعكس على `pay_method==='نقد'?'1110':'1120'` — بعد العهد، حذف opex من عهدة هيعكس على 1110/1120 **غلط**. لازم ياخد الحساب من القيد الأصلي (سطر النقدية) أو `source_account`. (وده من الـ15 مكان في القياس.)
+- **`partner_payouts`** (الموديل القديم — `je_payout` engine.js:1581، النهارده `method==='نقد'?'1110':'1120'`) — جرد c1 (grep 2026-09-30):
+  - الكتّاب: `submitPayout` (modals.js:2649→2654)، و`submitQuickPayout` (viewer.js:657→662).
+  - التعديل: `openEditPayoutModal` (dashboard.js:1957 patch + 1966 `updateJEInPlace` بـ`oldMethod/newMethod` ⇒ لازم «مصدر ← مصدر» §٦).
+  - الاعتماد: `_createApprovalJE` (operations.js:2151)، و`_processEditApproval` نوع `payout_edit` (operations.js:2299).
+  - الإصلاح: `fixUnbalancedEntries` (operations.js:4417)، و`createMissingJE` (4524)، و`createAllMissingJE` (4557)، و`runMigration` (5119).
+  - المعاينة: `simulateDraftJE` (engine.js ~1812-1842، بيقرا `pay_method` ⇒ يضيف `source_account` للـselect).
+  - الإلغاء: `voidTransaction` فرع payout (engine.js:397) بياخد `cashAccFromJE` من القيد الأصلي ✅ — والـfallback يقرا `source_account` قبل `pay_method`.
+- **`partner_ledger`** (`je_partnerLedger` engine.js:1616) — الكتّاب: `submitLedger` (modals.js:2913 RPC ← 2928 JE)؛ التعديل: `submitLedgerEdit` (modals.js:3063 RPC + 3082 `updateJEInPlace`)؛ الاعتماد: operations.js:2156 و2303؛ الإلغاء: engine.js:432-454. ⚠️ **الصف بيتكتب ويتعدّل عن طريق RPCين** (`create_partner_ledger_entry` و`update_partner_ledger_entry`)، مش `apiPost` — يعني حفظ `source_*` في الصف محتاج **بارامترين جداد في الـRPCين = SQL للمالك**. و`update_partner_ledger_entry` دلالتها «استبدال مش دمج» ⇒ لازم التعديل يبعت المصدر دايمًا (وإلا null يمسحه). **اقتراح:** يدخلوا في SQL الـB-2e (هو أصلًا بيعدّل `create_partner_ledger_entry` عشان `v_prior`) — ✅ **مقرر (مراجعة c1، 2026-09-30):** `p_source_sys`/`p_source_account` (default null) يدخلوا في SQL الـB-2e. **وفي c2: `je_partnerLedger` يرمي خطأ لو اتبعتله `source`** («مصدر لقيد الشريك بعد B-2e») — مايقبلوش «للقيد بس»، لأن قيد على 115x والصف مش حافظ مصدره ⇒ أي تعديل/اعتماد/إصلاح يرجّعه للمسار القديم **بصمت**. ووقت B-2e: `update_partner_ledger_entry` «استبدال» ⇒ التعديل **يبعت المصدر دايمًا**.
+- **`operating_expenses`** (`je_opex` engine.js:1683؛ `ref_id` = `ref_no` مش `id`) — `submitOpex` (operations.js:223)، و`submitEditOpex` (237/275 `updateJEInPlace`)، و`deleteOpex` (289/312 فوق)، واعتماد `opex_edit` (operations.js:2307)، و`fixUnbalancedEntries` (4424)، و`runMigration` (5127).
+- **قرّاء «كل الأعمدة»** (`select:'*'` بيعرض أي عمود): تفاصيل الاعتماد (operations.js ~1316) بتتخطى القيم الفاضية + اتضافلها اسم عربي (c1)؛ السجل/الأوديت (settings.js `_FIELD_LABELS`) اتضافله اسم عربي (c1)؛ `exportTxExcel` (transactions.js:631) هيطلّع **عمودين فاضيين بأساميهم الخام** (مش ضرر — يتحسّن في B-2d)؛ `checkDbStructure` (operations.js:3130) تشخيص بس.
 - **اختبار:** لكل مسار من دول، سجل بـ`source_account` = 115x ← القيد الناتج على 115x (مش 1110/1120).
 
 ## ٦. التعديل والعكس
@@ -110,7 +121,7 @@
 |---|---|---|---|
 | **B-2a** ✅ | 1150 + `custody_holders` + `create_custody_holder` + صفّين «العهدة الأساسية» + اسم 1110 «العهدة الأساسية» — **اتشغّل (المالك، 2026-09-30) ومتحقق حيًّا:** قبل 05:59:58Z = بعد 06:22:25Z بالحرف (الكناري، ومازن −63,589، والميزان BOX 1,228/20,585,510.507 وTM 4,055/4,469,508.42 فرق 0)، وصفر قيود جديدة، وصفر تحذيرات `cashAccountsOf`. (والمالك وافق «فتح العهدة للمدير بس».) | أيوه | صفر ✅ |
 | **B-2b** ✅ | `cashAccountsOf` (قاعدة المدى 1151-1199) + المستخدمين — منشور (`b4a7a26`/`7f2e7d8`)، وصفر سطور على المدى ⇒ الأرقام زي ما هي | لأ | صفر ✅ |
-| **B-2c** | `resolveMoneySource` + الكتّاب ياخدوا `source` + `source_sys/source_account` في السجلات + `updateJEInPlace` مصدر←مصدر | أيوه (العمودين) | صفر على القديم (المسار القديم لما العمودين فاضيين) |
+| **B-2c** | `resolveMoneySource` + الكتّاب ياخدوا `source` + `source_sys/source_account` في السجلات + `updateJEInPlace` مصدر←مصدر — **نايم**، ومتقسّم c1-c4. **c1 ✅** (`44622f4`/`532ad74`، منشور 2026-09-30T06:38:04Z، ومتحقق حيًّا بقراءات حقيقية والحاجز شغّال: الأساسية TM ⇒ 1110 «صندوق الترانزيت»، BOX ⇒ 1110 «الصندوق»، مازن ⇒ رفض «من عهدته»، قتيبه BOX ⇒ 2405 contact=الاسم، وصفر أخطاء console في النظامين، وصفر كتابة). SQL c1 لسه (المالك) — **لازم قبل نشر c2/c3** | أيوه (العمودين) | صفر على القديم (المسار القديم لما العمودين فاضيين) |
 | **B-2d** | الشاشات (§٩) + تجربة ZZTEST كاملة (فتح عهدة، مصروف منها، تحصيل فيها، عكس، تعديل مصدر) بإذن المالك | لأ | سجلات تجريبية تتمسح |
 | **B-2e** | C3 (الشاشة + السيرفر) | أيوه (v_prior) | صفر لحد ما يبقى فيه رصيد عهدة |
 | **B-2f** | البنوك بأساميها + أطراف ذات علاقة + القيد المرآة (§١١، مقرر) — **قبل B-2d** | أيوه | صفر لحد أول عملية بين الشركتين |
