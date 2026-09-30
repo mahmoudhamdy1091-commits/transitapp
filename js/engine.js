@@ -86,7 +86,20 @@ export function updateAdminPostToggleUI() {
 // بس. من غيره (الافتراضي القديم) بيتطبّق على أي سطر فيه اسم أو دائن — وده في
 // قيد تحصيل استلمه شريك كان هيكتب اسم العميل مكان الشريك على سطر 2400، وفي قيد
 // البيع بيحط اسم العميل على 4100/1300 (post_sale_je بيحطه على 1200 بس)
-export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null, contactAccount = null, newDate = null, oldCost = null, newCost = null, oldMethod = null, newMethod = null }) {
+export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount, newAmount, contactPatch = null, contactAccount = null, newDate = null, oldCost = null, newCost = null, oldMethod = null, newMethod = null, oldSourceAccount = null, newSource = null }) {
+  // ✅ B-2c3 — «مصدر ← مصدر» (DESIGN §٦): لو السجل ليه مصدر محفوظ (oldSourceAccount)، سطر المصدر
+  // بيتحرك **بس** لما newSource (من resolveMoneySource/sourceFromRecord) يبقى حساب تاني — وطريقة
+  // الدفع لوحدها مابتحرّكش القيد (عرض بس لحد البنوك). من غيرهم (السجل القديم) ⇒ المسار القديم بالحرف.
+  const sourceMode = oldSourceAccount != null || newSource != null;
+  if (sourceMode) {
+    if (oldSourceAccount == null) throw new Error(`تعديل ${refTable}: نقل سجل قديم (من غير مصدر محفوظ) لمصدر = عكس + إعادة ترحيل، مش تعديل في المكان`);
+    if (newSource == null || !isResolvedSource(newSource)) throw new Error(`تعديل ${refTable}: المصدر الجديد لازم ييجي من resolveMoneySource/sourceFromRecord`);
+    if (newSource.sys !== sys) throw new Error(`تعديل ${refTable}: مصدر من ${newSource.sys} والقيد في ${sys} — القيد المرآة لسه (B-2f)`);
+    // contactPatch من غير contactAccount بيلمس كل سطر فيه contact أو دائن — منهم سطر المصدر
+    // (contact لازم يفضل null للعهدة، §٣) ⇒ مع مصدر محفوظ لازم يتحدد الحساب صراحةً
+    if (contactPatch != null && !contactAccount) throw new Error(`تعديل ${refTable}: تغيير الطرف مع مصدر محفوظ محتاج contactAccount صريح`);
+  }
+  const sourceChanged  = sourceMode && String(newSource.account) !== String(oldSourceAccount);
   const amountChanged  = oldAmount != null && Math.abs((+oldAmount||0) - (+newAmount||0)) > 0.001;
   const costChanged    = oldCost != null && newCost != null && Math.abs((+oldCost||0) - (+newCost||0)) > 0.001;
   const contactChanged = contactPatch != null;
@@ -98,9 +111,9 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
   // والتحصيلات وصرف الشريك. نقارن الحساب لا النصّ: 'تحويل بنكي'→'شيك'
   // كلاهما 1120 فلا يستدعي إعادة ترحيل.
   const _cashAccOf     = m => (m||'') === 'نقد' ? '1110' : '1120';
-  const methodChanged  = oldMethod != null && newMethod != null
+  const methodChanged  = !sourceMode && oldMethod != null && newMethod != null   // ✅ B-2c3: مع مصدر ⇒ عرض بس
                        && _cashAccOf(oldMethod) !== _cashAccOf(newMethod);
-  if (!amountChanged && !costChanged && !contactChanged && !dateChanged && !methodChanged) return;
+  if (!amountChanged && !costChanged && !contactChanged && !dateChanged && !methodChanged && !sourceChanged) return;
 
   {
     let entryNo = null;
@@ -123,7 +136,7 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
     // مجرّد ضمن آخر 40 قيدًا، فقد يلتقط قيد كيان آخر تمامًا ويعكسه بصمت.
     // الأنواع بلا ملف (سحب/إيداع عام بالتصميم، والمصروف التشغيلي) تعتمد على
     // ref_id وحده وتفشل صراحةً إن غاب — والفشل الظاهر أأمن من عكس قيد خطأ.
-    if (!entryNo && fileNo && (amountChanged || dateChanged || costChanged || methodChanged)) {
+    if (!entryNo && fileNo && (amountChanged || dateChanged || costChanged || methodChanged || sourceChanged)) {
       const filter = {
         select: 'entry_no,dr_amount,cr_amount',
         system_type: `eq.${sys}`,
@@ -152,6 +165,16 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
     });
     if (!allLines?.length) throw new Error(`تعديل ${refTable}: القيد ${entryNo} غير موجود بأسطره — التعديل على السجل لن يكتمل`);
 
+    // ✅ B-2c3: القيد لازم يكون فعلًا على حساب المصدر المحفوظ — وإلا السجل والقيد مختلفين ⇒ وقف
+    // (مش تخمين). واسم الحساب الجديد من الشجرة زي الكتّاب (_sourceLine).
+    let newSrcName = null;
+    if (sourceMode) {
+      if (!allLines.some(l => String(l.account_code) === String(oldSourceAccount))) {
+        throw new Error(`تعديل ${refTable}: القيد ${entryNo} مش على حساب المصدر المحفوظ ${oldSourceAccount} — راجع اليومية قبل التعديل`);
+      }
+      if (sourceChanged) newSrcName = (await _sourceLine(sys, newSource, 0, 'cr')).name;
+    }
+
     // ── ابنِ أسطر القيد الجديد الصحيح: نفس حسابات القيد القديم بالضبط، بعد
     //    تطبيق التعديل على كل سطر بمطابقة القيمة الفعلية (نفس منطق المطابقة
     //    القديم) — لا "أي سطر موجب"، حتى لا يُكتب مبلغ الإيراد فوق سطر التكلفة
@@ -176,6 +199,13 @@ export async function updateJEInPlace({ sys, fileNo, refTable, refId, oldAmount,
       if (methodChanged && (accCode === '1110' || accCode === '1120')) {
         accCode = _cashAccOf(newMethod);
         accName = accCode === '1110' ? 'النقد' : 'البنك';
+        anyLineChanged = true;
+      }
+      // ✅ B-2c3: نقل سطر المصدر (المحفوظ) للمصدر الجديد — contact null للعهدة واسم الشريك للشريك
+      if (sourceChanged && String(accCode) === String(oldSourceAccount)) {
+        accCode = newSource.account;
+        accName = newSrcName;
+        contact = newSource.kind === 'partner' ? newSource.contact : null;
         anyLineChanged = true;
       }
       return {
@@ -415,8 +445,10 @@ export async function voidTransaction(type, record, force=false) {
     if (!partnerAcc) {
       throw new Error(`تعذّر إيجاد القيد المحاسبي الأصلي لهذا الصرف (${record.pay_id||record.ref_no||record.id}) — على الأغلب اتحذف من اليومية مباشرة قبل الإلغاء. لا يمكن إلغاؤه بأمان بدون معرفة الحساب الأصلي؛ راجعي اليومية يدوياً أولاً أو أعيدي إدخال القيد.`);
     }
-    const cashAcc = cashAccFromJE || ((record.pay_method||'') === 'نقد' ? '1110' : '1120');
-    const cashNm  = cashNameFromJE || ((record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك');
+    // ✅ B-2c3: الـfallback (القيد الأصلي من غير سطر نقدية) يقرا المصدر المحفوظ قبل pay_method
+    const _fbSrc  = cashAccFromJE ? null : await sourceFromRecord(sys, 'partner_payouts', record);
+    const cashAcc = cashAccFromJE || _fbSrc?.account || ((record.pay_method||'') === 'نقد' ? '1110' : '1120');
+    const cashNm  = cashNameFromJE || _fbSrc?.accountName || ((record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك');
     reversalDesc  = `عكس صرف شريك ${record.pay_id||record.ref_no||''} — ${record.partner||''} — ملف ${record.file_no}`;
     reversalLines = [
       { acc: cashAcc,    name: cashNm,      dr: amount, cr: 0,      contact: null           },
@@ -464,8 +496,10 @@ export async function voidTransaction(type, record, force=false) {
     if (!partnerAcc) {
       throw new Error(`تعذّر إيجاد القيد المحاسبي الأصلي لهذه المعاملة (${record.ref_no||record.id}) — على الأغلب اتحذف من اليومية مباشرة قبل الإلغاء. لا يمكن إلغاؤها بأمان بدون معرفة الحساب الأصلي؛ راجعي اليومية يدوياً أولاً أو أعيدي إدخال القيد.`);
     }
-    const cashAcc = cashAccFromJE || ((record.pay_method||'') === 'نقد' ? '1110' : '1120');
-    const cashNm  = cashNameFromJE || ((record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك');
+    // ✅ B-2c3: الـfallback (القيد الأصلي من غير سطر نقدية) يقرا المصدر المحفوظ قبل pay_method
+    const _fbSrc  = cashAccFromJE ? null : await sourceFromRecord(sys, 'partner_ledger', record);
+    const cashAcc = cashAccFromJE || _fbSrc?.account || ((record.pay_method||'') === 'نقد' ? '1110' : '1120');
+    const cashNm  = cashNameFromJE || _fbSrc?.accountName || ((record.pay_method||'') === 'نقد' ? 'النقد' : 'البنك');
     const isDeposit = record.entry_type === 'إيداع عام';
     reversalDesc  = `عكس ${record.entry_type||'معاملة شريك'} ${record.ref_no||''} — ${record.partner||''}${record.file_no ? ' — ملف '+record.file_no : ''}`;
     reversalLines = isDeposit
@@ -1813,6 +1847,10 @@ export async function simulateDraftJE(sys, from, to) {
       });
     });
   };
+  // ✅ B-2c3: سطر المصدر المحفوظ في المعاينة (تقريبي زي باقي المعاينة — الترحيل الحقيقي عبر
+  // sourceFromRecord). ⚠️ الـselect الصريح فيه source_* ⇒ ده **بعد SQL c1** بس (شرط §٥ب).
+  const _srcLine = (r, who, amt, side) => { const k = String(r.source_account);
+    return { acc:k, name:getAccountName(k), dr: side === 'dr' ? amt : 0, cr: side === 'cr' ? amt : 0, contact: /^24/.test(k) ? (who || null) : null }; };
 
   try {
     // ── المشتريات draft ──
@@ -1829,7 +1867,7 @@ export async function simulateDraftJE(sys, from, to) {
 
     // ── المدفوعات draft ──
     const PMs = await apiGetAll('payments', {
-      select:'id,pay_date,amount,file_no,payer,pay_method', system_type:`eq.${sys}`, post_status:'eq.draft',
+      select:'id,pay_date,amount,file_no,payer,pay_method,source_sys,source_account', system_type:`eq.${sys}`, post_status:'eq.draft',
     });
     for (const pmt of (PMs||[])) {
       if (!inRange(pmt.pay_date) || !(+pmt.amount>0)) continue;
@@ -1841,6 +1879,13 @@ export async function simulateDraftJE(sys, from, to) {
         } catch(_) {}
       }
       if (!sup) sup = 'مورد';
+      if (pmt.source_account) {   // ✅ B-2c3
+        push([
+          {acc:'2100', name:'ذمم الموردين', dr:+pmt.amount, cr:0, contact:sup},
+          _srcLine(pmt, pmt.payer, +pmt.amount, 'cr'),
+        ], pmt.file_no, 'payments', `دفعة للمورد ${sup} — ${pmt.payer||'العهدة الأساسية'} — ملف ${pmt.file_no} (معاينة)`, pmt.pay_date);
+        continue;
+      }
       const payerStr = pmt.payer || sup;
       const cashAcc  = pmt.pay_method==='نقد'?'1110':'1120';
       const cashNm   = pmt.pay_method==='نقد'?'النقد':'البنك';
@@ -1878,7 +1923,7 @@ export async function simulateDraftJE(sys, from, to) {
 
     // ── المصاريف draft ──
     const EXPs = await apiGetAll('expenses', {
-      select:'id,exp_date,amount,file_no,description,exp_type,pay_method', system_type:`eq.${sys}`, post_status:'eq.draft',
+      select:'id,exp_date,amount,file_no,description,exp_type,pay_method,paid_by,source_sys,source_account', system_type:`eq.${sys}`, post_status:'eq.draft',
     });
     (EXPs||[]).forEach(e => {
       if (!inRange(e.exp_date) || !(+e.amount>0)) return;
@@ -1890,13 +1935,14 @@ export async function simulateDraftJE(sys, from, to) {
       const cashNm  = e.pay_method==='نقد'?'النقد':'البنك';
       push([
         {acc:eAcc,    name:eNm,    dr:+e.amount, cr:0, contact:null},
-        {acc:cashAcc, name:cashNm, dr:0, cr:+e.amount, contact:null},
+        e.source_account ? _srcLine(e, e.paid_by, +e.amount, 'cr')   // ✅ B-2c3
+          : {acc:cashAcc, name:cashNm, dr:0, cr:+e.amount, contact:null},
       ], e.file_no, 'expenses', `${e.description||'مصروف'} — ملف ${e.file_no||'عام'} (معاينة)`, e.exp_date);
     });
 
     // ── صرف الشركاء draft ──
     const POuts = await apiGetAll('partner_payouts', {
-      select:'id,pay_date,amount,file_no,partner,pay_method', system_type:`eq.${sys}`, post_status:'eq.draft',
+      select:'id,pay_date,amount,file_no,partner,pay_method,source_sys,source_account', system_type:`eq.${sys}`, post_status:'eq.draft',
     });
     for (const o of (POuts||[])) {
       if (!inRange(o.pay_date) || !(+o.amount>0)) continue;
@@ -1924,7 +1970,8 @@ export async function simulateDraftJE(sys, from, to) {
       } catch(_) {}
       push([
         {acc:partnerAcc, name:partnerAccName, dr:+o.amount, cr:0, contact:o.partner},
-        {acc:cashAcc,    name:cashNm,         dr:0, cr:+o.amount, contact:null},
+        o.source_account ? _srcLine(o, null, +o.amount, 'cr')   // ✅ B-2c3
+          : {acc:cashAcc,    name:cashNm,         dr:0, cr:+o.amount, contact:null},
       ], o.file_no, 'partner_payouts', `صرف شريك ${o.partner} — ملف ${o.file_no} (معاينة)`, o.pay_date);
     }
 
@@ -1958,14 +2005,15 @@ export async function simulateDraftJE(sys, from, to) {
 
     // ── التحصيلات المدفوعة draft ──
     const Cols = await apiGetAll('collections', {
-      select:'id,paid_date,amount,file_no,customer,inv_no,pay_method', system_type:`eq.${sys}`, post_status:'eq.draft',
+      select:'id,paid_date,amount,file_no,customer,inv_no,pay_method,received_by,source_sys,source_account', system_type:`eq.${sys}`, post_status:'eq.draft',
     });
     (Cols||[]).forEach(c => {
       if (!c.paid_date || !inRange(c.paid_date) || !(+c.amount>0)) return;
       const cashAcc = c.pay_method==='نقد'?'1110':'1120';
       const cashNm  = c.pay_method==='نقد'?'النقد':'البنك';
       push([
-        {acc:cashAcc, name:cashNm,        dr:+c.amount, cr:0, contact:null},
+        c.source_account ? _srcLine(c, c.received_by, +c.amount, 'dr')   // ✅ B-2c3
+          : {acc:cashAcc, name:cashNm,        dr:+c.amount, cr:0, contact:null},
         {acc:'1200',  name:'ذمم العملاء', dr:0, cr:+c.amount, contact:c.customer},
       ], c.file_no, 'collections', `تحصيل ${c.inv_no} — ${c.customer} — ملف ${c.file_no} (معاينة)`, c.paid_date);
     });

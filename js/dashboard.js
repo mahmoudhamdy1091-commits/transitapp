@@ -1952,6 +1952,10 @@ export async function openEditPayoutModal(payoutId) {
         // ✅ Track A / Phase 1 — قرار موحَّد عبر js/lifecycle.js (كان مكرَّرًا هنا
         // وفي 5 أماكن تانية). راجع lifecycle.js لتفاصيل العلة الأصلية (BOX-133).
         const wasPosted = wasAlreadyPosted(p.post_status);
+        // ✅ B-2c3: صرف ليه مصدر محفوظ ⇒ القيد يفضل على حسابه وطريقة الدفع عرض بس؛ وتغيير الشريك
+        // المستلم معاه بيقع في updateJEInPlace (contactPatch محتاج contactAccount) — قبل أي كتابة
+        const _oldSrc = await sourceFromRecord(state.system, 'partner_payouts', p);
+        if (_oldSrc && wasPosted && newPartner !== p.partner) { showFieldErr('poutError','الصرف ده ليه مصدر فلوس محفوظ — تغيير الشريك المستلم = إلغاء وتسجيل جديد'); return; }
 
         // 1. تحديث السجل مباشرة
         await apiPatch('partner_payouts', { id:`eq.${payoutId}` }, {
@@ -1971,6 +1975,7 @@ export async function openEditPayoutModal(payoutId) {
             contactPatch: newPartner !== p.partner ? newPartner : null,
             newDate,   // ✅ مزامنة تاريخ قيد صرف الشريك مع تاريخه الجديد
             oldMethod: p.pay_method, newMethod: newMethod,   // ✅ نقل سطر النقدية عند نقد↔بنك
+            ...(_oldSrc ? { oldSourceAccount: p.source_account, newSource: _oldSrc } : {}),   // ✅ B-2c3
           });
         }
 
