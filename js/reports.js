@@ -259,8 +259,11 @@ export async function runCashFlowReport(from, to, sys, postFilter = 'posted') {
           : `<div style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--text2)">🔍 لا توجد عمليات معلّقة (draft) في هذه الفترة.</div>`)
       : '';
 
-    // حركات حسابات النقد/البنك
-    const cashRows = jeRows.filter(r => r.account_code === '1110' || r.account_code === '1120');
+    // حركات حسابات النقدية — ✅ B-2b (2026-09-29): من المصدر الموحّد (cashAccountsOf) بدل
+    // 1110/1120 الثابتين. العهد (115x) بتتحسب «نقدية» بقرار المالك §١٢-٣، فتسليم عهدة من بنك
+    // يظهر داخل وخارج بنفس المبلغ (تحويل داخلي) وصافيه صفر.
+    const _cashAccs = cashAccountsOf(sys);
+    const cashRows = jeRows.filter(r => _cashAccs.has(r.account_code));
 
     // داخل = مدين على النقد/البنك
     const inflows  = cashRows.filter(r => (+r.dr_amount||0) > 0);

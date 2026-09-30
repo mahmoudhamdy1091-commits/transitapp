@@ -206,11 +206,13 @@ function _ledgerRevRe() {
   return new RegExp('^عكس (' + names.join('|') + ')');
 }
 
-const CASH_ACCS = ['1110', '1120'];
+// ✅ B-2b (2026-09-29): حسابات النقدية من المصدر الموحّد (cashAccountsOf في core.js) بدل
+// ['1110','1120'] الثابتة — عشان معاملات الشركاء من عهدة (115x) يتحدد اتجاهها صح.
 export function _cashSide(lines) {
+  const CASH_ACCS = cashAccountsOf();
   let dr = 0, cr = 0;
   (lines || []).forEach(l => {
-    if (!CASH_ACCS.includes(String(l.account_code || ''))) return;
+    if (!CASH_ACCS.has(String(l.account_code || ''))) return;
     dr += +l.dr_amount || 0; cr += +l.cr_amount || 0;
   });
   if (!dr && !cr) return null;
