@@ -1341,6 +1341,49 @@ export const TREASURY_PARTNER = 'الصندوق';
 export const TREASURY_ALIASES = new Set([TREASURY_PARTNER, 'صندوق الترانزيت']);
 export function _isPartnerPocket(name) { const n = name && name.trim(); return !!(n && !TREASURY_ALIASES.has(n)); }
 
+// ════════════════════════════════════════════════════════════
+// ✅ B-2c2 (2026-09-30) — مصدر الفلوس في الكتّاب (docs/DESIGN-B2-custody-money-source.md §٣ و§٣ب و§٥).
+// **نايم:** ولا منادي بيبعت `source` لحد B-2d ⇒ source = null ⇒ المسار القديم بالحرف (بصمة جسم
+// القيد اتقاست قبل/بعد). ولما يتبعت:
+// - لازم يكون طالع من resolveMoneySource (isResolvedSource) — مايتبنيش باليد.
+// - source.sys ≠ sys ⇒ رفض (القيد المرآة بين الشركتين = B-2f).
+// - الاسم في خانة الدافع/المستلم لازم يطابق المصدر: العهدة «عهدة: …»، والأساسية فاضي أو اسم خزينة،
+//   والشريك اسمه — عشان قرّاء «تجميع الفلوس بالاسم» (§٣ب-ج) مايحسبوش دفعة من عهدة مساهمة من الشريك.
+// - «عهدة: …» في الخانة **من غير** source ⇒ رفض بصوت قبل أي نداء شبكة (المسار القديم مايعرفش حسابها).
+// - سطر المصدر: الحساب من source، والاسم من الشجرة (زي المسار القديم)، وcontact = null للعهدة
+//   (§٣ — عشان voidTransaction/cashAccFromJE يعكس على نفس الحساب) واسم الشريك للشريك.
+// ════════════════════════════════════════════════════════════
+const _SOURCE_KINDS = new Set(['custody', 'custody-base', 'partner']);
+function _checkSource(sys, source, { allowPartner = true, what = 'العملية' } = {}) {
+  if (!isResolvedSource(source)) throw new Error('مصدر الفلوس لازم ييجي من resolveMoneySource — مايتبنيش باليد');
+  if (source.sys !== sys) throw new Error(`مصدر الفلوس من ${source.sys} والقيد في ${sys} — القيد المرآة بين الشركتين لسه (B-2f)`);
+  if (!_SOURCE_KINDS.has(source.kind)) throw new Error(`نوع مصدر مش مدعوم في الكتّاب (${source.kind})`);
+  if (source.kind === 'partner' && !allowPartner) throw new Error(`${what} من جاري شريك مش مدعومة — المصدر لازم عهدة`);
+}
+function _assertNameMatchesSource(name, source, field) {
+  const n = (name || '').trim();
+  if (source.kind === 'custody-base') {
+    if (n && !TREASURY_ALIASES.has(n)) throw new Error(`${field} «${n}» مش مطابق لمصدر الفلوس (العهدة الأساسية)`);
+    return;
+  }
+  const want = source.kind === 'partner' ? source.contact : source.label;
+  if (n !== want) throw new Error(`${field} «${n || '—'}» مش مطابق لمصدر الفلوس «${want}»`);
+}
+function _assertNoCustodyLabel(names, field) {
+  const hit = (names || []).find(n => isCustodyLabel(n));
+  if (hit) throw new Error(`${field} «${hit.trim()}» مصدر عهدة — لازم يتبعت source من resolveMoneySource (المسار القديم مايعرفش حساب العهدة)`);
+}
+// ذيل الوصف لعهدة شخص «من عهدة: …» (عرض بس، عشان اليومية تبقى مفهومة)؛ الأساسية من غير ذيل زي الخزينة النهارده
+const _custodyTail = source => source.kind === 'custody' ? ` — من ${source.label}` : '';
+async function _sourceLine(sys, source, amount, side) {
+  const acc = await apiGetAll('chart_of_accounts', {
+    select:'account_name', system_type:`eq.${sys}`, account_code:`eq.${source.account}`,
+  });
+  if (!acc?.[0]?.account_name) throw new Error(`حساب المصدر ${source.account} مش موجود في شجرة ${sys} — مفيش ترحيل`);
+  return { acc:source.account, name:acc[0].account_name, dr: side === 'dr' ? amount : 0, cr: side === 'cr' ? amount : 0,
+           contact: source.kind === 'partner' ? source.contact : null };
+}
+
 // ✅ حارس ضد الكتابة على ملف مُلغى (VOIDED، 2026-09-23) — يتخطّى لو fileNo فاضي
 // (مصروف/صرف عام بلا ملف). يُستدعى أول أي دالة ترحّل نشاطًا جديدًا مرتبطًا
 // بملف — je_expense/je_payment/je_collection/je_payout/je_partnerLedger هنا،
@@ -1362,15 +1405,20 @@ export function displayUser(email) {
   return USER_DISPLAY_NAMES[email] || email.split('@')[0];
 }
 
-export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method,receivedBy,isPrimary=true}) {
+export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo,method,receivedBy,isPrimary=true,source=null}) {
   if(!amount||amount<=0) throw new Error(`قيمة تحصيل غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد التحصيل`);
+  // ✅ B-2c2: حراس المصدر قبل أي نداء شبكة
+  if (source != null) { _checkSource(sys, source); _assertNameMatchesSource(receivedBy, source, 'المستلم'); }
+  else _assertNoCustodyLabel([receivedBy], 'المستلم');
   await _assertFileNotVoided(sys, fileNo);
   // المدين: الخزينة (نقد/بنك) افتراضياً، أو حساب الشريك المخصَّص لو احتفظ
   // بالمبلغ خارج الصندوق. ✅ المرحلة ٢ (partner_account_links، 2026-09-16) —
   // نفس نمط je_payment: _isPartnerPocket أصلاً بتستبعد الخزينة، فاللوكاب هنا
   // بس. حارس صريح يرفض مُستلِم بلا حساب مربوط بدل التسجيل الصامت على 2400.
   let debit;
-  if (_isPartnerPocket(receivedBy)) {
+  if (source != null) {
+    debit = await _sourceLine(sys, source, amount, 'dr');   // ✅ B-2c2: المصدر المحلول بدل pay_method/_isPartnerPocket
+  } else if (_isPartnerPocket(receivedBy)) {
     const receivedByTrimmed = receivedBy.trim();
     const link = await apiGetAll('partner_account_links', {
       select:'account_code', system_type:`eq.${sys}`, partner_name:`eq.${receivedByTrimmed}`,
@@ -1388,7 +1436,9 @@ export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo
   } else {
     debit = {acc:(method==='نقد'?'1110':'1120'), name:(method==='نقد'?'النقد':'البنك'), dr:amount, cr:0, contact:null};
   }
-  const tail = _isPartnerPocket(receivedBy) ? ` — احتفظ بها ${receivedBy.trim()}` : '';
+  const tail = source != null
+    ? (source.kind === 'partner' ? ` — احتفظ بها ${source.contact}` : source.kind === 'custody' ? ` — في ${source.label}` : '')
+    : _isPartnerPocket(receivedBy) ? ` — احتفظ بها ${receivedBy.trim()}` : '';
   return await postDoubleEntry({sys,date,fileNo,refTable:'collections',refId,isPrimary,desc:`تحصيل ${invNo} — ${customer} — ملف ${fileNo}${tail}`,lines:[
     debit,
     {acc:'1200',  name:`ذمم العملاء`,    dr:0,      cr:amount, contact:customer },
@@ -1398,8 +1448,11 @@ export async function je_collection({sys,date,amount,fileNo,refId,customer,invNo
 // دفعة مورد: مورد Dr / نقد Cr
 // لو الدافع (payer) شريك مختلف عن المورد → يُضاف سطر ثالث على حساب الشريك 2400
 // حتى يظهر ما دفعه الشريك في كشف حسابه
-export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,payer,payerName,method,isPrimary=true}) {
+export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplierName,payer,payerName,method,isPrimary=true,source=null}) {
   if(!amount||amount<=0) throw new Error(`قيمة دفعة مورد غير صالحة (${amount}) — لن يُسجَّل القيد ولا تُعتمد الدفعة`);
+  // ✅ B-2c2: حراس المصدر قبل أي نداء شبكة
+  if (source != null) { _checkSource(sys, source); _assertNameMatchesSource(payer || payerName, source, 'الدافع'); }
+  else _assertNoCustodyLabel([payer, payerName], 'الدافع');
   await _assertFileNotVoided(sys, fileNo);
   let sup = supplier || supplierName || '';
   if (!sup && fileNo) {
@@ -1411,6 +1464,16 @@ export async function je_payment({sys,date,amount,fileNo,refId,supplier,supplier
     } catch(_) {}
   }
   if (!sup) sup = 'مورد';
+  // ✅ B-2c2: المصدر المحلول بيحدد الدائن بدل pay_method/_isPartnerPocket (والوصف: الشريك زي النهارده
+  // «بواسطة …»، والعهدة «من عهدة: …»، والأساسية من غير ذيل زي الخزينة)
+  if (source != null) {
+    const by = source.kind === 'partner' ? ` بواسطة ${source.contact}` : source.kind === 'custody' ? ` من ${source.label}` : '';
+    return await postDoubleEntry({sys,date,fileNo,refTable:'payments',refId,isPrimary,
+      desc:`دفعة للمورد ${sup}${by} — ملف ${fileNo}`,lines:[
+      {acc:'2100', name:`ذمم الموردين`, dr:amount, cr:0, contact:sup},
+      await _sourceLine(sys, source, amount, 'cr'),
+    ]});
+  }
   const payerStr = payer || payerName || sup;
   const cashAcc  = method==='نقد'?'1110':'1120';
   const cashNm   = method==='نقد'?'النقد':'البنك';
@@ -1529,8 +1592,17 @@ async function _expenseCreditLine(sys, name, amount, method, creditOverride = nu
 // ✅ P0-2 (N-09، 2026-09-27): creditOverride اختياري — راجع _expenseCreditLine فوق.
 // من غيره تعديل مبلغ مصروف مقسوم كان بيرجّع نص مازن من 3200 (فلوس شركة، m4b)
 // لـ2401 (حسابه) بصمت، لأن السطر الدائن بيتحسب من partner_account_links من الأول
-export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,paidBySplit=null,isPrimary=true,targetOverride=null,isCommission=false,creditOverride=null}) {
+export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,method,paidBy,paidBySplit=null,isPrimary=true,targetOverride=null,isCommission=false,creditOverride=null,source=null}) {
   if(!amount||amount<=0) throw new Error(`قيمة مصروف غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
+  // ✅ B-2c2: حراس المصدر قبل أي نداء شبكة. source وcreditOverride الاتنين بيحددوا جانب الدائن ⇒ واحد
+  // بس (قرار المراجعة)؛ أما targetOverride فجانب المدين ⇒ يتجمعوا عادي.
+  if (source != null) {
+    _checkSource(sys, source);
+    if (Array.isArray(paidBySplit) && paidBySplit.length) throw new Error('المصروف بمصدر واحد — التقسيم بالتساوي مع مصدر مش مسموح (§٥)');
+    if (creditOverride) throw new Error('source وcreditOverride الاتنين بيحددوا الدائن — ينفع واحد بس');
+    if (isCommission) throw new Error('العمولة المستحقة مش دفع فلوس — مالهاش مصدر');
+    _assertNameMatchesSource(paidBy, source, 'الدافع');
+  } else _assertNoCustodyLabel([paidBy, ...(Array.isArray(paidBySplit) ? paidBySplit.map(p => p && p.partner) : [])], 'الدافع');
   await _assertFileNotVoided(sys, fileNo);
   const hasSplit = Array.isArray(paidBySplit) && paidBySplit.length > 0;
   // ✅ م٦ (2026-09-22، قرار مالك) — "عمولة مستحقة لمستفيد": نفس القيد بالحرف
@@ -1562,10 +1634,15 @@ export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,meth
   // مصفوفة Promises لا كائنات حساب فعلية — postDoubleEntry كانت هتاخد lines
   // فيها [Promise, Promise,...] بدل {acc,name,dr,cr,contact} (رصدها المراجع
   // قبل الكتابة، مش بعد اكتشاف باج حي).
-  const creditLines = hasSplit
+  // ✅ B-2c2: المصدر المحلول = سطر دائن واحد (بدل pay_method/_isPartnerPocket)
+  const creditLines = source != null
+    ? [ await _sourceLine(sys, source, amount, 'cr') ]
+    : hasSplit
     ? await Promise.all(paidBySplit.map(p => _expenseCreditLine(sys, p.partner, +p.amount||0, method, creditOverride)))
     : [ await _expenseCreditLine(sys, paidBy, amount, method, creditOverride) ];
-  const tail = hasSplit
+  const tail = source != null
+    ? (source.kind === 'partner' ? ` — دفعها ${source.contact}` : _custodyTail(source))
+    : hasSplit
     ? ` — موزَّع بالتساوي على ${paidBySplit.map(p=>p.partner).join('، ')}`
     : (_isPartnerPocket(paidBy)
         ? (isCommission ? ` — عمولة مستحقة لـ${paidBy.trim()}` : ` — دفعها ${paidBy.trim()}`)
@@ -1578,8 +1655,10 @@ export async function je_expense({sys,date,amount,fileNo,refId,desc,expType,meth
 
 // صرف شريك (الموديل القديم — لا تُستخدم لأي صف جديد، تفضل للصفوف التاريخية
 // المرحَّلة قبل Phase 2 فقط): شريك Dr / نقد Cr
-export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
+export async function je_payout({sys,date,amount,fileNo,refId,partner,method,source=null}) {
   if(!amount||amount<=0) throw new Error(`قيمة صرف شريك غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد الصرف`);
+  // ✅ B-2c2: المصدر هنا عهدة بس (النهارده الصرف من الخزينة بس — مفيش «صرف من جاري شريك تاني»)
+  if (source != null) _checkSource(sys, source, { allowPartner:false, what:'صرف الشريك' });
   await _assertFileNotVoided(sys, fileNo);
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
@@ -1602,9 +1681,10 @@ export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
   if (acc?.[0]?.account_name) partnerAccName = acc[0].account_name;
   // ✅ Track B — نفس علة je_purchase/je_sale (return ناقصة). تأكدنا: كل الـ8
   // مواقع استدعاء حقيقية لا تلتقط القيمة المرجعة، فالإضافة دي إضافية بحتة
-  return await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',refId,desc:`صرف شريك ${partner} — ملف ${fileNo}`,lines:[
+  return await postDoubleEntry({sys,date,fileNo,refTable:'partner_payouts',refId,desc:`صرف شريك ${partner} — ملف ${fileNo}${source != null ? _custodyTail(source) : ''}`,lines:[
     {acc:partnerAcc, name:partnerAccName, dr:amount, cr:0,     contact:partnerTrimmed },
-    {acc:cashAcc,    name:cashNm,         dr:0,      cr:amount, contact:null    },
+    source != null ? await _sourceLine(sys, source, amount, 'cr')   // ✅ B-2c2
+      : {acc:cashAcc,    name:cashNm,         dr:0,      cr:amount, contact:null    },
   ]});
 }
 
@@ -1613,8 +1693,11 @@ export async function je_payout({sys,date,amount,fileNo,refId,partner,method}) {
 // في LEDGER_TYPES) لا تستدعي هذه الدالة إطلاقًا — الفرع يُقرَّر عند الكتابة،
 // لا هنا. سحب عام/إيداع عام: fileNo=null (postDoubleEntry تتعامل معه كقيد
 // عام، computeFinancials تتجاهله تلقائياً لأنه بلا ملف — راجع core.js:92).
-export async function je_partnerLedger({sys,date,entryType,amount,fileNo,refId,partner,method,notes}) {
+export async function je_partnerLedger({sys,date,entryType,amount,fileNo,refId,partner,method,notes,source=null}) {
   if(!amount||amount<=0) throw new Error(`قيمة غير صالحة (${amount}) — لن يُسجَّل القيد`);
+  // ✅ B-2c2 (قرار المراجعة): صف partner_ledger بيتكتب بـRPC لسه مابتقبلش المصدر ⇒ قيد على 115x والصف
+  // مش حافظ مصدره ⇒ أي تعديل/اعتماد/إصلاح يرجّعه للمسار القديم بصمت. يتفتح مع p_source_* في SQL الـB-2e.
+  if (source != null) throw new Error('مصدر الفلوس لقيد الشريك لسه ما اتفعّلش — بعد B-2e');
   await _assertFileNotVoided(sys, fileNo);
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
@@ -1680,15 +1763,18 @@ export async function je_custodian({sys, date, amount, custodian, desc, method, 
 }
 
 // مصروف تشغيلي: مصروف Dr / نقد Cr
-export async function je_opex({sys,date,amount,expType,desc,method,refNo}) {
+export async function je_opex({sys,date,amount,expType,desc,method,refNo,source=null}) {
   if(!amount||amount<=0) throw new Error(`قيمة مصروف تشغيلي غير صالحة (${amount}) — لن يُسجَّل القيد ولا يُعتمد المصروف`);
+  // ✅ B-2c2: المصدر هنا عهدة بس (النهارده التشغيلي من الخزينة بس — مالوش دافع شريك)
+  if (source != null) _checkSource(sys, source, { allowPartner:false, what:'المصروف التشغيلي' });
   const eAcc    = OPEX_ACC_MAP[expType] || '6700';
   const cashAcc = method==='نقد'?'1110':'1120';
   const cashNm  = method==='نقد'?'النقد':'البنك';
   await postDoubleEntry({sys,date,fileNo:null,refTable:'operating_expenses',refId:refNo||null,
-    desc:`مصروف تشغيلي: ${desc||expType}`,lines:[
+    desc:`مصروف تشغيلي: ${desc||expType}${source != null ? _custodyTail(source) : ''}`,lines:[
     {acc:eAcc,    name:`مصروف تشغيلي — ${expType||'أخرى'}`, dr:amount, cr:0,     contact:null},
-    {acc:cashAcc, name:cashNm,                               dr:0,      cr:amount, contact:null},
+    source != null ? await _sourceLine(sys, source, amount, 'cr')   // ✅ B-2c2
+      : {acc:cashAcc, name:cashNm,                               dr:0,      cr:amount, contact:null},
   ]});
 }
 

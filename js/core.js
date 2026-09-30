@@ -631,6 +631,12 @@ async function _custodyHoldersFor(sys) {
   return await loadCustodyHolders(sys);
 }
 
+// ✅ B-2c2: المصدر اللي بيقبله الكاتب لازم يكون **طالع من resolveMoneySource** (مجمَّد ومتسجّل هنا)
+// — مايتبنيش باليد، عشان قواعدها (رفض الدائم، ومدى العهد، والمقفولة، والتصنيف) ماتتلفّش.
+const _RESOLVED_SOURCES = new WeakSet();
+const _blessSource = o => { const f = Object.freeze(o); _RESOLVED_SOURCES.add(f); return f; };
+export const isResolvedSource = src => !!src && typeof src === 'object' && _RESOLVED_SOURCES.has(src);
+
 /**
  * resolveMoneySource(sys, choice) → { sys, account, accountName, kind, holderId?, label, contact }
  * - بترجّع **sys مع الحساب** (مش الحساب بس): لو مصدر من الشركة التانية (B-2f)، الكاتب هيعمل المرآة.
@@ -640,6 +646,7 @@ async function _custodyHoldersFor(sys) {
  *   { kind:'bank', ... }                                      ⇐ B-2f (لسه) ⇒ رفض صريح
  * - الشريك الدائم مباشرة ⇒ رفض («من عهدته»). والعهدة المقفولة ⇒ رفض. والتصنيف مش متأكد ⇒ رفض.
  * - contact_name لسطر العهدة/البنك = null (الحساب هو اللي بيعرّف صاحبه — §٣).
+ * - الناتج **مجمَّد ومتسجّل** (isResolvedSource) — الكتّاب (B-2c2) مابيقبلوش غيره.
  */
 export async function resolveMoneySource(sys, choice) {
   if (!['BOX', 'TM'].includes(sys)) throw new Error(`resolveMoneySource: نظام غير معروف (${sys})`);
@@ -655,13 +662,13 @@ export async function resolveMoneySource(sys, choice) {
     const isBase = h.kind === 'أساسية';
     if (!isBase && !isCustodyAccount(h.account_code)) throw new Error(`حساب عهدة «${h.name}» (${h.account_code}) بره مدى العهد 1151-1199`);
     if (isBase && h.account_code !== '1110') throw new Error(`العهدة الأساسية في ${sys} مش على 1110 (${h.account_code})`);
-    return {
+    return _blessSource({
       sys, account: h.account_code, kind: isBase ? 'custody-base' : 'custody', holderId: h.id, contact: null,
       accountName: (state.chartOfAccountsSys === sys && state.chartOfAccounts?.[h.account_code]?.name)
         || (isBase ? 'العهدة الأساسية' : `عهدة ${h.name}`),
       // العهدة الأساسية بتفضل باسم الخزينة (عشان القرّاء القدام)، وعهدة الشخص «عهدة: …»
       label: isBase ? (sys === 'TM' ? 'صندوق الترانزيت' : TREASURY_PARTNER) : custodyLabel(h.name),
-    };
+    });
   }
   if (kind === 'partner') {
     const name = String(choice.name || '').trim();
@@ -677,10 +684,10 @@ export async function resolveMoneySource(sys, choice) {
     if (!link) throw new Error(`الشريك «${name}» ليس له حساب مربوط في partner_account_links`);
     if (link.is_permanent === true) throw new Error(`«${name}» شريك دائم — الفلوس بتتسجّل «من عهدته»، مش من جاريه`);
     if (link.is_permanent !== false) throw new Error(PAYER_CLASS_UNVERIFIED_MSG);   // null = مش مصنَّف ⇒ fail-closed
-    return {
+    return _blessSource({
       sys, account: link.account_code, kind: 'partner', contact: name, label: name,
       accountName: (state.chartOfAccountsSys === sys && state.chartOfAccounts?.[link.account_code]?.name) || `جاري الشريك ${name}`,
-    };
+    });
   }
   if (kind === 'bank') throw new Error('البنوك بأساميها لسه ما اتفعّلتش (B-2f)');
   throw new Error(`resolveMoneySource: نوع مصدر غير معروف (${kind})`);
@@ -1950,7 +1957,7 @@ Object.assign(window, {
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, fetchAllPages, fetchPagesChecked, _orderHasId, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner,
   CASH_BASE_ACCOUNTS, cashAccountsOf, isCustodyAccount,
-  CUSTODY_LABEL_PREFIX, isCustodyLabel, custodyLabel, loadCustodyHolders, resolveMoneySource,
+  CUSTODY_LABEL_PREFIX, isCustodyLabel, custodyLabel, loadCustodyHolders, resolveMoneySource, isResolvedSource,
   PAYER_CLASS_UNVERIFIED_MSG, loadPayerClassLinks, payerClass, classifyPayer, permanentAmong, guardSupplierPayerUI,
   companyPayerName, permanentPayerBlockMsg, permanentExpenseWarnMsg, assertSupplierPayerAllowed, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
