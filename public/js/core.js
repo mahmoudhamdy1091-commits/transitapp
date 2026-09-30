@@ -557,6 +557,38 @@ export async function fetchJEForPeriod(sys, from, to) {
 }
 
 /**
+ * ✅ B-2b (2026-09-29) — القايمة الموحّدة لحسابات النقدية (docs/DESIGN-B2-custody-money-source.md §٧).
+ * = {1110 العهدة الأساسية، 1120 البنك التاريخي} + المدى 1151-1199 «العهد النقدية» (قاعدة المدى تحت)
+ * + (بعدين) البنوك بأساميها. **مصدر واحد** لكل حتة بتجمع «فلوس دخلت/خرجت»: computeFinancials
+ * (مبلغ المصاريف)، و_cashSide (journal.js)، والتدفقات النقدية (reports.js).
+ * **قاعدة المدى (مش الشجرة):** العهد = كل كود من 1151 لـ1199 **دايمًا**، بالرقم زي isPartnerPocketAcc
+ * (startsWith('24')). ليه مش من الشجرة: loadChartOfAccounts بتتنادى من غير انتظار (initApp/switchSystem)
+ * وبترجع {} بصمت لو فشلت، وبتبقى بتاعة النظام المفتوح بس ⇒ أول رسم للداشبورد (أو حساب لقيود نظام
+ * تاني) كان هيقع على الأساس وتختفي مصروفات العهد **بصمت**. والمدى آمن: create_custody_holder
+ * (sql/b2a) مابتخصّصش غيره تحت 1150، وB-2a بيقف لو فيه قيود عليه. الشجرة للتحقق بس (تحذير).
+ */
+export const CASH_BASE_ACCOUNTS = Object.freeze(['1110', '1120']);
+const CUSTODY_PARENT = '1150';
+const CUSTODY_MIN = 1151, CUSTODY_MAX = 1199;
+export const isCustodyAccount = code => /^\d{4}$/.test(String(code || '')) && +code >= CUSTODY_MIN && +code <= CUSTODY_MAX;
+let _cashChartWarned = '';
+export function cashAccountsOf(sys = state.system) {
+  const set = new Set(CASH_BASE_ACCOUNTS);
+  for (let n = CUSTODY_MIN; n <= CUSTODY_MAX; n++) set.add(String(n));
+  // تحقق بس (مابيغيّرش القايمة): لو الشجرة المحمّلة تبع النظام ده، أي حساب في المدى أبوه مش 1150،
+  // أو ابن لـ1150 بره المدى ⇒ تحذير مرة واحدة
+  const chart = state.chartOfAccounts || {};
+  if (state.chartOfAccountsSys === sys) {
+    const odd = Object.keys(chart).filter(c =>
+      (isCustodyAccount(c) && chart[c]?.parent_code !== CUSTODY_PARENT) ||
+      (chart[c]?.parent_code === CUSTODY_PARENT && !isCustodyAccount(c)));
+    const why = odd.length ? `حسابات مش متسقة مع مدى العهد 1151-1199 تحت 1150: ${odd.join('، ')}` : '';
+    if (why && _cashChartWarned !== sys + why) { _cashChartWarned = sys + why; console.warn(`[Transit] cashAccountsOf(${sys}): ${why}`); }
+  }
+  return set;
+}
+
+/**
  * حساب أرقام الربح/التكاليف من قيود journal_entries — معادلة موحّدة
  * تُستخدم في لوحة التحكم وتقرير الأرباح والخسائر لضمان تطابق الأرقام بينهما
  *
@@ -611,7 +643,9 @@ export function computeFinancials(jeRows) {
   // (project_partner_current_account_model.md). isPartnerPocketAcc تلتقطها
   // كلها برقم الحساب نفسه — بلا حاجة لجلب partner_account_links هنا (الدالة
   // متزامنة sync وبلا معرفة بـsys، وهذا الرقم توضيحي فقط، لا يدخل الربح).
-  const EXPENSE_CREDIT_FIXED = new Set(['1110', '1120']);
+  // ✅ B-2b (2026-09-29): حسابات النقدية من مصدر واحد (cashAccountsOf تحت) بدل {1110، 1120}
+  // الثابتة — عشان أي مصروف من عهدة (115x تحت 1150) مايختفيش من «مبلغ المصاريف».
+  const EXPENSE_CREDIT_FIXED = cashAccountsOf();
   const isPartnerPocketAcc = acc => EXPENSE_CREDIT_FIXED.has(acc) || acc.startsWith('24');
 
   // ✅ استبعاد قيود عكس أصلها بره نطاق الفترة المطلوبة (اكتُشف حيًّا 2026-08-09،
@@ -1817,6 +1851,7 @@ Object.assign(window, {
   isDraft, isActive, isEffective, isVisible, isOccupying, isPending,
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, fetchAllPages, fetchPagesChecked, _orderHasId, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner,
+  CASH_BASE_ACCOUNTS, cashAccountsOf, isCustodyAccount,
   PAYER_CLASS_UNVERIFIED_MSG, loadPayerClassLinks, payerClass, classifyPayer, permanentAmong, guardSupplierPayerUI,
   companyPayerName, permanentPayerBlockMsg, permanentExpenseWarnMsg, assertSupplierPayerAllowed, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,

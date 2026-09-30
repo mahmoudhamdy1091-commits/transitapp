@@ -898,12 +898,17 @@ export const approvalState = { all: [], filtered: [], currentType: 'all', curren
 
 // تحميل شجرة الحسابات وتخزينها في cache
 export async function loadChartOfAccounts() {
+  // ✅ B-2b (2026-09-29): النداء مش متستنّي (initApp وswitchSystem)، فرد متأخر لنظام قديم كان
+  // بيكتب فوق شجرة النظام الجديد (أسامي الحسابات تظهر غلط بعد تبديل سريع — N-21). دلوقتي الرد
+  // القديم بيتساب، والشجرة موسومة بنظامها (chartOfAccountsSys) للتحذير في cashAccountsOf.
+  const sys = state.system;
   try {
     const rows = await apiGet('chart_of_accounts', {
       select: 'account_code,account_name,account_type,parent_code',
-      system_type: `eq.${state.system}`,
+      system_type: `eq.${sys}`,
       is_active: 'eq.true',
     });
+    if (state.system !== sys) return;   // النظام اتغيّر وقت التحميل ⇒ سيب الرد القديم
     state.chartOfAccounts = {};
     (rows||[]).forEach(r => {
       state.chartOfAccounts[r.account_code] = {
@@ -912,7 +917,12 @@ export async function loadChartOfAccounts() {
         parent_code: r.parent_code,
       };
     });
-  } catch(e) { console.warn('loadChartOfAccounts:', e.message); state.chartOfAccounts = {}; }
+    state.chartOfAccountsSys = (rows||[]).length ? sys : null;
+  } catch(e) {
+    console.warn('loadChartOfAccounts:', e.message);
+    if (state.system !== sys) return;
+    state.chartOfAccounts = {}; state.chartOfAccountsSys = null;
+  }
 }
 
 // جيب اسم الحساب من الـ cache
