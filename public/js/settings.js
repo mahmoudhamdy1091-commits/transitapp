@@ -174,6 +174,7 @@ const _FIELD_LABELS = {
   sale_price:'سعر البيع', customer:'العميل', sale_date:'تاريخ البيع', vin:'رقم الشاصي',
   supplier:'المورد', total_purchase:'إجمالي الشراء', po_date:'تاريخ السند',
   payer:'الدافع', document:'المستند', partner:'الشريك', payout_type:'نوع الصرف',
+  source_sys:'نظام مصدر الفلوس', source_account:'حساب مصدر الفلوس',   // ✅ B-2c1
   model:'الموديل', make:'الصانع', year:'السنة', color:'اللون', purchase_price:'سعر الشراء',
   inv_no:'رقم الفاتورة', paid_date:'تاريخ الدفع', due_date:'تاريخ الاستحقاق',
   name:'الاسم', phone:'الهاتف', email:'الإيميل', type:'النوع',

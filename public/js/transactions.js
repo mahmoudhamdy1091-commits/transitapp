@@ -902,6 +902,9 @@ export async function loadChartOfAccounts() {
   // بيكتب فوق شجرة النظام الجديد (أسامي الحسابات تظهر غلط بعد تبديل سريع — N-21). دلوقتي الرد
   // القديم بيتساب، والشجرة موسومة بنظامها (chartOfAccountsSys) للتحذير في cashAccountsOf.
   const sys = state.system;
+  // ✅ B-2c1: كاش أصحاب العهد بيتفضّى مع كل تحميل للشجرة (تبديل نظام/بداية)، وبيتحمّل تاني
+  // عند أول استخدام (resolveMoneySource) — عشان عمره ما يتقري عهدة نظام تاني ولا قايمة قديمة.
+  state.custodyHolders = null; state.custodyHoldersSys = null;
   try {
     const rows = await apiGet('chart_of_accounts', {
       select: 'account_code,account_name,account_type,parent_code',
