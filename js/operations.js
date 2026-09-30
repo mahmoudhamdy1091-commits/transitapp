@@ -1287,6 +1287,7 @@ const FIELD_LABELS = {
   file_no:'رقم الملف', supplier:'المورد', po_no:'رقم PO', po_date:'تاريخ PO',
   total_purchase:'قيمة الصفقة', vehicle_count:'عدد السيارات',
   payer:'الدافع', amount:'المبلغ', pay_method:'طريقة الدفع', pay_date:'تاريخ الدفع',
+  source_sys:'نظام مصدر الفلوس', source_account:'حساب مصدر الفلوس',   // ✅ B-2c1
   document:'رقم المستند', notes:'ملاحظات', ref_no:'مرجع', pay_id:'رقم العملية',
   description:'الوصف', exp_type:'النوع', exp_date:'التاريخ',
   inv_no:'رقم الفاتورة', customer:'العميل', vin:'رقم الشاصي',

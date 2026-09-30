@@ -589,6 +589,104 @@ export function cashAccountsOf(sys = state.system) {
 }
 
 /**
+ * ✅ B-2c1 (2026-09-30) — مصدر الفلوس (docs/DESIGN-B2-custody-money-source.md §٣ و§٣ب و§٤).
+ * **نايم:** ولا منادي بيبعت `source` للكتّاب لحد B-2d، فالمسار القديم شغّال بالحرف.
+ *
+ * - «عهدة: [الاسم]» = الاسم المميّز لمصدر عهدة شخص في خانات الدافع/المستلم (payer · paid_by ·
+ *   received_by) — مش اسم الشريك، عشان أي مسار قديم ما اتحدّثش يقع بصوت بدل ما يوجّه بصمت (§٣ب).
+ * - العهدة الأساسية بتفضل باسم الخزينة الحالي (TREASURY_ALIASES) عشان القرّاء القدام.
+ */
+export const CUSTODY_LABEL_PREFIX = 'عهدة: ';
+export const isCustodyLabel = name => String(name || '').trim().startsWith(CUSTODY_LABEL_PREFIX.trim());
+export const custodyLabel = holderName => CUSTODY_LABEL_PREFIX + String(holderName || '').trim();
+
+// أصحاب العهد لكل نظام — كاش موسوم بنظامه، بيتجدد مع loadChartOfAccounts (transactions.js)،
+// والرد المتأخر لنظام قديم بيتساب (نفس حارس N-21). **fail-closed:** لو التحميل فشل ⇒ null،
+// و resolveMoneySource ترفض أي مصدر عهدة برسالة (ماتخمّنش حساب).
+export async function loadCustodyHolders(sys = state.system) {
+  let rows;
+  try {
+    rows = await apiGetAll('custody_holders', {
+      select: 'id,system_type,name,kind,linked_partner,account_code,status', system_type: `eq.${sys}`,
+    });
+  } catch (e) {
+    console.warn('loadCustodyHolders:', e.message);
+    if (state.system === sys) { state.custodyHolders = null; state.custodyHoldersSys = null; }
+    return null;
+  }
+  // صف «العهدة الأساسية» موجود دايمًا لكل نظام (B-2a) ⇒ قايمة فاضية = قراءة فشلت (RLS/جلسة منتهية)
+  // مش «مفيش عهد» — مانكاشهاش، ونرجّع null عشان الرفض يبقى برسالة التحميل.
+  if (!rows || !rows.length) {
+    console.warn(`loadCustodyHolders: قايمة ${sys} فاضية — المتوقع صف العهدة الأساسية على الأقل`);
+    if (state.system === sys) { state.custodyHolders = null; state.custodyHoldersSys = null; }
+    return null;
+  }
+  if (state.system !== sys) return rows;   // النظام اتغيّر وقت التحميل ⇒ مانكتبش فوق الكاش
+  state.custodyHolders = rows;
+  state.custodyHoldersSys = sys;
+  return state.custodyHolders;
+}
+async function _custodyHoldersFor(sys) {
+  if (state.custodyHoldersSys === sys && Array.isArray(state.custodyHolders)) return state.custodyHolders;
+  return await loadCustodyHolders(sys);
+}
+
+/**
+ * resolveMoneySource(sys, choice) → { sys, account, accountName, kind, holderId?, label, contact }
+ * - بترجّع **sys مع الحساب** (مش الحساب بس): لو مصدر من الشركة التانية (B-2f)، الكاتب هيعمل المرآة.
+ * - choice:
+ *   { kind:'custody', holderId } أو { kind:'custody', name }  ⇐ عهدة شخص أو العهدة الأساسية
+ *   { kind:'partner', name }                                  ⇐ شريك **خارجي** بس (جاريه، زي النهارده)
+ *   { kind:'bank', ... }                                      ⇐ B-2f (لسه) ⇒ رفض صريح
+ * - الشريك الدائم مباشرة ⇒ رفض («من عهدته»). والعهدة المقفولة ⇒ رفض. والتصنيف مش متأكد ⇒ رفض.
+ * - contact_name لسطر العهدة/البنك = null (الحساب هو اللي بيعرّف صاحبه — §٣).
+ */
+export async function resolveMoneySource(sys, choice) {
+  if (!['BOX', 'TM'].includes(sys)) throw new Error(`resolveMoneySource: نظام غير معروف (${sys})`);
+  const kind = choice?.kind;
+  if (kind === 'custody') {
+    const holders = await _custodyHoldersFor(sys);
+    if (!Array.isArray(holders)) throw new Error('تعذّر تحميل أصحاب العهد — أعد المحاولة، ولو تكرر أعد تحميل الصفحة.');
+    const h = choice.holderId != null
+      ? holders.find(x => String(x.id) === String(choice.holderId))
+      : holders.find(x => x.name === String(choice.name || '').trim());
+    if (!h) throw new Error(`العهدة «${choice.name || choice.holderId || ''}» مش موجودة في ${sys}`);
+    if (h.status !== 'active') throw new Error(`عهدة «${h.name}» مقفولة — ما ينفعش يتسجّل عليها حركة جديدة`);
+    const isBase = h.kind === 'أساسية';
+    if (!isBase && !isCustodyAccount(h.account_code)) throw new Error(`حساب عهدة «${h.name}» (${h.account_code}) بره مدى العهد 1151-1199`);
+    if (isBase && h.account_code !== '1110') throw new Error(`العهدة الأساسية في ${sys} مش على 1110 (${h.account_code})`);
+    return {
+      sys, account: h.account_code, kind: isBase ? 'custody-base' : 'custody', holderId: h.id, contact: null,
+      accountName: (state.chartOfAccountsSys === sys && state.chartOfAccounts?.[h.account_code]?.name)
+        || (isBase ? 'العهدة الأساسية' : `عهدة ${h.name}`),
+      // العهدة الأساسية بتفضل باسم الخزينة (عشان القرّاء القدام)، وعهدة الشخص «عهدة: …»
+      label: isBase ? (sys === 'TM' ? 'صندوق الترانزيت' : TREASURY_PARTNER) : custodyLabel(h.name),
+    };
+  }
+  if (kind === 'partner') {
+    const name = String(choice.name || '').trim();
+    if (!name || TREASURY_ALIASES.has(name)) throw new Error('الخزينة مش شريك — استخدم «العهدة الأساسية»');
+    if (isCustodyLabel(name)) throw new Error('«عهدة: …» مصدر عهدة مش شريك');
+    // نفس قراءة loadPayerClassLinks (كل روابط النظام + نفس فحص السلامة: لازم يبان شريك دائم
+    // واحد على الأقل، وإلا القراءة اتحجبت ⇒ «تعذّر التحقق» مش «مالوش حساب») + account_code
+    let rows;
+    try { rows = await apiGetAll('partner_account_links', { select:'partner_name,account_code,is_permanent', system_type:`eq.${sys}` }); }
+    catch (_) { throw new Error(PAYER_CLASS_UNVERIFIED_MSG); }
+    if (!(rows || []).some(r => r.is_permanent === true)) throw new Error(PAYER_CLASS_UNVERIFIED_MSG);
+    const link = rows.find(r => r.partner_name === name);
+    if (!link) throw new Error(`الشريك «${name}» ليس له حساب مربوط في partner_account_links`);
+    if (link.is_permanent === true) throw new Error(`«${name}» شريك دائم — الفلوس بتتسجّل «من عهدته»، مش من جاريه`);
+    if (link.is_permanent !== false) throw new Error(PAYER_CLASS_UNVERIFIED_MSG);   // null = مش مصنَّف ⇒ fail-closed
+    return {
+      sys, account: link.account_code, kind: 'partner', contact: name, label: name,
+      accountName: (state.chartOfAccountsSys === sys && state.chartOfAccounts?.[link.account_code]?.name) || `جاري الشريك ${name}`,
+    };
+  }
+  if (kind === 'bank') throw new Error('البنوك بأساميها لسه ما اتفعّلتش (B-2f)');
+  throw new Error(`resolveMoneySource: نوع مصدر غير معروف (${kind})`);
+}
+
+/**
  * حساب أرقام الربح/التكاليف من قيود journal_entries — معادلة موحّدة
  * تُستخدم في لوحة التحكم وتقرير الأرباح والخسائر لضمان تطابق الأرقام بينهما
  *
@@ -1852,6 +1950,7 @@ Object.assign(window, {
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, fetchAllPages, fetchPagesChecked, _orderHasId, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner,
   CASH_BASE_ACCOUNTS, cashAccountsOf, isCustodyAccount,
+  CUSTODY_LABEL_PREFIX, isCustodyLabel, custodyLabel, loadCustodyHolders, resolveMoneySource,
   PAYER_CLASS_UNVERIFIED_MSG, loadPayerClassLinks, payerClass, classifyPayer, permanentAmong, guardSupplierPayerUI,
   companyPayerName, permanentPayerBlockMsg, permanentExpenseWarnMsg, assertSupplierPayerAllowed, pgIn, apiPost, apiPatch,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
