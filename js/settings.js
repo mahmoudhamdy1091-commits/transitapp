@@ -1139,6 +1139,9 @@ export async function submitEditPayment() {
     // ✅ B-2c3: سجل ليه مصدر محفوظ ⇒ المصدر من السجل، والدافع لازم يفضل مطابق له (تغيير المصدر
     // بيتعمل من اختيار المصدر نفسه — B-2d). بيقع هنا قبل أي كتابة لو الاسم اتغيّر أو المحفوظ بايظ.
     const _oldSrc = await sourceFromRecord(state.system, 'payments', { ...old, payer });
+    // ✅ B-2c4: اسم عهدة من غير مصدر محفوظ ⇒ رفض قبل أي كتابة. من غيره: patch ← void (القيد القديم
+    // يتعكس) ← je_payment يرمي (c2) ⇒ قيد اتعكس من غير بديل. العهدة بتتختار كمصدر (B-2d)، مش بتتكتب.
+    if (!_oldSrc && isCustodyLabel(payer)) { showFieldErr('epError', CUSTODY_NEEDS_SOURCE_MSG); return; }
 
     // ⛔ P0-9: ممنوع **اختيار** شريك دائم كدافع جديد (مؤقت لحد B-2 — راجع core.js).
     // لو الدافع هو نفسه القديم (دفعة تاريخية باسم مازن مثلًا) التعديل مسموح: إجبار
@@ -1485,6 +1488,8 @@ export async function submitEditExpense() {
     // قبل أي كتابة (وقبل تنبيه P0-9) عشان المحفوظ لو بايظ أو الاسم اتغيّر نقف من غير ما نلمس حاجة
     if (old.source_account != null && splitMode) { showFieldErr('eeError','المصروف ده ليه مصدر فلوس محفوظ — مصدر واحد، التوزيع بالتساوي مش مسموح'); return; }
     const _oldSrc = await sourceFromRecord(state.system, 'expenses', { ...old, paid_by: paidBy });
+    // ✅ B-2c4: نفس حارس الدفعة — والتوزيع كمان (أي اسم فيه «عهدة: …»)
+    if (!_oldSrc && [paidBy, ...(splitMode ? splitPartners : [])].some(n => isCustodyLabel(n))) { showFieldErr('eeError', CUSTODY_NEEDS_SOURCE_MSG); return; }
     // ✅ المرحلة ١ — ترانزيت: يُرفض صراحةً بدل التحويل الصامت إلى "دُفع بواسطة"،
     // فالتحويل الصامت يعيد توجيه المبلغ كاملاً إلى طرف واحد بلا إشعار المستخدم.
     const _oldHasSplit = Array.isArray(old.paid_by_split) && old.paid_by_split.length > 0;
@@ -1686,6 +1691,8 @@ export async function submitEditCollection() {
     const old = oldData?.[0] || {};
     // ✅ B-2c3: سجل ليه مصدر محفوظ ⇒ المستلم لازم يفضل مطابق للمصدر (قبل أي كتابة)
     const _oldSrc = await sourceFromRecord(state.system, 'collections', { ...old, received_by: receivedBy });
+    // ✅ B-2c4: نفس حارس الدفعة (patch ← void ← je_collection يرمي)
+    if (!_oldSrc && isCustodyLabel(receivedBy)) { showFieldErr('ecError', CUSTODY_NEEDS_SOURCE_MSG); return; }
 
     // ✅ Track A / Phase 1 — قرار موحَّد عبر js/lifecycle.js. الشرط الإضافي
     // (old.paid_date) خاص بالتحصيلات تحديدًا: تحصيل "مستحق" بلا paid_date ما

@@ -599,6 +599,8 @@ export function cashAccountsOf(sys = state.system) {
 export const CUSTODY_LABEL_PREFIX = 'عهدة: ';
 export const isCustodyLabel = name => String(name || '').trim().startsWith(CUSTODY_LABEL_PREFIX.trim());
 export const custodyLabel = holderName => CUSTODY_LABEL_PREFIX + String(holderName || '').trim();
+// ✅ B-2c4: رسالة حارس «اسم عهدة من غير مصدر» في الشاشات (المصدر بيتختار، مش بيتكتب اسمه)
+export const CUSTODY_NEEDS_SOURCE_MSG = 'اختيار «عهدة: …» كدافع أو مستلم بيتعمل من اختيار مصدر الفلوس، مش بكتابة الاسم — ماتحفظش حاجة';
 
 // أصحاب العهد لكل نظام — كاش موسوم بنظامه، بيتجدد مع loadChartOfAccounts (transactions.js)،
 // والرد المتأخر لنظام قديم بيتساب (نفس حارس N-21). **fail-closed:** لو التحميل فشل ⇒ null،
@@ -1258,7 +1260,10 @@ export async function loadPayerClassLinks(sys) {
   if (!(rows || []).some(r => r.is_permanent === true)) throw new Error(PAYER_CLASS_UNVERIFIED_MSG);
   return rows;
 }
-const _isTreasuryPayer = name => { const n = (name || '').trim(); return !n || TREASURY_ALIASES.has(n); };
+// ✅ B-2c4: «عهدة: …» = فلوس شركة (أصل 115x في إيد حد) ⇒ نفس معاملة الخزينة في التصنيف بالاسم (مش شريك،
+// ومش دائم) — ومن غير قراءة partner_account_links، فمفيش «تعذّر التحقق» كاذب لدافع هو أصلًا فلوس شركة.
+// (المستهلكين كلهم بيقارنوا بـ'permanent' بس، ومفيش شاشة بتعرض كلمة للتصنيف ده.)
+const _isTreasuryPayer = name => { const n = (name || '').trim(); return !n || TREASURY_ALIASES.has(n) || isCustodyLabel(n); };
 // 'treasury' | 'permanent' | 'external' — الاسم الفاضي = الخزينة (زي je_payment/_isPartnerPocket)
 export function payerClass(sys, name, links) {
   if (_isTreasuryPayer(name)) return 'treasury';
@@ -2019,7 +2024,7 @@ Object.assign(window, {
   passesPostFilter, refreshAccessToken, isTokenValid, headers, apiFetch, apiGet,
   apiGetAll, fetchJEForPeriod, fetchAllPages, fetchPagesChecked, _orderHasId, computeFinancials, computePartnerSettlement, computePartnerSettlementBatch, isPermanentPartner,
   CASH_BASE_ACCOUNTS, cashAccountsOf, isCustodyAccount,
-  CUSTODY_LABEL_PREFIX, isCustodyLabel, custodyLabel, loadCustodyHolders, resolveMoneySource, isResolvedSource,
+  CUSTODY_LABEL_PREFIX, isCustodyLabel, custodyLabel, loadCustodyHolders, resolveMoneySource, isResolvedSource, CUSTODY_NEEDS_SOURCE_MSG,
   sourceFromRecord, sourceArgsFromRecord,
   PAYER_CLASS_UNVERIFIED_MSG, loadPayerClassLinks, payerClass, classifyPayer, permanentAmong, guardSupplierPayerUI,
   companyPayerName, permanentPayerBlockMsg, permanentExpenseWarnMsg, assertSupplierPayerAllowed, pgIn, apiPost, apiPatch,
