@@ -6,6 +6,9 @@
 --       الـconsole، وكل فحوص الـadmin (create_partner_account، create_custody_holder،
 --       post_file_profit_all، fleet void…) بتعتمد على الجدول ده.
 --       ⇒ الكتابة على user_roles للـadmin بس (is_app_admin())؛ القراءة لأي مسجّل زي ما هي.
+--       ⚠️ قرار المالك (2026-10-01، «موافق» على «إدارة المستخدمين تبقى للمدير على BOX أو TM بس»):
+--       is_app_admin = admin **بـsystems فيها BOX أو TM أو TRANSIT** — مش «admin في أي نظام». السبب: فيه
+--       أدمن FLEET بس (شريك) كان هيقدر يعدّل user_roles ويدّي نفسه BOX/TM.
 -- N-26b: دوال security definer **من غير فحص دور جوّاها** ⇒ بعد N-26 أي مستخدم مسجّل (حتى readonly)
 --       يقدر يناديها من الـconsole. قرار المالك:
 --         delete_deal_completely                              ⇐ admin بس
@@ -91,11 +94,12 @@ begin
   if v_owner is null or v_owner = 'PUT-OWNER-EMAIL-HERE' or v_owner !~ '@' then
     raise exception 'اكتب إيميل المالك في السطر بتاع n28.owner_email قبل التشغيل';
   end if;
-  if not exists (select 1 from public.user_roles where email = v_owner and role = 'admin') then
-    raise exception 'الإيميل % مش admin في user_roles — وقف (عشان محدش يقفل على نفسه إدارة المستخدمين)', v_owner;
+  -- (قرار المالك) إدارة المستخدمين للـadmin على BOX/TM بس ⇒ الحارسين بنفس الشرط، وإلا ممكن نقفلها على الكل
+  if not exists (select 1 from public.user_roles where email = v_owner and role = 'admin' and (systems like '%BOX%' or systems like '%TM%' or systems like '%TRANSIT%')) then
+    raise exception 'الإيميل % مش admin على BOX أو TM في user_roles — وقف (عشان محدش يقفل على نفسه إدارة المستخدمين)', v_owner;
   end if;
-  if (select count(*) from public.user_roles where role = 'admin') < 1 then
-    raise exception 'مفيش ولا admin في user_roles — وقف';
+  if (select count(*) from public.user_roles where role = 'admin' and (systems like '%BOX%' or systems like '%TM%' or systems like '%TRANSIT%')) < 1 then
+    raise exception 'مفيش ولا admin على BOX أو TM في user_roles — وقف';
   end if;
   if not (select relrowsecurity from pg_class where oid = 'public.user_roles'::regclass) then
     raise exception 'RLS مش مفعّلة على user_roles — وقف وراجع';
@@ -159,8 +163,8 @@ as $$
      limit 1), '');
 $$;
 
--- admin في أي نظام — للـpolicies بتاعة user_roles (secdef وصاحبها postgres = صاحب الجدول، والجدول
--- مش FORCE RLS ⇒ القراءة جوّاها مابتمرّش بالـpolicies ⇒ مفيش recursion)
+-- admin على BOX أو TM (قرار المالك — أدمن FLEET بس مايديرش المستخدمين) — للـpolicies بتاعة user_roles
+-- (secdef وصاحبها postgres = صاحب الجدول، والجدول مش FORCE RLS ⇒ القراءة جوّاها مابتمرّش بالـpolicies ⇒ مفيش recursion)
 create or replace function public.is_app_admin()
 returns boolean
 language sql
@@ -168,7 +172,8 @@ stable
 security definer
 set search_path = public, pg_temp
 as $$
-  select exists (select 1 from public.user_roles where email = auth.jwt() ->> 'email' and role = 'admin');
+  select exists (select 1 from public.user_roles where email = auth.jwt() ->> 'email' and role = 'admin'
+                   and (systems like '%BOX%' or systems like '%TM%' or systems like '%TRANSIT%'));
 $$;
 
 -- الفحص اللي الـwrappers بتناديه
@@ -328,6 +333,8 @@ notify pgrst, 'reload schema';
 --   select public.app_role('BOX') as box, public.app_role('TM') as tm, public.is_app_admin() as admin;  -- admin/admin/true
 --   select set_config('request.jwt.claims', '{"email":"<إيميل employee لو موجود>","role":"authenticated"}', true);
 --   select public.app_role('BOX'), public.app_role('TM'), public.is_app_admin();                       -- employee/…/false
+--   select set_config('request.jwt.claims', '{"email":"<إيميل admin على FLEET بس>","role":"authenticated"}', true);
+--   select public.app_role('BOX'), public.app_role('TM'), public.is_app_admin();                       -- ''/''/false (قرار المالك)
 -- rollback;
 --   (app_assert_role نفسها بتعدّي من الـSQL Editor لأن session_user = postgres — ده مقصود؛ فحصها الحقيقي
 --    من التطبيق: المنفّذ بيعمل فحص حي بحساب admin، ولو فيه employee/readonly حقيقي يتنسّق.)
