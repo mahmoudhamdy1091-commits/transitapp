@@ -343,7 +343,8 @@ notify pgrst, 'reload schema';
 --  where n.nspname = 'public' and p.proname like '%\_impl' order by 1;
 --      create_partner_ledger_entry_impl  7b9ff32b8ddce810307084321275c01c
 --      delete_deal_completely_impl       7eb7b89a3d00b56f7ce073fd720f6473
---      post_sale_je_impl                 f0106cdeffc20fa793cf97f4fac6b6fe
+--      post_sale_je_impl                 1cd8d8f006c609ee7fcd69874a3bafc8  (⚠️ N-33: الحي = sql/post_sale_je.sql fdf2c12
+--                                        من غير التعليقات — كود مطابق 129=129 سطر؛ md5 الريبو بالتعليقات f0106cde…)
 --      update_partner_ledger_entry_impl  d4f424b7ee41ed66740eb0b88ba70d0b
 --    أي دالة الـmd5 بتاعها مختلف ⇒ **الـprobe بتاعها مايتعملش** لحد ما pg_get_functiondef يتراجع.
 -- 5) **probes حية من غير كتابة** (المنفّذ، من التطبيق بحساب admin — session_user = authenticator ⇒ الفحص
