@@ -170,7 +170,7 @@ vehicles/stock_locations/partners_master ويعيد إدراجهم؛ postDoubleE
 |---|---|---|---|
 | `is_permanent_partner` (sql) | partner_account_links | ✓ / ✓ | بتتنادى من جوّه دوال secdef بس (create_custody_holder، post_file_profit_all، m6)، وjs/ وfleet مابينادوهاش ⇒ مش متأثرة ✓. وanon ✓ مش مشكلة: invoker، والـRLS بتقفل anon على الجدول. |
 | `is_treasury_name` | — | ✓ / ✓ | من غير جداول ✓ |
-- **⚠️ `reject_je_on_parent_account` (حارس م٥) ماظهرتش.** الاستعلام مش ممكن يفوّتها لو موجودة كـinvoker في public
+- **⚠️ `reject_je_on_parent_account` (حارس م٥) ماظهرتش** ⇒ **جرد ٤ أكّد: مش موجودة على الحي (N-36 في PLAN)**؛ الـtrigger الوحيد في public/fleet = `fleet.fleet_vehicles.trg_assign_vehicle_file_no` (secdef) ⇒ مفيش trigger invoker يتأثر بـN-31. الاستعلام مش ممكن يفوّتها لو موجودة كـinvoker في public
   (نفس الاستعلام طلّعها في PGlite). يعني يا إما **حارس القاعدة بتاع م٥ ماتشغّلش على الحي أصلًا** (آخر تسجيل:
   «حارس القاعدة بانتظار تشغيل المالك (2026-09-21)»، ومفيش تسجيل إنه اتشغّل)، يا إما secdef على الحي. ⇒ **جرد ٤**.
   - لو secdef: مش متأثرة بالـRLS ✓. ولو مش موجودة: مفيش أثر على N-31، بس **قفل الحسابات الأب في القاعدة مش شغّال**
@@ -212,7 +212,8 @@ vehicles/stock_locations/partners_master ويعيد إدراجهم؛ postDoubleE
 | `journal_entries_backup_20260714` | نسخة احتياطية من **الصفوف اللي اتغيّرت بس** في ترحيل 07-14 (sql/migrate_capitalize_file_expenses.sql:23 — سطور expenses/reversal على 13 حساب مصروف ليها file_no؛ المتوقع 63 صف) — **مش نسخة كاملة من القيود** | مفيش (مش في js/ ولا fleet) | 0 صف — مقفول ولا فاضي؟ ⇒ جرد ٤ |
 | `ledger_entries` | مش معروف — **مش مذكور في أي مكان في الريبو** (js/، public/fleet، sql/، scripts/) ⇒ اتعمل من الـdashboard | مفيش | 0 صف ⇒ جرد ٤ |
 | `partner_deal_summary` | نفس الكلام — مش مذكور في الريبو خالص | مفيش | 0 صف ⇒ جرد ٤ |
-- **قرار المالك بعد جرد ٤:** لكل جدول: (أ) RLS شغّالة ومفيش policy ⇒ مقفول على الكل ماعدا postgres/service_role — يفضل كده
+- **✅ جرد ٤ (10-03): الأربعة RLS = true و0 policies** ⇒ deny-all لـanon وauthenticated عن طريق REST (الـgrants موجودة بس الـRLS بتقفل). je_counters صفين، والـbackup 63 صف، وledger_entries وpartner_deal_summary فاضيين ⇒ **N-31 مايلمسهمش.**
+- **قرار المالك (في الآخر):** لكل جدول: (أ) RLS شغّالة ومفيش policy ⇒ مقفول على الكل ماعدا postgres/service_role — يفضل كده
   ولا يتشال؟ (ب) لو RLS مش شغّالة ⇒ تتشغّل في N-31. **الحذف قرار المالك بس** (والـbackup فيه أرقام حقيقية).
 
 **جرد ٤ (متابعة — استعلام واحد، اتجرّب على PGlite):** الـtriggers على جداول public/fleet ونوع دالتها (يحسم م٥) + حالة الـ4 جداول
@@ -225,6 +226,7 @@ vehicles/stock_locations/partners_master ويعيد إدراجهم؛ postDoubleE
 - ✅ `not null` على system_type ⇒ **audit_log بس** (الباقي NOT NULL أصلًا — جرد ٣).
 - ✅ Storage مفيش (§٧-٣). ✅ N-35 (v_trial_balance) اتقفل. ✅ viewين fleet ⇒ `security_invoker = true` في N-31 (PGlite 11/11).
 - ⏳ **توصية للمالك:** `drop default 'BOX'` على الـ8 جداول اللي في النطاق (§٧-٣).
-- ⏳ **جرد ٤:** م٥ trigger موجود ولا لأ ونوعه + حالة الـ4 جداول الزيادة ⇒ بعده قرار المالك عليهم (§٧-٤).
-- **N-34** (شاشة الشجرة مش مقفولة بالدور في الواجهة) ✅ اتسجّل — الإصلاح JS صغير ومنفصل **بعد N-31**.
+- ✅ **جرد ٤:** م٥ مش موجود على الحي (N-36 — قرار بعد N-31)؛ الـ4 جداول deny-all (RLS بدون policies) ⇒ N-31 مايلمسهمش.
+- ⏳ **قرار المالك في الآخر:** شيل ledger_entries وpartner_deal_summary (فاضيين ومش مستخدمين) وjournal_entries_backup_20260714 (63 صف) ولا يفضلوا.
+- ✅ **N-34 اتشال بقرار المالك (10-03)** — قفل القاعدة على chart_of_accounts (admin بس) فاضل هنا.
 - **الترتيب ثابت:** N-32 ← N-28/N-26b ← N-31.
