@@ -81,11 +81,14 @@
 vehicles/stock_locations/partners_master ويعيد إدراجهم؛ postDoubleEntry بيمسح سطور قيد فشل إدراجه).
 قصر الـDELETE على admin محتاج تحليل مسار بمسار — **المرحلة التانية** (§٥).
 
-**الشكل (من غير SQL نهائي):**
+**الشكل (اتنفّذ في `sql/n31_table_rls_by_role_and_system.sql` — مسودة، PGlite 73/73):**
 - دالة helper واحدة secdef stable: `app_systems(p_min_role)` ⇒ `text[]` بالأنظمة اللي المستخدم ليه فيها
-  دور ≥ المطلوب (من `user_roles.systems`، و`TRANSIT` ⇒ `TM`، بنفس منطق `app_role`).
-- الـpolicy: `system_type = any ((select public.app_systems('readonly')))` للقراءة،
+  دور ≥ المطلوب — **مبنية على `app_role` بتاع N-28 نفسه** (مفيش parser تاني لـ`user_roles.systems` ⇒ §٣-(٤) متحقق من غير
+  ما `app_role` يتعاد تعريفه).
+- الـpolicy: `system_type = any ((select public.app_systems('readonly'))::text[])` للقراءة،
   و`… ('employee')` للكتابة (using + with check).
+  - **الـ`::text[]` إلزامي:** من غيره Postgres بيقرا `= any ((select …))` كـsubquery مش array ⇒ «operator does not exist:
+    text = text[]» (طلع في PGlite).
   - **`(select …)` إلزامي** — بيتحوّل لـinitPlan بيتحسب **مرة واحدة لكل استعلام** بدل مرة لكل صف
     (journal_entries آلاف الصفوف، والصفحات 1000).
   - `with check` على الـINSERT/UPDATE بيمنع كمان **نقل صف لنظام تاني** (system_type جديد مش من أنظمتك).
@@ -107,6 +110,16 @@ vehicles/stock_locations/partners_master ويعيد إدراجهم؛ postDoubleE
 - **contacts (حكم المراجع 2026-10-01 ✅):** INSERT + UPDATE لـadmin أو employee (`ensureContact` جوّه سير الإدخال)،
   و**DELETE لـadmin بس** — زي `protectedTables` في الشاشة، ومفيش مسار employee بيمسح contacts. ده تخصيص للجدول ده
   بس (مش قاعدة «DELETE للـemployee» العامة في المرحلة ١).
+- **partner_account_links وcustody_holders وprofit_postings (حكم المراجع 10-03 ✅):** القراءة بالنظام (أي دور في النظام) بدل
+  `true` لأي authenticated — «كل واحد يشوف شركته»، وprofit_postings فيها أرباح كل شريك. الكتابة تفضل من غير policies
+  (RPC secdef بس). كل قرّاء js/ بيفلتروا بالنظام الحالي أصلًا (accounting:1858، core:611/682/728/935/1201/1258/1570/1602/1750،
+  dashboard:705/1153، engine:1457/1529/1609/1705/1746/1909/1961، modals:481/1090) ⇒ مستخدم النظام بيشوف صفوف نظامه كاملة
+  (فحص «لازم يبان دائم» بيعدّي — PGlite). والـsecdef (create_custody_holder، post_file_profit_all، is_permanent_partner من جوّه
+  secdef) بتعدّي الـRLS. ⇒ **22 جدول، 78 policy.**
+- **sale_charges** (مش من الـ17) داخل: الشاشات بتكتب فيه (modals.js:1969) ومالوش policy في الريبو ⇒ زي الـ16 العادية.
+- **⚠️ N-39 — الـRLS على UPDATE/DELETE صامتة:** الصف المش مسموح بيتشال من الـWHERE ⇒ «0 صفوف» من غير خطأ، والشاشة بتقول
+  «✅ تم» (apiPatch/apiDelete مابيبصّوش على العدد). الـINSERT (والـUPDATE اللي بينقل صف لنظام تاني) بس اللي بيترفض بصوت.
+  اتثبت في PGlite. الإصلاح JS بعد N-31 مباشرة (PLAN N-39).
 - **`system_type` يبقى `not null` في الجداول اللي في النطاق (حكم المراجع 2026-10-01 ✅)** — في نفس SQL الـN-31،
   للأعمدة اللي جرد ٣ يطلّعها nullable بس ⇒ **جرد ٣: audit_log بس** (الباقي NOT NULL أصلًا). + توصية `drop default 'BOX'` (§٧-٣).
   - **ليه:** بعد الـpolicy، صف بـnull **هيختفي بصمت** عن الكل؛ مع `not null` الإدراج **هيفشل بصوت** بدل كده.
