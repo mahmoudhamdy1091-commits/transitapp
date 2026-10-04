@@ -180,7 +180,8 @@
   - **بحساب الشريك (24xx):** `fetchPartnerLedgerMovements`، و`computePartnerGlobalBalance`.
   - **بالجهة (`contact_name` = null):** `loadContactStatement`، و`showLedger`/`loadContacts` (contacts.js).
 - **بالفترة (من غير فلتر ملف):** `fetchJEForPeriod` (الداشبورد، والتقارير عن طريق `computeFinancials`) هيجيب المرآة. **الأثر صفر على الربح والمصروفات**، لأن المرآة حسابات ميزانية بس (1270 + بنك)، و`ref_table` بتاعها مش `expenses`، فمش هتتحسب مصروف. **ويتأكد بالكناري.**
-- **أدوات الإصلاح** (`checkMissingEntries` 4411، و`createAllMissingJE`، و`fixUnbalancedEntries`، و`runMigration`): لازم تعرف `ref_table = 'intercompany'`، ما تعتبرهاش «قيد من غير سجل» ولا تحاول «تصلّحها». ده درس «نوع جديد؟ افحص كل مستهلك»: خرايط `ref_table` في journal.js (`RT`، و`REVERSAL_TABLE_BY_NAME`) وSOURCE_LABELS في accounting.js لازم يكون فيها النوع الجديد («قيد شركة تانية»).
+- **⛔ (N-42، 2026-10-04): `fixUnbalancedEntries` و`runMigration` (ومعاهم `openMigrationModal` و`runPostImportMigration`) اتقفلوا بقرار المالك — بيرموا «الأداة دي اتقفلت» ⇒ مش مستهلك يتحدّث في B-2f. الباقي هنا: `checkMissingEntries`/`createMissingJE`/`createAllMissingJE`.**
+- **أدوات الإصلاح** (`checkMissingEntries` 4411، و`createAllMissingJE`، و`fixUnbalancedEntries` ⛔، و`runMigration` ⛔): لازم تعرف `ref_table = 'intercompany'`، ما تعتبرهاش «قيد من غير سجل» ولا تحاول «تصلّحها». ده درس «نوع جديد؟ افحص كل مستهلك»: خرايط `ref_table` في journal.js (`RT`، و`REVERSAL_TABLE_BY_NAME`) وSOURCE_LABELS في accounting.js لازم يكون فيها النوع الجديد («قيد شركة تانية»).
 - **الكاش** `_doLoadCache` (core.js:75): يتراجع وقت التنفيذ (بيجيب إيه وبيستخدمه فين).
 - **ملاحظات اليومية** `js/journal-notes.js` (جلسة تانية، 2026-09-29): لما زرار «إظهار قيود الشركة التانية» يتداس، لازم تتعامل مع `ref_table = 'intercompany'` من غير ما تقع (ملاحظة السجل الأصلي موجودة في الشركة التانية، فتعرض «قيد مرآة — [الشركة] [القيد]» أو ما تعرضش حاجة).
 
