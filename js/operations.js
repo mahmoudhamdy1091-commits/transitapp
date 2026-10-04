@@ -4180,7 +4180,6 @@ export async function loadJEManager() {
               <div style="font-size:12px;font-weight:700;color:var(--red)">❌ فرق ${fmt(diff)} بين المدين والدائن — يؤثر على ميزان المراجعة!</div>
               <div style="font-size:13px;color:var(--text2);margin-top:3px">${unbalanced.length} قيد غير متوازن — السبب: فشل جزئي أثناء الترحيل أو الإدخال</div>
             </div>
-            <button class="btn btn-sm" onclick="fixUnbalancedEntries()" style="background:var(--red);color:#fff;border:none;font-weight:700;white-space:nowrap">🔧 إصلاح تلقائي</button>
             <button class="btn btn-secondary btn-sm" onclick="showUnbalancedDetail()" style="white-space:nowrap">🔍 تفاصيل</button>
           </div>`;
       }
@@ -4348,12 +4347,21 @@ export function showUnbalancedDetail() {
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
-    </div>
-    <div style="margin-top:10px;font-size:13px;color:var(--text2)">اضغط "إصلاح" لحذف هذه القيود وإعادة ترحيل بياناتها</div>`,
-    () => fixUnbalancedEntries()
+    </div>`,
+    // ⛔ N-42: النافذة عرض بس — زرار التأكيد («إصلاح») مستخبي، والإلغاء بقى «إغلاق»
+    () => {}, null,
+    (okBtn, cancelBtn) => { okBtn.style.display = 'none'; if (cancelBtn) cancelBtn.textContent = 'إغلاق'; }
   );
 }
+// ⛔ N-42 (قرار المالك 2026-10-04: «اقفلهم»): أدوات إعادة بناء اليومية اتقفلت. «⚡ ترحيل البيانات التاريخية»
+// كان بيمسح كل القيود التلقائية في النظام ويعيد توليدها من الجداول، و«🔧 إصلاح تلقائي» كان بيمسح القيد الناقص
+// ويعيد توليد كل دفعات/مبيعات الملف — الاتنين بيضيّعوا كل تصحيحات اليومية (D-1، N-27، m4b، سلاسل العكس،
+// is_primary_line، توجيه الشركاء/العهد، قيود الأرباح، CORRECT). الدوال فاضلة متصدّرة (onclick قديم مايقعش
+// بـReferenceError) بس بترمي قبل أي confirm أو طلب. الجسم القديم تحتها مابيتنفّذش.
+export const JE_REBUILD_CLOSED_MSG = 'الأداة دي اتقفلت — اليومية بتتصلّح بقيود عكس/تصحيح بس';
+
 export async function fixUnbalancedEntries() {
+  toast(JE_REBUILD_CLOSED_MSG, 'err'); throw new Error(JE_REBUILD_CLOSED_MSG);
   const unbalanced = Object.values(jeMgrState.grouped).filter(g => Math.abs(g.totalDr-g.totalCr)>0.01);
   if (!unbalanced.length) { toast('✅ لا توجد قيود غير متوازنة','ok'); return; }
 
@@ -4916,6 +4924,7 @@ export async function deleteJEEntry(entryNo, opts) {
 // ════════════════════════════════════════════════════════
 
 export function openMigrationModal() {
+  toast(JE_REBUILD_CLOSED_MSG, 'err'); throw new Error(JE_REBUILD_CLOSED_MSG);   // ⛔ N-42
   const inp = el('mig-confirm-input');
   if (inp) inp.value = '';
   if (el('mig-pre-run'))  el('mig-pre-run').style.display  = 'block';
@@ -4941,6 +4950,7 @@ export function _migProgress(pct, label) {
 }
 
 export async function runMigration() {
+  toast(JE_REBUILD_CLOSED_MSG, 'err'); throw new Error(JE_REBUILD_CLOSED_MSG);   // ⛔ N-42
   const confirm = el('mig-confirm-input')?.value?.trim();
   if (confirm !== 'MIGRATE') {
     if (el('mig-pre-error')) { el('mig-pre-error').style.display='block'; el('mig-pre-error').textContent='اكتب MIGRATE بالأحرف الكبيرة للتأكيد'; }
@@ -5175,8 +5185,7 @@ export async function runMigration() {
     _migLog(`❌ خطأ: ${e.message}`, 'err');
     if (el('mig-status-text')) el('mig-status-text').textContent = '❌ توقف الترحيل بسبب خطأ';
     if (el('mig-footer')) el('mig-footer').innerHTML =
-      `<button class="btn btn-secondary" onclick="closeModal('migrationModal')">إغلاق</button>
-       <button class="btn btn-primary" onclick="runMigration()">🔄 إعادة المحاولة</button>`;
+      `<button class="btn btn-secondary" onclick="closeModal('migrationModal')">إغلاق</button>`;   // ⛔ N-42: من غير «🔄 إعادة المحاولة»
     if (el('mig-footer')) el('mig-footer').style.display = 'flex';
     console.error('Migration error:', e);
   }
@@ -5742,9 +5751,8 @@ export async function loadContactStatement() {
         wrap.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text2)">
           <div style="font-size:36px;margin-bottom:10px">📋</div>
           <div style="font-size:14px;font-weight:700;margin-bottom:6px">لا توجد قيود باسم "${name}"</div>
-          <div style="font-size:12px">شغّل الترحيل التاريخي من دفتر القيود لتحديث البيانات</div>
-          <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="showJEManager();setTimeout(openMigrationModal,300)">⚡ ترحيل البيانات</button>
-        </div>`;
+          <div style="font-size:12px">مفيش قيود مرحّلة لجهة الاتصال دي في اليومية</div>
+        </div>`;   // ⛔ N-42: من غير زرار «⚡ ترحيل البيانات»
         return;
       }
     }
@@ -6241,7 +6249,6 @@ export async function runImport() {
       </div>
     </div>
     <div style="margin-top:10px;display:flex;gap:8px">
-      <button class="btn btn-primary" onclick="runPostImportMigration()">⚡ توليد القيود المحاسبية</button>
       <button class="btn btn-secondary" onclick="selectImportType('${type}');setImportStep(3)">📥 استيراد ملف آخر</button>
       <button class="btn btn-secondary" onclick="showDashboard()">🏠 الداشبورد</button>
     </div>`;
@@ -6250,7 +6257,9 @@ export async function runImport() {
   await logAudit('IMPORT', schema.table, null, null, { type, inserted, failed, system:sys });
 }
 
+// ⛔ N-42: كانت بتفتح مودال الترحيل وتكتب MIGRATE فيه لوحدها بعد الاستيراد
 export async function runPostImportMigration() {
+  toast(JE_REBUILD_CLOSED_MSG, 'err'); throw new Error(JE_REBUILD_CLOSED_MSG);
   toast('⏳ جاري توليد القيود للبيانات المستوردة...','ok');
   openMigrationModal();
   setTimeout(() => {
@@ -6296,7 +6305,7 @@ Object.assign(window, {
   setReviewPeriod, switchReviewTab, runAllReviewChecks, renderCheckItem, renderReviewChecklist,
   updateChecklistProgress, renderSignoff, saveReviewSignoff, loadReconciliations, loadReviewHistory,
   showJEManager, setJEMgrPeriod, loadJEManager, renderJEManagerTable, showUnbalancedDetail,
-  fixUnbalancedEntries, checkMissingEntries, createMissingJE, createAllMissingJE, toggleJELines,
+  fixUnbalancedEntries, JE_REBUILD_CLOSED_MSG, checkMissingEntries, createMissingJE, createAllMissingJE, toggleJELines,
   openNewJEModal, openEditJEModal, renderJELines, addJELine, removeJELine,
   onJEAccInput, onJEAccChange, updateJETotals, submitJE, deleteJEEntry,
   openMigrationModal, _migLog, _migProgress, runMigration, showWarehouses,

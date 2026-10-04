@@ -106,10 +106,9 @@ export async function loadTrialBalance() {
       el('trialTable').innerHTML = `
         <div style="text-align:center;padding:32px;color:var(--text2)">
           <div style="font-size:32px;margin-bottom:10px">⚖️</div>
-          <div style="font-size:14px;font-weight:700;margin-bottom:6px">لا توجد قيود محاسبية في النظام</div>
-          <div style="font-size:12px;margin-bottom:16px">يجب تشغيل الترحيل أولاً لتوليد القيود من البيانات الموجودة</div>
+          <div style="font-size:14px;font-weight:700;margin-bottom:6px">مفيش قيود مرحّلة في الفترة دي</div>
+          <div style="font-size:12px;margin-bottom:16px">مفيش قيود مرحّلة في الفترة دي — اعرض كل القيود بما فيها المسودات للتأكد</div>
           <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-            <button class="btn btn-primary btn-sm" onclick="showJEManager();setTimeout(openMigrationModal,300)">⚡ ترحيل البيانات التاريخية</button>
             <button class="btn btn-secondary btn-sm" onclick="el('tb-post-filter').value='all';loadTrialBalance()">👁 عرض كل القيود بما فيها المسودات</button>
           </div>
         </div>`;
