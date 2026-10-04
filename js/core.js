@@ -1336,7 +1336,12 @@ export async function apiPost(table, data) {
   return resBody;
 }
 
-export async function apiPatch(table, matchParams, data) {
+// ✅ N-39: PATCH/DELETE ما لمسش ولا صف كان بيعدّي من غير خطأ والشاشة تقول «✅ تم» — الـRLS (N-31) بتشيل
+// الصف المش مسموح من الـWHERE بصمت، وid قديم (السجل اتغيّر/اتمسح من شاشة تانية) بيعمل نفس الحاجة. دلوقتي
+// بيرمي، إلا لو النداء قال { allowEmpty: true } (تنضيف / شرطي — docs/DESIGN-N39-silent-zero-rows.md).
+export const ZERO_ROWS_MSG = 'ما اتغيّرش أي سجل — يا إما مش مسموح لك بالعملية دي، يا إما السجل اتغيّر أو اتمسح من مكان تاني. حدّث الصفحة وحاول تاني.';
+
+export async function apiPatch(table, matchParams, data, { allowEmpty = false } = {}) {
   let url = `${SB_URL}/rest/v1/${table}?`;
   for (const [k, v] of Object.entries(matchParams)) url += `${k}=${encodeURIComponent(v)}&`;
   const body = JSON.stringify(data);
@@ -1352,6 +1357,7 @@ export async function apiPatch(table, matchParams, data) {
     if (classified) throw new Error(classified);
     throw new Error(msg);
   }
+  if (!allowEmpty && Array.isArray(resBody) && resBody.length === 0) throw new Error(ZERO_ROWS_MSG);
   return resBody;
 }
 
@@ -2027,7 +2033,7 @@ Object.assign(window, {
   CUSTODY_LABEL_PREFIX, isCustodyLabel, custodyLabel, loadCustodyHolders, resolveMoneySource, isResolvedSource, CUSTODY_NEEDS_SOURCE_MSG,
   sourceFromRecord, sourceArgsFromRecord,
   PAYER_CLASS_UNVERIFIED_MSG, loadPayerClassLinks, payerClass, classifyPayer, permanentAmong, guardSupplierPayerUI,
-  companyPayerName, permanentPayerBlockMsg, permanentExpenseWarnMsg, assertSupplierPayerAllowed, pgIn, apiPost, apiPatch,
+  companyPayerName, permanentPayerBlockMsg, permanentExpenseWarnMsg, assertSupplierPayerAllowed, pgIn, apiPost, apiPatch, ZERO_ROWS_MSG,
   apiRpc, _safeAuditJSON, logAudit, getRecordAuditTrail, getCreatorsMap,
   computePartnerGlobalBalance, fetchPartnerLedgerMovements, postFileProfitAll, getFileDefaultReceiver, createPartnerLedgerEntry, updatePartnerLedgerEntry, checkPayoutCap,
   PROFIT_POSTING_GATE_OPEN, PROFIT_POSTING_GATE_MSG,

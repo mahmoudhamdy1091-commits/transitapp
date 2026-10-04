@@ -1001,7 +1001,8 @@ export async function checkVinDuplicate(vin, excludeFileNo='') {
     const deals = await apiGetAll('purchase_orders', { select:'file_no', system_type:`eq.${state.system}`, file_no:`eq.${found[0].file_no}` });
     if (!deals || !deals.length) {
       // VIN exists but deal is deleted — clean up orphan silently
-      try { await apiDelete('vehicles', { system_type:`eq.${state.system}`, vin:`eq.${vin}`, file_no:`eq.${found[0].file_no}` }); } catch(e) { console.warn('deleteVehicle:', e.message); }
+      // allowEmpty (N-39): تنضيف سيارة يتيمة — لو اتمسحت قبل كده مفيش حاجة تتعمل
+      try { await apiDelete('vehicles', { system_type:`eq.${state.system}`, vin:`eq.${vin}`, file_no:`eq.${found[0].file_no}` }, { allowEmpty: true }); } catch(e) { console.warn('deleteVehicle:', e.message); }
       return null;
     }
     return found[0];

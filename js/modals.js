@@ -608,7 +608,12 @@ export async function _submitNewFileInner() {
         try {
           await je_purchase({sys:state.system,date:poDate||today(),amount:finalTotal,fileNo,supplier,refId:newPoId});
         } catch(jeErr) {
-          await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` }, { post_status:'draft' });
+          // N-39: الرجوع لـdraft strict — لو ماتمش، الصفقة posted من غير قيد ⇒ الرسالتين مع بعض بدل ما تضيع رسالة القيد
+          try {
+            await apiPatch('purchase_orders', { system_type:`eq.${state.system}`, file_no:`eq.${fileNo}` }, { post_status:'draft' });
+          } catch(revErr) {
+            throw new Error(`فشل ترحيل قيد الشراء (${jeErr.message}) — وكمان رجوع الصفقة لـ«مسودة» ماتمش (${revErr.message}). الصفقة متسجّلة من غير قيد — بلّغ المدير.`);
+          }
           toast(`⚠️ تم حفظ الصفقة بدون ترحيل قيد الشراء — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
         }
       }
@@ -680,7 +685,8 @@ export async function voidOrDeleteOldPayment(op) {
       const record = rows?.[0];
       if (record) await voidTransaction('payment', record, true);
     } else {
-      await apiDelete('payments', { id:`eq.${op.paymentId}` });
+      // allowEmpty (N-39): تنضيف دفعة draft قديمة — لو اتمسحت قبل كده مفيش حاجة تتعمل
+      await apiDelete('payments', { id:`eq.${op.paymentId}` }, { allowEmpty: true });
     }
   } catch(e) { console.warn('voidOrDeleteOldPayment:', e.message); }
 }
@@ -804,9 +810,10 @@ export async function submitEditFileFull() {
         // جيب VIN قبل الحذف لتنظيف المخزون
         const vRow = await apiGet('vehicles', { select:'vin', id:`eq.${vid}` });
         const vin  = vRow?.[0]?.vin;
-        await apiDelete('vehicles', { id:`eq.${vid}` });
+        // allowEmpty (N-39): سيارة اتشالت من الملف — لو اتمسحت قبل كده، تنضيف المخزون لازم يكمّل برضه
+        await apiDelete('vehicles', { id:`eq.${vid}` }, { allowEmpty: true });
         if (vin) {
-          await apiDelete('stock_locations', { system_type:`eq.${state.system}`, vin:`eq.${vin}` });
+          await apiDelete('stock_locations', { system_type:`eq.${state.system}`, vin:`eq.${vin}` }, { allowEmpty: true });
         }
       } catch(delErr) { console.warn('delete removed vehicle:', delErr.message); }
     }
@@ -857,7 +864,8 @@ export async function submitEditFileFull() {
     // 3a. شركاء أُزيلوا بالكامل من الجدول — دفعاتهم (لو فيه) تفضل زي ما هي
     for (const op of (_originalPartners||[])) {
       if (remainingPids.has(op.pid)) continue;
-      try { await apiDelete('partners_master', { id:`eq.${op.pid}` }); } catch(e) { console.warn('delete removed partner:', e.message); }
+      // allowEmpty (N-39): شريك اتشال من الملف — لو اتمسح قبل كده مفيش حاجة تتعمل
+      try { await apiDelete('partners_master', { id:`eq.${op.pid}` }, { allowEmpty: true }); } catch(e) { console.warn('delete removed partner:', e.message); }
     }
 
     // 3b. شركاء موجودون (تعديل في المكان) أو جدد (إنشاء)
@@ -1963,7 +1971,8 @@ export async function submitSale() {
     // ── حفظ المصاريف الإضافية في sale_charges ──
     // عند التعديل: احذف القديمة أولاً ثم أعد الحفظ
     if (el('saleSubmitBtn')._editMode) {
-      try { await apiDelete('sale_charges', { system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` }); } catch(e) {}
+      // allowEmpty (N-39): المصاريف القديمة وقت التعديل — فاتورة من غير مصاريف إضافية طبيعي (غالبًا 0)
+      try { await apiDelete('sale_charges', { system_type:`eq.${state.system}`, inv_no:`eq.${invNo}` }, { allowEmpty: true }); } catch(e) {}
     }
     for (const ec of extraCharges) {
       await apiPost('sale_charges', {
@@ -1985,7 +1994,14 @@ export async function submitSale() {
           p_sale_amount: grandTotal,
         });
       } catch(jeErr) {
-        if (saleIds.length) await apiPatch('sales', { id:`in.(${saleIds.join(',')})` }, { post_status:'draft' });
+        // N-39: الرجوع لـdraft strict — لو ماتمش، الفاتورة posted من غير قيد ⇒ الرسالتين مع بعض
+        if (saleIds.length) {
+          try {
+            await apiPatch('sales', { id:`in.(${saleIds.join(',')})` }, { post_status:'draft' });
+          } catch(revErr) {
+            throw new Error(`فشل ترحيل قيد الفاتورة (${jeErr.message}) — وكمان رجوع الفاتورة لـ«مسودة» ماتمش (${revErr.message}). الفاتورة متسجّلة من غير قيد — بلّغ المدير.`);
+          }
+        }
         toast(`⚠️ تم حفظ الفاتورة بدون ترحيل قيدها — راجع قائمة الاعتمادات (${jeErr.message})`,'warn');
       }
     }

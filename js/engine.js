@@ -671,7 +671,8 @@ export async function _voidSaleInvoiceCore(invNo, fileNo) {
         try { await voidTransaction('collection', c, true); }
         catch(e) { colReverseFailures++; console.warn('_voidSaleInvoiceCore: فشل عكس قيد تحصيل مرتبط', c.id, e.message); }
       } else {
-        try { await apiPatch('collections', { id:`eq.${c.id}` }, { post_status:'voided' }); } catch(e) {}
+        // allowEmpty (N-39): تنضيف وقت إلغاء الفاتورة — لو التحصيل اتشال/اتغيّر من مكان تاني مفيش حاجة تتعمل
+        try { await apiPatch('collections', { id:`eq.${c.id}` }, { post_status:'voided' }, { allowEmpty: true }); } catch(e) {}
       }
     }
   } catch(e) { console.warn('_voidSaleInvoiceCore: فشل جلب التحصيلات المرتبطة:', e.message); }
@@ -967,7 +968,8 @@ export async function voidPurchaseOrder(fileNo, reason) {
     jeCount = jeIds.length;
     for (let i = 0; i < jeIds.length; i += 200) {
       const chunk = jeIds.slice(i, i+200);
-      await apiPatch('journal_entries', { id:`in.(${chunk.join(',')})` }, { post_status: 'voided' });
+      // allowEmpty (N-39): تنضيف سطور قيد الشراء وقت الإلغاء — جوّه try بيبلع أصلًا
+      await apiPatch('journal_entries', { id:`in.(${chunk.join(',')})` }, { post_status: 'voided' }, { allowEmpty: true });
     }
   } catch(e) { console.warn('voidPurchaseOrder: فشل إعادة تصنيف journal_entries:', e.message); }
 

@@ -222,7 +222,8 @@ export async function submitOpex() {
     try {
       await je_opex({ sys:state.system, date, amount, expType:finalType, desc, method, refNo });
     } catch(jeErr) {
-      if (newId) { try { await apiDelete('operating_expenses', { id:`eq.${newId}` }); } catch(_){} }
+      // allowEmpty (N-39): رجوع المصروف بعد فشل القيد — جوّه try بيبلع أصلًا
+      if (newId) { try { await apiDelete('operating_expenses', { id:`eq.${newId}` }, { allowEmpty: true }); } catch(_){} }
       showFieldErr('opexError', `⚠️ فشل إنشاء القيد المحاسبي — لم يُحفظ المصروف: ${jeErr.message}`);
       return;
     }
@@ -1836,28 +1837,34 @@ export async function approveItem(type, id) {
       ? { system_type:`eq.${state.system}`, file_no:`eq.${item.file_no}`, inv_no:`eq.${item.inv_no}` }
       : null;
     // ✅ فحص idempotency: لو السجل أُعتمد فعلاً (لم يعد draft) — توقف بدون تكرار القيود
+    // allowEmpty (N-39): شرطي (eq.draft) — الصفر = «اتوافق قبل كده» والسطر اللي بعده بيتعامل معاه
     const patched = isSaleInvoice
-      ? await apiPatch(cfg.table, { ...saleInvoiceFilter, post_status:`eq.draft` }, { post_status:'posted' })
-      : await apiPatch(cfg.table, { id:`eq.${id}`, post_status:`eq.draft` }, { post_status:'posted' });
+      ? await apiPatch(cfg.table, { ...saleInvoiceFilter, post_status:`eq.draft` }, { post_status:'posted' }, { allowEmpty: true })
+      : await apiPatch(cfg.table, { id:`eq.${id}`, post_status:`eq.draft` }, { post_status:'posted' }, { allowEmpty: true });
     if (!patched?.length) return;
     // ✅ لو فشل إنشاء القيد بعد الموافقة — رجّع السجل (أو الفاتورة كاملة) لـ draft ليظهر في قائمة الاعتمادات من جديد
-    const revertToDraft = async () => {
-      if (isSaleInvoice) await apiPatch(cfg.table, saleInvoiceFilter, { post_status:'draft' });
-      else await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'draft' });
+    // N-39: الرجوع strict — لو ماتمش، السجل posted من غير قيد ⇒ رسالة فشل القيد + فشل الرجوع مع بعض
+    const revertToDraft = async (origErr) => {
+      try {
+        if (isSaleInvoice) await apiPatch(cfg.table, saleInvoiceFilter, { post_status:'draft' });
+        else await apiPatch(cfg.table, { id:`eq.${id}` }, { post_status:'draft' });
+      } catch(revErr) {
+        throw new Error(`${origErr?.message || 'فشل إنشاء القيد'} — وكمان رجوع ${cfg.label} لـ«مسودة» ماتمش (${revErr.message}). السجل متسجّل من غير قيد — بلّغ المدير.`);
+      }
       toast(`⚠️ فشلت الموافقة على ${cfg.label} — أُعيد لقائمة الاعتمادات`,'warn');
     };
     // ✅ شراء/دفعة/مصروف/صرف شريك — دالة مشتركة مع _ensureApprovalJE (كانت 5 نسخ منفصلة)
     // item مضمون موجود هنا (توقفنا فوق لو لأ) — القيد بقى يتكوّن دايمًا، مش بشرط قابل للتخطي الصامت
     if (type === 'purchase' || type === 'payment' || type === 'expense' || type === 'payout' || type === 'ledger') {
       try { await _createApprovalJE(type, item, state.system); }
-      catch(e) { await revertToDraft(); throw e; }
+      catch(e) { await revertToDraft(e); throw e; }
     }
     if (type === 'sale') {
       // ✅ قفل بـPromise مشترك لمنع تكرار القيد عند موافقات فردية متسارعة على
       // سيارات متعددة من نفس الفاتورة (نفس النواة المستخدمة في _ensureApprovalJE)
       try {
         await _ensureSaleJE(state.system, item.file_no, item.inv_no, item.sale_date, item.customer);
-      } catch(e) { await revertToDraft(); throw e; }
+      } catch(e) { await revertToDraft(e); throw e; }
 
       // ✅ OPTION B: تحصيلات مرتبطة بهذه الفاتورة (مدفوعة فعلاً) — اعتماد تلقائي
       // بدالة مشتركة مع _ensureApprovalJE (كانت نسختين منفصلتين تفرَّقتا)
@@ -1867,7 +1874,7 @@ export async function approveItem(type, id) {
       // ✅ القيد يُولَّد فقط إذا كان مدفوعاً فعلاً (paid_date موجود) — دالة مشتركة مع _ensureApprovalJE
       // لو لا يوجد paid_date → التحصيل معلق، يظهر في قائمة "مستحق" ليُسجَّل الدفع لاحقاً، لا قيد الآن
       try { await _createApprovalJE(type, item, state.system); }
-      catch(e) { await revertToDraft(); throw e; }
+      catch(e) { await revertToDraft(e); throw e; }
     }
     // ✅ سجّل "من وافق" على المسودة (كان غير مسجَّل — فجوة تتبّع)
     await logAudit('APPROVE', cfg.table, item.file_no || null, item, { approved_at: today() }, `موافقة ${cfg.label} ${item.ref_no || item.inv_no || id}`);
@@ -1906,7 +1913,8 @@ export async function rejectItem(type, id) {
       }
       if (!oldRow) {
         // لا يوجد سجل تدقيق — لا يمكن استرجاع القيمة الأصلية، نُرجع الحالة لـ posted فقط
-        await apiPatch(tbl, { id:`eq.${id}`, post_status:`eq.pending_edit` }, { post_status:'posted' });
+        // allowEmpty (N-39): شرطي (eq.pending_edit) — الصفر = الحالة اتحلّت قبل كده
+        await apiPatch(tbl, { id:`eq.${id}`, post_status:`eq.pending_edit` }, { post_status:'posted' }, { allowEmpty: true });
         toast('⚠️ لم يُعثر على القيمة الأصلية في سجل التدقيق — تم إلغاء حالة "معلّق" فقط بدون عكس القيد','warn');
         invalidateCache();
         loadApprovalQueue();
@@ -2016,7 +2024,8 @@ export async function rejectItem(type, id) {
               try {
                 const rows = await apiGetAll(t, { select:'id,post_status', system_type:`eq.${sys}`, file_no:`eq.${fn}`, post_status:'eq.draft' });
                 for (const r of (rows||[])) {
-                  await apiPatch(t, { id:`eq.${r.id}` }, { post_status:'cancelled' });
+                  // allowEmpty (N-39): تنضيف بالتتابع وقت رفض أمر الشراء — صف اتغيّر من مكان تاني مايوقفش الباقي
+                  await apiPatch(t, { id:`eq.${r.id}` }, { post_status:'cancelled' }, { allowEmpty: true });
                 }
               } catch(e) { console.warn(`cancelCascade ${t}:`, e.message); }
             }
@@ -2217,7 +2226,8 @@ export async function _approveLinkedPaidCollections(sys, fileNo, invNo, fallback
           continue; // لا تُرحِّل السجل بلا قيد
         }
       }
-      const colPatched = await apiPatch('collections', { id:`eq.${col.id}`, post_status:`eq.draft` }, { post_status:'posted' });
+      // allowEmpty (N-39): شرطي (eq.draft) — الصفر = اتوافق قبل كده، والسطر اللي بعده بيشيك colPatched.length
+      const colPatched = await apiPatch('collections', { id:`eq.${col.id}`, post_status:`eq.draft` }, { post_status:'posted' }, { allowEmpty: true });
       if (colPatched?.length) {
         // ✅ تسجيل تدقيق — كان مفقوداً تماماً في كلا النسختين القديمتين
         await logAudit('APPROVE', 'collections', col.file_no||fileNo, col, { approved_at: today(), auto: true, via: 'sale_approval' }, `موافقة تلقائية تحصيل مرتبط بفاتورة ${invNo}`);
@@ -2334,14 +2344,15 @@ export async function _processEditApproval(type, id, preloadedItem = null) {
     // قايمة الانتظار لوحده (payment_edit) لحد ما يتعتمد أو يترفض.
 
     // ✅ فحص idempotency: لو السجل اعتُمد فعلاً (لم يعد pending_edit) — توقف بدون تكرار
+    // allowEmpty (N-39): شرطي (eq.pending_edit) — الصفر = «كانت معتمدة مسبقاً» (السطر اللي بعده)
     let cleanPatched;
     if (type === 'sale_edit' && item.inv_no) {
       cleanPatched = await apiPatch('sales',
         { system_type:`eq.${state.system}`, inv_no:`eq.${item.inv_no}`, post_status:`eq.pending_edit` },
-        { post_status: 'posted' }
+        { post_status: 'posted' }, { allowEmpty: true }
       );
     } else {
-      cleanPatched = await apiPatch(cfg.table, { id:`eq.${id}`, post_status:`eq.pending_edit` }, { post_status: 'posted' });
+      cleanPatched = await apiPatch(cfg.table, { id:`eq.${id}`, post_status:`eq.pending_edit` }, { post_status: 'posted' }, { allowEmpty: true });
     }
     if (!cleanPatched?.length) return { ok:true, message:`${cfg.label}: كانت معتمدة مسبقاً`, already:true };
 
@@ -2415,9 +2426,10 @@ export async function approveAll() {
       try {
         await _ensureApprovalJE(r, sys);
         // ✅ فاتورة بيع = كل سيارات نفس inv_no دفعة واحدة، لا سطر واحد فقط
+        // allowEmpty (N-39): شرطي (eq.draft) — الصفر = اتوافق قبل كده، والـif اللي بعده بيتعامل معاه
         const patched = (r._type === 'sale' && r.inv_no && r.file_no)
-          ? await apiPatch(cfg.table, { system_type:`eq.${sys}`, file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}`, post_status:`eq.draft` }, { post_status:'posted' })
-          : await apiPatch(cfg.table, { id:`eq.${r.id}`, post_status:`eq.draft` }, { post_status:'posted' });
+          ? await apiPatch(cfg.table, { system_type:`eq.${sys}`, file_no:`eq.${r.file_no}`, inv_no:`eq.${r.inv_no}`, post_status:`eq.draft` }, { post_status:'posted' }, { allowEmpty: true })
+          : await apiPatch(cfg.table, { id:`eq.${r.id}`, post_status:`eq.draft` }, { post_status:'posted' }, { allowEmpty: true });
         if (patched?.length) {
           okCount++;
           // ✅ سجّل "من وافق" (موافقة جماعية)
