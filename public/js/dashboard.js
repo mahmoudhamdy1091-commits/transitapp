@@ -1603,8 +1603,9 @@ export async function deleteSaleInvoice(invNo, fileNo) {
         }
         // 3. حذف السجلات
         await apiDelete('sales', { system_type:`eq.${sys}`, file_no:`eq.${fileNo}`, inv_no:`eq.${invNo}` });
-        try { await apiDelete('collections', { system_type:`eq.${sys}`, inv_no:`eq.${invNo}` }); } catch(e) { console.warn('deleteSale cleanup collections:', e.message); }
-        try { await apiDelete('sale_charges', { system_type:`eq.${sys}`, inv_no:`eq.${invNo}` }); } catch(e) { console.warn('deleteSale cleanup sale_charges:', e.message); }
+        // allowEmpty (N-39): تنضيف — فاتورة من غير تحصيلات/مصاريف إضافية طبيعي
+        try { await apiDelete('collections', { system_type:`eq.${sys}`, inv_no:`eq.${invNo}` }, { allowEmpty: true }); } catch(e) { console.warn('deleteSale cleanup collections:', e.message); }
+        try { await apiDelete('sale_charges', { system_type:`eq.${sys}`, inv_no:`eq.${invNo}` }, { allowEmpty: true }); } catch(e) { console.warn('deleteSale cleanup sale_charges:', e.message); }
         // 4. تحديث حالة الصفقة
         try {
           const allV = await apiGetAll('vehicles', { select:'vin', system_type:`eq.${sys}`, file_no:`eq.${fileNo}` });

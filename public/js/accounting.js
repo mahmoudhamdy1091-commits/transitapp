@@ -984,22 +984,34 @@ export async function submitEditVehicle() {
 }
 
 
-// apiDelete helper — includes permission guard + auto audit log
-export const apiDelete = async function(table, matchParams) {
+// apiDelete helper — includes permission guard + audit log (بعد المسح الناجح)
+// ✅ N-39: كان بيرجّع الـResponse من غير ما يشيك res.ok (أي فشل HTTP في المسح كان صامت، وولا نداء بيقرا
+// النتيجة)، وكان بيكتب سطر DELETE في audit_log **قبل** المسح (السجل يقول «اتمسح» حتى لو المسح وقع أو لمس
+// 0 صفوف). دلوقتي: يرمي على فشل HTTP، ويرمي على 0 صفوف إلا لو { allowEmpty: true }، والـaudit بعد النجاح
+// وبالعدد الفعلي. select=id ⇒ الرجوع صغير (عدد الصفوف بس).
+export const apiDelete = async function(table, matchParams, { allowEmpty = false } = {}) {
   const protectedTables = ['purchase_orders','vehicles','sales','expenses','payments','collections','partner_payouts','contacts'];
   if (protectedTables.includes(table) && !can('delete')) {
     toast('🔒 ليس لديك صلاحية الحذف', 'err');
     throw new Error('غير مصرح بالحذف');
   }
-  // Log the delete action
-  try {
-    const fileNo = matchParams?.file_no?.replace('eq.','') || matchParams?.id?.replace('eq.','') || null;
-    logAudit('DELETE', table, fileNo, null, matchParams, `حذف من جدول ${table}`);
-  } catch(e) { console.warn('logAudit DELETE:', e.message); }
 
   let url = `${SB_URL}/rest/v1/${table}?`;
   for (const [k,v] of Object.entries(matchParams)) url += `${k}=${encodeURIComponent(v)}&`;
-  return apiFetch(url, { method:'DELETE', headers: {'Prefer':'return=representation'} });
+  url += 'select=id';
+  const res = await apiFetch(url, { method:'DELETE', headers: {'Prefer':'return=representation'} });
+  const resBody = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(resBody?.message || resBody?.error || res.statusText || `HTTP ${res.status}`);
+  const n = Array.isArray(resBody) ? resBody.length : 0;
+  if (n === 0 && !allowEmpty) throw new Error(ZERO_ROWS_MSG);
+
+  if (n > 0) {
+    try {
+      const fileNo = matchParams?.file_no?.replace('eq.','') || matchParams?.id?.replace('eq.','') || null;
+      logAudit('DELETE', table, fileNo, null, matchParams, `حذف من جدول ${table} (${n} صف)`);
+    } catch(e) { console.warn('logAudit DELETE:', e.message); }
+  }
+  return resBody;
 }
 
 // ════════════════════════════════════════
