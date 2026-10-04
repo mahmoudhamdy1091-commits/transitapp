@@ -695,6 +695,7 @@ function _runConfirm(title, msg, isHtml, onConfirm, onCancel, beforeShow) {
     // confirmAsync بتكتب فوقه في beforeShow زي ما هي
     okBtn.textContent = '🗑 حذف نهائي';
     okBtn.style.background = '';
+    okBtn.style.display = '';   // ✅ N-42: showUnbalancedDetail بتخبّيه (عرض بس) — يرجع ظاهر في أي نافذة بعدها
     if (typeof beforeShow === 'function') beforeShow(okBtn, cancelBtn);
     openModal('confirmDeleteModal');
   });
